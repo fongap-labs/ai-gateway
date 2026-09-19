@@ -71,6 +71,9 @@ The tracked `wrangler.jsonc` is the repository baseline. Local Worker name, bind
 
 Core GitHub Variables include:
 
+- `DEPLOY_ENABLED=true` to enable production deployment
+- `DEPLOY_REPOSITORY` set to the repository allowed to deploy
+- `ACTION_WORKER_REPOSITORY` for centralized PR governance dispatch
 - `CLOUDFLARE_ACCOUNT_ID`
 - `GATEWAY_PUBLIC_BASE_URL`
 - at least one `TIER{1,2,3}_NODES_CONFIG_XX` shard
