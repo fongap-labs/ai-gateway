@@ -110,6 +110,15 @@ function getBaseCommit() {
   return null;
 }
 
+function isRootCommit() {
+  const result = spawnSync('git', ['rev-list', '--parents', '-n', '1', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return false;
+  return result.stdout.trim().split(/\s+/).filter(Boolean).length === 1;
+}
+
 function ensureHistory(baseCommit) {
   // If the base commit is not reachable (shallow checkout), fetch more history.
   if (!baseCommit) return;
@@ -127,6 +136,10 @@ function checkImmutability(files) {
   // New files (A) are allowed. Modified (M), Deleted (D), Renamed (R) are blocked.
   const baseCommit = getBaseCommit();
   if (!baseCommit) {
+    if (isRootCommit()) {
+      console.log('migrations:check: root baseline detected; immutability diff skipped.');
+      return;
+    }
     throw new Error('migrations:check: could not determine base commit; immutability check requires complete git history');
   }
   ensureHistory(baseCommit);
