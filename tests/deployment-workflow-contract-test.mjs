@@ -63,9 +63,10 @@ assert.equal(decideDeploy({ ...base, triggerEvent: 'push', headRepo: 'someone/ai
 assert.equal(decideDeploy({ ...base, triggerEvent: 'push', changedFiles: ['README.md', 'docs/README.md'] }).deploy, false, 'docs-only change must skip deploy');
 assert.equal(decideDeploy({ event: 'workflow_dispatch' }).deploy, true, 'manual Deploy workflow may enter its own validation gate');
 
-assert.match(deploy, /vars\.DEPLOY_ENABLED != 'false'/);
-assert.match(deploy, /github\.repository == 'fongap\/ai-gateway'/);
 assert.match(deploy, /vars\.DEPLOY_ENABLED == 'true'/);
+assert.match(deploy, /github\.repository == vars\.DEPLOY_REPOSITORY/);
+assert.doesNotMatch(deploy, /github\.repository == 'fongap-labs\/ai-gateway'/);
+assert.doesNotMatch(deploy, /github\.repository == 'fongap\/ai-gateway'/);
 
 const eventTargetRef = /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/;
 const governedTargetRef = /ref: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/;
