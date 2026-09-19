@@ -8,10 +8,10 @@ Multi-provider routing · Multi-key load balancing · Tiered failover · OpenAI 
 
 [**English**](README.md) · [简体中文](README.zh-CN.md)
 
-[![CI](https://github.com/fongap/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap/ai-gateway/actions/workflows/ci.yml)
-[![Deploy](https://github.com/fongap/ai-gateway/actions/workflows/deploy.yml/badge.svg?branch=main&event=workflow_run)](https://github.com/fongap/ai-gateway/actions/workflows/deploy.yml)
+[![CI](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
+[![Deploy](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml/badge.svg?branch=main&event=workflow_run)](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
-![License](https://img.shields.io/github/license/fongap/ai-gateway?label=License)
+![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License)
 
 [Quick Start](#quick-start) · [Architecture](docs/architecture/overview.md) · [Configuration](docs/operations/configuration.md) · [Deployment](docs/operations/deployment.md)
 
@@ -74,7 +74,7 @@ The project is now in a **stability phase**. Architecture stays frozen unless pr
 Requires Node.js **>=22.18.0**, a Cloudflare account, and at least one upstream credential.
 
 ```bash
-git clone https://github.com/fongap/ai-gateway.git
+git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
 npm ci
 sh scripts/install.sh
