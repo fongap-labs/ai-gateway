@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+//
+// OpenAI Responses SSE framing and event builders.
+//
+// The Responses wire format is NOT Chat Completions SSE: events are named
+// (`response.created`, `response.output_text.delta`, …), carry an ordered
+// `sequence_number`, and reference output items by `output_index` / `item_id`.
+// These builders are the single source of that framing so every path (stream,
+// synthesizer, error) emits byte-compatible events.
+//
+// Event shapes and sequence numbering follow the OpenAI Responses event
+// contract (the same ordering free-claude-code adopts) so Codex / OpenCode
+// clients can consume them without a custom parser.
+
+export function formatResponsesSseEvent(eventType: string, data: unknown): string {
+  return `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export class ResponsesEventBuilder {
+  private _nextSequenceNumber: number;
+
+  constructor() {
+    this._nextSequenceNumber = 0;
+  }
+
+  response_created(response: Record<string, unknown>) {
+    return this._format('response.created', { type: 'response.created', response });
+  }
+
+  response_completed(response: Record<string, unknown>) {
+    return this._format('response.completed', { type: 'response.completed', response });
+  }
+
+  response_incomplete(response: Record<string, unknown>) {
+    return this._format('response.incomplete', { type: 'response.incomplete', response });
+  }
+
+  response_failed(response: Record<string, unknown>) {
+    return this._format('response.failed', { type: 'response.failed', response });
+  }
+
+  output_item_added(outputIndex: number, item: unknown) {
+    return this._format('response.output_item.added', {
+      type: 'response.output_item.added',
+      output_index: outputIndex,
+      item,
+    });
+  }
+
+  output_item_done(outputIndex: number, item: unknown) {
+    return this._format('response.output_item.done', {
+      type: 'response.output_item.done',
+      output_index: outputIndex,
+      item,
+    });
+  }
+
+  content_part_added(itemId: string, outputIndex: number) {
+    return this._format('response.content_part.added', {
+      type: 'response.content_part.added',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      part: { type: 'output_text', text: '', annotations: [] },
+    });
+  }
+
+  content_part_done(itemId: string, outputIndex: number, text: string) {
+    return this._format('response.content_part.done', {
+      type: 'response.content_part.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      part: { type: 'output_text', text, annotations: [] },
+    });
+  }
+
+  output_text_delta(itemId: string, outputIndex: number, text: string) {
+    return this._format('response.output_text.delta', {
+      type: 'response.output_text.delta',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      delta: text,
+    });
+  }
+
+  output_text_done(itemId: string, outputIndex: number, text: string) {
+    return this._format('response.output_text.done', {
+      type: 'response.output_text.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      text,
+    });
+  }
+
+  reasoning_text_delta(itemId: string, outputIndex: number, text: string) {
+    return this._format('response.reasoning_text.delta', {
+      type: 'response.reasoning_text.delta',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      delta: text,
+    });
+  }
+
+  reasoning_text_done(itemId: string, outputIndex: number, text: string) {
+    return this._format('response.reasoning_text.done', {
+      type: 'response.reasoning_text.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      text,
+    });
+  }
+
+  function_call_arguments_delta(itemId: string, outputIndex: number, argumentsJson: string) {
+    return this._format('response.function_call_arguments.delta', {
+      type: 'response.function_call_arguments.delta',
+      item_id: itemId,
+      output_index: outputIndex,
+      delta: argumentsJson,
+    });
+  }
+
+  function_call_arguments_done(itemId: string, outputIndex: number, argumentsJson: string) {
+    return this._format('response.function_call_arguments.done', {
+      type: 'response.function_call_arguments.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      arguments: argumentsJson,
+    });
+  }
+
+  _format(eventType: string, data: Record<string, unknown>): string {
+    data.sequence_number = this._nextSequenceNumber;
+    this._nextSequenceNumber += 1;
+    return formatResponsesSseEvent(eventType, data);
+  }
+}
+
+// ---- Error envelope --------------------------------------------------------
+
+export type ResponsesErrorType =
+  | 'invalid_request_error' | 'authentication_error' | 'permission_error'
+  | 'not_found_error' | 'request_too_large' | 'unsupported_media_type_error'
+  | 'rate_limit_error' | 'billing_error' | 'overloaded_error'
+  | 'timeout_error' | 'api_error';
+
+export function responsesErrorTypeForStatus(status: number): ResponsesErrorType {
+  if (status === 400 || status === 422) return 'invalid_request_error';
+  if (status === 401) return 'authentication_error';
+  if (status === 403) return 'permission_error';
+  if (status === 404) return 'not_found_error';
+  if (status === 413) return 'request_too_large';
+  if (status === 415) return 'unsupported_media_type_error';
+  if (status === 429) return 'rate_limit_error';
+  if (status === 402) return 'billing_error';
+  if (status === 529) return 'overloaded_error';
+  if (status === 408 || status === 504) return 'timeout_error';
+  return 'api_error';
+}
+
+// OpenAI-style error envelope used by /v1/responses responses. Keep `code`
+// nullable for strict Codex/OpenAI compatibility; gateway-specific diagnostic
+// classification is carried in response headers, never by mutating this body.
+export function buildResponsesError(message: unknown, errorType?: string | null): { error: { message: string, type: string, param: null, code: null } } {
+  return {
+    error: {
+      message: String(message || 'Unknown gateway error.'),
+      type: errorType || 'api_error',
+      param: null,
+      code: null,
+    },
+  };
+}

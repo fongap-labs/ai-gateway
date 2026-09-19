@@ -1,0 +1,55 @@
+{
+  "name": "ai-gateway",
+  "private": true,
+  "description": "AI API gateway on Cloudflare Workers that turns fragmented, failure-prone providers and keys into one stable OpenAI/Anthropic-compatible endpoint — maximizing low-cost capacity through smart routing and tiered failover.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "npm run validate:merge",
+    "check": "node scripts/check-syntax.mjs",
+    "check:links": "node scripts/link-check.mjs",
+    "check:docs": "node scripts/docs-check.mjs",
+    "test:unit": "node tests/run-unit.mjs",
+    "test:gate": "npm run test:unit && node tests/scheduler-stability-test.mjs && node tests/integration-test.mjs && node tests/stress-test.mjs && node tests/codex-contract-test.mjs && node tests/claude-contract-test.mjs",
+    "test:all": "npm run test:gate",
+    "test": "npm run test:unit",
+    "test:integration": "node tests/integration-test.mjs",
+    "test:conversion": "node tests/conversion-test.mjs",
+    "security:scan": "node scripts/secret-scan.mjs",
+    "typecheck": "npx tsc --noEmit",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run test:gate && npm run security:scan && npm run check:docs && npm run typecheck && npm run check:links",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run test:all && npm run security:scan && npm run check:docs && npm run typecheck && npm run check:links",
+    "dev": "node scripts/cloudflare-wrangler.mjs dev",
+    "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
+    "tail": "node scripts/cloudflare-wrangler.mjs tail",
+    "cf:login": "node scripts/cloudflare-wrangler.mjs login",
+    "cf:whoami": "node scripts/cloudflare-wrangler.mjs whoami",
+    "check:deploy": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --keep-vars --outdir .wrangler-dry-run",
+    "check:deployment-config": "node scripts/deployment-config-check.mjs",
+    "migrations:check": "node scripts/migrations-check.mjs",
+    "config:check": "node scripts/config-cli.mjs check",
+    "config:show": "node scripts/config-cli.mjs show",
+    "config:diff": "node scripts/config-cli.mjs diff",
+    "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
+    "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json"
+  },
+  "keywords": [
+    "ai-gateway",
+    "llm-gateway",
+    "llm-router",
+    "cloudflare-workers",
+    "claude-code",
+    "openai-api",
+    "openai-compatible",
+    "anthropic-api",
+    "load-balancing",
+    "rate-limiting",
+    "multi-provider"
+  ],
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,70 @@
+# Contributing
+
+ai-gateway favors focused, evidence-backed changes over broad rewrites. Runtime behavior, protocol compatibility, routing, reliability, and deployment semantics are treated as explicit contracts.
+
+## Issues and Discussions
+
+Issues are for confirmed, reproducible gateway defects that can be tracked to resolution. Use the `Bug report` form for public Issues.
+
+Setup, configuration, provider integration, usage, and troubleshooting questions belong in Discussions / Q&A. Feature, protocol, routing, reliability, and product improvement proposals belong in Discussions / Ideas. Once a proposal is accepted for implementation, it can be converted into an Issue for execution tracking.
+
+Do not disclose security vulnerabilities publicly. Use the private reporting process described in [SECURITY.md](SECURITY.md).
+
+## Development setup
+
+```bash
+git clone https://github.com/fongap/ai-gateway.git
+cd ai-gateway
+npm ci
+npm run validate:merge
+npm run check:deploy
+```
+
+Use Node.js **>=22.18.0**.
+
+## Pull requests
+
+1. Create a focused branch using `feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `ci/`, or `chore/`.
+2. Keep one primary objective per PR.
+3. Add or update regression coverage for behavior changes.
+4. Update the canonical documentation in the same PR when behavior, configuration, deployment, protocol, or operational semantics change.
+5. Run `npm run validate:merge` and `npm run check:deploy`.
+6. Use squash merge after required checks pass.
+
+PR descriptions should state the problem, behavior change, verification, compatibility impact, resource impact, security impact, and any measured hot-path impact. A refactor must state whether external behavior changed; behavior-preserving refactors must not quietly alter scheduler, protocol, timeout, cooldown, fallback, or configuration semantics.
+
+## Repository ownership
+
+- `src/` — Cloudflare Worker runtime.
+- `tests/` — executable tests, contracts, and test-only helpers.
+- `scripts/` — repository, CI, configuration, installation, deployment, and discovery tooling.
+- `migrations/` — ordered D1 schema changes.
+- `docs/` — long-lived architecture, operations, and governance documentation.
+
+Do not place test files back under `scripts/`; tests may exercise scripts, but tooling and verification have separate owners. Do not add duplicate deployment/update wrappers when the supported entry point already exists; see [scripts/README.md](scripts/README.md).
+
+## Documentation responsibilities
+
+`README.md` is the canonical project landing page. The documentation tree is English-canonical:
+
+- [Architecture](docs/architecture/overview.md) — durable design boundaries and invariants.
+- [Operations](docs/operations/configuration.md) — configuration and deployment procedures.
+- [Governance](docs/governance/README.md) — development, quality, dependency, product, and documentation policy.
+
+Historical evidence lives in Git history, pull requests, commits, existing tags, and existing GitHub Releases. The repository does not maintain an automated project release number or a source changelog as a second history system.
+
+If a named release is useful, a maintainer selects the intended commit and creates the Git tag or GitHub Release manually. CI and deployment automation must not infer, bump, validate, or publish project release numbering.
+
+Do not create temporary `latest`, `final`, `new`, or version-suffixed copies of long-lived documentation. Update the responsible document directly.
+
+## Core governance
+
+- [Development policy](docs/governance/development-policy.md)
+- [Quality policy](docs/governance/quality-policy.md)
+- [Dependency policy](docs/governance/dependency-policy.md)
+- [Product policy](docs/governance/product-policy.md)
+- [Documentation policy](docs/governance/documentation-policy.md)
+
+## Security
+
+Never commit or paste live API keys, bearer tokens, authorization headers, private upstream URLs, request bodies, or user data. Report vulnerabilities through the private process described in [SECURITY.md](SECURITY.md).

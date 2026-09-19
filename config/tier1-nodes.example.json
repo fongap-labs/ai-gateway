@@ -1,0 +1,31 @@
+[
+  {
+    "id": "nvidia-01",
+    "provider": "nvidia",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "priority": 10,
+    "models": {
+      "general-air": "deepseek-ai/deepseek-v3.1",
+      "code-pro": "qwen/qwen3-coder-480b"
+    }
+  },
+  {
+    "id": "nvidia-02",
+    "provider": "nvidia",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "priority": 10,
+    "models": {
+      "general-air": "deepseek-ai/deepseek-v3.1"
+    }
+  },
+  {
+    "id": "glm-01",
+    "provider": "zhipu",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+    "priority": 20,
+    "models": {
+      "general-air": "glm-4.7",
+      "code-max": "glm-4.7"
+    }
+  }
+]

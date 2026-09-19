@@ -1,0 +1,233 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+//
+// POLICIES_CONFIG: policy name -> request/failover policy. Optional.
+// `max_attempts` is the hard request-wide logical-attempt ceiling. Tier order
+// is fixed (tier-1 -> tier-2 -> tier-3); there is one allocation model and no
+// configurable cross-tier budget splitter.
+
+import { readEnv } from './env.ts';
+import { getLimits } from './timeouts.ts';
+import type { PolicyConfig } from '../types/policy.ts';
+
+const MIN_ATTEMPTS = 1;
+const MAX_ATTEMPTS = 8;
+const TIER_KEYS = ['tier1', 'tier2', 'tier3'];
+const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'first_event_timeout_ms', 'max_in_flight']);
+
+type HedgePolicy = { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
+type TierAttempts = { tier1?: number, tier2?: number, tier3?: number } | null;
+
+const BUILTIN_POLICIES: Readonly<{
+  default: PolicyConfig,
+  fast: PolicyConfig,
+  'long-reasoning': PolicyConfig,
+}> = Object.freeze({
+  default: {
+    maxAttempts: 5,
+    tierAttempts: null,
+    hedge: { enabled: true, tiers: ['tier1'] },
+    firstEventTimeoutMs: null,
+    maxInFlight: null,
+  },
+  fast: {
+    maxAttempts: 1,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    firstEventTimeoutMs: null,
+    maxInFlight: null,
+  },
+  'long-reasoning': {
+    maxAttempts: 3,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    firstEventTimeoutMs: 60_000,
+    maxInFlight: null,
+  },
+});
+
+let cachedEnv: Record<string, unknown> | undefined;
+let cached: { policies: Record<string, PolicyConfig>, errors: string[] } | undefined;
+
+export function loadPoliciesConfig(env: Record<string, unknown>): Record<string, PolicyConfig> {
+  return analyzePolicies(env).policies;
+}
+
+export function getPoliciesConfigDiagnostics(env: Record<string, unknown>): string[] {
+  return analyzePolicies(env).errors;
+}
+
+function analyzePolicies(env: Record<string, unknown>): { policies: Record<string, PolicyConfig>, errors: string[] } {
+  if (cachedEnv === env && cached) return cached;
+  cachedEnv = env;
+  const raw = readEnv(env, 'POLICIES_CONFIG');
+  const errors: string[] = [];
+  const policies: Record<string, PolicyConfig> = { ...BUILTIN_POLICIES };
+
+  if (raw) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`POLICIES_CONFIG invalid JSON (${msg}); built-ins used`);
+      cached = { policies, errors };
+      return cached;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      errors.push('POLICIES_CONFIG must be a JSON object { name: { max_attempts, tier_attempts?, hedge? } }');
+    } else {
+      for (const [name, config] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!name.trim()) {
+          errors.push('POLICIES_CONFIG: empty policy name (keys must be non-empty strings)');
+          continue;
+        }
+        if (!config || typeof config !== 'object' || Array.isArray(config)) {
+          errors.push(`POLICIES_CONFIG: "${name}" must be an object`);
+          continue;
+        }
+
+        const cfg = config as Record<string, unknown>;
+        for (const field of Object.keys(cfg)) {
+          if (!ALLOWED_FIELDS.has(field)) {
+            errors.push(`POLICIES_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_FIELDS].join(', ')})`);
+          }
+        }
+
+        const key = name.trim();
+        const base = policies[key];
+        const tierErrorsBefore = errors.length;
+        const tierAttempts = cfg.tier_attempts === undefined
+          ? (base?.tierAttempts ?? null)
+          : parseTierAttempts(cfg.tier_attempts, key, errors);
+        const tierAttemptsValid = errors.length === tierErrorsBefore;
+        const hedge = cfg.hedge === undefined
+          ? (base?.hedge ?? null)
+          : parseHedge(cfg.hedge, key, errors);
+        const firstEventTimeoutMs = cfg.first_event_timeout_ms === undefined
+          ? (base?.firstEventTimeoutMs ?? null)
+          : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
+        if (firstEventTimeoutMs !== null && firstEventTimeoutMs > getLimits(env).failoverBudgetMs) {
+          errors.push(`POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds FAILOVER_BUDGET_MS (${getLimits(env).failoverBudgetMs})`);
+        }
+        const maxInFlight = cfg.max_in_flight === undefined
+          ? (base?.maxInFlight ?? null)
+          : parseMaxInFlight(cfg.max_in_flight, key, errors);
+
+        let attempts: number;
+        let maxAttemptsValid = true;
+        if (cfg.max_attempts !== undefined) {
+          const rawMax = cfg.max_attempts;
+          if (typeof rawMax !== 'number'
+            || !Number.isInteger(rawMax)
+            || rawMax < MIN_ATTEMPTS
+            || rawMax > MAX_ATTEMPTS) {
+            errors.push(`POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
+            attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
+            maxAttemptsValid = false;
+          } else {
+            attempts = rawMax;
+          }
+        } else {
+          attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
+        }
+
+        if (tierAttempts && tierAttemptsValid && maxAttemptsValid) {
+          const tierAttemptsTotal = Object.values(tierAttempts).reduce((sum, value) => sum + (value ?? 0), 0);
+          if (tierAttemptsTotal > attempts) {
+            errors.push(`POLICIES_CONFIG: "${key}": tier_attempts total exceeds max_attempts (${tierAttemptsTotal} > ${attempts})`);
+          }
+        }
+
+        policies[key] = {
+          maxAttempts: attempts,
+          tierAttempts,
+          hedge,
+          firstEventTimeoutMs,
+          maxInFlight,
+        };
+      }
+    }
+  }
+
+  cached = { policies, errors };
+  return cached;
+}
+
+function parseHedge(value: unknown, policyName: string, errors: string[]): HedgePolicy {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`POLICIES_CONFIG: "${policyName}": hedge must be an object { enabled?, delay_ms?, tiers? }`);
+    return null;
+  }
+  const rec = value as Record<string, unknown>;
+  const out: { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } = { enabled: true };
+  if (rec.enabled !== undefined) {
+    if (typeof rec.enabled !== 'boolean') errors.push(`POLICIES_CONFIG: "${policyName}": hedge.enabled must be a boolean`);
+    else out.enabled = rec.enabled;
+  }
+  if (rec.delay_ms !== undefined) {
+    if (typeof rec.delay_ms !== 'number' || !Number.isInteger(rec.delay_ms) || rec.delay_ms < 0) {
+      errors.push(`POLICIES_CONFIG: "${policyName}": hedge.delay_ms must be a non-negative integer`);
+    } else {
+      out.delayMs = rec.delay_ms;
+    }
+  }
+  if (rec.tiers !== undefined) {
+    if (!Array.isArray(rec.tiers) || !rec.tiers.every((t) => typeof t === 'string' && TIER_KEYS.includes(t))) {
+      errors.push(`POLICIES_CONFIG: "${policyName}": hedge.tiers must be an array of "tier1", "tier2", "tier3"`);
+    } else {
+      out.tiers = rec.tiers;
+    }
+  }
+  return out;
+}
+
+function parseTierAttempts(value: unknown, policyName: string, errors: string[]): TierAttempts {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`POLICIES_CONFIG: "${policyName}" tier_attempts must be an object { tier1, tier2, tier3 }`);
+    return null;
+  }
+  const out: { tier1?: number, tier2?: number, tier3?: number } = {};
+  let any = false;
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!TIER_KEYS.includes(key)) {
+      errors.push(`POLICIES_CONFIG: "${policyName}" tier_attempts.${key} is not a valid tier (allowed: ${TIER_KEYS.join(', ')})`);
+      continue;
+    }
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0 || val > MAX_ATTEMPTS) {
+      errors.push(`POLICIES_CONFIG: "${policyName}" tier_attempts.${key} must be an integer between 0 and ${MAX_ATTEMPTS}`);
+      continue;
+    }
+    out[key as 'tier1' | 'tier2' | 'tier3'] = val;
+    any = true;
+  }
+  return any ? out : null;
+}
+
+function parseFirstEventTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 5_000 || value > 600_000) {
+    errors.push(`POLICIES_CONFIG: "${policyName}": first_event_timeout_ms must be an integer between 5000 and 600000`);
+    return null;
+  }
+  return value;
+}
+
+// `max_in_flight` is an explicit Tier 1 local safety ceiling. Current config
+// accepts JSON numbers only; there is no string coercion compatibility path.
+function parseMaxInFlight(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null || value === 0) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    errors.push(`POLICIES_CONFIG: "${policyName}": max_in_flight must be a non-negative integer number`);
+    return null;
+  }
+  return value;
+}
+
+export function getPolicy(modelName: string, modelsConfig: Record<string, { policy?: string }>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
+  const policyName = modelsConfig[modelName]?.policy || 'default';
+  return policiesConfig[policyName] ?? policiesConfig.default ?? BUILTIN_POLICIES.default;
+}

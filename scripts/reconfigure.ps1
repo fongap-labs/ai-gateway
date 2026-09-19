@@ -1,0 +1,124 @@
+[CmdletBinding()]
+param()
+$ErrorActionPreference = 'Stop'
+$Root = Split-Path -Parent $PSScriptRoot
+Set-Location $Root
+
+function Read-SecretText([string]$Prompt) {
+  $s = Read-Host $Prompt -AsSecureString
+  $p = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
+  try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($p) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p) }
+}
+function Confirm-Yes([string]$Value) { return $Value -match '^(y|yes)$' }
+function Read-FilePath([string]$Prompt, [bool]$Required) {
+  $p = (Read-Host $Prompt).Trim()
+  if ($p -eq '' -and -not $Required) { return $null }
+  if ($p -eq '' -or !(Test-Path $p)) { throw "file not found: $p" }
+  return (Resolve-Path $p).Path
+}
+
+& node scripts/cloudflare-wrangler.mjs whoami >$null 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'Login to Cloudflare first (npm run cf:login).' }
+
+$userConfigPath = Join-Path $Root 'wrangler.user.jsonc'
+$targetConfigPath = if (Test-Path $userConfigPath) { $userConfigPath } else { Join-Path $Root 'wrangler.jsonc' }
+$workerName = ((Get-Content $targetConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json).name)
+Write-Host "Target worker: $workerName"
+
+Write-Host '==> Node configuration update'
+$tierFiles = @{}
+foreach ($n in 1, 2, 3) {
+  $required = ($n -eq 1)
+  $p = Read-FilePath "tier-$n node config JSON file$(if(-not $required){' (optional, empty to skip)'})" $required
+  if ($p) { $tierFiles[$n] = $p }
+}
+$secretsFile = Read-FilePath 'node secrets JSON file ({ "node-id": "credential" })' $true
+
+$existingVarNames = @()
+if (Test-Path $userConfigPath) {
+  $prevVars = ((Get-Content $userConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json).vars)
+  if ($prevVars) { $existingVarNames = @($prevVars.PSObject.Properties.Name) }
+}
+
+$tmpFiles = @()
+try {
+  $existingVarsFile = Join-Path ([IO.Path]::GetTempPath()) ("gateway-vars-" + [guid]::NewGuid().ToString('N') + '.json')
+  [IO.File]::WriteAllText($existingVarsFile, ($existingVarNames | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  $tmpFiles += $existingVarsFile
+
+  $planFile = Join-Path ([IO.Path]::GetTempPath()) ("gateway-plan-" + [guid]::NewGuid().ToString('N') + '.json')
+  $tmpFiles += $planFile
+
+  $planArgs = @('plan', '--secrets', $secretsFile, '--existing-vars', $existingVarsFile, '--out', $planFile)
+  foreach ($n in 1, 2, 3) { if ($tierFiles[$n]) { $planArgs += @("--tier$n", $tierFiles[$n]) } }
+  node scripts/plan-node-configuration.mjs @planArgs
+  if ($LASTEXITCODE -ne 0) { throw 'configuration planning failed.' }
+
+  $plan = Get-Content $planFile -Raw -Encoding UTF8 | ConvertFrom-Json
+
+  Write-Host '==> Gateway Access Groups'
+  Write-Host 'Leave a Group unchanged unless you explicitly choose to configure or rotate it.'
+  $accessKeys = [ordered]@{}
+  $accessModels = [ordered]@{}
+  foreach ($group in @('AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT')) {
+    if (-not (Confirm-Yes (Read-Host "Configure/rotate $group? [y/N]"))) { continue }
+    $key = Read-SecretText "new GATEWAY_ACCESS_KEY_$group"
+    if ([string]::IsNullOrEmpty($key)) { throw "GATEWAY_ACCESS_KEY_$group must not be empty when configuring this Group." }
+    $models = (Read-Host "GATEWAY_ACCESS_MODELS_$group (CSV, required)").Trim()
+    if ([string]::IsNullOrWhiteSpace($models)) {
+      throw "GATEWAY_ACCESS_MODELS_$group is required when GATEWAY_ACCESS_KEY_$group is set."
+    }
+    $accessKeys[$group] = $key
+    $accessModels[$group] = $models
+  }
+
+  $userConfig = if (Test-Path $userConfigPath) {
+    Get-Content $userConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } else {
+    Get-Content (Join-Path $Root 'wrangler.jsonc') -Raw -Encoding UTF8 | ConvertFrom-Json
+  }
+  $existingAffinity = @($userConfig.kv_namespaces | Where-Object { $_.binding -eq 'TIER1_AFFINITY' }) | Select-Object -First 1
+  if (-not $existingAffinity) {
+    $affinityKvId = (Read-Host 'Tier 1 affinity KV namespace ID (required)').Trim()
+    if ($affinityKvId -notmatch '^[a-fA-F0-9]{32}$') { throw 'Tier 1 affinity KV namespace ID must be 32 hexadecimal characters.' }
+    $userConfig | Add-Member -NotePropertyName kv_namespaces -NotePropertyValue @(
+      [ordered]@{ binding = 'TIER1_AFFINITY'; id = $affinityKvId }
+    ) -Force
+  }
+  $previousVars = [ordered]@{}
+  if ($userConfig.vars) {
+    foreach ($prop in $userConfig.vars.PSObject.Properties) { $previousVars[$prop.Name] = $prop.Value }
+  }
+  $varsMap = [ordered]@{}
+  foreach ($prop in $plan.vars.PSObject.Properties) { $varsMap[$prop.Name] = $prop.Value }
+  foreach ($name in $previousVars.Keys) {
+    if ($name -like 'GATEWAY_ACCESS_MODELS_*') { $varsMap[$name] = $previousVars[$name] }
+  }
+  foreach ($group in $accessModels.Keys) { $varsMap["GATEWAY_ACCESS_MODELS_$group"] = $accessModels[$group] }
+  $userConfig | Add-Member -NotePropertyName vars -NotePropertyValue $varsMap -Force
+  [IO.File]::WriteAllText($userConfigPath, ($userConfig | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
+
+  $bulkPath = Join-Path ([IO.Path]::GetTempPath()) ("gateway-secrets-" + [guid]::NewGuid().ToString('N') + '.json')
+  $tmpFiles += $bulkPath
+  $bulk = [ordered]@{}
+  foreach ($group in $accessKeys.Keys) { $bulk["GATEWAY_ACCESS_KEY_$group"] = $accessKeys[$group] }
+  foreach ($prop in $plan.secrets.PSObject.Properties) { $bulk[$prop.Name] = $prop.Value }
+  [IO.File]::WriteAllText($bulkPath, ($bulk | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
+
+  Write-Host "==> Deploying updated variables and code for '$workerName'"
+  & node scripts/cloudflare-wrangler.mjs deploy -c 'wrangler.user.jsonc' --keep-vars --secrets-file $bulkPath
+  if ($LASTEXITCODE -ne 0) { throw 'deploy failed.' }
+
+  foreach ($key in $plan.deleteSecrets) {
+    'y' | & node scripts/cloudflare-wrangler.mjs secret delete $key | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "failed to delete stale secret $key" }
+    Write-Host "deleted stale secret: $key"
+  }
+  foreach ($key in $plan.deleteVars) {
+    Write-Host "note: variable '$key' is no longer planned; remove it in the Cloudflare dashboard if still present."
+  }
+}
+finally {
+  foreach ($f in $tmpFiles) { if ($f -and (Test-Path $f)) { Remove-Item $f -Force } }
+}
+Write-Host 'Configuration updated.'
