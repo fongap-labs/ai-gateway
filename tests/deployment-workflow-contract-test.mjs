@@ -41,7 +41,7 @@ assert.match(ci, /npm run validate:deploy/);
 assert.ok(!ci.includes('cleanup-legacy-workflow-history'), 'one-shot cleanup job must not remain in permanent CI');
 assert.ok(!ci.includes('actions: write'), 'permanent CI must not retain Actions write permission');
 assert.match(deploy, /manual-validate:[\s\S]*npm run validate:deploy[\s\S]*npm run check:deploy/);
-assert.match(jobBlock('deploy-policy'), /uses: fongap\/action-worker\/\.github\/workflows\/validate-deploy-policy\.yml@main/);
+assert.match(jobBlock('deploy-policy'), /uses: fongap-labs\/action-worker\/\.github\/workflows\/validate-deploy-policy\.yml@main/);
 assert.match(jobBlock('deploy-policy'), /target_sha: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
 assert.match(jobBlock('deploy-policy'), /ci_workflow: ci\.yml/);
 assert.match(jobBlock('deploy-policy'), /require_default_head: true/);
@@ -51,8 +51,8 @@ assert.match(jobBlock('deploy'), /needs:[\s\S]*- gate[\s\S]*- deploy-policy[\s\S
 const base = {
   event: 'workflow_run',
   ciConclusion: 'success',
-  headRepo: 'fongap/ai-gateway',
-  thisRepo: 'fongap/ai-gateway',
+  headRepo: 'fongap-labs/ai-gateway',
+  thisRepo: 'fongap-labs/ai-gateway',
   changedFiles: ['src/index.ts'],
 };
 assert.equal(decideDeploy({ ...base, triggerEvent: 'push' }).deploy, true, 'successful push CI may auto-deploy');
