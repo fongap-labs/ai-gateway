@@ -8,10 +8,10 @@
 
 [English](README.md) · [**简体中文**](README.zh-CN.md)
 
-[![CI](https://github.com/fongap/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap/ai-gateway/actions/workflows/ci.yml)
-[![Deploy](https://github.com/fongap/ai-gateway/actions/workflows/deploy.yml/badge.svg?branch=main&event=workflow_run)](https://github.com/fongap/ai-gateway/actions/workflows/deploy.yml)
+[![CI](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
+[![Deploy](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml/badge.svg?branch=main&event=workflow_run)](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
-![License](https://img.shields.io/github/license/fongap/ai-gateway?label=License)
+![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License)
 
 [快速开始](#快速开始) · [架构](docs/architecture/overview.md) · [配置](docs/operations/configuration.md) · [部署](docs/operations/deployment.md)
 
@@ -74,7 +74,7 @@ Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provid
 要求：Node.js **>=22.18.0**、Cloudflare 账户，以及至少一个上游凭据。
 
 ```bash
-git clone https://github.com/fongap/ai-gateway.git
+git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
 npm ci
 sh scripts/install.sh
