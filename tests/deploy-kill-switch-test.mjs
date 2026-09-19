@@ -7,34 +7,27 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, '..');
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const root = join(currentDir, '..');
 const deploy = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
 
-// The gate condition is intentionally one line. Find it by the three semantic
-// clauses we care about instead of trying to parse surrounding YAML/comments.
 const gateIf = deploy.split(/\r?\n/).find((line) =>
-  line.includes("vars.DEPLOY_ENABLED != 'false'")
-  && line.includes("github.repository == 'fongap/ai-gateway'")
-  && line.includes("vars.DEPLOY_ENABLED == 'true'"),
+  line.includes("vars.DEPLOY_ENABLED == 'true'")
+  && line.includes("github.repository == vars.DEPLOY_REPOSITORY"),
 )?.trim() || '';
 
 assert.ok(
-  gateIf.includes("vars.DEPLOY_ENABLED != 'false'"),
-  'original-repository auto deploy must have an explicit DEPLOY_ENABLED=false kill switch',
-);
-assert.ok(
-  gateIf.includes("github.repository == 'fongap/ai-gateway'"),
-  'original repository must still auto-deploy by default when the kill switch is unset',
-);
-assert.ok(
   gateIf.includes("vars.DEPLOY_ENABLED == 'true'"),
-  'fork deployments must remain explicit opt-in via DEPLOY_ENABLED=true',
+  'deployment must require explicit DEPLOY_ENABLED=true',
 );
-assert.match(
+assert.ok(
+  gateIf.includes("github.repository == vars.DEPLOY_REPOSITORY"),
+  'deployment must require the configured repository identity',
+);
+assert.doesNotMatch(
   gateIf,
-  /DEPLOY_ENABLED != 'false'.*\(github\.repository == 'fongap\/ai-gateway' \|\| vars\.DEPLOY_ENABLED == 'true'\)/,
-  'kill switch must guard both the original-repo default and fork opt-in branches',
+  /fongap(?:-labs)?\/ai-gateway/,
+  'deployment identity must not be hard-coded in the workflow gate',
 );
 
-console.log('deploy kill-switch contract tests passed.');
+console.log('deploy gate contract tests passed.');

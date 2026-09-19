@@ -93,8 +93,9 @@ assert.deepEqual(
 );
 
 const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /vars\.DEPLOY_ENABLED != 'false'/);
-assert.match(workflow, /github\.repository\s*==\s*'fongap\/ai-gateway'\s*\|\|\s*vars\.DEPLOY_ENABLED\s*==\s*'true'/);
+assert.match(workflow, /vars\.DEPLOY_ENABLED\s*==\s*'true'/);
+assert.match(workflow, /github\.repository\s*==\s*vars\.DEPLOY_REPOSITORY/);
+assert.doesNotMatch(workflow, /fongap\/ai-gateway/);
 assert.match(workflow, /github-deployment-config\.mjs preflight/);
 assert.match(workflow, /prepare --from-env/);
 assert.match(workflow, /TIER1_NODES_SECRETS_01:/);
