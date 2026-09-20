@@ -8,8 +8,8 @@ Production configuration is delivered from GitHub Actions into Cloudflare Worker
 | --- | --- |
 | `TIER{1,2,3}_NODES_CONFIG_01..10` | Non-secret account/node definitions |
 | `TIER{1,2,3}_NODES_SECRETS_01..10` | Tier-scoped credentials keyed by node id |
-| `GATEWAY_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
-| `GATEWAY_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
+| `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
+| `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
 | `MODELS_CONFIG` | Optional logical-model metadata/capabilities |
 | `POLICIES_CONFIG` | Attempt, hedge, timeout and Tier 1 admission policy |
 | `DASHBOARD_MODELS` | Optional public-dashboard logical-model display allowlist |
@@ -21,8 +21,8 @@ Production configuration is delivered from GitHub Actions into Cloudflare Worker
 The five independent groups are `AIR`, `PRO`, `MAX`, `ULTRA`, and `AGENT`. A configured group uses both:
 
 ```text
-GATEWAY_ACCESS_KEY_<GROUP>
-GATEWAY_ACCESS_MODELS_<GROUP>
+GATEWAY_KEY_<GROUP>
+GATEWAY_MODELS_<GROUP>
 ```
 
 Groups do not inherit from one another. An empty model allowlist grants zero models. The group name is an authorization boundary only; it does not assign Tier 1 scheduler priority.
@@ -123,18 +123,18 @@ Tier 1 → Tier 2 → Tier 3
 
 Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 
-- `UPSTREAM_HEADERS_TIMEOUT_MS`
-- `FIRST_EVENT_TIMEOUT_MS`
-- `STREAM_IDLE_TIMEOUT_MS`
-- `RATE_LIMIT_COOLDOWN_MS`
-- `AUTH_FAIL_COOLDOWN_MS`
+- `HEADER_TIMEOUT_MS`
+- `EVENT_TIMEOUT_MS`
+- `STREAM_IDLE_MS`
+- `RATE_COOLDOWN_MS`
+- `AUTH_COOLDOWN_MS`
 - `MAX_BODY_BYTES`
 - `FAILOVER_BUDGET_MS`
 - `HEDGE_DELAY_MS`
-- `MAX_HEDGES_PER_REQUEST`
+- `REQUEST_HEDGE_MAX`
 - `GATEWAY_KEY_RPM`
 
-Other current variables include `ALLOWED_ORIGIN`, `STREAM_INCLUDE_USAGE`, `STREAM_USAGE_INCLUDE_OFF_PROVIDERS`, `ANTHROPIC_COUNT_TOKENS_MODE`, `LOG_LEVEL`, `PROTOCOL_FALLBACKS`, `EXPOSE_UPSTREAM_INFO`, `FAKE_STREAM_PROTECTION`, `ALLOW_INSECURE_HTTP_UPSTREAM`, and `DASHBOARD_MODELS`.
+Other current variables include `ALLOWED_ORIGIN`, `STREAM_INCLUDE_USAGE`, `INCLUDE_OFF_PROVIDERS`, `ANTHROPIC_COUNT_MODE`, `LOG_LEVEL`, `PROTOCOL_FALLBACKS`, `SHOULD_EXPOSE_UPSTREAM`, `HAS_STREAM_GUARD`, `CAN_USE_HTTP`, and `DASHBOARD_MODELS`.
 
 ## Dashboard model display
 
