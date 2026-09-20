@@ -240,7 +240,7 @@ await testAsync('queryRecentModelEvidence: no binding -> empty Set', async () =>
 
 await testAsync('queryRecentModelEvidence: persists -> returns model Set', async () => {
   const d1 = createMockD1();
-  const env = { AIG_USAGE_D1: d1 };
+  const env = { TOKEN_STATS_DB: d1 };
   // Persist one recent success.
   const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;
   const { persistTokenUsage } = await import('../src/observability/token-usage-store.ts');
@@ -254,7 +254,7 @@ await testAsync('queryRecentModelEvidence: persists -> returns model Set', async
 
 await testAsync('queryRecentModelEvidence: D1 read failure -> empty Set, never throws', async () => {
   const d1 = createMockD1({ failReads: true });
-  const env = { AIG_USAGE_D1: d1 };
+  const env = { TOKEN_STATS_DB: d1 };
   const out = await queryRecentModelEvidence(env, MODEL_STATUS_RECENT_WINDOW_MS, now());
   assert.ok(out instanceof Set);
   assert.equal(out.size, 0);
@@ -262,7 +262,7 @@ await testAsync('queryRecentModelEvidence: D1 read failure -> empty Set, never t
 
 await testAsync('queryRecentModelEvidence: only rows in the window count', async () => {
   const d1 = createMockD1();
-  const env = { AIG_USAGE_D1: d1 };
+  const env = { TOKEN_STATS_DB: d1 };
   const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;          // 30 min ago: in window
   const hOld = Math.floor((now() - 30 * HOUR) / HOUR) * HOUR;            // 30h ago: out of window
   const { persistTokenUsage } = await import('../src/observability/token-usage-store.ts');
@@ -275,7 +275,7 @@ await testAsync('queryRecentModelEvidence: only rows in the window count', async
 
 await testAsync('queryRecentModelEvidence: requests=0 is NOT evidence', async () => {
   const d1 = createMockD1();
-  const env = { AIG_USAGE_D1: d1 };
+  const env = { TOKEN_STATS_DB: d1 };
   const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;
   // Persist with null usage -> requests=1, reports=0, missing=1. The
   // evidence query is `requests > 0` (per-model traffic), so this DOES
@@ -380,7 +380,7 @@ test('canonical historical evidence matches official-cased model', () => {
 
 await testAsync('dashboard path issues queryRecentModelEvidence at most once per 45s cache window', async () => {
   const d1 = createMockD1();
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_USAGE_D1: d1, AIG_MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
+  const env = { AIG_ACCESS_KEY_AIR: 'k', TOKEN_STATS_DB: d1, AIG_MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
   const { dashboardResponse, __resetDashboardCacheForTests } = await import('../src/dashboard/pages.ts');
   __resetDashboardCacheForTests();
   const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;
