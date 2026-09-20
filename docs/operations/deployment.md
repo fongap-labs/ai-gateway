@@ -71,22 +71,22 @@ The tracked `wrangler.jsonc` is the repository baseline. Local Worker name, bind
 
 Core GitHub Variables include:
 
-- `IS_DEPLOY_ENABLED=true` to enable production deployment
-- `DEPLOY_REPOSITORY` set to the repository allowed to deploy
+- `AIG_IS_DEPLOY_ENABLED=true` to enable production deployment
+- `AIG_DEPLOY_REPOSITORY` set to the repository allowed to deploy
 - PR governance targets `${GITHUB_REPOSITORY_OWNER}/action-worker`; no repository variable is required
 - `CLOUDFLARE_ACCOUNT_ID`
-- `GATEWAY_PUBLIC_URL`
-- at least one `TIER{1,2,3}_NODES_XX` shard
-- `AFFINITY_KV_ID` when Tier 1 affinity is used
-- optional `USAGE_D1_ID`
-- corresponding `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
-- optional `MODELS_CONFIG`, `POLICIES_CONFIG`, and runtime variables
+- `AIG_PUBLIC_URL`
+- at least one `AIG_TIER{1,2,3}_NODES_XX` shard
+- `AIG_AFFINITY_KV_ID` when Tier 1 affinity is used
+- optional `AIG_USAGE_D1_ID`
+- corresponding `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
+- optional `AIG_MODELS_CONFIG`, `AIG_POLICIES_CONFIG`, and runtime variables
 
 Core GitHub Secrets include:
 
 - `CLOUDFLARE_API_TOKEN`
-- at least one `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
-- tier-scoped `TIER{1,2,3}_CREDENTIALS_01..10` containing `{ "node-id": "credential" }`
+- at least one `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
+- tier-scoped `AIG_TIER{1,2,3}_CREDENTIALS_01..10` containing `{ "node-id": "credential" }`
 
 The deployment preflight fails closed on missing required production inputs.
 
@@ -105,11 +105,11 @@ Do not place credentials in node JSON.
 ## Gateway access groups
 
 ```text
-GATEWAY_KEY_AIR       + GATEWAY_MODELS_AIR
-GATEWAY_KEY_PRO       + GATEWAY_MODELS_PRO
-GATEWAY_KEY_MAX       + GATEWAY_MODELS_MAX
-GATEWAY_KEY_ULTRA     + GATEWAY_MODELS_ULTRA
-GATEWAY_KEY_AGENT     + GATEWAY_MODELS_AGENT
+AIG_ACCESS_KEY_AIR       + AIG_ACCESS_MODELS_AIR
+AIG_ACCESS_KEY_PRO       + AIG_ACCESS_MODELS_PRO
+AIG_ACCESS_KEY_MAX       + AIG_ACCESS_MODELS_MAX
+AIG_ACCESS_KEY_ULTRA     + AIG_ACCESS_MODELS_ULTRA
+AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 ```
 
 A configured key with an empty/missing model allowlist is fail-closed and grants zero model access.
