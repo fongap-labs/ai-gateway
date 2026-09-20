@@ -73,15 +73,15 @@ function makeEnv({ tier1, tier2, tier3, secrets = {}, extraEnv = {} } = {}) {
   const t2s = secretSubset(tier2);
   const t3s = secretSubset(tier3);
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'integration-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
-    ...(Object.keys(t1s).length ? { TIER1_CREDENTIALS_01: JSON.stringify(t1s) } : {}),
-    ...(Object.keys(t2s).length ? { TIER2_CREDENTIALS_01: JSON.stringify(t2s) } : {}),
-    ...(Object.keys(t3s).length ? { TIER3_CREDENTIALS_01: JSON.stringify(t3s) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { AIG_TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(Object.keys(t1s).length ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(t1s) } : {}),
+    ...(Object.keys(t2s).length ? { AIG_TIER2_CREDENTIALS_01: JSON.stringify(t2s) } : {}),
+    ...(Object.keys(t3s).length ? { AIG_TIER3_CREDENTIALS_01: JSON.stringify(t3s) } : {}),
     ...extraEnv,
   };
 }
@@ -324,13 +324,13 @@ await test('live in-flight load is soft: the sole healthy Tier 1 node accepts a 
   assert.equal(tier1AccountInFlight('soft'), 0);
 });
 
-await test('legacy QUOTA_RATE_LIMITER binding is not provider admission policy', async () => {
+await test('legacy AIG_QUOTA_RATE_LIMITER binding is not provider admission policy', async () => {
   let limiterCalls = 0;
   const binding = { limit: async () => { limiterCalls++; return { success: false }; } };
   routeHandlers['quota.example.com'] = () => jsonResponse(okChat());
   const env = makeEnv({
     tier1: [openaiNode('quota')], secrets: { quota: 'k' },
-    extraEnv: { QUOTA_RATE_LIMITER: binding },
+    extraEnv: { AIG_QUOTA_RATE_LIMITER: binding },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
@@ -366,8 +366,8 @@ await test('busy Tier 2 remains last-resort capacity when it is the only healthy
     tier2: [openaiNode('busy-t2', { models: { 'general-air': 'up-a', parked: 'up-p' } })],
     secrets: { 'busy-t1': '1', 'busy-t2': '2' },
     extraEnv: {
-      MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'fast' }, parked: { policy: 'fast' } }),
-      POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 2 } }),
+      AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'fast' }, parked: { policy: 'fast' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 2 } }),
     },
   });
   const parked = worker.fetch(chatRequest({ model: 'parked' }), env, {});
@@ -626,10 +626,10 @@ await test('hedge races a slow Tier 1 primary with a same-surface twin', async (
     tier1: [openaiNode('hedge-slow'), openaiNode('hedge-fast')],
     secrets: { 'hedge-slow': 's', 'hedge-fast': 'f' },
     extraEnv: {
-      FAILOVER_BUDGET_MS: '30000',
-      HEDGE_DELAY_MS: '100',
-      MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'hp' } }),
-      POLICIES_CONFIG: JSON.stringify({ hp: { max_attempts: 2, hedge: { enabled: true, delay_ms: 100, tiers: ['tier1'] } } }),
+      AIG_FAILOVER_BUDGET_MS: '30000',
+      AIG_HEDGE_DELAY_MS: '100',
+      AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'hp' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ hp: { max_attempts: 2, hedge: { enabled: true, delay_ms: 100, tiers: ['tier1'] } } }),
     },
   });
   const res = await worker.fetch(chatRequest(), env, {});
@@ -651,7 +651,7 @@ await test('failover wall-clock budget stops before dispatching a fresh node', a
   const env = makeEnv({
     tier1: [openaiNode('budget-a'), openaiNode('budget-b')],
     secrets: { 'budget-a': 'a', 'budget-b': 'b' },
-    extraEnv: { FAILOVER_BUDGET_MS: '1200' },
+    extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 504);
@@ -675,7 +675,7 @@ await test('D1 write failure is observational and never breaks a successful AI r
   routeHandlers['d1.example.com'] = () => jsonResponse(okChat());
   const failingD1 = { prepare() { throw new Error('D1 unavailable'); } };
   const env = makeEnv({
-    tier1: [openaiNode('d1')], secrets: { d1: 'k' }, extraEnv: { TOKEN_STATS_DB: failingD1 },
+    tier1: [openaiNode('d1')], secrets: { d1: 'k' }, extraEnv: { AIG_USAGE_D1: failingD1 },
   });
   const res = await worker.fetch(chatRequest(), env, { waitUntil() {} });
   assert.equal(res.status, 200);
