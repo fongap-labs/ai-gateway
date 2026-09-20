@@ -190,7 +190,7 @@ await test('missing records land in their dimension bucket for accurate per-node
 const cellCount = (html) => (html.match(/class="cell"/g) || []).length;
 const monthLabels = (html) => [...html.matchAll(/<span style="grid-column:\d+">(\d{1,2})月<\/span>/g)].map((m) => m[1]);
 function seededEnv(writes) {
-  const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1;
+  const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1;
   const h0 = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   for (const [usage, offsetHours = 0] of writes) persistTokenUsage(env, usage, h0 - offsetHours * 3_600_000);
   return env;
@@ -203,7 +203,7 @@ await test('no D1 binding degrades to 统计暂不可用 with em dashes, never a
 });
 
 await test('a failing D1 query also degrades instead of 500 / fake zero', async () => {
-  const env = deepClone(ENV); env.AIG_USAGE_D1 = createMockD1({ failReads: true });
+  const env = deepClone(ENV); env.TOKEN_STATS_DB = createMockD1({ failReads: true });
   const res = await dashboardResponse(authedRequest(), env); assert.equal(res.status, 200); const html = await res.text(); assert.ok(html.includes('统计暂不可用')); assert.ok(!html.includes('>0<')); assert.ok(!html.includes('class="cell"'));
 });
 
@@ -215,7 +215,7 @@ await test('the D1-backed card renders the four KPIs from real aggregates', asyn
 await test('token composition uses cumulative input, output, and reported cache-read totals without an extra heading', async () => {
   const d1 = createMockD1();
   const env = deepClone(ENV);
-  env.AIG_USAGE_D1 = d1;
+  env.TOKEN_STATS_DB = d1;
   const HOUR = 3_600_000;
   const h0 = Math.floor(Date.now() / HOUR) * HOUR;
   await persistTokenUsage(env, { input_tokens: 50, output_tokens: 20 }, h0);
@@ -246,7 +246,7 @@ await test('token composition uses cumulative input, output, and reported cache-
 await test('token composition renders unknown cache as dash instead of zero when no provider reported cache detail', async () => {
   const d1 = createMockD1();
   const env = deepClone(ENV);
-  env.AIG_USAGE_D1 = d1;
+  env.TOKEN_STATS_DB = d1;
   const h0 = Math.floor(Date.now() / 3_600_000) * 3_600_000;
   await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 10 }, h0);
   const html = await pageText(anonRequest(), env);
@@ -255,7 +255,7 @@ await test('token composition renders unknown cache as dash instead of zero when
 });
 
 await test('模型使用 renders ranked rows with proportional bars', async () => {
-  const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR;
+  const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR;
   await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'code-max'); await persistTokenUsage(env, { prompt_tokens: 40, completion_tokens: 10 }, h0, 'ultra');
   const html = await pageText(anonRequest(), env);
   assert.ok(html.includes('模型使用 · 近 7 天')); assert.ok(html.includes('model-ranking')); assert.ok(html.includes('model-rank-row')); assert.ok(html.includes('code-max')); assert.ok(html.includes('ultra')); assert.ok(html.includes('model-rank-bar')); assert.ok(html.includes('data-tooltip='));
@@ -263,7 +263,7 @@ await test('模型使用 renders ranked rows with proportional bars', async () =
 });
 
 await test('模型使用 shows official logical IDs, not lowercase statistics keys', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1;
+  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1;
   env.AIG_TIER1_NODES_01 = JSON.stringify([{ id: 'node-a', provider: 'mock', base_url: 'https://a.example.com/v1', models: { 'Code-Max': 'up-max', 'Code-Ultra': 'up-ultra' } }]);
   env.AIG_TIER1_CREDENTIALS_01 = JSON.stringify({ 'node-a': 'test-key' });
   const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR;
@@ -272,7 +272,7 @@ await test('模型使用 shows official logical IDs, not lowercase statistics ke
 });
 
 await test('模型使用 keeps Top 3 and folds the remainder into one 其他 row', async () => {
-  const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR;
+  const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR;
   const models = [['m1', 600], ['m2', 500], ['m3', 400], ['m4', 300], ['m5', 30], ['m6', 20]];
   for (const [model, tokens] of models) await persistTokenUsage(env, { prompt_tokens: tokens, completion_tokens: 0 }, h0, model);
   const html = await pageText(anonRequest(), env); for (const model of ['m1', 'm2', 'm3']) assert.ok(html.includes(`>${model}<`)); for (const model of ['m4', 'm5', 'm6']) assert.ok(!html.includes(`>${model}<`)); assert.ok(html.includes('>其他<')); assert.match(html, /<div class="model-rank-value">350<\/div>/);
@@ -334,32 +334,32 @@ await test('passthrough without onUsage stays fully functional (observability op
 });
 
 await test('dashboard D1 cache coalesces concurrent requests within TTL', async () => {
-  const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'code-max'); const [html1, html2] = await Promise.all([pageText(anonRequest(), env), pageText(anonRequest(), env)]); assert.equal(html1, html2); assert.equal(d1._reads.length, 8); await pageText(anonRequest(), env); assert.equal(d1._reads.length, 8);
+  const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'code-max'); const [html1, html2] = await Promise.all([pageText(anonRequest(), env), pageText(anonRequest(), env)]); assert.equal(html1, html2); assert.equal(d1._reads.length, 8); await pageText(anonRequest(), env); assert.equal(d1._reads.length, 8);
 });
 await test('dashboard D1 cache refreshes after TTL expires', async () => {
-  const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'code-max'); const realNow = Date.now; let fakeNow = h0 + 1_000; Date.now = () => fakeNow;
+  const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(env, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'code-max'); const realNow = Date.now; let fakeNow = h0 + 1_000; Date.now = () => fakeNow;
   try { const html1 = await pageText(anonRequest(), env); assert.ok(html1.includes('code-max')); assert.equal(d1._reads.length, 8); await persistTokenUsage(env, { prompt_tokens: 200, completion_tokens: 0 }, h0, 'ultra'); fakeNow += 44_000; const cached = await pageText(anonRequest(), env); assert.ok(!cached.includes('>200<')); assert.equal(d1._reads.length, 8); fakeNow += 2_000; const refreshed = await pageText(anonRequest(), env); assert.ok(refreshed.includes('>200<')); assert.ok(refreshed.includes('code-max')); assert.equal(d1._reads.length, 16); } finally { Date.now = realNow; }
 });
 await test('dashboard cache does not leak across different D1 bindings', async () => {
-  const d1a = createMockD1(); const d1b = createMockD1(); const envA = deepClone(ENV); const envB = deepClone(ENV); envA.AIG_USAGE_D1 = d1a; envB.AIG_USAGE_D1 = d1b; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(envA, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'model-a'); await persistTokenUsage(envB, { prompt_tokens: 200, completion_tokens: 0 }, h0, 'model-b'); const htmlA = await pageText(anonRequest(), envA); assert.ok(htmlA.includes('model-a')); assert.ok(!htmlA.includes('model-b')); const htmlB = await pageText(anonRequest(), envB); assert.ok(htmlB.includes('model-b')); assert.ok(!htmlB.includes('model-a')); assert.equal(d1a._reads.length, 8); assert.equal(d1b._reads.length, 8);
+  const d1a = createMockD1(); const d1b = createMockD1(); const envA = deepClone(ENV); const envB = deepClone(ENV); envA.TOKEN_STATS_DB = d1a; envB.TOKEN_STATS_DB = d1b; const HOUR = 3_600_000; const h0 = Math.floor(Date.now() / HOUR) * HOUR; await persistTokenUsage(envA, { prompt_tokens: 100, completion_tokens: 0 }, h0, 'model-a'); await persistTokenUsage(envB, { prompt_tokens: 200, completion_tokens: 0 }, h0, 'model-b'); const htmlA = await pageText(anonRequest(), envA); assert.ok(htmlA.includes('model-a')); assert.ok(!htmlA.includes('model-b')); const htmlB = await pageText(anonRequest(), envB); assert.ok(htmlB.includes('model-b')); assert.ok(!htmlB.includes('model-a')); assert.equal(d1a._reads.length, 8); assert.equal(d1b._reads.length, 8);
 });
 await test('public homepage does not leak raw D1 errors in degraded state', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1({ failReads: true }); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const html = await pageText(anonRequest(), env); assert.ok(html.includes('统计暂不可用')); for (const leak of ['token_usage_hourly','token_usage_model_hourly','AIG_USAGE_D1','mock D1 read failure','SELECT','FROM','WHERE','GROUP BY','ORDER BY']) assert.ok(!html.includes(leak));
+  __resetDashboardCacheForTests(); const d1 = createMockD1({ failReads: true }); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const html = await pageText(anonRequest(), env); assert.ok(html.includes('统计暂不可用')); for (const leak of ['token_usage_hourly','token_usage_model_hourly','TOKEN_STATS_DB','mock D1 read failure','SELECT','FROM','WHERE','GROUP BY','ORDER BY']) assert.ok(!html.includes(leak));
 });
 await test('model usage panel does not leak raw D1 errors in degraded state', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1({ failReads: true }); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const html = await pageText(anonRequest(), env); assert.ok(html.includes('模型使用')); assert.ok(html.includes('model-usage-empty')); for (const leak of ['token_usage_model_hourly','mock D1 read failure','SELECT','FROM']) assert.ok(!html.includes(leak));
+  __resetDashboardCacheForTests(); const d1 = createMockD1({ failReads: true }); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const html = await pageText(anonRequest(), env); assert.ok(html.includes('模型使用')); assert.ok(html.includes('model-usage-empty')); for (const leak of ['token_usage_model_hourly','mock D1 read failure','SELECT','FROM']) assert.ok(!html.includes(leak));
 });
 await test('模型状态 section has model rows with status, P50, P95, sample count', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; env.AIG_TIER1_NODES_01 = JSON.stringify([{ id: 'node-a', provider: 'mock', base_url: 'https://a.example.com/v1', models: { 'max': 'up-max' } }]); env.AIG_TIER1_CREDENTIALS_01 = JSON.stringify({ 'node-a': 'test-key' }); const html = await pageText(anonRequest(), env); assert.ok(html.includes('P50')); assert.ok(html.includes('P95')); assert.ok(html.includes('samples')); assert.ok(html.includes('mr-status')); assert.ok(html.includes('status-grid'));
+  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; env.AIG_TIER1_NODES_01 = JSON.stringify([{ id: 'node-a', provider: 'mock', base_url: 'https://a.example.com/v1', models: { 'max': 'up-max' } }]); env.AIG_TIER1_CREDENTIALS_01 = JSON.stringify({ 'node-a': 'test-key' }); const html = await pageText(anonRequest(), env); assert.ok(html.includes('P50')); assert.ok(html.includes('P95')); assert.ok(html.includes('samples')); assert.ok(html.includes('mr-status')); assert.ok(html.includes('status-grid'));
 });
 await test('使用情况 section does NOT contain success rate, reliability, TTFT P50, TTFT P95', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const html = await pageText(anonRequest(), env); for (const leak of ['perf-section','成功率','reliability','Reliability','Model Reliability','Provider Reliability','可靠性']) assert.ok(!html.includes(leak)); assert.ok(html.includes('使用情况')); assert.ok(html.includes('Token 活动'));
+  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const html = await pageText(anonRequest(), env); for (const leak of ['perf-section','成功率','reliability','Reliability','Model Reliability','Provider Reliability','可靠性']) assert.ok(!html.includes(leak)); assert.ok(html.includes('使用情况')); assert.ok(html.includes('Token 活动'));
 });
 await test('public dashboard does not leak provider, node id, tier, credential, key', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; const html = await pageText(anonRequest(), env); for (const leak of ['provider','node','tier','credential','api_key','cooldown','circuit']) assert.ok(!html.includes(leak));
+  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; const html = await pageText(anonRequest(), env); for (const leak of ['provider','node','tier','credential','api_key','cooldown','circuit']) assert.ok(!html.includes(leak));
 });
 await test('model status section is structurally separate from usage section', async () => {
-  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.AIG_USAGE_D1 = d1; env.AIG_TIER1_NODES_01 = JSON.stringify([{ id: 'node-a', provider: 'mock', base_url: 'https://a.example.com/v1', models: { 'unconfigured-model': 'up-x' } }]); env.AIG_TIER1_CREDENTIALS_01 = JSON.stringify({ 'node-a': 'test-key' }); const html = await pageText(anonRequest(), env); const modelStatusIdx = html.indexOf('模型状态'); const usageIdx = html.indexOf('使用情况'); assert.ok(modelStatusIdx >= 0); assert.ok(usageIdx >= 0); assert.ok(modelStatusIdx < usageIdx); assert.ok(!html.includes('perf-section')); assert.ok(!html.includes('可靠性 · 性能')); assert.ok(html.includes('status-grid'));
+  __resetDashboardCacheForTests(); const d1 = createMockD1(); const env = deepClone(ENV); env.TOKEN_STATS_DB = d1; env.AIG_TIER1_NODES_01 = JSON.stringify([{ id: 'node-a', provider: 'mock', base_url: 'https://a.example.com/v1', models: { 'unconfigured-model': 'up-x' } }]); env.AIG_TIER1_CREDENTIALS_01 = JSON.stringify({ 'node-a': 'test-key' }); const html = await pageText(anonRequest(), env); const modelStatusIdx = html.indexOf('模型状态'); const usageIdx = html.indexOf('使用情况'); assert.ok(modelStatusIdx >= 0); assert.ok(usageIdx >= 0); assert.ok(modelStatusIdx < usageIdx); assert.ok(!html.includes('perf-section')); assert.ok(!html.includes('可靠性 · 性能')); assert.ok(html.includes('status-grid'));
 });
 
 if (!process.exitCode) console.log(`\ntoken-usage tests passed (${passed}).`);
