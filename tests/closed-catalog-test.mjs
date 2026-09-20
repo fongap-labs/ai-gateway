@@ -44,9 +44,9 @@ test('wildcard + empty catalog rejects arbitrary model', () => {
   assert.equal(supportsRequest(n, requestFor('gpt-unknown'), known), false);
 });
 
-test('MODELS_CONFIG can bound an intentional wildcard node', () => {
+test('AIG_MODELS_CONFIG can bound an intentional wildcard node', () => {
   const n = wildcard('w1');
-  const env = { MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }) };
+  const env = { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }) };
   const known = collectKnownModels([n], env);
   assert.ok(known.has('Code-Max'));
   assert.deepEqual(authorizeModel('Code-Max', known, allowAll), { allowed: true });
@@ -56,7 +56,7 @@ test('MODELS_CONFIG can bound an intentional wildcard node', () => {
 
 test('wildcard never expands beyond the known catalog', () => {
   const n = wildcard('w1');
-  const known = collectKnownModels([n], { MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }) });
+  const known = collectKnownModels([n], { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }) });
   for (const unknown of ['gpt-4.1', 'made-up-model', 'anything']) {
     assert.equal(authorizeModel(unknown, known, allowAll).allowed, false);
     assert.equal(servesModel(n, unknown, known), false);
@@ -64,9 +64,9 @@ test('wildcard never expands beyond the known catalog', () => {
   }
 });
 
-test('known catalog is the union of explicit node mappings and MODELS_CONFIG', () => {
+test('known catalog is the union of explicit node mappings and AIG_MODELS_CONFIG', () => {
   const nodes = [node('n1', { 'Code-Pro': 'up-pro', Air: 'up-air' })];
-  const env = { MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, Omni: {} }) };
+  const env = { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, Omni: {} }) };
   const known = collectKnownModels(nodes, env);
   assert.deepEqual([...known].sort(), ['Air', 'Code-Max', 'Code-Pro', 'Omni']);
 });
@@ -89,7 +89,7 @@ test('wildcard requires an explicit known catalog even when called directly', ()
 
 test('allow-all visible models are exactly the known catalog', () => {
   const nodes = [node('n1', { Air: 'up-air', 'Code-Pro': 'up-pro' }), wildcard('w1')];
-  const known = collectKnownModels(nodes, { MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }) });
+  const known = collectKnownModels(nodes, { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }) });
   const visible = filterVisibleModels(known, allowAll);
   assert.deepEqual(visible, [...known].sort());
   for (const model of visible) {
@@ -100,7 +100,7 @@ test('allow-all visible models are exactly the known catalog', () => {
 
 test('per-key allowlist is intersected with the known catalog', () => {
   const known = collectKnownModels([node('n1', { Air: 'a', 'Code-Pro': 'p' })], {
-    MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }),
+    AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': {} }),
   });
   const key = allowlist('Code-Pro', 'Code-Max');
   assert.deepEqual(filterVisibleModels(known, key), ['Code-Max', 'Code-Pro']);
