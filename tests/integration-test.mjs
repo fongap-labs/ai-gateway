@@ -324,13 +324,13 @@ await test('live in-flight load is soft: the sole healthy Tier 1 node accepts a 
   assert.equal(tier1AccountInFlight('soft'), 0);
 });
 
-await test('legacy AIG_QUOTA_RATE_LIMITER binding is not provider admission policy', async () => {
+await test('legacy QUOTA_RATE_LIMITER binding is not provider admission policy', async () => {
   let limiterCalls = 0;
   const binding = { limit: async () => { limiterCalls++; return { success: false }; } };
   routeHandlers['quota.example.com'] = () => jsonResponse(okChat());
   const env = makeEnv({
     tier1: [openaiNode('quota')], secrets: { quota: 'k' },
-    extraEnv: { AIG_QUOTA_RATE_LIMITER: binding },
+    extraEnv: { QUOTA_RATE_LIMITER: binding },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
@@ -675,7 +675,7 @@ await test('D1 write failure is observational and never breaks a successful AI r
   routeHandlers['d1.example.com'] = () => jsonResponse(okChat());
   const failingD1 = { prepare() { throw new Error('D1 unavailable'); } };
   const env = makeEnv({
-    tier1: [openaiNode('d1')], secrets: { d1: 'k' }, extraEnv: { AIG_USAGE_D1: failingD1 },
+    tier1: [openaiNode('d1')], secrets: { d1: 'k' }, extraEnv: { TOKEN_STATS_DB: failingD1 },
   });
   const res = await worker.fetch(chatRequest(), env, { waitUntil() {} });
   assert.equal(res.status, 200);
