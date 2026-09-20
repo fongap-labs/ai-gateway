@@ -1,5 +1,5 @@
 {
-  "TIER1_NODES_CONFIG_01": [
+  "TIER1_NODES_01": [
     {
       "id": "primary-01",
       "provider": "custom",
@@ -10,7 +10,7 @@
       }
     }
   ],
-  "GATEWAY_ACCESS_MODELS_PRO": "code-pro",
+  "GATEWAY_MODELS_PRO": "code-pro",
   "MODELS_CONFIG": {
     "code-pro": {
       "policy": "default",

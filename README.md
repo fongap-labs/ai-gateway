@@ -88,7 +88,7 @@ powershell scripts/install.ps1
 
 The installer validates configuration, collects credentials, deploys the Worker, and can verify the live endpoint.
 
-Config and Secret shards are independent and bind by **Tier + node id**, not by matching suffixes. Access is controlled by `GATEWAY_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` and `GATEWAY_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`.
+Config and Secret shards are independent and bind by **Tier + node id**, not by matching suffixes. Access is controlled by `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` and `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`.
 
 See [Configuration](docs/operations/configuration.md) for the schema and [Deployment](docs/operations/deployment.md) for the production flow.
 

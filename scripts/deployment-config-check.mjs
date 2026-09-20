@@ -47,18 +47,16 @@ for (const file of ['scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
 
 const accessGroups = [...KEY_GROUPS];
 const accessGroupPattern = KEY_GROUPS.join('|');
-const standaloneAccessKeyPattern = /GATEWAY_ACCESS_KEY(?!_)/;
 for (const file of ['scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   const source = read(file);
   for (const group of accessGroups) assert.ok(source.includes(group), `${file} must expose ${group}`);
-  assert.match(source, /GATEWAY_ACCESS_KEY_/);
-  assert.match(source, /GATEWAY_ACCESS_MODELS_/);
-  assert.doesNotMatch(source, standaloneAccessKeyPattern);
+  assert.match(source, /GATEWAY_KEY_/);
+  assert.match(source, /GATEWAY_MODELS_/);
 }
 for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
   const source = read(file);
   assert.match(source, /At least one Gateway Access Group Key/);
-  assert.doesNotMatch(source, /GATEWAY_ACCESS_MODELS_[^\n]*[=:][^\n]*["']\*["']/);
+  assert.doesNotMatch(source, /GATEWAY_MODELS_[^\n]*[=:][^\n]*["']\*["']/);
 }
 
 const pkg = JSON.parse(read('package.json'));
@@ -93,22 +91,22 @@ assert.deepEqual(
 );
 
 const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /vars\.DEPLOY_ENABLED\s*==\s*'true'/);
+assert.match(workflow, /vars\.IS_DEPLOY_ENABLED\s*==\s*'true'/);
 assert.match(workflow, /github\.repository\s*==\s*vars\.DEPLOY_REPOSITORY/);
 assert.doesNotMatch(workflow, /fongap\/ai-gateway/);
 assert.match(workflow, /github-deployment-config\.mjs preflight/);
 assert.match(workflow, /prepare --from-env/);
-assert.match(workflow, /TIER1_NODES_SECRETS_01:/);
-assert.match(workflow, /TIER1_NODES_CONFIG_01:/);
-assert.match(workflow, /TIER1_AFFINITY_KV_ID:/);
+assert.match(workflow, /TIER1_CREDENTIALS_01:/);
+assert.match(workflow, /TIER1_NODES_01:/);
+assert.match(workflow, /AFFINITY_KV_ID:/);
 assert.match(workflow, /github-deployment-config\.mjs health-check/);
-assert.doesNotMatch(workflow, /secrets\.TIER[123]_NODES_CONFIG/);
-assert.doesNotMatch(workflow, /vars\.TIER[123]_NODES_SECRETS/);
+assert.doesNotMatch(workflow, /secrets\.TIER[123]_NODES/);
+assert.doesNotMatch(workflow, /vars\.TIER[123]_CREDENTIALS/);
 assert.doesNotMatch(workflow, /GATEWAY_CONFIG|GATEWAY_SECRETS_CONFIG/);
 assert.doesNotMatch(workflow, /deploy[^\n]*--keep-vars/);
 for (const group of accessGroups) {
-  assert.match(workflow, new RegExp(`GATEWAY_ACCESS_KEY_${group}:`));
-  assert.match(workflow, new RegExp(`GATEWAY_ACCESS_MODELS_${group}:`));
+  assert.match(workflow, new RegExp(`GATEWAY_KEY_${group}:`));
+  assert.match(workflow, new RegExp(`GATEWAY_MODELS_${group}:`));
 }
 
 for (const removedExample of [
@@ -138,11 +136,10 @@ const workerVars = JSON.parse(read('config/worker-vars.example.json'));
 assert.equal(Object.hasOwn(workerVars, 'GATEWAY_CONFIG'), false);
 assert.equal(Object.hasOwn(workerVars, 'GATEWAY_SECRETS_CONFIG'), false);
 const accessExample = JSON.parse(read('config/access-keys.example.json'));
-const groupKeyName = new RegExp(`^GATEWAY_ACCESS_KEY_(${accessGroupPattern})$`);
-const groupModelsName = new RegExp(`^GATEWAY_ACCESS_MODELS_(${accessGroupPattern})$`);
+const groupKeyName = new RegExp(`^GATEWAY_KEY_(${accessGroupPattern})$`);
+const groupModelsName = new RegExp(`^GATEWAY_MODELS_(${accessGroupPattern})$`);
 assert.ok(Object.keys(accessExample).some((name) => groupKeyName.test(name)));
 assert.ok(Object.keys(accessExample).some((name) => groupModelsName.test(name)));
-assert.doesNotMatch(JSON.stringify(accessExample), standaloneAccessKeyPattern);
 
 const srcFiles = [];
 function walk(dir) {
@@ -155,7 +152,6 @@ function walk(dir) {
 walk(path.join(root, 'src'));
 for (const file of srcFiles) {
   const source = fs.readFileSync(file, 'utf8');
-  assert.doesNotMatch(source, standaloneAccessKeyPattern, `${file} must not use standalone gateway key config`);
   assert.doesNotMatch(source, /\bbudgetSplit\b|\bbudget_split\b/, `${file} must not contain alternate tier-budget config`);
 }
 

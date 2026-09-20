@@ -52,15 +52,15 @@ function makeEnv({ tier1, tier2, tier3, secrets, extraEnv } = {}) {
   const tier2Secrets = tierSecrets(tier2);
   const tier3Secrets = tierSecrets(tier3);
   return {
-    GATEWAY_ACCESS_KEY_AIR: ACCESS_KEY,
-    GATEWAY_ACCESS_MODELS_AIR: '*',
+    GATEWAY_KEY_AIR: ACCESS_KEY,
+    GATEWAY_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'arch-contract-test',
-    ...(tier1 ? { TIER1_NODES_CONFIG_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_CONFIG_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_CONFIG_01: JSON.stringify(tier3) } : {}),
-    ...(Object.keys(tier1Secrets).length ? { TIER1_NODES_SECRETS_01: JSON.stringify(tier1Secrets) } : {}),
-    ...(Object.keys(tier2Secrets).length ? { TIER2_NODES_SECRETS_01: JSON.stringify(tier2Secrets) } : {}),
-    ...(Object.keys(tier3Secrets).length ? { TIER3_NODES_SECRETS_01: JSON.stringify(tier3Secrets) } : {}),
+    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(Object.keys(tier1Secrets).length ? { TIER1_CREDENTIALS_01: JSON.stringify(tier1Secrets) } : {}),
+    ...(Object.keys(tier2Secrets).length ? { TIER2_CREDENTIALS_01: JSON.stringify(tier2Secrets) } : {}),
+    ...(Object.keys(tier3Secrets).length ? { TIER3_CREDENTIALS_01: JSON.stringify(tier3Secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -236,7 +236,7 @@ await test('Contract 08: Logical attempt != physical hedge dispatch count', asyn
     tier1: [anthropicNode('an-slow'), anthropicNode('an-twin')],
     secrets: { 'an-slow': 'k', 'an-twin': 'k' },
     extraEnv: {
-      HEDGE_DELAY_MS: '120', FAILOVER_BUDGET_MS: '30000', UPSTREAM_HEADERS_TIMEOUT_MS: '2000',
+      HEDGE_DELAY_MS: '120', FAILOVER_BUDGET_MS: '30000', UPSTREAM_HEADER_TIMEOUT: '2000',
       POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5, hedge: { enabled: true, tiers: ['tier1'] } } }),
       MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
     },

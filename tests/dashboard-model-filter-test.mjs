@@ -187,7 +187,7 @@ const envelope = {
 
 {
   const html = quickStartSection('https://gateway.example.com/v1');
-  assert.ok(!html.includes('GATEWAY_ACCESS_KEY_AIR'), 'quick start must not imply AIR is the only usable key');
+  assert.ok(!html.includes('GATEWAY_KEY_AIR'), 'quick start must not imply AIR is the only usable key');
   assert.ok(html.includes('GATEWAY_API_KEY'), 'quick start uses a generic client-side gateway key variable');
   assert.ok(html.includes(KEY_GROUPS.join(' / ')), 'quick start key-group list comes from the shared key registry');
 }

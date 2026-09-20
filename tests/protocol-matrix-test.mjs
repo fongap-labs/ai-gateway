@@ -37,9 +37,9 @@ const openaiNode = (id) => ({ id, provider: 'openai', base_url: `https://${id}.e
 const messagesNode = (id) => ({ id, provider: 'anthropic', base_url: `https://${id}.example.com`, models: { max: 'up-model' } });
 function env(nodes, extra = {}) {
   return {
-    GATEWAY_ACCESS_KEY_AIR: ACCESS_KEY, GATEWAY_ACCESS_MODELS_AIR: 'max',
-    TIER1_NODES_CONFIG_01: JSON.stringify(nodes),
-    TIER1_NODES_SECRETS_01: JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, `key-${n.id}`]))),
+    GATEWAY_KEY_AIR: ACCESS_KEY, GATEWAY_MODELS_AIR: 'max',
+    TIER1_NODES_01: JSON.stringify(nodes),
+    TIER1_CREDENTIALS_01: JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, `key-${n.id}`]))),
     TIER1_SCHEDULER_SEED: 'protocol-matrix', MODELS_CONFIG: JSON.stringify({ max: { policy: 'default' } }), ...extra,
   };
 }

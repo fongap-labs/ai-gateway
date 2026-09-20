@@ -62,11 +62,11 @@ try {
   $accessModels = [ordered]@{}
   foreach ($group in @('AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT')) {
     if (-not (Confirm-Yes (Read-Host "Configure/rotate $group? [y/N]"))) { continue }
-    $key = Read-SecretText "new GATEWAY_ACCESS_KEY_$group"
-    if ([string]::IsNullOrEmpty($key)) { throw "GATEWAY_ACCESS_KEY_$group must not be empty when configuring this Group." }
-    $models = (Read-Host "GATEWAY_ACCESS_MODELS_$group (CSV, required)").Trim()
+    $key = Read-SecretText "new GATEWAY_KEY_$group"
+    if ([string]::IsNullOrEmpty($key)) { throw "GATEWAY_KEY_$group must not be empty when configuring this Group." }
+    $models = (Read-Host "GATEWAY_MODELS_$group (CSV, required)").Trim()
     if ([string]::IsNullOrWhiteSpace($models)) {
-      throw "GATEWAY_ACCESS_MODELS_$group is required when GATEWAY_ACCESS_KEY_$group is set."
+      throw "GATEWAY_MODELS_$group is required when GATEWAY_KEY_$group is set."
     }
     $accessKeys[$group] = $key
     $accessModels[$group] = $models
@@ -92,16 +92,16 @@ try {
   $varsMap = [ordered]@{}
   foreach ($prop in $plan.vars.PSObject.Properties) { $varsMap[$prop.Name] = $prop.Value }
   foreach ($name in $previousVars.Keys) {
-    if ($name -like 'GATEWAY_ACCESS_MODELS_*') { $varsMap[$name] = $previousVars[$name] }
+    if ($name -like 'GATEWAY_MODELS_*') { $varsMap[$name] = $previousVars[$name] }
   }
-  foreach ($group in $accessModels.Keys) { $varsMap["GATEWAY_ACCESS_MODELS_$group"] = $accessModels[$group] }
+  foreach ($group in $accessModels.Keys) { $varsMap["GATEWAY_MODELS_$group"] = $accessModels[$group] }
   $userConfig | Add-Member -NotePropertyName vars -NotePropertyValue $varsMap -Force
   [IO.File]::WriteAllText($userConfigPath, ($userConfig | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
 
   $bulkPath = Join-Path ([IO.Path]::GetTempPath()) ("gateway-secrets-" + [guid]::NewGuid().ToString('N') + '.json')
   $tmpFiles += $bulkPath
   $bulk = [ordered]@{}
-  foreach ($group in $accessKeys.Keys) { $bulk["GATEWAY_ACCESS_KEY_$group"] = $accessKeys[$group] }
+  foreach ($group in $accessKeys.Keys) { $bulk["GATEWAY_KEY_$group"] = $accessKeys[$group] }
   foreach ($prop in $plan.secrets.PSObject.Properties) { $bulk[$prop.Name] = $prop.Value }
   [IO.File]::WriteAllText($bulkPath, ($bulk | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
 

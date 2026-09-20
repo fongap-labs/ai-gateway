@@ -53,12 +53,12 @@ console.error = (...args) => logs.push(args.map((arg) => String(arg)).join(' '))
 
 try {
   const env = {
-    GATEWAY_ACCESS_KEY_AIR: ACCESS_KEY,
-    GATEWAY_ACCESS_MODELS_AIR: '*',
+    GATEWAY_KEY_AIR: ACCESS_KEY,
+    GATEWAY_MODELS_AIR: '*',
     PROTOCOL_FALLBACKS: JSON.stringify({
       'anthropic:messages': ['openai:chat_completions'],
     }),
-    TIER1_NODES_CONFIG_01: JSON.stringify([
+    TIER1_NODES_01: JSON.stringify([
       {
         id: 'openai-only',
         provider: 'mock',
@@ -66,7 +66,7 @@ try {
         models: { 'code-max': 'up-model' },
       },
     ]),
-    TIER1_NODES_SECRETS_01: JSON.stringify({ 'openai-only': 'upstream-key' }),
+    TIER1_CREDENTIALS_01: JSON.stringify({ 'openai-only': 'upstream-key' }),
   };
 
   const request = new Request('https://gateway.example.com/v1/messages?beta=true', {

@@ -9,7 +9,7 @@
 // aggregate diagnostics (requested model / attempt counts where that protocol
 // shape supports them). Raw upstream error messages and per-attempt internal
 // details stay hidden. Both are exposed only when the caller passes
-// `exposeUpstreamInfo` (EXPOSE_UPSTREAM_INFO=true).
+// `exposeUpstreamInfo` (SHOULD_EXPOSE_UPSTREAM=true).
 
 import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../protocol/http.ts';
 import { anthropicErrorTypeForStatus } from '../protocol/anthropic.ts';

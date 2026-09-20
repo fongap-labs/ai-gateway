@@ -8,14 +8,14 @@ Start with evidence from the failing boundary: configuration validation, CI job/
 
 Check that:
 
-- at least one `GATEWAY_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret is configured;
-- its matching `GATEWAY_ACCESS_MODELS_<GROUP>` Variable is present and non-empty;
-- at least one `TIER{1,2,3}_NODES_CONFIG_XX` Variable exists;
-- usable nodes have credentials in a `TIER{1,2,3}_NODES_SECRETS_XX` Secret for the same tier.
+- at least one `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret is configured;
+- its matching `GATEWAY_MODELS_<GROUP>` Variable is present and non-empty;
+- at least one `TIER{1,2,3}_NODES_XX` Variable exists;
+- usable nodes have credentials in a `TIER{1,2,3}_CREDENTIALS_XX` Secret for the same tier.
 
 A group key with an empty model allowlist intentionally grants zero models.
 
-### `No TIER{1,2,3}_NODES_CONFIG_XX Variable is configured`
+### `No TIER{1,2,3}_NODES_XX Variable is configured`
 
 Add at least one valid tier config shard containing a JSON array of nodes. The suffix is only a shard number.
 
@@ -35,8 +35,8 @@ Credentials bind by Tier + node id. They do not need to be in a Secret shard wit
 Example:
 
 ```text
-TIER1_NODES_CONFIG_03 contains node "nvidia-01"
-TIER1_NODES_SECRETS_01 may contain {"nvidia-01":"..."}
+TIER1_NODES_03 contains node "nvidia-01"
+TIER1_CREDENTIALS_01 may contain {"nvidia-01":"..."}
 ```
 
 If the tier differs, the credential is invalid for that node.
@@ -204,11 +204,11 @@ Do not divide aggregate physical Token usage by upstream-attempt count and compa
 
 ### Headers timeout
 
-No upstream response headers arrived before `UPSTREAM_HEADERS_TIMEOUT_MS`. Check network/provider responsiveness.
+No upstream response headers arrived before `UPSTREAM_HEADER_TIMEOUT`. Check network/provider responsiveness.
 
 ### First-event timeout
 
-Headers arrived but no meaningful protocol-specific output appeared before the active attempt deadline. `FIRST_EVENT_TIMEOUT_MS` is bounded by the same request/attempt wall-clock budget; lifecycle-only SSE events do not necessarily commit the response.
+Headers arrived but no meaningful protocol-specific output appeared before the active attempt deadline. `FIRST_EVENT_TIMEOUT` is bounded by the same request/attempt wall-clock budget; lifecycle-only SSE events do not necessarily commit the response.
 
 ### Stream interruption
 

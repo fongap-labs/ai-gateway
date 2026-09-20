@@ -3,9 +3,9 @@
 // Shared node-configuration sharding and planning module.
 //
 // Plain variables:
-//   TIER{1,2,3}_NODES_CONFIG_01..10   JSON arrays of current node configs
+//   TIER{1,2,3}_NODES_01..10   JSON arrays of current node configs
 // Secrets:
-//   TIER{1,2,3}_NODES_SECRETS_01..10  JSON objects { nodeId: credential }
+//   TIER{1,2,3}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
 //
 // Node config is account-level only. Protocol and surfaces are Provider wire
 // capabilities owned by src/config/provider-profile.ts, not repeated here.
@@ -15,8 +15,8 @@ import fs from 'node:fs';
 export const SHARD_MAX_BYTES = 4500;
 export const MAX_SHARD_NUMBER = 10;
 
-export const MANAGED_VAR_PATTERN = /^TIER[123]_NODES_CONFIG_(0[1-9]|10)$/;
-export const MANAGED_SECRET_PATTERN = /^TIER[123]_NODES_SECRETS_(0[1-9]|10)$/;
+export const MANAGED_VAR_PATTERN = /^TIER[123]_NODES_(0[1-9]|10)$/;
+export const MANAGED_SECRET_PATTERN = /^TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const VALID_TIER_PATTERN = /^[123]$/;
@@ -38,8 +38,8 @@ export function shardKeyName(kind, tierNumber, index) {
   if (!VALID_TIER_PATTERN.test(String(tierNumber))) {
     throw new Error(`Invalid tier number: ${tierNumber}`);
   }
-  if (kind === 'var') return `TIER${tierNumber}_NODES_CONFIG_${pad(index)}`;
-  if (kind === 'secret') return `TIER${tierNumber}_NODES_SECRETS_${pad(index)}`;
+  if (kind === 'var') return `TIER${tierNumber}_NODES_${pad(index)}`;
+  if (kind === 'secret') return `TIER${tierNumber}_CREDENTIALS_${pad(index)}`;
   throw new Error(`Unknown shard kind: ${kind}`);
 }
 
@@ -71,7 +71,7 @@ export function assertNodesArray(nodes, label = 'nodes config') {
 
     const forbidden = FORBIDDEN_NODE_FIELDS.filter((field) => field in node);
     if (forbidden.length > 0) {
-      throw new Error(`${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in TIER{1,2,3}_NODES_SECRETS_*.`);
+      throw new Error(`${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in TIER{1,2,3}_CREDENTIALS_*.`);
     }
     if ('tier' in node) {
       throw new Error(`${label}: node "${id}" must not declare "tier"; the tier comes from the variable name`);

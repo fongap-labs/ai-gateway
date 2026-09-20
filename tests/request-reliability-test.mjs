@@ -313,14 +313,14 @@ await test('hedge defaults: 3000ms delay, 1 hedge per request, overridable', asy
   // Hedge is also disabled by default through the built-in 'default' policy
   // (hedge.enabled=false); the raw env-var default is still 3000.
   assert.equal(defaults.hedgeDelayMs, 3_000, 'HEDGE_DELAY_MS default is 3000');
-  assert.equal(defaults.maxHedgesPerRequest, 1, 'MAX_HEDGES_PER_REQUEST default is 1');
-  const overridden = getLimits({ HEDGE_DELAY_MS: '8000', MAX_HEDGES_PER_REQUEST: '2' });
+  assert.equal(defaults.maxHedgesPerRequest, 1, 'REQUEST_HEDGE_MAX default is 1');
+  const overridden = getLimits({ HEDGE_DELAY_MS: '8000', REQUEST_HEDGE_MAX: '2' });
   assert.equal(overridden.hedgeDelayMs, 8_000);
   assert.equal(overridden.maxHedgesPerRequest, 2);
   // 0 disables hedging entirely but stays inside the clamped range.
-  assert.equal(getLimits({ MAX_HEDGES_PER_REQUEST: '0' }).maxHedgesPerRequest, 0);
+  assert.equal(getLimits({ REQUEST_HEDGE_MAX: '0' }).maxHedgesPerRequest, 0);
   // Out-of-range values are clamped, not trusted.
-  assert.equal(getLimits({ MAX_HEDGES_PER_REQUEST: '99' }).maxHedgesPerRequest, 3);
+  assert.equal(getLimits({ REQUEST_HEDGE_MAX: '99' }).maxHedgesPerRequest, 3);
   assert.equal(getLimits({ HEDGE_DELAY_MS: '-5' }).hedgeDelayMs, 0);
 });
 

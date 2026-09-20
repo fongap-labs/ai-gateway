@@ -27,7 +27,7 @@ export const TIER1_5XX_MAX_MS = 300_000;
 // classifier. If a direct internal caller omits the duration, fall back to the
 // canonical runtime-variable default rather than maintaining a second literal.
 const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find(
-  (entry) => entry.name === 'AUTH_FAIL_COOLDOWN_MS',
+  (entry) => entry.name === 'AUTH_FAILURE_COOLDOWN',
 )?.def ?? 0;
 // 429 cooldown duration is owned exclusively by adaptive-429.ts. This module
 // stores the supplied deadline and controls the post-cooldown recovery probe;

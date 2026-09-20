@@ -3,7 +3,7 @@
 // interruption reasons (missing_completion_marker / idle_timeout / reader_error)
 // plus the completed and neutral outcomes, and the passive onUsage scan (the
 // usage capture point for chat-passthrough streams). These run against the
-// module directly because STREAM_IDLE_TIMEOUT_MS is clamped to >= 10s at the
+// module directly because STREAM_IDLE_TIMEOUT is clamped to >= 10s at the
 // env layer, which makes idle-timeout scenarios impractical through the
 // black-box worker suite.
 import assert from 'node:assert/strict';

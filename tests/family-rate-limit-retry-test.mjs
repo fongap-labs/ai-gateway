@@ -31,11 +31,11 @@ const nodes = [
 ];
 
 const env = {
-  GATEWAY_ACCESS_KEY_ULTRA: ACCESS_KEY,
-  GATEWAY_ACCESS_MODELS_ULTRA: '*',
+  GATEWAY_KEY_ULTRA: ACCESS_KEY,
+  GATEWAY_MODELS_ULTRA: '*',
   PROTOCOL_FALLBACKS: 'disable',
-  TIER1_NODES_CONFIG_01: JSON.stringify(nodes),
-  TIER1_NODES_SECRETS_01: JSON.stringify({
+  TIER1_NODES_01: JSON.stringify(nodes),
+  TIER1_CREDENTIALS_01: JSON.stringify({
     'code-ultra-rl': 'k-ultra', 'code-max-rl': 'k-max', 'code-pro-rl': 'k-pro',
   }),
 };

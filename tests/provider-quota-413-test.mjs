@@ -13,7 +13,7 @@ async function test(name, fn) {
   catch (error) { failed++; console.error(`FAIL - ${name}`); console.error(error?.stack || error); }
 }
 
-const env = { RATE_LIMIT_COOLDOWN_MS: '60000' };
+const env = { RATE_LIMIT_COOLDOWN: '60000' };
 
 await test('Groq ITPM-shaped 413 rotates as a node rate limit', () => {
   const body = JSON.stringify({ error: { message: 'Request too large on input tokens per minute (ITPM): Limit 7000, Requested 7398.' } });
@@ -65,22 +65,22 @@ await test('real request continues after Tier 1 quota-413', async () => {
 
   try {
     const integrationEnv = {
-      GATEWAY_ACCESS_KEY_PRO: accessKey,
-      GATEWAY_ACCESS_MODELS_PRO: '*',
+      GATEWAY_KEY_PRO: accessKey,
+      GATEWAY_MODELS_PRO: '*',
       PROTOCOL_FALLBACKS: 'disable',
       HEDGE_DELAY_MS: '0',
-      MAX_HEDGES_PER_REQUEST: '0',
-      RATE_LIMIT_COOLDOWN_MS: '60000',
-      TIER1_NODES_CONFIG_01: JSON.stringify([{
+      REQUEST_HEDGE_MAX: '0',
+      RATE_LIMIT_COOLDOWN: '60000',
+      TIER1_NODES_01: JSON.stringify([{
         id: 'groq-quota', provider: 'groq',
         base_url: 'https://groq-quota.example.com/v1', priority: 10, models: { 'Quota-Test': 'qwen/qwen3.8-27b' },
       }]),
-      TIER1_NODES_SECRETS_01: JSON.stringify({ 'groq-quota': 'groq-key' }),
-      TIER2_NODES_CONFIG_01: JSON.stringify([{
+      TIER1_CREDENTIALS_01: JSON.stringify({ 'groq-quota': 'groq-key' }),
+      TIER2_NODES_01: JSON.stringify([{
         id: 'fallback-node', provider: 'fallback-provider',
         base_url: 'https://fallback.example.com/v1', priority: 10, models: { 'Quota-Test': 'fallback-model' },
       }]),
-      TIER2_NODES_SECRETS_01: JSON.stringify({ 'fallback-node': 'fallback-key' }),
+      TIER2_CREDENTIALS_01: JSON.stringify({ 'fallback-node': 'fallback-key' }),
       POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2 } }),
     };
     const response = await worker.fetch(new Request('https://gateway.example.com/v1/chat/completions', {

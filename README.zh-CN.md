@@ -88,7 +88,7 @@ powershell scripts/install.ps1
 
 安装脚本会校验配置、读取凭据、部署 Worker，并可验证线上入口。
 
-Config shard 与 Secret shard 彼此独立，按 **Tier + node id** 绑定，不按相同后缀一一对应。访问由 `GATEWAY_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` 与 `GATEWAY_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` 控制。
+Config shard 与 Secret shard 彼此独立，按 **Tier + node id** 绑定，不按相同后缀一一对应。访问由 `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` 与 `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` 控制。
 
 Schema 见 [Configuration](docs/operations/configuration.md)，生产部署见 [Deployment](docs/operations/deployment.md)。
 

@@ -1004,12 +1004,12 @@ function resetMock() {
 
 function makeEnv({ tier1, tier2, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_ACCESS_KEY_AIR: ACCESS_KEY,
-    GATEWAY_ACCESS_MODELS_AIR: 'claude-x',
+    GATEWAY_KEY_AIR: ACCESS_KEY,
+    GATEWAY_MODELS_AIR: 'claude-x',
     TIER1_SCHEDULER_SEED: 'conversion-test',
-    ...(tier1 ? { TIER1_NODES_CONFIG_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_CONFIG_01: JSON.stringify(tier2) } : {}),
-    ...(secrets ? { TIER1_NODES_SECRETS_01: JSON.stringify(secrets) } : {}),
+    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -1093,7 +1093,7 @@ await run('handler: Anthropic exhausted -> OpenAI conversion success', async () 
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1130,7 +1130,7 @@ await run('handler: native available -> OpenAI fallback is never called', async 
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1179,7 +1179,7 @@ await run('handler: OpenAI 429 then 200 -> fallback retries and succeeds', async
     secrets: { a1: 'k', o1: 'k', o2: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
       MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
       POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
     },
@@ -1283,7 +1283,7 @@ await run('handler: first-event timeout -> rotates to next node', async () => {
     extraEnv: {
       // Enough budget for a1's first-event timeout (~2.5s) plus a2's response.
       FAILOVER_BUDGET_MS: '6000',
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1311,7 +1311,7 @@ await run('handler: conversion shares max_attempts budget with native', async ()
     secrets: { a1: 'k', a2: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
       MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
       POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3 } }),
     },
@@ -1337,7 +1337,7 @@ await run('handler: conversion shares failover_budget_ms', async () => {
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
       FAILOVER_BUDGET_MS: '30000', // Normal budget
     },
   });
@@ -1387,7 +1387,7 @@ await run('handler: hedge never crosses protocol', async () => {
     secrets: { a1: 'k', a2: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
       HEDGE_DELAY_MS: '50', // Fast hedge trigger
       MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
       POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: true, tiers: ['tier1'] } } }),
@@ -1420,7 +1420,7 @@ await run('handler: conversion error does not pollute node health', async () => 
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1451,7 +1451,7 @@ await run('regression: no native candidate + configured fallback -> 200 via Open
     secrets: { o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1504,7 +1504,7 @@ await run('regression: fallback configured but target node lacks the model -> 40
     secrets: { o1: 'k' },
     extraEnv: {
       PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1538,7 +1538,7 @@ await run('handler: OpenAI Chat client + only Anthropic upstream -> success (non
   const env = makeEnv({
     tier1: [anthropicNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', messages: [{ role: 'user', content: 'hi' }],
@@ -1588,7 +1588,7 @@ await run('handler: OpenAI Chat client + only Anthropic upstream -> success (str
   const env = makeEnv({
     tier1: [anthropicNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', stream: true, messages: [{ role: 'user', content: 'hi' }],
@@ -1640,7 +1640,7 @@ await run('handler: OpenAI Chat client + Anthropic 529 -> rotation 429 retry', a
     tier1: [anthropicNode('a1'), anthropicNode('a2')],
     secrets: { a1: 'k', a2: 'k' },
     extraEnv: {
-      EXPOSE_UPSTREAM_INFO: 'true',
+      SHOULD_EXPOSE_UPSTREAM: 'true',
       MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
       POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
     },
@@ -1707,7 +1707,7 @@ await run('handler: OpenAI Chat native success unchanged when native node availa
   const env = makeEnv({
     tier1: [openaiNode('o1')],
     secrets: { o1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', messages: [{ role: 'user', content: 'hi' }],
@@ -1796,7 +1796,7 @@ await run('handler: OpenAI Responses client + only Anthropic upstream (no fallba
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true', GATEWAY_ACCESS_MODELS_AIR: 'code-max' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1812,7 +1812,7 @@ await run('handler: OpenAI Responses client + only Anthropic upstream (no fallba
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true', GATEWAY_ACCESS_MODELS_AIR: 'code-max' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi', stream: true,
@@ -1828,7 +1828,7 @@ await run('handler: OpenAI Responses client + Anthropic 529 (no fallback) -> 404
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { GATEWAY_ACCESS_MODELS_AIR: 'code-max' },
+    extraEnv: { GATEWAY_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1846,7 +1846,7 @@ await run('handler: OpenAI Responses client + only OpenAI Responses upstream -> 
   const env = makeEnv({
     tier1: [openaiResponsesNodeOnly('r1')],
     secrets: { r1: 'k' },
-    extraEnv: { EXPOSE_UPSTREAM_INFO: 'true', GATEWAY_ACCESS_MODELS_AIR: 'code-max' },
+    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1873,7 +1873,7 @@ await run('handler: OpenAI Responses client + Anthropic upstream with tool_use (
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { GATEWAY_ACCESS_MODELS_AIR: 'code-max' },
+    extraEnv: { GATEWAY_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max',

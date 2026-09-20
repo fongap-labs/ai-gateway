@@ -6,17 +6,17 @@
 // Five independent credential groups — AIR, PRO, MAX, ULTRA, AGENT — each
 // with its own secret and model allowlist:
 //
-//   GATEWAY_ACCESS_KEY_<GROUP>      = <secret>
-//   GATEWAY_ACCESS_MODELS_<GROUP>   = "Model1,Model2"   (CSV; "*" = all)
+//   GATEWAY_KEY_<GROUP>      = <secret>
+//   GATEWAY_MODELS_<GROUP>   = "Model1,Model2"   (CSV; "*" = all)
 //
 // Rules:
 //   * Each group is independent. No inheritance, no implicit defaults.
 //   * Allowlist semantics are fail-closed: a missing or empty
-//     GATEWAY_ACCESS_MODELS_<GROUP> grants ZERO models.
+//     GATEWAY_MODELS_<GROUP> grants ZERO models.
 //   * "*" alone grants every currently-known logical model.
 //   * Access Models referencing a model that is NOT currently known emit a
 //     diagnostic warning. The referenced model is NOT auto-created.
-//   * If no GATEWAY_ACCESS_KEY_<GROUP> is configured, no gateway credential
+//   * If no GATEWAY_KEY_<GROUP> is configured, no gateway credential
 //     is accepted.
 
 import { readEnv } from './env.ts';
@@ -31,7 +31,7 @@ function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<
   const out: { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] } = { allowAll: false, allowlist: new Set(), warnings: [], errors: [] };
   if (raw === undefined || raw === null) return out;
   if (typeof raw !== 'string') {
-    out.errors.push(`GATEWAY_ACCESS_MODELS_${group} must be a CSV string ("Model1,Model2" or "*")`);
+    out.errors.push(`GATEWAY_MODELS_${group} must be a CSV string ("Model1,Model2" or "*")`);
     return out;
   }
   const trimmed = raw.trim();
@@ -44,7 +44,7 @@ function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<
   if (knownModels) {
     for (const m of out.allowlist) {
       if (!knownModels.has(m)) {
-        out.warnings.push(`GATEWAY_ACCESS_MODELS_${group} references model "${m}" which is not in the Known Model Catalog (node models or MODELS_CONFIG)`);
+        out.warnings.push(`GATEWAY_MODELS_${group} references model "${m}" which is not in the Known Model Catalog (node models or MODELS_CONFIG)`);
       }
     }
   }
@@ -87,9 +87,9 @@ function analyzeAccessKeys(env: GatewayEnv): AccessKeysAnalysis {
   const knownModels = collectKnownModels(nodes, env);
 
   for (const group of KEY_GROUPS) {
-    const secret = readEnv(env, `GATEWAY_ACCESS_KEY_${group}`);
+    const secret = readEnv(env, `GATEWAY_KEY_${group}`);
     if (!secret) continue;
-    const parsed = parseModelsField(env ? env[`GATEWAY_ACCESS_MODELS_${group}`] : undefined, group, knownModels);
+    const parsed = parseModelsField(env ? env[`GATEWAY_MODELS_${group}`] : undefined, group, knownModels);
     diagnostics.push(...parsed.warnings, ...parsed.errors);
     keys.push({ group, secret: String(secret), allowAll: parsed.allowAll, allowlist: parsed.allowlist });
   }
