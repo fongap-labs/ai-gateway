@@ -21,7 +21,7 @@ jobs:
       - name: Dispatch central governance
         env:
           ACTION_WORKER_PAT: ${{ secrets.ACTION_WORKER_PAT }}
-          ACTION_WORKER_REPOSITORY: ${{ vars.ACTION_WORKER_REPOSITORY }}
+          ACTION_WORKER_REPOSITORY: ${{ github.repository_owner }}/action-worker
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -65,8 +65,8 @@ jobs:
             false
           fi
 
-          if [[ ! "$ACTION_WORKER_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "::error::ACTION_WORKER_REPOSITORY is not configured or invalid." >&2
+          if [[ ! "$ACTION_WORKER_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/action-worker$ ]]; then
+            echo "::error::Derived Action Worker repository is invalid." >&2
             false
           fi
 
