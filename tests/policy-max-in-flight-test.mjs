@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { loadPoliciesConfig, getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 
 function policies(config) {
-  const env = config === undefined ? {} : { POLICIES_CONFIG: JSON.stringify(config) };
+  const env = config === undefined ? {} : { AIG_POLICIES_CONFIG: JSON.stringify(config) };
   return loadPoliciesConfig(env);
 }
 
@@ -28,7 +28,7 @@ assert.equal(policies({ default: { max_in_flight: null } }).default.maxInFlight,
 assert.equal(policies({ default: { max_in_flight: 4 } }).default.maxInFlight, 4,
   'positive max_in_flight remains an explicit operator admission ceiling');
 
-const badEnv = { POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: -1 } }) };
+const badEnv = { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: -1 } }) };
 const badDiags = getPoliciesConfigDiagnostics(badEnv);
 assert.ok(badDiags.some((d) => d.includes('max_in_flight must be a non-negative integer')),
   `invalid max_in_flight must be diagnosed, got ${JSON.stringify(badDiags)}`);
