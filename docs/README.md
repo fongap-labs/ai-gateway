@@ -1,6 +1,6 @@
 # ai-gateway documentation
 
-This documentation describes the current repository contract. It is organized by responsibility so runtime facts, operating procedures, and governance rules do not compete as equal sources of truth.
+This documentation describes ai-gateway-specific architecture, operations and product policy. Shared Fongap Labs engineering governance is maintained in `fongap-labs/action-worker` and is not duplicated here.
 
 ## Documentation model
 
@@ -42,7 +42,6 @@ History belongs in Git, Pull Requests and commits. Human-created tags or GitHub 
 | --- | --- |
 | [README.md](governance/README.md) | Governance index and authority model |
 | [product-policy.md](governance/product-policy.md) | Household/small-team scope, Tier roles, clean replacement, human-owned release identity, simplicity boundary |
-| [development-policy.md](governance/development-policy.md) | Branch, PR, refactor, clean-replacement, and architecture-change rules |
 | [quality-policy.md](governance/quality-policy.md) | CI, tests, security, deployment identity, and production gates |
 | [dependency-policy.md](governance/dependency-policy.md) | Dependency and toolchain update policy |
 | [documentation-policy.md](governance/documentation-policy.md) | English-canonical documentation and code-to-doc synchronization |
