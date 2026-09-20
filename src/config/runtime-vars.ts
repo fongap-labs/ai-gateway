@@ -45,7 +45,7 @@ export const RUNTIME_TUNABLES = [
   // Per-isolate, per-key RPM cap. Counts request-START moments in a
   // 60s sliding window. The cap is best-effort (single-isolate); for a
   // strict global cap across isolates, bind a Cloudflare Rate Limiting
-  // worker binding (this is the existing model, see AIG_QUOTA_RATE_LIMITER).
+  // worker binding (this is the existing model, see QUOTA_RATE_LIMITER).
   // 0 disables the cap entirely (default for backward compatibility).
   { name: 'AIG_ACCESS_KEY_RPM', type: 'int', min: 0, max: 100_000, def: 0 },
 ] as const satisfies readonly RuntimeTunable[];
