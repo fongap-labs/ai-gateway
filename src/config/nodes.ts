@@ -70,7 +70,7 @@ function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
   const policies = loadPoliciesConfig(env);
   for (const [model, mcfg] of Object.entries(models)) {
     const pname = mcfg?.policy || 'default';
-    if (!policies[pname]) diags.push(`MODELS_CONFIG: model "${model}" references unknown policy "${pname}"`);
+    if (!policies[pname]) diags.push(`AIG_MODELS_CONFIG: model "${model}" references unknown policy "${pname}"`);
   }
   return diags;
 }
@@ -92,7 +92,7 @@ function collectNodeModelDiagnostics(nodes: ReadonlyArray<RuntimeNode>, env: Rec
   for (const node of nodes) {
     for (const logical of Object.keys(node.models)) {
       if (internalModels.has(logical)) {
-        diags.push(`NODE CONFIG: node "${node.id}" maps logical model "${logical}" which is marked visibility:"internal" in MODELS_CONFIG; internal models are still requestable but hidden from the dashboard`);
+        diags.push(`NODE CONFIG: node "${node.id}" maps logical model "${logical}" which is marked visibility:"internal" in AIG_MODELS_CONFIG; internal models are still requestable but hidden from the dashboard`);
       }
     }
   }
@@ -104,10 +104,10 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   const auxDiagnostics = collectAuxConfigDiagnostics(env);
   auxDiagnostics.push(...getProtocolFallbacksDiagnostics(env));
   diagnostics.push(...auxDiagnostics);
-  const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `GATEWAY_KEY_${g}`));
+  const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `AIG_ACCESS_KEY_${g}`));
 
-  const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'TIER1_NODES_', 'TIER1_NODES_01', 2, diagnostics);
-  const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'TIER1_CREDENTIALS_', 'TIER1_CREDENTIALS_01', 2, diagnostics);
+  const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
+  const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
   const nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
@@ -156,7 +156,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
-  const allowInsecure = getBool(env, 'CAN_USE_HTTP', false);
+  const allowInsecure = getBool(env, 'AIG_CAN_USE_HTTP', false);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -274,7 +274,7 @@ function buildRuntimeNode(
     return null;
   }
   if (!allowInsecure && url.protocol !== 'https:') {
-    diagnostics.push(`node "${id}": base_url must use https:// (set CAN_USE_HTTP=true to override)`);
+    diagnostics.push(`node "${id}": base_url must use https:// (set AIG_CAN_USE_HTTP=true to override)`);
     return null;
   }
   if (url.username || url.password) {
