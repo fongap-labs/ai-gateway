@@ -127,7 +127,7 @@ base.vars = { ...plan.vars };
 for (const [name, value] of Object.entries(access)) {
   if (name.startsWith("AIG_ACCESS_MODELS_")) base.vars[name] = value;
 }
-base.kv_namespaces = [{ binding: "AIG_AFFINITY_KV", id: process.env.AIG_AFFINITY_KV_ID }];
+base.kv_namespaces = [{ binding: "TIER1_AFFINITY", id: process.env.AIG_AFFINITY_KV_ID }];
 fs.writeFileSync("wrangler.user.jsonc", JSON.stringify(base, null, 2) + "\n");
 ' "$TMP_PLAN" "$TMP_ACCESS"
 
