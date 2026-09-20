@@ -239,12 +239,12 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') 
   };
   if (String(d1DatabaseId || '').trim()) {
     out.d1_databases = [{
-      binding: 'AIG_USAGE_D1', database_name: 'ai-gateway-stats', database_id: String(d1DatabaseId).trim(),
+      binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: String(d1DatabaseId).trim(),
       migrations_dir: path.resolve(root, 'migrations'),
     }];
   }
   if (String(affinityKvId || '').trim()) {
-    out.kv_namespaces = [{ binding: 'AIG_AFFINITY_KV', id: String(affinityKvId).trim() }];
+    out.kv_namespaces = [{ binding: 'TIER1_AFFINITY', id: String(affinityKvId).trim() }];
   }
   return out;
 }
