@@ -3,9 +3,9 @@
 //
 // Config Layer: environment shards -> Runtime Node list.
 //
-//   TIER{1,2,3}_NODES_01..10   plain variables, JSON arrays of node
+//   AIG_TIER{1,2,3}_NODES_01..10   plain variables, JSON arrays of node
 //                                     configs WITHOUT credential material.
-//   TIER{1,2,3}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
+//   AIG_TIER{1,2,3}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
 //
 // Current Node JSON schema is deliberately small. Required fields:
 //   id, provider, base_url, models
@@ -27,8 +27,8 @@ import type { RegistryEntry } from './registry.ts';
 import type { RuntimeNode, NodeTier } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
 
-export const TIER_SHARD_PATTERN = /^TIER([123])_NODES_(\d{2})$/;
-export const SECRET_SHARD_PATTERN = /^TIER([123])_CREDENTIALS_(\d{2})$/;
+export const TIER_SHARD_PATTERN = /^AIG_TIER([123])_NODES_(\d{2})$/;
+export const SECRET_SHARD_PATTERN = /^AIG_TIER([123])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
@@ -249,7 +249,7 @@ function buildRuntimeNode(
   }
   const forbidden = FORBIDDEN_NODE_FIELDS.filter((f) => f in rec);
   if (forbidden.length > 0) {
-    diagnostics.push(`node "${id}": forbidden credential field(s) ${forbidden.join(', ')}; credentials belong in TIER{N}_CREDENTIALS_*`);
+    diagnostics.push(`node "${id}": forbidden credential field(s) ${forbidden.join(', ')}; credentials belong in AIG_TIER{N}_CREDENTIALS_*`);
     return null;
   }
   for (const key of Object.keys(rec)) {
@@ -284,7 +284,7 @@ function buildRuntimeNode(
 
   const credential = credentials.get(id);
   if (!credential) {
-    diagnostics.push(`node "${id}": no credential found in TIER{N}_CREDENTIALS_*; node excluded`);
+    diagnostics.push(`node "${id}": no credential found in AIG_TIER{N}_CREDENTIALS_*; node excluded`);
     return null;
   }
 
