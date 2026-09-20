@@ -59,12 +59,12 @@ function resetMock() {
 
 function makeEnv({ tier1, tier2, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'claude-contract-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(secrets ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -552,8 +552,8 @@ const fallbackEnv = ({ tier1, secrets }) => makeEnv({
   tier1,
   secrets,
   extraEnv: {
-    PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-    SHOULD_EXPOSE_UPSTREAM: 'true',
+    AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+    AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
   },
 });
 
