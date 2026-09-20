@@ -108,7 +108,7 @@ Discovery must never:
 - persist or log API credentials, authorization headers, cookies, or user request data;
 - synthesize a provider URL from an untrusted provider name;
 - use credential-bearing URLs;
-- follow a URL or redirect that fails structural or DNS-backed SSRF validation unless `ALLOW_PRIVATE_DISCOVERY` is explicitly enabled for a trusted private provider;
+- follow a URL or redirect that fails structural or DNS-backed SSRF validation unless `CAN_DISCOVER_PRIVATE` is explicitly enabled for a trusted private provider;
 - perform destructive or configuration-writing actions;
 - become a runtime dependency of `src/request`, `src/scheduler`, `src/reliability`, `src/transport`, `src/protocol`, `src/conversion`, or `src/stream`.
 

@@ -50,7 +50,7 @@ for (const file of ['.dev.vars.example', 'config/worker-vars.example.json']) {
 const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models']);
 const workerVars = JSON.parse(read('config/worker-vars.example.json'));
 for (const [key, nodes] of Object.entries(workerVars)) {
-  if (!/^TIER[123]_NODES_CONFIG_\d{2}$/.test(key)) continue;
+  if (!/^TIER[123]_NODES_\d{2}$/.test(key)) continue;
   assert.ok(Array.isArray(nodes), `${key} example must be an array`);
   for (const node of nodes) {
     const unknown = Object.keys(node).filter((field) => !ALLOWED_NODE_FIELDS.has(field));
@@ -73,8 +73,8 @@ const ACCESS_FACT_FILES = [
   'docs/operations/configuration.md', 'docs/operations/deployment.md',
   '.dev.vars.example', 'config/access-keys.example.json',
 ];
-const GROUP_KEY = /GATEWAY_ACCESS_KEY_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
-const GROUP_MODELS = /GATEWAY_ACCESS_MODELS_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
+const GROUP_KEY = /GATEWAY_KEY_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
+const GROUP_MODELS = /GATEWAY_MODELS_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
 for (const file of ACCESS_FACT_FILES) {
   const text = read(file);
   assert.match(text, GROUP_KEY, `${file}: grouped access key required`);

@@ -20,8 +20,7 @@ jobs:
     steps:
       - name: Dispatch central governance
         env:
-          ACTION_WORKER_PAT: ${{ secrets.ACTION_WORKER_PAT }}
-          ACTION_WORKER_REPOSITORY: ${{ vars.ACTION_WORKER_REPOSITORY }}
+          ACTION_WORKER_TOKEN: ${{ secrets.ACTION_WORKER_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -60,13 +59,8 @@ jobs:
 
           set_status pending "PR governance dispatch pending"
 
-          if [ -z "$ACTION_WORKER_PAT" ]; then
-            echo "::error::ACTION_WORKER_PAT is not configured." >&2
-            false
-          fi
-
-          if [[ ! "$ACTION_WORKER_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
-            echo "::error::ACTION_WORKER_REPOSITORY is not configured or invalid." >&2
+          if [ -z "$ACTION_WORKER_TOKEN" ]; then
+            echo "::error::ACTION_WORKER_TOKEN is not configured." >&2
             false
           fi
 
@@ -90,8 +84,8 @@ jobs:
             --retry 2 \
             --retry-delay 1 \
             --request POST \
-            --header "Authorization: Bearer $ACTION_WORKER_PAT" \
+            --header "Authorization: Bearer $ACTION_WORKER_TOKEN" \
             --header "Accept: application/vnd.github+json" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$ACTION_WORKER_REPOSITORY/dispatches" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
             --data "$payload"

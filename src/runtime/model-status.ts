@@ -81,7 +81,7 @@ export type PublicModelStatusEntry = {
 // model known to the gateway.
 //
 // Source of model names: node mappings are the PRIMARY source — the operator
-// declares models where they actually live (in TIER1/TIER2/TIER3_NODES_CONFIG_*).
+// declares models where they actually live (in TIER1/TIER2/TIER3_NODES_*).
 // MODELS_CONFIG is an OPTIONAL metadata layer that may downgrade a model to
 // `visibility: 'internal'` to hide it from the public catalog; it NEVER
 // narrows or widens the visible model set on its own. This keeps the operator

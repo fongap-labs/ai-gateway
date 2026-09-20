@@ -23,10 +23,10 @@ const node = (id, extra = {}) => ({
 });
 function makeEnv({ tier1, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_ACCESS_KEY_AIR: 'k',
-    GATEWAY_ACCESS_MODELS_AIR: '*',
-    ...(tier1 ? { TIER1_NODES_CONFIG_01: JSON.stringify(tier1) } : {}),
-    ...(secrets ? { TIER1_NODES_SECRETS_01: JSON.stringify(secrets) } : {}),
+    GATEWAY_KEY_AIR: 'k',
+    GATEWAY_MODELS_AIR: '*',
+    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -37,12 +37,12 @@ const modelDiags = (models) => getModelsConfigDiagnostics(makeEnv({ extraEnv: { 
 test('collectShards accepts 01..10 and reports out-of-range/malformed names', () => {
   const diags = [];
   const secrets = collectShards(
-    { TIER1_NODES_SECRETS_01: '{}', TIER1_NODES_SECRETS_09: '{}', TIER1_NODES_SECRETS_12: '{}' },
-    SECRET_SHARD_PATTERN, 'TIER1_NODES_SECRETS_', 'TIER1_NODES_SECRETS_01', 2, diags,
+    { TIER1_CREDENTIALS_01: '{}', TIER1_CREDENTIALS_09: '{}', TIER1_CREDENTIALS_12: '{}' },
+    SECRET_SHARD_PATTERN, 'TIER1_CREDENTIALS_', 'TIER1_CREDENTIALS_01', 2, diags,
   );
   assert.deepEqual(secrets.map((s) => s.index), [1, 9]);
   assert.ok(diags.some((d) => /12.*out of range/.test(d)));
-  const tiers = collectShards({ TIER2_NODES_CONFIG_03: '[]' }, TIER_SHARD_PATTERN, 'TIER2_NODES_CONFIG_', 'TIER2_NODES_CONFIG_01', 2, []);
+  const tiers = collectShards({ TIER2_NODES_03: '[]' }, TIER_SHARD_PATTERN, 'TIER2_NODES_', 'TIER2_NODES_01', 2, []);
   assert.equal(tiers[0].tierNumber, 2);
   assert.equal(tiers[0].index, 3);
 });

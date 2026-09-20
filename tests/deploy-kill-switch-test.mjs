@@ -12,13 +12,13 @@ const root = join(currentDir, '..');
 const deploy = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
 
 const gateIf = deploy.split(/\r?\n/).find((line) =>
-  line.includes("vars.DEPLOY_ENABLED == 'true'")
+  line.includes("vars.IS_DEPLOY_ENABLED == 'true'")
   && line.includes("github.repository == vars.DEPLOY_REPOSITORY"),
 )?.trim() || '';
 
 assert.ok(
-  gateIf.includes("vars.DEPLOY_ENABLED == 'true'"),
-  'deployment must require explicit DEPLOY_ENABLED=true',
+  gateIf.includes("vars.IS_DEPLOY_ENABLED == 'true'"),
+  'deployment must require explicit IS_DEPLOY_ENABLED=true',
 );
 assert.ok(
   gateIf.includes("github.repository == vars.DEPLOY_REPOSITORY"),

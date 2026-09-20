@@ -23,10 +23,10 @@ function test(name, fn) {
 
 test('valid plan shards current nodes and tier-scoped secrets', () => {
   const plan = buildPlan({ tiers: { 1: [node('a'), node('b')], 2: [node('c')] }, secretsMap: { a: 'cred-a', b: 'cred-b', c: 'cred-c' } });
-  assert.ok(plan.vars.TIER1_NODES_CONFIG_01.startsWith('[{'));
-  assert.ok(plan.vars.TIER2_NODES_CONFIG_01.startsWith('[{'));
-  assert.ok(plan.secrets.TIER1_NODES_SECRETS_01);
-  assert.ok(plan.secrets.TIER2_NODES_SECRETS_01);
+  assert.ok(plan.vars.TIER1_NODES_01.startsWith('[{'));
+  assert.ok(plan.vars.TIER2_NODES_01.startsWith('[{'));
+  assert.ok(plan.secrets.TIER1_CREDENTIALS_01);
+  assert.ok(plan.secrets.TIER2_CREDENTIALS_01);
   for (const value of Object.values(plan.vars)) JSON.parse(value);
   for (const value of Object.values(plan.secrets)) JSON.parse(value);
 });
@@ -97,18 +97,18 @@ test('oversized entry fails before producing invalid shards', () => {
 test('stale managed shard lists are computed', () => {
   const plan = buildPlan({
     tiers: { 1: [node('a')] }, secretsMap: { a: 'x' },
-    existingVarNames: ['TIER1_NODES_CONFIG_01', 'TIER1_NODES_CONFIG_02', 'TIER3_NODES_CONFIG_01'],
-    existingSecretNames: ['TIER1_NODES_SECRETS_01', 'TIER1_NODES_SECRETS_02', 'GATEWAY_ACCESS_KEY'],
+    existingVarNames: ['TIER1_NODES_01', 'TIER1_NODES_02', 'TIER3_NODES_01'],
+    existingSecretNames: ['TIER1_CREDENTIALS_01', 'TIER1_CREDENTIALS_02', 'UNMANAGED_GATEWAY_KEY'],
   });
-  assert.deepEqual(plan.deleteVars, ['TIER1_NODES_CONFIG_02', 'TIER3_NODES_CONFIG_01']);
-  assert.deepEqual(plan.deleteSecrets, ['TIER1_NODES_SECRETS_02']);
+  assert.deepEqual(plan.deleteVars, ['TIER1_NODES_02', 'TIER3_NODES_01']);
+  assert.deepEqual(plan.deleteSecrets, ['TIER1_CREDENTIALS_02']);
 });
 
 test('managed patterns cover current shards only', () => {
-  assert.ok(MANAGED_VAR_PATTERN.test('TIER2_NODES_CONFIG_07'));
-  assert.ok(MANAGED_SECRET_PATTERN.test('TIER1_NODES_SECRETS_03'));
-  assert.ok(!MANAGED_SECRET_PATTERN.test('GATEWAY_ACCESS_KEY'));
-  assert.ok(!MANAGED_SECRET_PATTERN.test('TIER1_NODES_SECRETS_11'));
+  assert.ok(MANAGED_VAR_PATTERN.test('TIER2_NODES_07'));
+  assert.ok(MANAGED_SECRET_PATTERN.test('TIER1_CREDENTIALS_03'));
+  assert.ok(!MANAGED_SECRET_PATTERN.test('UNMANAGED_GATEWAY_KEY'));
+  assert.ok(!MANAGED_SECRET_PATTERN.test('TIER1_CREDENTIALS_11'));
 });
 
 test('planner never emits shard index above 10', () => {

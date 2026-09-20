@@ -73,15 +73,15 @@ function makeEnv({ tier1, tier2, tier3, secrets = {}, extraEnv = {} } = {}) {
   const t2s = secretSubset(tier2);
   const t3s = secretSubset(tier3);
   return {
-    GATEWAY_ACCESS_KEY_AIR: ACCESS_KEY,
-    GATEWAY_ACCESS_MODELS_AIR: '*',
+    GATEWAY_KEY_AIR: ACCESS_KEY,
+    GATEWAY_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'integration-test',
-    ...(tier1 ? { TIER1_NODES_CONFIG_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_CONFIG_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_CONFIG_01: JSON.stringify(tier3) } : {}),
-    ...(Object.keys(t1s).length ? { TIER1_NODES_SECRETS_01: JSON.stringify(t1s) } : {}),
-    ...(Object.keys(t2s).length ? { TIER2_NODES_SECRETS_01: JSON.stringify(t2s) } : {}),
-    ...(Object.keys(t3s).length ? { TIER3_NODES_SECRETS_01: JSON.stringify(t3s) } : {}),
+    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(Object.keys(t1s).length ? { TIER1_CREDENTIALS_01: JSON.stringify(t1s) } : {}),
+    ...(Object.keys(t2s).length ? { TIER2_CREDENTIALS_01: JSON.stringify(t2s) } : {}),
+    ...(Object.keys(t3s).length ? { TIER3_CREDENTIALS_01: JSON.stringify(t3s) } : {}),
     ...extraEnv,
   };
 }

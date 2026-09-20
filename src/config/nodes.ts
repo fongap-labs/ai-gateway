@@ -3,9 +3,9 @@
 //
 // Config Layer: environment shards -> Runtime Node list.
 //
-//   TIER{1,2,3}_NODES_CONFIG_01..10   plain variables, JSON arrays of node
+//   TIER{1,2,3}_NODES_01..10   plain variables, JSON arrays of node
 //                                     configs WITHOUT credential material.
-//   TIER{1,2,3}_NODES_SECRETS_01..10  secrets, JSON objects { nodeId: credential }.
+//   TIER{1,2,3}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
 //
 // Current Node JSON schema is deliberately small. Required fields:
 //   id, provider, base_url, models
@@ -27,8 +27,8 @@ import type { RegistryEntry } from './registry.ts';
 import type { RuntimeNode, NodeTier } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
 
-export const TIER_SHARD_PATTERN = /^TIER([123])_NODES_CONFIG_(\d{2})$/;
-export const SECRET_SHARD_PATTERN = /^TIER([123])_NODES_SECRETS_(\d{2})$/;
+export const TIER_SHARD_PATTERN = /^TIER([123])_NODES_(\d{2})$/;
+export const SECRET_SHARD_PATTERN = /^TIER([123])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
@@ -104,10 +104,10 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   const auxDiagnostics = collectAuxConfigDiagnostics(env);
   auxDiagnostics.push(...getProtocolFallbacksDiagnostics(env));
   diagnostics.push(...auxDiagnostics);
-  const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `GATEWAY_ACCESS_KEY_${g}`));
+  const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `GATEWAY_KEY_${g}`));
 
-  const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'TIER1_NODES_CONFIG_', 'TIER1_NODES_CONFIG_01', 2, diagnostics);
-  const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'TIER1_NODES_SECRETS_', 'TIER1_NODES_SECRETS_01', 2, diagnostics);
+  const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'TIER1_NODES_', 'TIER1_NODES_01', 2, diagnostics);
+  const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'TIER1_CREDENTIALS_', 'TIER1_CREDENTIALS_01', 2, diagnostics);
   const nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
@@ -156,7 +156,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
-  const allowInsecure = getBool(env, 'ALLOW_INSECURE_HTTP_UPSTREAM', false);
+  const allowInsecure = getBool(env, 'CAN_USE_HTTP', false);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -249,7 +249,7 @@ function buildRuntimeNode(
   }
   const forbidden = FORBIDDEN_NODE_FIELDS.filter((f) => f in rec);
   if (forbidden.length > 0) {
-    diagnostics.push(`node "${id}": forbidden credential field(s) ${forbidden.join(', ')}; credentials belong in TIER{N}_NODES_SECRETS_*`);
+    diagnostics.push(`node "${id}": forbidden credential field(s) ${forbidden.join(', ')}; credentials belong in TIER{N}_CREDENTIALS_*`);
     return null;
   }
   for (const key of Object.keys(rec)) {
@@ -274,7 +274,7 @@ function buildRuntimeNode(
     return null;
   }
   if (!allowInsecure && url.protocol !== 'https:') {
-    diagnostics.push(`node "${id}": base_url must use https:// (set ALLOW_INSECURE_HTTP_UPSTREAM=true to override)`);
+    diagnostics.push(`node "${id}": base_url must use https:// (set CAN_USE_HTTP=true to override)`);
     return null;
   }
   if (url.username || url.password) {
@@ -284,7 +284,7 @@ function buildRuntimeNode(
 
   const credential = credentials.get(id);
   if (!credential) {
-    diagnostics.push(`node "${id}": no credential found in TIER{N}_NODES_SECRETS_*; node excluded`);
+    diagnostics.push(`node "${id}": no credential found in TIER{N}_CREDENTIALS_*; node excluded`);
     return null;
   }
 
