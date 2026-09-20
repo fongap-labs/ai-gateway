@@ -15,7 +15,7 @@
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 
 const AIG_AFFINITY_KV_FACTOR = 0.85;
-const KV_BINDING = 'AIG_AFFINITY_KV';
+const KV_BINDING = 'TIER1_AFFINITY';
 const KEY_PREFIX = 'affinity:v1:';
 const TTL_SECONDS = 30 * 60;
 const CACHE_TTL_MS = 5_000;
