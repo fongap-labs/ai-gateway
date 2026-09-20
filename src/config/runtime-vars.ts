@@ -10,7 +10,7 @@
 // Sensitive values (AIG_ACCESS_KEY_<GROUP>, TIER*_CREDENTIALS_*, CLOUDFLARE_API_TOKEN)
 // are NOT listed here — they are Secrets, never plain Worker variables.
 //
-// CLOUDFLARE_ACCOUNT_ID, USAGE_D1_ID and GATEWAY_PUBLIC_URL are
+// CLOUDFLARE_ACCOUNT_ID, AIG_USAGE_D1_ID and AIG_PUBLIC_URL are
 // deployment identifiers, not runtime tunables; the bridge handles them
 // separately via REQUIRED_VARS / REQUIRED_SECRETS.
 
