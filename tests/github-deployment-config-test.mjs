@@ -19,14 +19,14 @@ const currentNode = (id = 'node-a') => ({
 function fixture() {
   return {
     vars: {
-      TIER1_NODES_01: [currentNode()],
-      GATEWAY_MODELS_AIR: 'code-pro',
-      MODELS_CONFIG: { 'code-pro': { policy: 'default' } },
-      POLICIES_CONFIG: { default: { max_attempts: 5 } },
+      AIG_TIER1_NODES_01: [currentNode()],
+      AIG_ACCESS_MODELS_AIR: 'code-pro',
+      AIG_MODELS_CONFIG: { 'code-pro': { policy: 'default' } },
+      AIG_POLICIES_CONFIG: { default: { max_attempts: 5 } },
     },
     secrets: {
-      GATEWAY_KEY_AIR: 'gateway-key',
-      TIER1_CREDENTIALS_01: { 'node-a': 'upstream-key' },
+      AIG_ACCESS_KEY_AIR: 'gateway-key',
+      AIG_TIER1_CREDENTIALS_01: { 'node-a': 'upstream-key' },
     },
   };
 }
@@ -35,23 +35,23 @@ const loaded = loadRuntimeConfig(JSON.stringify(fixture().vars), JSON.stringify(
 const cfg = validateGatewayRuntime(loaded);
 assert.equal(cfg.ready, true);
 assert.equal(cfg.nodesUsable, 1);
-assert.equal(JSON.parse(loaded.vars.TIER1_NODES_01)[0].provider, 'mock');
-assert.equal(JSON.parse(loaded.secrets.TIER1_CREDENTIALS_01)['node-a'], 'upstream-key');
+assert.equal(JSON.parse(loaded.vars.AIG_TIER1_NODES_01)[0].provider, 'mock');
+assert.equal(JSON.parse(loaded.secrets.AIG_TIER1_CREDENTIALS_01)['node-a'], 'upstream-key');
 
 assert.throws(
-  () => normalizeRuntimeConfig({ vars: { ...fixture().vars, GATEWAY_KEY_AIR: 'nope' }, secrets: fixture().secrets }),
+  () => normalizeRuntimeConfig({ vars: { ...fixture().vars, AIG_ACCESS_KEY_AIR: 'nope' }, secrets: fixture().secrets }),
   /credentials belong in secrets/,
 );
 assert.throws(
-  () => normalizeRuntimeConfig({ vars: fixture().vars, secrets: { GATEWAY_KEY_AIR: 'x' } }),
+  () => normalizeRuntimeConfig({ vars: fixture().vars, secrets: { AIG_ACCESS_KEY_AIR: 'x' } }),
   /TIER\[123\]_CREDENTIALS|TIER[123]_CREDENTIALS/,
 );
 assert.throws(
   () => validateGatewayRuntime(normalizeRuntimeConfig({
     vars: {
       ...fixture().vars,
-      MODELS_CONFIG: { 'code-pro': { policy: 'missing' } },
-      POLICIES_CONFIG: {},
+      AIG_MODELS_CONFIG: { 'code-pro': { policy: 'missing' } },
+      AIG_POLICIES_CONFIG: {},
     },
     secrets: fixture().secrets,
   })),
@@ -60,36 +60,36 @@ assert.throws(
 
 const wrangler = buildWranglerConfig(loaded.vars, 'd1-id', 'kv-id');
 assert.equal(wrangler.keep_vars, false);
-assert.equal(wrangler.vars.TIER1_NODES_01, loaded.vars.TIER1_NODES_01);
+assert.equal(wrangler.vars.AIG_TIER1_NODES_01, loaded.vars.AIG_TIER1_NODES_01);
 assert.equal(wrangler.d1_databases[0].database_id, 'd1-id');
-assert.deepEqual(wrangler.kv_namespaces, [{ binding: 'TIER1_AFFINITY', id: 'kv-id' }]);
+assert.deepEqual(wrangler.kv_namespaces, [{ binding: 'AIG_AFFINITY_KV', id: 'kv-id' }]);
 assert.ok(path.isAbsolute(wrangler.main));
 assert.ok(path.isAbsolute(wrangler.d1_databases[0].migrations_dir));
 
 assert.deepEqual(
   withStaleNodeSecretsRemoved(loaded.secrets, [
-    { name: 'TIER1_CREDENTIALS_01' },
-    { name: 'TIER1_CREDENTIALS_02' },
+    { name: 'AIG_TIER1_CREDENTIALS_01' },
+    { name: 'AIG_TIER1_CREDENTIALS_02' },
     { name: 'UNRELATED_SECRET' },
   ]),
-  { ...loaded.secrets, TIER1_CREDENTIALS_02: null },
+  { ...loaded.secrets, AIG_TIER1_CREDENTIALS_02: null },
 );
 
 function envFixture() {
   return {
     CLOUDFLARE_ACCOUNT_ID: 'acct',
     CLOUDFLARE_API_TOKEN: 'cf-token',
-    USAGE_D1_ID: 'd1-id',
-    AFFINITY_KV_ID: 'kv-id',
-    GATEWAY_PUBLIC_URL: 'https://gw.example.com',
-    RATE_LIMIT_COOLDOWN: '15000',
-    FIRST_EVENT_TIMEOUT: '15000',
-    MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'default' } }),
-    POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5 } }),
-    TIER1_NODES_01: JSON.stringify([currentNode()]),
-    GATEWAY_KEY_AIR: 'gw-key',
-    GATEWAY_MODELS_AIR: 'code-pro',
-    TIER1_CREDENTIALS_01: JSON.stringify({ 'node-a': 'upstream-key' }),
+    AIG_USAGE_D1_ID: 'd1-id',
+    AIG_AFFINITY_KV_ID: 'kv-id',
+    AIG_PUBLIC_URL: 'https://gw.example.com',
+    AIG_RATE_LIMIT_COOLDOWN_MS: '15000',
+    AIG_FIRST_EVENT_TIMEOUT_MS: '15000',
+    AIG_MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5 } }),
+    AIG_TIER1_NODES_01: JSON.stringify([currentNode()]),
+    AIG_ACCESS_KEY_AIR: 'gw-key',
+    AIG_ACCESS_MODELS_AIR: 'code-pro',
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'node-a': 'upstream-key' }),
   };
 }
 
@@ -101,7 +101,7 @@ function envFixture() {
 
 {
   const env = envFixture();
-  env.TIER1_NODES_01 = JSON.stringify([currentNode()]).replace(/}]$/, '}、]');
+  env.AIG_TIER1_NODES_01 = JSON.stringify([currentNode()]).replace(/}]$/, '}、]');
   const built = buildRuntimeFromEnv(env);
   assert.equal(validateGatewayRuntime(built.runtime).ready, true);
   assert.ok(preflight(env).warnings.some((w) => w.includes('full-width JSON punctuation')));
@@ -110,29 +110,29 @@ function envFixture() {
 {
   const built = buildRuntimeFromEnv(envFixture());
   assert.equal(validateGatewayRuntime(built.runtime).ready, true);
-  assert.equal(built.runtime.vars.RATE_LIMIT_COOLDOWN, '15000');
-  assert.equal(JSON.parse(built.runtime.secrets.TIER1_CREDENTIALS_01)['node-a'], 'upstream-key');
+  assert.equal(built.runtime.vars.AIG_RATE_LIMIT_COOLDOWN_MS, '15000');
+  assert.equal(JSON.parse(built.runtime.secrets.AIG_TIER1_CREDENTIALS_01)['node-a'], 'upstream-key');
 }
 
 {
   const env = envFixture();
   const vars = collectVarsFromEnv(env).vars;
   const secrets = collectSecretsFromEnv(env).secrets;
-  assert.ok('TIER1_NODES_01' in vars);
-  assert.ok(!('TIER1_NODES_01' in secrets));
-  assert.ok('TIER1_CREDENTIALS_01' in secrets);
-  assert.ok(!('TIER1_CREDENTIALS_01' in vars));
-  assert.ok('GATEWAY_MODELS_AIR' in vars);
-  assert.ok('GATEWAY_KEY_AIR' in secrets);
-  assert.ok(!('GATEWAY_KEY_AIR' in vars));
+  assert.ok('AIG_TIER1_NODES_01' in vars);
+  assert.ok(!('AIG_TIER1_NODES_01' in secrets));
+  assert.ok('AIG_TIER1_CREDENTIALS_01' in secrets);
+  assert.ok(!('AIG_TIER1_CREDENTIALS_01' in vars));
+  assert.ok('AIG_ACCESS_MODELS_AIR' in vars);
+  assert.ok('AIG_ACCESS_KEY_AIR' in secrets);
+  assert.ok(!('AIG_ACCESS_KEY_AIR' in vars));
 }
 
 {
   const env = envFixture();
-  env.TIER1_NODES_02 = '';
-  env.TIER1_CREDENTIALS_02 = '';
-  assert.ok(!('TIER1_NODES_02' in collectVarsFromEnv(env).vars));
-  assert.ok(!('TIER1_CREDENTIALS_02' in collectSecretsFromEnv(env).secrets));
+  env.AIG_TIER1_NODES_02 = '';
+  env.AIG_TIER1_CREDENTIALS_02 = '';
+  assert.ok(!('AIG_TIER1_NODES_02' in collectVarsFromEnv(env).vars));
+  assert.ok(!('AIG_TIER1_CREDENTIALS_02' in collectSecretsFromEnv(env).secrets));
 }
 
 {
@@ -144,32 +144,32 @@ function envFixture() {
 {
   const env = envFixture();
   delete env.CLOUDFLARE_ACCOUNT_ID;
-  delete env.GATEWAY_PUBLIC_URL;
-  delete env.TIER1_NODES_01;
-  delete env.TIER1_CREDENTIALS_01;
-  delete env.GATEWAY_KEY_AIR;
+  delete env.AIG_PUBLIC_URL;
+  delete env.AIG_TIER1_NODES_01;
+  delete env.AIG_TIER1_CREDENTIALS_01;
+  delete env.AIG_ACCESS_KEY_AIR;
   delete env.CLOUDFLARE_API_TOKEN;
   const result = preflight(env);
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes('CLOUDFLARE_ACCOUNT_ID')));
-  assert.ok(result.errors.some((e) => e.includes('GATEWAY_KEY_<GROUP>')));
+  assert.ok(result.errors.some((e) => e.includes('AIG_ACCESS_KEY_<GROUP>')));
   assert.ok(result.errors.some((e) => e.includes('No TIER')));
 }
 
 {
   const env = envFixture();
-  delete env.MODELS_CONFIG;
-  delete env.POLICIES_CONFIG;
+  delete env.AIG_MODELS_CONFIG;
+  delete env.AIG_POLICIES_CONFIG;
   const result = preflight(env);
   assert.equal(result.ok, true);
-  assert.ok(result.warnings.some((w) => w.includes('MODELS_CONFIG')));
-  assert.ok(result.warnings.some((w) => w.includes('POLICIES_CONFIG')));
+  assert.ok(result.warnings.some((w) => w.includes('AIG_MODELS_CONFIG')));
+  assert.ok(result.warnings.some((w) => w.includes('AIG_POLICIES_CONFIG')));
 }
 
 {
   const built = buildRuntimeFromEnv({
     ...envFixture(),
-    TIER1_CREDENTIALS_01: JSON.stringify({ 'other-node': 'key' }),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'other-node': 'key' }),
   });
   assert.throws(() => validateGatewayRuntime(built.runtime), /no credential|no matching node|invalid/i);
 }
@@ -188,14 +188,14 @@ function envFixture() {
 
 {
   const env = envFixture();
-  env.TIER1_NODES_10 = env.TIER1_NODES_01;
-  env.TIER1_NODES_11 = env.TIER1_NODES_01;
-  env.TIER1_CREDENTIALS_10 = env.TIER1_CREDENTIALS_01;
-  env.TIER1_CREDENTIALS_11 = env.TIER1_CREDENTIALS_01;
-  assert.ok('TIER1_NODES_10' in collectVarsFromEnv(env).vars);
-  assert.ok(!('TIER1_NODES_11' in collectVarsFromEnv(env).vars));
-  assert.ok('TIER1_CREDENTIALS_10' in collectSecretsFromEnv(env).secrets);
-  assert.ok(!('TIER1_CREDENTIALS_11' in collectSecretsFromEnv(env).secrets));
+  env.AIG_TIER1_NODES_10 = env.AIG_TIER1_NODES_01;
+  env.AIG_TIER1_NODES_11 = env.AIG_TIER1_NODES_01;
+  env.AIG_TIER1_CREDENTIALS_10 = env.AIG_TIER1_CREDENTIALS_01;
+  env.AIG_TIER1_CREDENTIALS_11 = env.AIG_TIER1_CREDENTIALS_01;
+  assert.ok('AIG_TIER1_NODES_10' in collectVarsFromEnv(env).vars);
+  assert.ok(!('AIG_TIER1_NODES_11' in collectVarsFromEnv(env).vars));
+  assert.ok('AIG_TIER1_CREDENTIALS_10' in collectSecretsFromEnv(env).secrets);
+  assert.ok(!('AIG_TIER1_CREDENTIALS_11' in collectSecretsFromEnv(env).secrets));
 }
 
 console.log('github deployment config tests passed.');
