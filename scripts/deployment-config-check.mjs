@@ -33,7 +33,7 @@ for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
   assert.match(source, /--secrets-file/);
   assert.match(source, /keep-vars/);
   assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /AIG_AFFINITY_KV/);
+  assert.match(source, /TIER1_AFFINITY/);
   assert.match(source, /cloudflare-wrangler\.mjs/);
   assert.match(source, /wrangler\.user\.jsonc/);
 }
@@ -41,7 +41,7 @@ for (const file of ['scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   const source = read(file);
   assert.match(source, /--secrets-file/);
   assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /AIG_AFFINITY_KV/);
+  assert.match(source, /TIER1_AFFINITY/);
   assert.match(source, /cloudflare-wrangler\.mjs/);
 }
 
@@ -70,7 +70,7 @@ assert.match(wranglerTool, /wrangler@4\.114\.0/, 'Wrangler pin has one tooling o
 for (const file of ['package.json', 'scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   assert.doesNotMatch(read(file), /wrangler@\d+\.\d+\.\d+/, `${file} must not duplicate the Wrangler pin`);
 }
-for (const token of ['migrations', 'apply', 'AIG_USAGE_D1', '--remote', '--dry-run', 'AIG_AFFINITY_KV']) {
+for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry-run', 'TIER1_AFFINITY']) {
   assert.ok(wranglerTool.includes(token), `cloudflare-wrangler.mjs must include ${token}`);
 }
 
