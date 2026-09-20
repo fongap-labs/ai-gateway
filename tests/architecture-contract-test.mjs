@@ -52,15 +52,15 @@ function makeEnv({ tier1, tier2, tier3, secrets, extraEnv } = {}) {
   const tier2Secrets = tierSecrets(tier2);
   const tier3Secrets = tierSecrets(tier3);
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'arch-contract-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
-    ...(Object.keys(tier1Secrets).length ? { TIER1_CREDENTIALS_01: JSON.stringify(tier1Secrets) } : {}),
-    ...(Object.keys(tier2Secrets).length ? { TIER2_CREDENTIALS_01: JSON.stringify(tier2Secrets) } : {}),
-    ...(Object.keys(tier3Secrets).length ? { TIER3_CREDENTIALS_01: JSON.stringify(tier3Secrets) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { AIG_TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(Object.keys(tier1Secrets).length ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(tier1Secrets) } : {}),
+    ...(Object.keys(tier2Secrets).length ? { AIG_TIER2_CREDENTIALS_01: JSON.stringify(tier2Secrets) } : {}),
+    ...(Object.keys(tier3Secrets).length ? { AIG_TIER3_CREDENTIALS_01: JSON.stringify(tier3Secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -101,7 +101,7 @@ await test('Contract 01: Native First — native runs before fallback', async ()
   routeHandlers['o1.example.com'] = () => jsonUpstream(okCompletion());
   const env = makeEnv({
     tier1: [anthropicNode('an'), openaiChatNode('o1')], secrets: { an: 'k', o1: 'k' },
-    extraEnv: { PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
+    extraEnv: { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
   });
   const res = await worker.fetch(messagesRequest({}), env, {});
   assert.equal(res.status, 200);
@@ -113,7 +113,7 @@ await test('Contract 02: Native Empty + Explicit Fallback -> 200 via OpenAI', as
   routeHandlers['o1.example.com'] = () => jsonUpstream(okCompletion());
   const env = makeEnv({
     tier1: [openaiChatNode('o1')], secrets: { o1: 'k' },
-    extraEnv: { PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
+    extraEnv: { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
   });
   const res = await worker.fetch(messagesRequest({}), env, {});
   assert.equal(res.status, 200);
@@ -130,10 +130,10 @@ await test('Contract 03: Default ON — Anthropic request with only OpenAI nodes
   assert.deepEqual(upstreamCalls.map((c) => c.host), ['o1.example.com']);
 });
 
-await test('Contract 03b: PROTOCOL_FALLBACKS=disable -> 404', async () => {
+await test('Contract 03b: AIG_PROTOCOL_FALLBACKS=disable -> 404', async () => {
   resetMock();
   routeHandlers['o1.example.com'] = () => jsonUpstream(okCompletion());
-  const env = makeEnv({ tier1: [openaiChatNode('o1')], secrets: { o1: 'k' }, extraEnv: { PROTOCOL_FALLBACKS: 'disable' } });
+  const env = makeEnv({ tier1: [openaiChatNode('o1')], secrets: { o1: 'k' }, extraEnv: { AIG_PROTOCOL_FALLBACKS: 'disable' } });
   const res = await worker.fetch(messagesRequest({}), env, {});
   assert.equal(res.status, 404);
   assert.equal(upstreamCalls.length, 0);
@@ -160,10 +160,10 @@ await test('Contract 05: Hedge twin never crosses protocol/surface', async () =>
     tier1: [anthropicNode('an-slow'), anthropicNode('an-fast'), openaiChatNode('o1')],
     secrets: { 'an-slow': 'k', 'an-fast': 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      HEDGE_DELAY_MS: '50',
-      POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5, hedge: { enabled: true, tiers: ['tier1'] } } }),
-      MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_HEDGE_DELAY_MS: '50',
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5, hedge: { enabled: true, tiers: ['tier1'] } } }),
+      AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
     },
   });
   const res = await worker.fetch(messagesRequest({ stream: true }), env, {});
@@ -194,7 +194,7 @@ await test('Contract 06: Stream commit -> no transparent failover', async () => 
   routeHandlers['o1.example.com'] = () => jsonUpstream(okCompletion());
   const env = makeEnv({
     tier1: [anthropicNode('an1'), openaiChatNode('o1')], secrets: { an1: 'k', o1: 'k' },
-    extraEnv: { PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
+    extraEnv: { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) },
   });
   await worker.fetch(messagesRequest({ stream: true }), env, {});
   const hosts = upstreamCalls.map((c) => c.host);
@@ -211,9 +211,9 @@ await test('Contract 07: Shared failover budget (attempts + fallback)', async ()
     tier1: [anthropicNode('a1'), anthropicNode('a2'), openaiChatNode('o1')],
     secrets: { a1: 'k', a2: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
-      POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3 } }),
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3 } }),
     },
   });
   const res = await worker.fetch(messagesRequest({}), env, {});
@@ -236,9 +236,9 @@ await test('Contract 08: Logical attempt != physical hedge dispatch count', asyn
     tier1: [anthropicNode('an-slow'), anthropicNode('an-twin')],
     secrets: { 'an-slow': 'k', 'an-twin': 'k' },
     extraEnv: {
-      HEDGE_DELAY_MS: '120', FAILOVER_BUDGET_MS: '30000', UPSTREAM_HEADER_TIMEOUT: '2000',
-      POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5, hedge: { enabled: true, tiers: ['tier1'] } } }),
-      MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
+      AIG_HEDGE_DELAY_MS: '120', AIG_FAILOVER_BUDGET_MS: '30000', AIG_UPSTREAM_HEADER_TIMEOUT_MS: '2000',
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 5, hedge: { enabled: true, tiers: ['tier1'] } } }),
+      AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }),
     },
   });
   const res = await worker.fetch(messagesRequest({}), env, {});
@@ -275,7 +275,7 @@ await test('Contract 10: Closed Catalog - wildcard node rejects unknown model', 
   routeHandlers['wc1.example.com'] = () => jsonUpstream(okCompletion());
   const env = makeEnv({
     tier1: [wildcardNode], secrets: { wc1: 'k' },
-    extraEnv: { MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }) },
+    extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' } }) },
   });
   assert.equal((await worker.fetch(chatRequest({}), env, {})).status, 200);
   assert.equal((await worker.fetch(chatRequest({ model: 'random-model-xxx' }), env, {})).status, 404);
@@ -295,7 +295,7 @@ await test('Contract 12: Model Missing Isolation (per node-model pair)', async (
   const env = makeEnv({
     tier1: [anthropicNode('an1', { models: { 'Code-Max': 'up-max', 'Code-Pro': 'up-pro' } })],
     secrets: { an1: 'k' },
-    extraEnv: { MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, 'Code-Pro': { policy: 'default' } }) },
+    extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, 'Code-Pro': { policy: 'default' } }) },
   });
   const res1 = await worker.fetch(messagesRequest({ model: 'Code-Max' }), env, {});
   assert.equal(res1.status, 200);
