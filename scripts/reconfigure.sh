@@ -53,7 +53,7 @@ AIG_AFFINITY_KV_ID=""
 if ! node -e '
 const fs = require("fs");
 const c = fs.existsSync("wrangler.user.jsonc") ? JSON.parse(fs.readFileSync("wrangler.user.jsonc", "utf8")) : {};
-process.exit((c.kv_namespaces || []).some((entry) => entry.binding === "AIG_AFFINITY_KV" && /^[a-fA-F0-9]{32}$/.test(entry.id || "")) ? 0 : 1);
+process.exit((c.kv_namespaces || []).some((entry) => entry.binding === "TIER1_AFFINITY" && /^[a-fA-F0-9]{32}$/.test(entry.id || "")) ? 0 : 1);
 '; then
   printf "Tier 1 affinity KV namespace ID (required): "
   read -r AIG_AFFINITY_KV_ID
@@ -108,12 +108,12 @@ for (const [name, value] of Object.entries(previousVars)) {
 for (const [name, value] of Object.entries(access)) {
   if (name.startsWith("AIG_ACCESS_MODELS_")) base.vars[name] = value;
 }
-if (!(base.kv_namespaces || []).some((entry) => entry.binding === "AIG_AFFINITY_KV")) {
+if (!(base.kv_namespaces || []).some((entry) => entry.binding === "TIER1_AFFINITY")) {
   if (!/^[a-fA-F0-9]{32}$/.test(process.env.AIG_AFFINITY_KV_ID || "")) {
     console.error("Tier 1 affinity KV namespace ID must be 32 hexadecimal characters");
     process.exit(1);
   }
-  base.kv_namespaces = [...(base.kv_namespaces || []), { binding: "AIG_AFFINITY_KV", id: process.env.AIG_AFFINITY_KV_ID }];
+  base.kv_namespaces = [...(base.kv_namespaces || []), { binding: "TIER1_AFFINITY", id: process.env.AIG_AFFINITY_KV_ID }];
 }
 fs.writeFileSync("wrangler.user.jsonc", JSON.stringify(base, null, 2) + "\n");
 ' "$TMP_PLAN" "$TMP_ACCESS"
