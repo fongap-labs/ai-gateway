@@ -157,7 +157,7 @@ await test('S2b explicit max_in_flight=4 remains an opt-in admission ceiling', a
   const env = makeEnv({
     tier1: [node('capped')],
     secrets: { capped: 'k' },
-    extraEnv: { POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }) },
+    extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }) },
   });
   const settled = [];
   const requests = Array.from({ length: 8 }, () => worker.fetch(chatRequest(), env, {}).then((response) => {
@@ -280,7 +280,7 @@ await test('S7 failover wall-clock budget prevents dispatch after the budget is 
   const env = makeEnv({
     tier1: [node('slow'), node('fast')],
     secrets: { slow: 's', fast: 'f' },
-    extraEnv: { FAILOVER_BUDGET_MS: '1200' },
+    extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 504);
