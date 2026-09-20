@@ -10,21 +10,21 @@ import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
-const NODE_VAR = /^TIER[123]_NODES_CONFIG_(0[1-9]|10)$/;
-const NODE_SECRET = /^TIER[123]_NODES_SECRETS_(0[1-9]|10)$/;
+const NODE_VAR = /^TIER[123]_NODES_(0[1-9]|10)$/;
+const NODE_SECRET = /^TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
 const GROUP_KEY_PATTERN = `GATEWAY_KEY_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_MODELS_PATTERN = `GATEWAY_MODELS_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
-const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|TIER[123]_NODES_SECRETS_(0[1-9]|10))$`);
+const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|TIER[123]_CREDENTIALS_(0[1-9]|10))$`);
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
-  '^(TIER[123]_NODES_CONFIG_(0[1-9]|10)|MODELS_CONFIG|POLICIES_CONFIG|' +
+  '^(TIER[123]_NODES_(0[1-9]|10)|MODELS_CONFIG|POLICIES_CONFIG|' +
   GROUP_MODELS_PATTERN + '|' + RUNTIME_VAR_NAMES.join('|') + ')$',
 );
 const EXTRA_VAR_ALLOW = new Set(['GITHUB_SHA']);
 const CREDENTIAL_NAMES = new Set([
-  'CLOUDFLARE_DEPLOY_TOKEN',
+  'CLOUDFLARE_API_TOKEN',
   ...KEY_GROUPS.map((group) => `GATEWAY_KEY_${group}`),
 ]);
 
@@ -87,7 +87,7 @@ export function normalizeRuntimeConfig(raw) {
     if (CREDENTIAL_NAMES.has(name) || NODE_SECRET.test(name)) {
       throw new Error(`vars.${name}: credentials belong in secrets, never vars`);
     }
-    const nodeVarMatch = /^TIER[123]_NODES_CONFIG_(\d{2})$/.exec(name);
+    const nodeVarMatch = /^TIER[123]_NODES_(\d{2})$/.exec(name);
     if (nodeVarMatch && Number(nodeVarMatch[1]) > 10) {
       throw new Error(`vars.${name}: shard index out of range (01..10); ignored`);
     }
@@ -98,7 +98,7 @@ export function normalizeRuntimeConfig(raw) {
   }
   for (const [name, rawValue] of Object.entries(raw.secrets)) {
     if (!SECRET_NAME.test(name)) {
-      throw new Error(`secrets.${name}: only GATEWAY_KEY_<GROUP> and TIER[123]_NODES_SECRETS_01..10 are supported`);
+      throw new Error(`secrets.${name}: only GATEWAY_KEY_<GROUP> and TIER[123]_CREDENTIALS_01..10 are supported`);
     }
     const value = encodeValue(rawValue, `secrets.${name}`);
     assertSize(name, value);
@@ -108,10 +108,10 @@ export function normalizeRuntimeConfig(raw) {
     throw new Error(`secrets must contain at least one GATEWAY_KEY_<GROUP> (${GROUP_LABEL})`);
   }
   if (!Object.keys(vars).some((name) => NODE_VAR.test(name))) {
-    throw new Error('vars must contain at least one TIER{1,2,3}_NODES_CONFIG_XX value');
+    throw new Error('vars must contain at least one TIER{1,2,3}_NODES_XX value');
   }
   if (!Object.keys(secrets).some((name) => NODE_SECRET.test(name))) {
-    throw new Error('secrets must contain at least one TIER[123]_NODES_SECRETS_XX value');
+    throw new Error('secrets must contain at least one TIER[123]_CREDENTIALS_XX value');
   }
   return { vars, secrets };
 }
@@ -149,7 +149,7 @@ export function buildRuntimeFromEnv(env) {
 }
 
 const REQUIRED_VARS = ['CLOUDFLARE_ACCOUNT_ID', 'GATEWAY_PUBLIC_URL'];
-const REQUIRED_SECRETS = ['CLOUDFLARE_DEPLOY_TOKEN'];
+const REQUIRED_SECRETS = ['CLOUDFLARE_API_TOKEN'];
 
 export function preflight(env) {
   const errors = [];
@@ -166,7 +166,7 @@ export function preflight(env) {
   const v = collectVarsFromEnv(env);
   const s = collectSecretsFromEnv(env);
   const tierShards = Object.keys(v.vars).filter((n) => NODE_VAR.test(n)).length;
-  const tier1Shards = Object.keys(v.vars).filter((n) => /^TIER1_NODES_CONFIG_(0[1-9]|10)$/.test(n)).length;
+  const tier1Shards = Object.keys(v.vars).filter((n) => /^TIER1_NODES_(0[1-9]|10)$/.test(n)).length;
   for (const [name, value] of Object.entries(v.vars)) {
     if (NODE_VAR.test(name) && normalizeNodeConfigJsonText(value) !== value) {
       warnings.push(`${name} contains full-width JSON punctuation; deployment will normalize it. Fix the GitHub Variable at source.`);
@@ -174,12 +174,12 @@ export function preflight(env) {
   }
   const totalManaged = Object.keys(v.vars).length + Object.keys(s.secrets).length;
   if (totalManaged > 80) warnings.push(`Worker variable + secret count is ${totalManaged} (threshold 80). Consolidate shards or reduce node count.`);
-  if (!tierShards) errors.push('No TIER{1,2,3}_NODES_CONFIG_XX GitHub Variable is configured.');
+  if (!tierShards) errors.push('No TIER{1,2,3}_NODES_XX GitHub Variable is configured.');
   if (tier1Shards && (!env.AFFINITY_KV_ID || String(env.AFFINITY_KV_ID).trim() === '')) {
     errors.push('AFFINITY_KV_ID is required when Tier 1 nodes are configured.');
   }
   if (!Object.keys(s.secrets).some((n) => NODE_SECRET.test(n))) {
-    errors.push('No TIER[123]_NODES_SECRETS_XX Secret is configured.');
+    errors.push('No TIER[123]_CREDENTIALS_XX Secret is configured.');
   }
   if (!v.vars.MODELS_CONFIG) warnings.push('MODELS_CONFIG is not set (optional; the registry applies conservative defaults).');
   if (!v.vars.POLICIES_CONFIG) warnings.push('POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
@@ -211,7 +211,7 @@ export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
   const out = { ...secrets };
   for (const entry of Array.isArray(existingSecrets) ? existingSecrets : []) {
     const name = typeof entry === 'string' ? entry : entry?.name;
-    if (typeof name === 'string' && /^TIER[123]_NODES_SECRETS_(0[1-9]|10)$/.test(name) && !(name in out)) out[name] = null;
+    if (typeof name === 'string' && /^TIER[123]_CREDENTIALS_(0[1-9]|10)$/.test(name) && !(name in out)) out[name] = null;
   }
   return out;
 }

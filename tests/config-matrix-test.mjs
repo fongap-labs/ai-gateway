@@ -25,7 +25,7 @@ function test(name, fn) {
   }
 }
 
-const access = { GATEWAY_ACCESS_KEY_AIR: 'k', GATEWAY_ACCESS_MODELS_AIR: '*' };
+const access = { GATEWAY_KEY_AIR: 'k', GATEWAY_MODELS_AIR: '*' };
 const env = (models) => ({ ...access, ...(models ? { MODELS_CONFIG: JSON.stringify(models) } : {}) });
 const runtimeNode = (id, models) => ({
   id, provider: 'mock', tier: 'tier-1', protocol: 'openai', surfaces: ['chat_completions'],
@@ -74,8 +74,8 @@ test('MODELS_CONFIG alone never widens public/requestable models', () => {
 test('same-tier credential may live in a different shard suffix', () => {
   const cfg = loadGatewayConfig({
     ...access,
-    TIER1_NODES_CONFIG_01: JSON.stringify([configNode('same-tier')]),
-    TIER1_NODES_SECRETS_07: JSON.stringify({ 'same-tier': 'secret' }),
+    TIER1_NODES_01: JSON.stringify([configNode('same-tier')]),
+    TIER1_CREDENTIALS_07: JSON.stringify({ 'same-tier': 'secret' }),
   });
   assert.equal(cfg.status, 'ready');
   assert.equal(cfg.nodes[0].credential, 'secret');
@@ -84,8 +84,8 @@ test('same-tier credential may live in a different shard suffix', () => {
 test('cross-tier credential binding is rejected', () => {
   const cfg = loadGatewayConfig({
     ...access,
-    TIER2_NODES_CONFIG_01: JSON.stringify([configNode('tier2-cross')]),
-    TIER1_NODES_SECRETS_01: JSON.stringify({ 'tier2-cross': 'secret' }),
+    TIER2_NODES_01: JSON.stringify([configNode('tier2-cross')]),
+    TIER1_CREDENTIALS_01: JSON.stringify({ 'tier2-cross': 'secret' }),
   });
   assert.equal(cfg.ready, false);
   assert.ok(cfg.diagnostics.some((d) => d.includes('tier2-cross') && d.includes('TIER2') && d.includes('TIER1')));

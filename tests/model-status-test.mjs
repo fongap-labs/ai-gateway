@@ -53,7 +53,7 @@ async function testAsync(name, fn) {
   }
 }
 
-const ENV = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
+const ENV = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
 const node = (id, models) => ({ id, provider: 'mock', tier: 'tier-1', protocol: 'openai', surfaces: ['chat_completions'], base_url: `https://${id}.example.com/v1`, models, limits: { concurrency: 1 } });
 const now = () => 1_700_000_000_000;
 
@@ -233,7 +233,7 @@ test('Tier 1 half-open state -> no_record without evidence, available with recen
 // --- 15. queryRecentModelEvidence: miss / hit / fail-open --------------------
 
 await testAsync('queryRecentModelEvidence: no binding -> empty Set', async () => {
-  const out = await queryRecentModelEvidence({ GATEWAY_ACCESS_KEY: 'k' }, MODEL_STATUS_RECENT_WINDOW_MS, now());
+  const out = await queryRecentModelEvidence({ GATEWAY_KEY_AIR: 'k' }, MODEL_STATUS_RECENT_WINDOW_MS, now());
   assert.ok(out instanceof Set);
   assert.equal(out.size, 0);
 });
@@ -380,7 +380,7 @@ test('canonical historical evidence matches official-cased model', () => {
 
 await testAsync('dashboard path issues queryRecentModelEvidence at most once per 45s cache window', async () => {
   const d1 = createMockD1();
-  const env = { GATEWAY_ACCESS_KEY: 'k', TOKEN_STATS_DB: d1, MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
+  const env = { GATEWAY_KEY_AIR: 'k', TOKEN_STATS_DB: d1, MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
   const { dashboardResponse, __resetDashboardCacheForTests } = await import('../src/dashboard/pages.ts');
   __resetDashboardCacheForTests();
   const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;
@@ -407,7 +407,7 @@ await testAsync('dashboard path issues queryRecentModelEvidence at most once per
 // --- 21. Config-driven model order and grouping ------------------------------
 
 test('config-driven model order: display_order controls sort order', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     alpha: { policy: 'default', display_order: 30, group: 'general' },
     beta: { policy: 'default', display_order: 10, group: 'general' },
     gamma: { policy: 'default', display_order: 20, group: 'general' },
@@ -418,7 +418,7 @@ test('config-driven model order: display_order controls sort order', () => {
 });
 
 test('config-driven grouping: group field controls which block a model appears in', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     air: { policy: 'default', display_order: 10, group: 'general' },
     pro: { policy: 'default', display_order: 20, group: 'general' },
     codeair: { policy: 'default', display_order: 10, group: 'coding' },
@@ -433,7 +433,7 @@ test('config-driven grouping: group field controls which block a model appears i
 });
 
 test('display_order missing uses default 100', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     zebra: { policy: 'default' },
     alpha: { policy: 'default', display_order: 10 },
   }) };
@@ -443,7 +443,7 @@ test('display_order missing uses default 100', () => {
 });
 
 test('group missing defaults to general', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     solo: { policy: 'default', display_order: 5 },
   }) };
   const nodes = [node('n1', { solo: 'up' })];
@@ -461,7 +461,7 @@ test('node-mapped model without MODELS_CONFIG gets default order=100 and group=g
 // --- 22. v1.2.7 Model Governance: ui_visible and 10-model catalog ---------
 
 test('ui_visible=false hides model from public status', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     Air: { policy: 'default', group: 'general', ui_visible: true },
     Omni: { policy: 'default', group: 'omni', ui_visible: false },
   }) };
@@ -471,7 +471,7 @@ test('ui_visible=false hides model from public status', () => {
 });
 
 test('ui_visible defaults to true when not specified', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     Air: { policy: 'default', group: 'general' },
   }) };
   const nodes = [node('n1', { Air: 'up' })];
@@ -481,7 +481,7 @@ test('ui_visible defaults to true when not specified', () => {
 });
 
 test('Omni and OCR excluded from public status with ui_visible=false', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     Air: { policy: 'default', group: 'general', ui_visible: true, display_order: 10 },
     Pro: { policy: 'default', group: 'general', ui_visible: true, display_order: 20 },
     Max: { policy: 'default', group: 'general', ui_visible: true, display_order: 30 },
@@ -510,7 +510,7 @@ test('Omni and OCR excluded from public status with ui_visible=false', () => {
 });
 
 test('group values: general, code, omni, ocr from config', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     Air: { policy: 'default', group: 'general', ui_visible: true },
     'Code-Air': { policy: 'default', group: 'code', ui_visible: true },
     Omni: { policy: 'default', group: 'omni', ui_visible: false },
@@ -540,7 +540,7 @@ test('deriveGroup fallback: Code- prefix -> code, Omni -> omni, OCR -> ocr', () 
 });
 
 test('ui_visible=false with visibility=public still hidden from public status', () => {
-  const env = { GATEWAY_ACCESS_KEY: 'k', MODELS_CONFIG: JSON.stringify({
+  const env = { GATEWAY_KEY_AIR: 'k', MODELS_CONFIG: JSON.stringify({
     Omni: { policy: 'default', visibility: 'public', ui_visible: false, group: 'omni' },
   }) };
   const nodes = [node('n1', { Omni: 'up' })];

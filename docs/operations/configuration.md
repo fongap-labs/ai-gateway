@@ -6,8 +6,8 @@ Production configuration is delivered from GitHub Actions into Cloudflare Worker
 
 | Source | Purpose |
 | --- | --- |
-| `TIER{1,2,3}_NODES_CONFIG_01..10` | Non-secret account/node definitions |
-| `TIER{1,2,3}_NODES_SECRETS_01..10` | Tier-scoped credentials keyed by node id |
+| `TIER{1,2,3}_NODES_01..10` | Non-secret account/node definitions |
+| `TIER{1,2,3}_CREDENTIALS_01..10` | Tier-scoped credentials keyed by node id |
 | `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
 | `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
 | `MODELS_CONFIG` | Optional logical-model metadata/capabilities |
@@ -123,18 +123,18 @@ Tier 1 → Tier 2 → Tier 3
 
 Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 
-- `HEADER_TIMEOUT_MS`
-- `EVENT_TIMEOUT_MS`
-- `STREAM_IDLE_MS`
-- `RATE_COOLDOWN_MS`
-- `AUTH_COOLDOWN_MS`
+- `UPSTREAM_HEADER_TIMEOUT`
+- `FIRST_EVENT_TIMEOUT`
+- `STREAM_IDLE_TIMEOUT`
+- `RATE_LIMIT_COOLDOWN`
+- `AUTH_FAILURE_COOLDOWN`
 - `MAX_BODY_BYTES`
 - `FAILOVER_BUDGET_MS`
 - `HEDGE_DELAY_MS`
 - `REQUEST_HEDGE_MAX`
 - `GATEWAY_KEY_RPM`
 
-Other current variables include `ALLOWED_ORIGIN`, `STREAM_INCLUDE_USAGE`, `INCLUDE_OFF_PROVIDERS`, `ANTHROPIC_COUNT_MODE`, `LOG_LEVEL`, `PROTOCOL_FALLBACKS`, `SHOULD_EXPOSE_UPSTREAM`, `HAS_STREAM_GUARD`, `CAN_USE_HTTP`, and `DASHBOARD_MODELS`.
+Other current variables include `ALLOWED_ORIGIN`, `USAGE_INCLUDE_MODE`, `USAGE_EXCLUDE_PROVIDERS`, `ANTHROPIC_COUNT_MODE`, `LOG_LEVEL`, `PROTOCOL_FALLBACKS`, `SHOULD_EXPOSE_UPSTREAM`, `HAS_STREAM_GUARD`, `CAN_USE_HTTP`, and `DASHBOARD_MODELS`.
 
 ## Dashboard model display
 

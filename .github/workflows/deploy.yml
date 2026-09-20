@@ -53,7 +53,7 @@ jobs:
     with:
       target_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
       ci_workflow: ci.yml
-      should_match_default: true
+      require_default_head: true
 
   manual-validate:
     needs:
@@ -102,19 +102,19 @@ jobs:
       GATEWAY_PUBLIC_URL: ${{ vars.GATEWAY_PUBLIC_URL }}
       MODELS_CONFIG: ${{ vars.MODELS_CONFIG }}
       POLICIES_CONFIG: ${{ vars.POLICIES_CONFIG }}
-      RATE_COOLDOWN_MS: ${{ vars.RATE_COOLDOWN_MS }}
-      EVENT_TIMEOUT_MS: ${{ vars.EVENT_TIMEOUT_MS }}
-      STREAM_IDLE_MS: ${{ vars.STREAM_IDLE_MS }}
-      AUTH_COOLDOWN_MS: ${{ vars.AUTH_COOLDOWN_MS }}
+      RATE_LIMIT_COOLDOWN: ${{ vars.RATE_LIMIT_COOLDOWN }}
+      FIRST_EVENT_TIMEOUT: ${{ vars.FIRST_EVENT_TIMEOUT }}
+      STREAM_IDLE_TIMEOUT: ${{ vars.STREAM_IDLE_TIMEOUT }}
+      AUTH_FAILURE_COOLDOWN: ${{ vars.AUTH_FAILURE_COOLDOWN }}
       MAX_BODY_BYTES: ${{ vars.MAX_BODY_BYTES }}
       FAILOVER_BUDGET_MS: ${{ vars.FAILOVER_BUDGET_MS }}
-      HEADER_TIMEOUT_MS: ${{ vars.HEADER_TIMEOUT_MS }}
+      UPSTREAM_HEADER_TIMEOUT: ${{ vars.UPSTREAM_HEADER_TIMEOUT }}
       HEDGE_DELAY_MS: ${{ vars.HEDGE_DELAY_MS }}
       REQUEST_HEDGE_MAX: ${{ vars.REQUEST_HEDGE_MAX }}
       GATEWAY_KEY_RPM: ${{ vars.GATEWAY_KEY_RPM }}
       ALLOWED_ORIGIN: ${{ vars.ALLOWED_ORIGIN }}
-      STREAM_INCLUDE_USAGE: ${{ vars.STREAM_INCLUDE_USAGE }}
-      INCLUDE_OFF_PROVIDERS: ${{ vars.INCLUDE_OFF_PROVIDERS }}
+      USAGE_INCLUDE_MODE: ${{ vars.USAGE_INCLUDE_MODE }}
+      USAGE_EXCLUDE_PROVIDERS: ${{ vars.USAGE_EXCLUDE_PROVIDERS }}
       SHOULD_EXPOSE_UPSTREAM: ${{ vars.SHOULD_EXPOSE_UPSTREAM }}
       LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       HAS_STREAM_GUARD: ${{ vars.HAS_STREAM_GUARD }}
@@ -152,7 +152,7 @@ jobs:
       TIER3_NODES_08: ${{ vars.TIER3_NODES_08 }}
       TIER3_NODES_09: ${{ vars.TIER3_NODES_09 }}
       TIER3_NODES_10: ${{ vars.TIER3_NODES_10 }}
-      CLOUDFLARE_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       GATEWAY_KEY_AIR: ${{ secrets.GATEWAY_KEY_AIR }}
       GATEWAY_MODELS_AIR: ${{ vars.GATEWAY_MODELS_AIR }}
       GATEWAY_KEY_PRO: ${{ secrets.GATEWAY_KEY_PRO }}
@@ -163,36 +163,36 @@ jobs:
       GATEWAY_MODELS_ULTRA: ${{ vars.GATEWAY_MODELS_ULTRA }}
       GATEWAY_KEY_AGENT: ${{ secrets.GATEWAY_KEY_AGENT }}
       GATEWAY_MODELS_AGENT: ${{ vars.GATEWAY_MODELS_AGENT }}
-      TIER1_KEYS_01: ${{ secrets.TIER1_KEYS_01 }}
-      TIER1_KEYS_02: ${{ secrets.TIER1_KEYS_02 }}
-      TIER1_KEYS_03: ${{ secrets.TIER1_KEYS_03 }}
-      TIER1_KEYS_04: ${{ secrets.TIER1_KEYS_04 }}
-      TIER1_KEYS_05: ${{ secrets.TIER1_KEYS_05 }}
-      TIER1_KEYS_06: ${{ secrets.TIER1_KEYS_06 }}
-      TIER1_KEYS_07: ${{ secrets.TIER1_KEYS_07 }}
-      TIER1_KEYS_08: ${{ secrets.TIER1_KEYS_08 }}
-      TIER1_KEYS_09: ${{ secrets.TIER1_KEYS_09 }}
-      TIER1_KEYS_10: ${{ secrets.TIER1_KEYS_10 }}
-      TIER2_KEYS_01: ${{ secrets.TIER2_KEYS_01 }}
-      TIER2_KEYS_02: ${{ secrets.TIER2_KEYS_02 }}
-      TIER2_KEYS_03: ${{ secrets.TIER2_KEYS_03 }}
-      TIER2_KEYS_04: ${{ secrets.TIER2_KEYS_04 }}
-      TIER2_KEYS_05: ${{ secrets.TIER2_KEYS_05 }}
-      TIER2_KEYS_06: ${{ secrets.TIER2_KEYS_06 }}
-      TIER2_KEYS_07: ${{ secrets.TIER2_KEYS_07 }}
-      TIER2_KEYS_08: ${{ secrets.TIER2_KEYS_08 }}
-      TIER2_KEYS_09: ${{ secrets.TIER2_KEYS_09 }}
-      TIER2_KEYS_10: ${{ secrets.TIER2_KEYS_10 }}
-      TIER3_KEYS_01: ${{ secrets.TIER3_KEYS_01 }}
-      TIER3_KEYS_02: ${{ secrets.TIER3_KEYS_02 }}
-      TIER3_KEYS_03: ${{ secrets.TIER3_KEYS_03 }}
-      TIER3_KEYS_04: ${{ secrets.TIER3_KEYS_04 }}
-      TIER3_KEYS_05: ${{ secrets.TIER3_KEYS_05 }}
-      TIER3_KEYS_06: ${{ secrets.TIER3_KEYS_06 }}
-      TIER3_KEYS_07: ${{ secrets.TIER3_KEYS_07 }}
-      TIER3_KEYS_08: ${{ secrets.TIER3_KEYS_08 }}
-      TIER3_KEYS_09: ${{ secrets.TIER3_KEYS_09 }}
-      TIER3_KEYS_10: ${{ secrets.TIER3_KEYS_10 }}
+      TIER1_CREDENTIALS_01: ${{ secrets.TIER1_CREDENTIALS_01 }}
+      TIER1_CREDENTIALS_02: ${{ secrets.TIER1_CREDENTIALS_02 }}
+      TIER1_CREDENTIALS_03: ${{ secrets.TIER1_CREDENTIALS_03 }}
+      TIER1_CREDENTIALS_04: ${{ secrets.TIER1_CREDENTIALS_04 }}
+      TIER1_CREDENTIALS_05: ${{ secrets.TIER1_CREDENTIALS_05 }}
+      TIER1_CREDENTIALS_06: ${{ secrets.TIER1_CREDENTIALS_06 }}
+      TIER1_CREDENTIALS_07: ${{ secrets.TIER1_CREDENTIALS_07 }}
+      TIER1_CREDENTIALS_08: ${{ secrets.TIER1_CREDENTIALS_08 }}
+      TIER1_CREDENTIALS_09: ${{ secrets.TIER1_CREDENTIALS_09 }}
+      TIER1_CREDENTIALS_10: ${{ secrets.TIER1_CREDENTIALS_10 }}
+      TIER2_CREDENTIALS_01: ${{ secrets.TIER2_CREDENTIALS_01 }}
+      TIER2_CREDENTIALS_02: ${{ secrets.TIER2_CREDENTIALS_02 }}
+      TIER2_CREDENTIALS_03: ${{ secrets.TIER2_CREDENTIALS_03 }}
+      TIER2_CREDENTIALS_04: ${{ secrets.TIER2_CREDENTIALS_04 }}
+      TIER2_CREDENTIALS_05: ${{ secrets.TIER2_CREDENTIALS_05 }}
+      TIER2_CREDENTIALS_06: ${{ secrets.TIER2_CREDENTIALS_06 }}
+      TIER2_CREDENTIALS_07: ${{ secrets.TIER2_CREDENTIALS_07 }}
+      TIER2_CREDENTIALS_08: ${{ secrets.TIER2_CREDENTIALS_08 }}
+      TIER2_CREDENTIALS_09: ${{ secrets.TIER2_CREDENTIALS_09 }}
+      TIER2_CREDENTIALS_10: ${{ secrets.TIER2_CREDENTIALS_10 }}
+      TIER3_CREDENTIALS_01: ${{ secrets.TIER3_CREDENTIALS_01 }}
+      TIER3_CREDENTIALS_02: ${{ secrets.TIER3_CREDENTIALS_02 }}
+      TIER3_CREDENTIALS_03: ${{ secrets.TIER3_CREDENTIALS_03 }}
+      TIER3_CREDENTIALS_04: ${{ secrets.TIER3_CREDENTIALS_04 }}
+      TIER3_CREDENTIALS_05: ${{ secrets.TIER3_CREDENTIALS_05 }}
+      TIER3_CREDENTIALS_06: ${{ secrets.TIER3_CREDENTIALS_06 }}
+      TIER3_CREDENTIALS_07: ${{ secrets.TIER3_CREDENTIALS_07 }}
+      TIER3_CREDENTIALS_08: ${{ secrets.TIER3_CREDENTIALS_08 }}
+      TIER3_CREDENTIALS_09: ${{ secrets.TIER3_CREDENTIALS_09 }}
+      TIER3_CREDENTIALS_10: ${{ secrets.TIER3_CREDENTIALS_10 }}
     steps:
       - name: Checkout target commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -222,7 +222,7 @@ jobs:
       - name: Apply D1 migrations
         if: env.USAGE_D1_ID != ''
         env:
-          CLOUDFLARE_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           USAGE_D1_ID: ${{ vars.USAGE_D1_ID }}
         run: npx --yes wrangler@4.114.0 d1 migrations apply ai-gateway-stats --remote -c "$RUNNER_TEMP/wrangler.github.json"
@@ -230,7 +230,7 @@ jobs:
       - name: Deploy Worker (atomic code+secrets)
         id: deploy
         env:
-          CLOUDFLARE_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4.114.0 deploy --secrets-file "$RUNNER_TEMP/gateway-secrets.json" -c "$RUNNER_TEMP/wrangler.github.json"
 
@@ -253,7 +253,7 @@ jobs:
         id: rollback
         if: failure() && steps.deploy.outcome == 'success'
         env:
-          CLOUDFLARE_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           echo "::notice::Rolling back Worker code for deployed SHA: ${DEPLOYED_SHA}"

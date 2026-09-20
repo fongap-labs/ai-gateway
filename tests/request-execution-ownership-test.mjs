@@ -38,8 +38,8 @@ function configNode(id, tier, models, priority = 10) {
 
 function envFor(nodes, extra = {}) {
   const env = {
-    GATEWAY_ACCESS_KEY_ULTRA: ACCESS_KEY,
-    GATEWAY_ACCESS_MODELS_ULTRA: '*',
+    GATEWAY_KEY_ULTRA: ACCESS_KEY,
+    GATEWAY_MODELS_ULTRA: '*',
     PROTOCOL_FALLBACKS: 'disable',
     TIER1_SCHEDULER_SEED: 'request-execution-ownership',
     ...extra,
@@ -47,8 +47,8 @@ function envFor(nodes, extra = {}) {
   for (const tier of [1, 2, 3]) {
     const tierNodes = nodes.filter((node) => node.__tier === tier);
     if (!tierNodes.length) continue;
-    env[`TIER${tier}_NODES_CONFIG_01`] = JSON.stringify(tierNodes.map(({ __tier, ...node }) => node));
-    env[`TIER${tier}_NODES_SECRETS_01`] = JSON.stringify(
+    env[`TIER${tier}_NODES_01`] = JSON.stringify(tierNodes.map(({ __tier, ...node }) => node));
+    env[`TIER${tier}_CREDENTIALS_01`] = JSON.stringify(
       Object.fromEntries(tierNodes.map((node) => [node.id, `secret-${node.id}`])),
     );
   }

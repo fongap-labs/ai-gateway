@@ -73,10 +73,10 @@ Core GitHub Variables include:
 
 - `IS_DEPLOY_ENABLED=true` to enable production deployment
 - `DEPLOY_REPOSITORY` set to the repository allowed to deploy
-- `ACTION_WORKER_REPOSITORY` for centralized PR governance dispatch
+- PR governance targets `${GITHUB_REPOSITORY_OWNER}/action-worker`; no repository variable is required
 - `CLOUDFLARE_ACCOUNT_ID`
 - `GATEWAY_PUBLIC_URL`
-- at least one `TIER{1,2,3}_NODES_CONFIG_XX` shard
+- at least one `TIER{1,2,3}_NODES_XX` shard
 - `AFFINITY_KV_ID` when Tier 1 affinity is used
 - optional `USAGE_D1_ID`
 - corresponding `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
@@ -84,9 +84,9 @@ Core GitHub Variables include:
 
 Core GitHub Secrets include:
 
-- `CLOUDFLARE_DEPLOY_TOKEN`
+- `CLOUDFLARE_API_TOKEN`
 - at least one `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
-- tier-scoped `TIER{1,2,3}_NODES_SECRETS_01..10` containing `{ "node-id": "credential" }`
+- tier-scoped `TIER{1,2,3}_CREDENTIALS_01..10` containing `{ "node-id": "credential" }`
 
 The deployment preflight fails closed on missing required production inputs.
 
@@ -96,7 +96,7 @@ Config and Secret shards are independent partitions. Runtime binding is by **Tie
 
 To add or rotate an upstream key:
 
-1. keep the node in the appropriate `TIER*_NODES_CONFIG_XX` Variable;
+1. keep the node in the appropriate `TIER*_NODES_XX` Variable;
 2. add/update its credential under the same node id in any Secret shard for the same tier;
 3. let the next production deployment rebuild runtime configuration.
 

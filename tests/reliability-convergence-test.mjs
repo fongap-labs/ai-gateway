@@ -48,9 +48,9 @@ function node(id, model, upstreamModel = `up-${model.toLowerCase()}`) {
     return chatCompletion(body.model, 'should-not-be-called');
   };
   const env = {
-    GATEWAY_ACCESS_KEY_AIR: key, GATEWAY_ACCESS_MODELS_AIR: 'Air,SenseNova', PROTOCOL_FALLBACKS: 'disable',
-    TIER1_NODES_CONFIG_01: JSON.stringify([node('air-01', 'Air', 'up-air'), node('pro-01', 'Pro', 'up-pro'), node('max-01', 'Max', 'up-max')]),
-    TIER1_NODES_SECRETS_01: JSON.stringify({ 'air-01': 'a', 'pro-01': 'p', 'max-01': 'm' }),
+    GATEWAY_KEY_AIR: key, GATEWAY_MODELS_AIR: 'Air,SenseNova', PROTOCOL_FALLBACKS: 'disable',
+    TIER1_NODES_01: JSON.stringify([node('air-01', 'Air', 'up-air'), node('pro-01', 'Pro', 'up-pro'), node('max-01', 'Max', 'up-max')]),
+    TIER1_CREDENTIALS_01: JSON.stringify({ 'air-01': 'a', 'pro-01': 'p', 'max-01': 'm' }),
   };
   const response = await worker.fetch(request('Air', key), env, {});
   assert.notEqual(response.status, 200);
@@ -68,9 +68,9 @@ function node(id, model, upstreamModel = `up-${model.toLowerCase()}`) {
     return chatCompletion(body.model, 'fallback-ok');
   };
   const env = {
-    GATEWAY_ACCESS_KEY_MAX: key, GATEWAY_ACCESS_MODELS_MAX: 'Max,Pro,Ultra', PROTOCOL_FALLBACKS: 'disable',
-    TIER1_NODES_CONFIG_01: JSON.stringify([node('max-01', 'Max', 'up-max'), node('pro-01', 'Pro', 'up-pro')]),
-    TIER1_NODES_SECRETS_01: JSON.stringify({ 'max-01': 'm', 'pro-01': 'p' }),
+    GATEWAY_KEY_MAX: key, GATEWAY_MODELS_MAX: 'Max,Pro,Ultra', PROTOCOL_FALLBACKS: 'disable',
+    TIER1_NODES_01: JSON.stringify([node('max-01', 'Max', 'up-max'), node('pro-01', 'Pro', 'up-pro')]),
+    TIER1_CREDENTIALS_01: JSON.stringify({ 'max-01': 'm', 'pro-01': 'p' }),
   };
   const response = await worker.fetch(request('Max', key), env, {});
   assert.equal(response.status, 200);

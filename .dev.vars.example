@@ -41,8 +41,8 @@ TIER1_NODES_01='[
 
 # ============ Credentials live ONLY in tier-scoped secrets ============
 # Runtime binds by Tier + node id. Config/Secret shard numbers are independent.
-# TIER1_KEYS_01='{"nvidia-01":"nvapi-xxx","nvidia-02":"nvapi-yyy","glm-01":"zzz.id"}'
-# More shards: TIER1_KEYS_02 ... TIER1_KEYS_10
+# TIER1_CREDENTIALS_01='{"nvidia-01":"nvapi-xxx","nvidia-02":"nvapi-yyy","glm-01":"zzz.id"}'
+# More shards: TIER1_CREDENTIALS_02 ... TIER1_CREDENTIALS_10
 # Tier 2 credentials remain unset until a subscription-entitlement adapter exists.
 # Tier 3 credentials are configured only together with intentional paid-API nodes.
 
@@ -57,11 +57,11 @@ TIER1_NODES_01='[
 # ============ Runtime knobs (all optional) ============
 # Defaults live in src/config/runtime-vars.ts. Uncomment only intentional overrides.
 # MAX_BODY_BYTES="20971520"              # default: 20 MB
-# HEADER_TIMEOUT_MS="15000"     # default: 15 s
-# EVENT_TIMEOUT_MS="30000"         # default: 30 s
-# STREAM_IDLE_MS="120000"        # default: 120 s
-# RATE_COOLDOWN_MS="30000"         # default: 30 s
-# AUTH_COOLDOWN_MS="3600000"        # default: 1 h
+# UPSTREAM_HEADER_TIMEOUT="15000"     # default: 15 s
+# FIRST_EVENT_TIMEOUT="30000"         # default: 30 s
+# STREAM_IDLE_TIMEOUT="120000"        # default: 120 s
+# RATE_LIMIT_COOLDOWN="30000"         # default: 30 s
+# AUTH_FAILURE_COOLDOWN="3600000"        # default: 1 h
 # FAILOVER_BUDGET_MS="60000"             # default: 60 s
 # HEDGE_DELAY_MS="3000"                  # default: 3 s
 # REQUEST_HEDGE_MAX="1"             # default: 1
@@ -84,8 +84,8 @@ TIER1_NODES_01='[
 # Ask OpenAI-compatible streaming upstreams to report usage in the final chunk.
 # "auto" (default) follows provider quirks; "on" forces it; "off" disables it.
 # Missing provider usage is recorded as missing and is never estimated.
-# STREAM_INCLUDE_USAGE="auto"
-# INCLUDE_OFF_PROVIDERS="my-llm-provider"
+# USAGE_INCLUDE_MODE="auto"
+# USAGE_EXCLUDE_PROVIDERS="my-llm-provider"
 
 # CORS is disabled by default. Set an explicit origin to enable browser access:
 # ALLOWED_ORIGIN="https://your-app.example.com"

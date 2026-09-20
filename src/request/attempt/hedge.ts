@@ -34,7 +34,7 @@ const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeo
 // Hedge vs. logical attempt: the twin is an EXTRA executioner of the SAME
 // logical attempt, not an attempt of its own. It charges neither the
 // max_attempts budget nor the tier cap; it is bounded instead by
-// MAX_HEDGES_PER_REQUEST (default 1) and by the hard dispatch ceiling
+// REQUEST_HEDGE_MAX (default 1) and by the hard dispatch ceiling
 // maxDispatches = maxAttempts + maxHedgesPerRequest. Both executioners share
 // the logical attempt's wall-clock slice: the twin INHERITS the primary's
 // absolute attempt deadline instead of being handed a fresh one. See The Tail
