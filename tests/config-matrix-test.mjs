@@ -25,8 +25,8 @@ function test(name, fn) {
   }
 }
 
-const access = { GATEWAY_KEY_AIR: 'k', GATEWAY_MODELS_AIR: '*' };
-const env = (models) => ({ ...access, ...(models ? { MODELS_CONFIG: JSON.stringify(models) } : {}) });
+const access = { AIG_ACCESS_KEY_AIR: 'k', AIG_ACCESS_MODELS_AIR: '*' };
+const env = (models) => ({ ...access, ...(models ? { AIG_MODELS_CONFIG: JSON.stringify(models) } : {}) });
 const runtimeNode = (id, models) => ({
   id, provider: 'mock', tier: 'tier-1', protocol: 'openai', surfaces: ['chat_completions'],
   base_url: `https://${id}.example.com/v1`, models,
@@ -44,7 +44,7 @@ const now = () => 1_700_000_000_000;
 const req = { model: 'Code-Max', protocol: 'openai', surface: 'chat_completions' };
 const ids = (result) => result.models.map((m) => m.id);
 
-test('node-mapped models are public without MODELS_CONFIG', () => {
+test('node-mapped models are public without AIG_MODELS_CONFIG', () => {
   const nodes = [runtimeNode('a', { 'public-air': 'up-air', 'public-max': 'up-max' })];
   recordTier1Ttft('a', 'public-air', 100, now() - 1000);
   const result = getPublicModelStatus(nodes, env(null), new Set(), now());
@@ -65,7 +65,7 @@ test('visibility internal hides a mapped model but does not make it unrequestabl
   assert.equal(nodes.some((n) => supportsRequest(n, { model: 'hidden', protocol: 'openai', surface: 'chat_completions' })), true);
 });
 
-test('MODELS_CONFIG alone never widens public/requestable models', () => {
+test('AIG_MODELS_CONFIG alone never widens public/requestable models', () => {
   const result = getPublicModelStatus([], env({ orphan: { policy: 'fast' } }), new Set(), now());
   assert.ok(!ids(result).includes('orphan'));
   assert.equal([].some((n) => supportsRequest(n, { model: 'orphan', protocol: 'openai', surface: 'chat_completions' })), false);
@@ -74,8 +74,8 @@ test('MODELS_CONFIG alone never widens public/requestable models', () => {
 test('same-tier credential may live in a different shard suffix', () => {
   const cfg = loadGatewayConfig({
     ...access,
-    TIER1_NODES_01: JSON.stringify([configNode('same-tier')]),
-    TIER1_CREDENTIALS_07: JSON.stringify({ 'same-tier': 'secret' }),
+    AIG_TIER1_NODES_01: JSON.stringify([configNode('same-tier')]),
+    AIG_TIER1_CREDENTIALS_07: JSON.stringify({ 'same-tier': 'secret' }),
   });
   assert.equal(cfg.status, 'ready');
   assert.equal(cfg.nodes[0].credential, 'secret');
@@ -84,8 +84,8 @@ test('same-tier credential may live in a different shard suffix', () => {
 test('cross-tier credential binding is rejected', () => {
   const cfg = loadGatewayConfig({
     ...access,
-    TIER2_NODES_01: JSON.stringify([configNode('tier2-cross')]),
-    TIER1_CREDENTIALS_01: JSON.stringify({ 'tier2-cross': 'secret' }),
+    AIG_TIER2_NODES_01: JSON.stringify([configNode('tier2-cross')]),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'tier2-cross': 'secret' }),
   });
   assert.equal(cfg.ready, false);
   assert.ok(cfg.diagnostics.some((d) => d.includes('tier2-cross') && d.includes('TIER2') && d.includes('TIER1')));
@@ -125,12 +125,12 @@ test('explicit zero disables a tier', () => {
 });
 
 test('tier_attempts total above max_attempts is rejected', () => {
-  const diags = getPoliciesConfigDiagnostics({ POLICIES_CONFIG: JSON.stringify({ over: { max_attempts: 6, tier_attempts: { tier2: 4, tier3: 4 } } }) });
+  const diags = getPoliciesConfigDiagnostics({ AIG_POLICIES_CONFIG: JSON.stringify({ over: { max_attempts: 6, tier_attempts: { tier2: 4, tier3: 4 } } }) });
   assert.ok(diags.some((d) => d.includes('tier_attempts total exceeds max_attempts')));
 });
 
 test('budget_split is not a current policy field', () => {
-  const diags = getPoliciesConfigDiagnostics({ POLICIES_CONFIG: JSON.stringify({ bad: { max_attempts: 5, budget_split: 'weighted' } }) });
+  const diags = getPoliciesConfigDiagnostics({ AIG_POLICIES_CONFIG: JSON.stringify({ bad: { max_attempts: 5, budget_split: 'weighted' } }) });
   assert.ok(diags.some((d) => d.includes('unknown field "budget_split"')));
 });
 
