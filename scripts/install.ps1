@@ -109,7 +109,7 @@ try {
   foreach ($group in $accessModels.Keys) { $varsMap["AIG_ACCESS_MODELS_$group"] = $accessModels[$group] }
   $userConfig | Add-Member -NotePropertyName vars -NotePropertyValue $varsMap -Force
   $userConfig | Add-Member -NotePropertyName kv_namespaces -NotePropertyValue @(
-    [ordered]@{ binding = 'AIG_AFFINITY_KV'; id = $affinityKvId }
+    [ordered]@{ binding = 'TIER1_AFFINITY'; id = $affinityKvId }
   ) -Force
   [IO.File]::WriteAllText($userConfigPath, ($userConfig | ConvertTo-Json -Depth 30) + "`n", [Text.UTF8Encoding]::new($false))
 
