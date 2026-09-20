@@ -5,7 +5,7 @@
 //
 // Discovery's network entry point is deliberately narrow. This module
 // centralizes URL validation, DNS resolution checks, redirect re-validation,
-// and bounded response limits. CAN_DISCOVER_PRIVATE remains the explicit
+// and bounded response limits. AIG_CAN_DISCOVER_PRIVATE_PROVIDERS remains the explicit
 // opt-in for trusted private providers.
 
 import { lookup as defaultDnsLookup } from 'node:dns/promises';
