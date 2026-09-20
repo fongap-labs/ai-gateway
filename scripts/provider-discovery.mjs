@@ -183,7 +183,7 @@ async function cmdLive(argv) {
   const { opts } = readArgs(argv);
   const outDir = resolveAgainstCwd(String(opts['out-dir'] || 'model-discovery'));
   const previous = loadPreviousSnapshot(opts.previous ? String(opts.previous) : '');
-  const allowPrivate = String(process.env.ALLOW_PRIVATE_DISCOVERY || '').trim().toLowerCase() === 'true';
+  const allowPrivate = String(process.env.CAN_DISCOVER_PRIVATE || '').trim().toLowerCase() === 'true';
   const current = await scanDiscoveryEnv(process.env, { allowPrivate });
   const diff = diffModelSnapshots(previous, current);
   const markdown = formatDiscoveryMarkdown(previous, current, diff);
