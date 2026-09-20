@@ -1,5 +1,5 @@
 {
-  "TIER1_NODES_01": [
+  "AIG_TIER1_NODES_01": [
     {
       "id": "primary-01",
       "provider": "custom",
@@ -10,8 +10,8 @@
       }
     }
   ],
-  "GATEWAY_MODELS_PRO": "code-pro",
-  "MODELS_CONFIG": {
+  "AIG_ACCESS_MODELS_PRO": "code-pro",
+  "AIG_MODELS_CONFIG": {
     "code-pro": {
       "policy": "default",
       "capabilities": {
@@ -22,13 +22,13 @@
       }
     }
   },
-  "POLICIES_CONFIG": {
+  "AIG_POLICIES_CONFIG": {
     "default": {
       "max_attempts": 5
     }
   },
-  "DASHBOARD_MODELS": "Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air",
-  "PROTOCOL_FALLBACKS": {
+  "AIG_DASHBOARD_MODELS": "Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air",
+  "AIG_PROTOCOL_FALLBACKS": {
     "anthropic:messages": [
       "openai:chat_completions"
     ],
@@ -36,5 +36,5 @@
       "anthropic:messages"
     ]
   },
-  "PROJECT_REPOSITORY_URL": "https://github.com/your-org/ai-gateway"
+  "AIG_REPOSITORY_URL": "https://github.com/your-org/ai-gateway"
 }
