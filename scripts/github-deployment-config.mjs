@@ -12,8 +12,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const NODE_VAR = /^TIER[123]_NODES_CONFIG_(0[1-9]|10)$/;
 const NODE_SECRET = /^TIER[123]_NODES_SECRETS_(0[1-9]|10)$/;
-const GROUP_KEY_PATTERN = `GATEWAY_ACCESS_KEY_(?:${KEY_GROUPS.join('|')})`;
-const GROUP_MODELS_PATTERN = `GATEWAY_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
+const GROUP_KEY_PATTERN = `GATEWAY_KEY_(?:${KEY_GROUPS.join('|')})`;
+const GROUP_MODELS_PATTERN = `GATEWAY_MODELS_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|TIER[123]_NODES_SECRETS_(0[1-9]|10))$`);
@@ -24,8 +24,8 @@ const RUNTIME_VAR_PATTERN = new RegExp(
 );
 const EXTRA_VAR_ALLOW = new Set(['GITHUB_SHA']);
 const CREDENTIAL_NAMES = new Set([
-  'CLOUDFLARE_API_TOKEN',
-  ...KEY_GROUPS.map((group) => `GATEWAY_ACCESS_KEY_${group}`),
+  'CLOUDFLARE_DEPLOY_TOKEN',
+  ...KEY_GROUPS.map((group) => `GATEWAY_KEY_${group}`),
 ]);
 
 export function parseConfigObject(text, label = 'configuration') {
@@ -98,14 +98,14 @@ export function normalizeRuntimeConfig(raw) {
   }
   for (const [name, rawValue] of Object.entries(raw.secrets)) {
     if (!SECRET_NAME.test(name)) {
-      throw new Error(`secrets.${name}: only GATEWAY_ACCESS_KEY_<GROUP> and TIER[123]_NODES_SECRETS_01..10 are supported`);
+      throw new Error(`secrets.${name}: only GATEWAY_KEY_<GROUP> and TIER[123]_NODES_SECRETS_01..10 are supported`);
     }
     const value = encodeValue(rawValue, `secrets.${name}`);
     assertSize(name, value);
     secrets[name] = value;
   }
   if (!Object.keys(secrets).some((k) => GROUP_KEY_RE.test(k))) {
-    throw new Error(`secrets must contain at least one GATEWAY_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
+    throw new Error(`secrets must contain at least one GATEWAY_KEY_<GROUP> (${GROUP_LABEL})`);
   }
   if (!Object.keys(vars).some((name) => NODE_VAR.test(name))) {
     throw new Error('vars must contain at least one TIER{1,2,3}_NODES_CONFIG_XX value');
@@ -148,8 +148,8 @@ export function buildRuntimeFromEnv(env) {
   return { runtime: normalizeRuntimeConfig({ vars: v.vars, secrets: s.secrets }) };
 }
 
-const REQUIRED_VARS = ['CLOUDFLARE_ACCOUNT_ID', 'GATEWAY_PUBLIC_BASE_URL'];
-const REQUIRED_SECRETS = ['CLOUDFLARE_API_TOKEN'];
+const REQUIRED_VARS = ['CLOUDFLARE_ACCOUNT_ID', 'GATEWAY_PUBLIC_URL'];
+const REQUIRED_SECRETS = ['CLOUDFLARE_DEPLOY_TOKEN'];
 
 export function preflight(env) {
   const errors = [];
@@ -161,7 +161,7 @@ export function preflight(env) {
     if (!env[name] || String(env[name]).trim() === '') errors.push(`${name} is missing from GitHub Repository Secrets.`);
   }
   const hasGroupKey = Object.keys(env).some((k) => GROUP_KEY_RE.test(k) && env[k] && String(env[k]).trim() !== '');
-  if (!hasGroupKey) errors.push(`At least one GATEWAY_ACCESS_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
+  if (!hasGroupKey) errors.push(`At least one GATEWAY_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
 
   const v = collectVarsFromEnv(env);
   const s = collectSecretsFromEnv(env);
@@ -175,15 +175,15 @@ export function preflight(env) {
   const totalManaged = Object.keys(v.vars).length + Object.keys(s.secrets).length;
   if (totalManaged > 80) warnings.push(`Worker variable + secret count is ${totalManaged} (threshold 80). Consolidate shards or reduce node count.`);
   if (!tierShards) errors.push('No TIER{1,2,3}_NODES_CONFIG_XX GitHub Variable is configured.');
-  if (tier1Shards && (!env.TIER1_AFFINITY_KV_ID || String(env.TIER1_AFFINITY_KV_ID).trim() === '')) {
-    errors.push('TIER1_AFFINITY_KV_ID is required when Tier 1 nodes are configured.');
+  if (tier1Shards && (!env.AFFINITY_KV_ID || String(env.AFFINITY_KV_ID).trim() === '')) {
+    errors.push('AFFINITY_KV_ID is required when Tier 1 nodes are configured.');
   }
   if (!Object.keys(s.secrets).some((n) => NODE_SECRET.test(n))) {
     errors.push('No TIER[123]_NODES_SECRETS_XX Secret is configured.');
   }
   if (!v.vars.MODELS_CONFIG) warnings.push('MODELS_CONFIG is not set (optional; the registry applies conservative defaults).');
   if (!v.vars.POLICIES_CONFIG) warnings.push('POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
-  if (!env.TOKEN_STATS_D1_ID || String(env.TOKEN_STATS_D1_ID).trim() === '') warnings.push('D1 persistence disabled: TOKEN_STATS_D1_ID is not configured.');
+  if (!env.USAGE_D1_ID || String(env.USAGE_D1_ID).trim() === '') warnings.push('D1 persistence disabled: USAGE_D1_ID is not configured.');
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -200,9 +200,9 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
     `  Worker variables: ${Object.keys(runtime.vars).length}`,
     `  Node secret shards: ${Object.keys(runtime.secrets).filter((n) => NODE_SECRET.test(n)).length}`,
     `  Obsolete node-secret shards removed: ${removedSecretShards}`, '', 'D1',
-    `  Status: ${String(d1Configured || '').trim() ? 'ready' : 'disabled (TOKEN_STATS_D1_ID is not configured)'}`, '',
+    `  Status: ${String(d1Configured || '').trim() ? 'ready' : 'disabled (USAGE_D1_ID is not configured)'}`, '',
     'Tier 1 affinity KV',
-    `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (TIER1_AFFINITY_KV_ID is not configured)'}`, '',
+    `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (AFFINITY_KV_ID is not configured)'}`, '',
     'Health', '  /health                    OK', '  /v1/models                 OK', '  /v1/messages/count_tokens  OK',
   ].join('\n');
 }
@@ -266,7 +266,7 @@ const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // /health. Human release labels are not part of runtime verification.
 export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs = 30_000, intervalMs = 5_000 } = {}) {
   const origin = String(baseUrl || '').replace(/\/+$/, '');
-  if (!/^https:\/\//.test(origin)) throw new Error('GATEWAY_PUBLIC_BASE_URL must be an absolute https URL');
+  if (!/^https:\/\//.test(origin)) throw new Error('GATEWAY_PUBLIC_URL must be an absolute https URL');
   const headers = { authorization: `Bearer ${accessKey}` };
   if (expectedBuild !== undefined && !/^[a-f0-9]{40}$/i.test(expectedBuild)) {
     throw new Error('Expected build must be a full commit SHA');
@@ -342,14 +342,14 @@ async function main() {
     const config = validateGatewayRuntime(runtime);
     const existingSecretsFile = argValue(argv, '--existing-secrets');
     const bulkSecrets = existingSecretsFile ? withStaleNodeSecretsRemoved(runtime.secrets, readSecretList(existingSecretsFile)) : runtime.secrets;
-    fs.writeFileSync(wrangler, JSON.stringify(buildWranglerConfig(runtime.vars, process.env.TOKEN_STATS_D1_ID, process.env.TIER1_AFFINITY_KV_ID), null, 2));
+    fs.writeFileSync(wrangler, JSON.stringify(buildWranglerConfig(runtime.vars, process.env.USAGE_D1_ID, process.env.AFFINITY_KV_ID), null, 2));
     fs.writeFileSync(secretsOut, JSON.stringify(bulkSecrets));
     const removed = Object.values(bulkSecrets).filter((value) => value === null).length;
     const summaryOut = argValue(argv, '--summary');
     if (summaryOut) {
       fs.writeFileSync(summaryOut, buildDeploymentSummary({
-        config, runtime, d1Configured: process.env.TOKEN_STATS_D1_ID,
-        affinityKvConfigured: process.env.TIER1_AFFINITY_KV_ID, removedSecretShards: removed,
+        config, runtime, d1Configured: process.env.USAGE_D1_ID,
+        affinityKvConfigured: process.env.AFFINITY_KV_ID, removedSecretShards: removed,
       }) + '\n');
     }
     console.log(`Runtime configuration package is valid: ${config.nodesUsable}/${config.nodesTotal} usable node(s), ${Object.keys(runtime.vars).length} Worker text variable(s), ${Object.keys(runtime.secrets).length} Worker Secret(s), ${removed} obsolete node-secret shard(s) removed.`);
@@ -358,8 +358,8 @@ async function main() {
   if (command === 'health-check') {
     const runtime = resolveRuntime(argv);
     const groupKey = Object.keys(runtime.secrets).find((k) => GROUP_KEY_RE.test(k));
-    if (!groupKey) throw new Error('No GATEWAY_ACCESS_KEY_<GROUP> secret found for health check');
-    await verifyRemote(process.env.GATEWAY_PUBLIC_BASE_URL, runtime.secrets[groupKey], argValue(argv, '--expected-build') || undefined);
+    if (!groupKey) throw new Error('No GATEWAY_KEY_<GROUP> secret found for health check');
+    await verifyRemote(process.env.GATEWAY_PUBLIC_URL, runtime.secrets[groupKey], argValue(argv, '--expected-build') || undefined);
     console.log('Remote health checks passed.');
     return;
   }
