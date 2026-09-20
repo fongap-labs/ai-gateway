@@ -8,14 +8,14 @@ Start with evidence from the failing boundary: configuration validation, CI job/
 
 Check that:
 
-- at least one `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret is configured;
-- its matching `GATEWAY_MODELS_<GROUP>` Variable is present and non-empty;
-- at least one `TIER{1,2,3}_NODES_XX` Variable exists;
-- usable nodes have credentials in a `TIER{1,2,3}_CREDENTIALS_XX` Secret for the same tier.
+- at least one `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret is configured;
+- its matching `AIG_ACCESS_MODELS_<GROUP>` Variable is present and non-empty;
+- at least one `AIG_TIER{1,2,3}_NODES_XX` Variable exists;
+- usable nodes have credentials in a `AIG_TIER{1,2,3}_CREDENTIALS_XX` Secret for the same tier.
 
 A group key with an empty model allowlist intentionally grants zero models.
 
-### `No TIER{1,2,3}_NODES_XX Variable is configured`
+### `No AIG_TIER{1,2,3}_NODES_XX Variable is configured`
 
 Add at least one valid tier config shard containing a JSON array of nodes. The suffix is only a shard number.
 
@@ -35,13 +35,13 @@ Credentials bind by Tier + node id. They do not need to be in a Secret shard wit
 Example:
 
 ```text
-TIER1_NODES_03 contains node "nvidia-01"
-TIER1_CREDENTIALS_01 may contain {"nvidia-01":"..."}
+AIG_TIER1_NODES_03 contains node "nvidia-01"
+AIG_TIER1_CREDENTIALS_01 may contain {"nvidia-01":"..."}
 ```
 
 If the tier differs, the credential is invalid for that node.
 
-### `MODELS_CONFIG` / `POLICIES_CONFIG` invalid
+### `AIG_MODELS_CONFIG` / `AIG_POLICIES_CONFIG` invalid
 
 These auxiliary configs are validated fail-fast. Check malformed JSON, unknown fields, invalid values, and model→policy references to policy names that do not exist.
 
@@ -135,13 +135,13 @@ Use authenticated `/health` and sanitized runtime diagnostics. A retryable famil
 
 ### 504 Gateway Timeout
 
-The request-wide `FAILOVER_BUDGET_MS` was exhausted or no safe attempt remained within the wall-clock budget. Inspect upstream headers/first-event latency, attempted failure domains, and fallback/hedge activity before increasing the budget.
+The request-wide `AIG_FAILOVER_BUDGET_MS` was exhausted or no safe attempt remained within the wall-clock budget. Inspect upstream headers/first-event latency, attempted failure domains, and fallback/hedge activity before increasing the budget.
 
 ## Model problems
 
 ### Model not listed or unavailable
 
-Check the logical model name against node `models` mappings and optional `MODELS_CONFIG`. Provider-facing model ids may differ from the gateway's logical model aliases.
+Check the logical model name against node `models` mappings and optional `AIG_MODELS_CONFIG`. Provider-facing model ids may differ from the gateway's logical model aliases.
 
 A model-shaped upstream 404 uses a short upstream-model-specific cooldown; it should not permanently poison the logical alias after remapping.
 
@@ -204,11 +204,11 @@ Do not divide aggregate physical Token usage by upstream-attempt count and compa
 
 ### Headers timeout
 
-No upstream response headers arrived before `UPSTREAM_HEADER_TIMEOUT`. Check network/provider responsiveness.
+No upstream response headers arrived before `AIG_UPSTREAM_HEADER_TIMEOUT_MS`. Check network/provider responsiveness.
 
 ### First-event timeout
 
-Headers arrived but no meaningful protocol-specific output appeared before the active attempt deadline. `FIRST_EVENT_TIMEOUT` is bounded by the same request/attempt wall-clock budget; lifecycle-only SSE events do not necessarily commit the response.
+Headers arrived but no meaningful protocol-specific output appeared before the active attempt deadline. `AIG_FIRST_EVENT_TIMEOUT_MS` is bounded by the same request/attempt wall-clock budget; lifecycle-only SSE events do not necessarily commit the response.
 
 ### Stream interruption
 
