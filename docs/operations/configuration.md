@@ -6,13 +6,13 @@ Production configuration is delivered from GitHub Actions into Cloudflare Worker
 
 | Source | Purpose |
 | --- | --- |
-| `TIER{1,2,3}_NODES_01..10` | Non-secret account/node definitions |
-| `TIER{1,2,3}_CREDENTIALS_01..10` | Tier-scoped credentials keyed by node id |
-| `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
-| `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
-| `MODELS_CONFIG` | Optional logical-model metadata/capabilities |
-| `POLICIES_CONFIG` | Attempt, hedge, timeout and Tier 1 admission policy |
-| `DASHBOARD_MODELS` | Optional public-dashboard logical-model display allowlist |
+| `AIG_TIER{1,2,3}_NODES_01..10` | Non-secret account/node definitions |
+| `AIG_TIER{1,2,3}_CREDENTIALS_01..10` | Tier-scoped credentials keyed by node id |
+| `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
+| `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
+| `AIG_MODELS_CONFIG` | Optional logical-model metadata/capabilities |
+| `AIG_POLICIES_CONFIG` | Attempt, hedge, timeout and Tier 1 admission policy |
+| `AIG_DASHBOARD_MODELS` | Optional public-dashboard logical-model display allowlist |
 
 `src/config/runtime-vars.ts` is the single source for runtime variable defaults and ranges.
 
@@ -21,8 +21,8 @@ Production configuration is delivered from GitHub Actions into Cloudflare Worker
 The five independent groups are `AIR`, `PRO`, `MAX`, `ULTRA`, and `AGENT`. A configured group uses both:
 
 ```text
-GATEWAY_KEY_<GROUP>
-GATEWAY_MODELS_<GROUP>
+AIG_ACCESS_KEY_<GROUP>
+AIG_ACCESS_MODELS_<GROUP>
 ```
 
 Groups do not inherit from one another. An empty model allowlist grants zero models. The group name is an authorization boundary only; it does not assign Tier 1 scheduler priority.
@@ -123,27 +123,27 @@ Tier 1 → Tier 2 → Tier 3
 
 Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 
-- `UPSTREAM_HEADER_TIMEOUT`
-- `FIRST_EVENT_TIMEOUT`
-- `STREAM_IDLE_TIMEOUT`
-- `RATE_LIMIT_COOLDOWN`
-- `AUTH_FAILURE_COOLDOWN`
-- `MAX_BODY_BYTES`
-- `FAILOVER_BUDGET_MS`
-- `HEDGE_DELAY_MS`
-- `REQUEST_HEDGE_MAX`
-- `GATEWAY_KEY_RPM`
+- `AIG_UPSTREAM_HEADER_TIMEOUT_MS`
+- `AIG_FIRST_EVENT_TIMEOUT_MS`
+- `AIG_STREAM_IDLE_TIMEOUT_MS`
+- `AIG_RATE_LIMIT_COOLDOWN_MS`
+- `AIG_AUTH_FAILURE_COOLDOWN_MS`
+- `AIG_REQUEST_BODY_MAX_BYTES`
+- `AIG_FAILOVER_BUDGET_MS`
+- `AIG_HEDGE_DELAY_MS`
+- `AIG_REQUEST_HEDGE_MAX`
+- `AIG_ACCESS_KEY_RPM`
 
-Other current variables include `ALLOWED_ORIGIN`, `USAGE_INCLUDE_MODE`, `USAGE_EXCLUDE_PROVIDERS`, `ANTHROPIC_COUNT_MODE`, `LOG_LEVEL`, `PROTOCOL_FALLBACKS`, `SHOULD_EXPOSE_UPSTREAM`, `HAS_STREAM_GUARD`, `CAN_USE_HTTP`, and `DASHBOARD_MODELS`.
+Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, and `AIG_DASHBOARD_MODELS`.
 
 ## Dashboard model display
 
-`DASHBOARD_MODELS` is a comma-separated presentation allowlist for logical models.
+`AIG_DASHBOARD_MODELS` is a comma-separated presentation allowlist for logical models.
 
 Example:
 
 ```text
-DASHBOARD_MODELS=Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air
+AIG_DASHBOARD_MODELS=Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air
 ```
 
 It does not change routing, authorization, `/v1/models`, fallback, D1 collection, or aggregate usage totals. It controls which public logical models are shown in the model-status area and which models are eligible to appear by name in the model-usage breakdown; non-allowlisted usage is aggregated into `其他`.
@@ -158,9 +158,9 @@ Tier 1 uses observed runtime facts rather than guessed Provider quotas:
 - provider-model heat;
 - passive TTFT;
 - soft session affinity, exploration, recovery/circuit state;
-- optional explicit `POLICIES_CONFIG.max_in_flight` safety ceiling.
+- optional explicit `AIG_POLICIES_CONFIG.max_in_flight` safety ceiling.
 
-Access-key groups do not add a routing score factor. `GATEWAY_KEY_RPM` protects gateway access keys; it is not a Provider quota model.
+Access-key groups do not add a routing score factor. `AIG_ACCESS_KEY_RPM` protects gateway access keys; it is not a Provider quota model.
 
 ## Policies
 
@@ -182,7 +182,7 @@ Example:
 
 ## Request timing
 
-`FAILOVER_BUDGET_MS` is one wall-clock budget for the whole request. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset it. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
+`AIG_FAILOVER_BUDGET_MS` is one wall-clock budget for the whole request. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset it. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
 
 ## Usage accounting
 
