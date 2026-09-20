@@ -38,9 +38,9 @@ function configNode(id, tier, models, priority = 10) {
 
 function envFor(nodes, extra = {}) {
   const env = {
-    GATEWAY_KEY_ULTRA: ACCESS_KEY,
-    GATEWAY_MODELS_ULTRA: '*',
-    PROTOCOL_FALLBACKS: 'disable',
+    AIG_ACCESS_KEY_ULTRA: ACCESS_KEY,
+    AIG_ACCESS_MODELS_ULTRA: '*',
+    AIG_PROTOCOL_FALLBACKS: 'disable',
     TIER1_SCHEDULER_SEED: 'request-execution-ownership',
     ...extra,
   };
@@ -117,9 +117,9 @@ installFetch({
   'family-pro.example.com': () => jsonResponse(completedResponsesObject('real-pro', 'sibling recovered')),
 });
 const familyEnv = envFor([codeMax, codePro], {
-  FAILOVER_BUDGET_MS: '1000',
-  MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, 'Code-Pro': { policy: 'default' } }),
-  POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: false } } }),
+  AIG_FAILOVER_BUDGET_MS: '1000',
+  AIG_MODELS_CONFIG: JSON.stringify({ 'Code-Max': { policy: 'default' }, 'Code-Pro': { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: false } } }),
 });
 const familyStarted = Date.now();
 const familyResponse = await withDeadline(worker.fetch(responsesRequest('Code-Max', true), familyEnv, {}), 1800, 'family failover request');
@@ -137,9 +137,9 @@ installFetch({
   'tier2-good.example.com': () => jsonResponse(completedResponsesObject('solo-upstream', 'fallback node succeeded')),
 });
 const errorBodyEnv = envFor([badTier2, goodTier2], {
-  FAILOVER_BUDGET_MS: '1000',
-  MODELS_CONFIG: JSON.stringify({ Solo: { policy: 'default' } }),
-  POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: false } } }),
+  AIG_FAILOVER_BUDGET_MS: '1000',
+  AIG_MODELS_CONFIG: JSON.stringify({ Solo: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: false } } }),
 });
 const errorStarted = Date.now();
 const errorResponse = await withDeadline(worker.fetch(responsesRequest('Solo', false), errorBodyEnv, {}), 1800, 'non-ok diagnostic body failover');
@@ -152,8 +152,8 @@ reset();
 const synthNode = configNode('synth-json', 1, { SoloStream: 'solo-stream-upstream' });
 installFetch({ 'synth-json.example.com': () => jsonResponse(completedResponsesObject('solo-stream-upstream', 'synthetic stream')) });
 const synthEnv = envFor([synthNode], {
-  MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
-  POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
+  AIG_MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
 });
 const activeBefore = gatewayStats.activeRequests;
 const successBefore = gatewayStats.successes;
@@ -171,8 +171,8 @@ const cancelActiveBefore = gatewayStats.activeRequests;
 const cancelSuccessBefore = gatewayStats.successes;
 const cancelCountBefore = gatewayStats.cancellations;
 const cancelResponse = await worker.fetch(responsesRequest('SoloStream', true), envFor([synthNode], {
-  MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
-  POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
+  AIG_MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
 }), {});
 assert.equal(gatewayStats.activeRequests, cancelActiveBefore + 1);
 const cancelReader = cancelResponse.body.getReader();
