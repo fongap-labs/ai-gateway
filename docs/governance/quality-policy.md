@@ -4,9 +4,9 @@ Quality gates protect behavior before deployment. The repository separates the m
 
 ## CI model
 
-### Merge gate
+### Merge evidence
 
-`validate-merge` runs for Pull Requests and pushes:
+`ci-evidence` runs the gateway's local merge validation for Pull Requests and pushes:
 
 ```bash
 npm ci
@@ -25,6 +25,8 @@ npm run validate:deploy
 ```
 
 It includes the unit suite plus scheduler-stability, integration, stress, Codex, and Claude contracts.
+
+`validate-merge` is the stable merge gate. On Pull Requests it requires both `ci-evidence=success` and Action Worker `PR Governance=success`; on non-PR runs it requires local evidence only.
 
 Automatic production deployment is permitted only when a push-triggered `main` CI run succeeds. Scheduled and manually triggered CI runs are test-only. Manual Deploy runs full validation before touching production.
 
