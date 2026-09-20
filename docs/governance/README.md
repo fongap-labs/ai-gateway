@@ -12,6 +12,7 @@ This directory contains only ai-gateway-specific policy.
 | [quality-policy.md](quality-policy.md) | Gateway-specific CI, protocol, reliability, security and production validation |
 | [dependency-policy.md](dependency-policy.md) | Worker runtime, GitHub Actions, Wrangler and dependency-update rules |
 | [documentation-policy.md](documentation-policy.md) | ai-gateway document ownership and code-to-doc synchronization |
+| [development-policy.md](development-policy.md) | Temporary non-authoritative redirect retained for the current policy contract test |
 
 ## Document classes
 
