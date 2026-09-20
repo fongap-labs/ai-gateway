@@ -68,7 +68,7 @@ assert.equal(terminalStatus({ [KIND.HEADERS_TIMEOUT]: 1, [KIND.RATE_LIMIT]: 1 })
 assert.equal(terminalStatus({ [KIND.RATE_LIMIT]: 1, [KIND.SERVER]: 1 }), 502);
 assert.equal(terminalStatus({ [KIND.SERVER]: 1, [KIND.RATE_LIMIT]: 1 }), 502);
 assert.equal(terminalStatus({ [KIND.RATE_LIMIT]: 1, [KIND.RATE_LIMIT_GLOBAL]: 1, [KIND.SERVER]: 1 }), 429);
-assert.equal(terminalStatus({ [KIND.HEADERS_TIMEOUT]: 1, [KIND.AIG_FIRST_EVENT_TIMEOUT_MS]: 1, [KIND.SERVER]: 1 }), 504);
+assert.equal(terminalStatus({ [KIND.HEADERS_TIMEOUT]: 1, [KIND.FIRST_EVENT_TIMEOUT]: 1, [KIND.SERVER]: 1 }), 504);
 assert.equal(terminalStatus({}), null);
 assert.equal(buildResponsesError('x', 'api_error').error.code, null);
 
