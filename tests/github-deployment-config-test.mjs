@@ -62,7 +62,7 @@ const wrangler = buildWranglerConfig(loaded.vars, 'd1-id', 'kv-id');
 assert.equal(wrangler.keep_vars, false);
 assert.equal(wrangler.vars.AIG_TIER1_NODES_01, loaded.vars.AIG_TIER1_NODES_01);
 assert.equal(wrangler.d1_databases[0].database_id, 'd1-id');
-assert.deepEqual(wrangler.kv_namespaces, [{ binding: 'AIG_AFFINITY_KV', id: 'kv-id' }]);
+assert.deepEqual(wrangler.kv_namespaces, [{ binding: 'TIER1_AFFINITY', id: 'kv-id' }]);
 assert.ok(path.isAbsolute(wrangler.main));
 assert.ok(path.isAbsolute(wrangler.d1_databases[0].migrations_dir));
 
