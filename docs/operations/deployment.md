@@ -71,21 +71,21 @@ The tracked `wrangler.jsonc` is the repository baseline. Local Worker name, bind
 
 Core GitHub Variables include:
 
-- `DEPLOY_ENABLED=true` to enable production deployment
+- `IS_DEPLOY_ENABLED=true` to enable production deployment
 - `DEPLOY_REPOSITORY` set to the repository allowed to deploy
 - `ACTION_WORKER_REPOSITORY` for centralized PR governance dispatch
 - `CLOUDFLARE_ACCOUNT_ID`
-- `GATEWAY_PUBLIC_BASE_URL`
+- `GATEWAY_PUBLIC_URL`
 - at least one `TIER{1,2,3}_NODES_CONFIG_XX` shard
-- `TIER1_AFFINITY_KV_ID` when Tier 1 affinity is used
-- optional `TOKEN_STATS_D1_ID`
-- corresponding `GATEWAY_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
+- `AFFINITY_KV_ID` when Tier 1 affinity is used
+- optional `USAGE_D1_ID`
+- corresponding `GATEWAY_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
 - optional `MODELS_CONFIG`, `POLICIES_CONFIG`, and runtime variables
 
 Core GitHub Secrets include:
 
-- `CLOUDFLARE_API_TOKEN`
-- at least one `GATEWAY_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
+- `CLOUDFLARE_DEPLOY_TOKEN`
+- at least one `GATEWAY_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
 - tier-scoped `TIER{1,2,3}_NODES_SECRETS_01..10` containing `{ "node-id": "credential" }`
 
 The deployment preflight fails closed on missing required production inputs.
@@ -105,11 +105,11 @@ Do not place credentials in node JSON.
 ## Gateway access groups
 
 ```text
-GATEWAY_ACCESS_KEY_AIR       + GATEWAY_ACCESS_MODELS_AIR
-GATEWAY_ACCESS_KEY_PRO       + GATEWAY_ACCESS_MODELS_PRO
-GATEWAY_ACCESS_KEY_MAX       + GATEWAY_ACCESS_MODELS_MAX
-GATEWAY_ACCESS_KEY_ULTRA     + GATEWAY_ACCESS_MODELS_ULTRA
-GATEWAY_ACCESS_KEY_AGENT     + GATEWAY_ACCESS_MODELS_AGENT
+GATEWAY_KEY_AIR       + GATEWAY_MODELS_AIR
+GATEWAY_KEY_PRO       + GATEWAY_MODELS_PRO
+GATEWAY_KEY_MAX       + GATEWAY_MODELS_MAX
+GATEWAY_KEY_ULTRA     + GATEWAY_MODELS_ULTRA
+GATEWAY_KEY_AGENT     + GATEWAY_MODELS_AGENT
 ```
 
 A configured key with an empty/missing model allowlist is fail-closed and grants zero model access.
