@@ -84,17 +84,17 @@ echo "Configure at least one of AIR / PRO / MAX / ULTRA / AGENT. Empty Key skips
 ACCESS_GROUP_COUNT=0
 VERIFY_KEY=""
 for GROUP in AIR PRO MAX ULTRA AGENT; do
-  printf "GATEWAY_ACCESS_KEY_%s (empty to skip): " "$GROUP"
+  printf "GATEWAY_KEY_%s (empty to skip): " "$GROUP"
   stty -echo 2>/dev/null || true
   read -r GROUP_KEY
   stty echo 2>/dev/null || true
   echo ""
   [ -n "$GROUP_KEY" ] || continue
 
-  printf "GATEWAY_ACCESS_MODELS_%s (CSV, required): " "$GROUP"
+  printf "GATEWAY_MODELS_%s (CSV, required): " "$GROUP"
   read -r GROUP_MODELS
   if [ -z "$(printf '%s' "$GROUP_MODELS" | tr -d '[:space:]')" ]; then
-    echo "GATEWAY_ACCESS_MODELS_$GROUP is required when GATEWAY_ACCESS_KEY_$GROUP is set." >&2
+    echo "GATEWAY_MODELS_$GROUP is required when GATEWAY_KEY_$GROUP is set." >&2
     exit 1
   fi
 
@@ -103,8 +103,8 @@ const fs = require("fs");
 const file = process.argv[1];
 const value = JSON.parse(fs.readFileSync(file, "utf8"));
 const group = process.env.GROUP_NAME;
-value[`GATEWAY_ACCESS_KEY_${group}`] = process.env.GROUP_KEY_VALUE;
-value[`GATEWAY_ACCESS_MODELS_${group}`] = process.env.GROUP_MODELS_VALUE;
+value[`GATEWAY_KEY_${group}`] = process.env.GROUP_KEY_VALUE;
+value[`GATEWAY_MODELS_${group}`] = process.env.GROUP_MODELS_VALUE;
 fs.writeFileSync(file, JSON.stringify(value));
 ' "$TMP_ACCESS"
 
@@ -125,7 +125,7 @@ const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 base.name = process.env.WORKER_NAME;
 base.vars = { ...plan.vars };
 for (const [name, value] of Object.entries(access)) {
-  if (name.startsWith("GATEWAY_ACCESS_MODELS_")) base.vars[name] = value;
+  if (name.startsWith("GATEWAY_MODELS_")) base.vars[name] = value;
 }
 base.kv_namespaces = [{ binding: "TIER1_AFFINITY", id: process.env.AFFINITY_KV_ID }];
 fs.writeFileSync("wrangler.user.jsonc", JSON.stringify(base, null, 2) + "\n");
@@ -137,7 +137,7 @@ const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const bulk = { ...plan.secrets };
 for (const [name, value] of Object.entries(access)) {
-  if (name.startsWith("GATEWAY_ACCESS_KEY_")) bulk[name] = value;
+  if (name.startsWith("GATEWAY_KEY_")) bulk[name] = value;
 }
 fs.writeFileSync(process.argv[3], JSON.stringify(bulk));
 ' "$TMP_PLAN" "$TMP_ACCESS" "$TMP_BULK"
