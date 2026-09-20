@@ -73,7 +73,7 @@ function checkAffinityKvBinding(configSource) {
   try {
     const config = JSON.parse(configSource);
     return config?.kv_namespaces?.some((entry) =>
-      entry?.binding === 'AIG_AFFINITY_KV' && typeof entry.id === 'string' && entry.id.length > 0) || false;
+      entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0) || false;
   } catch {
     return false;
   }
@@ -89,11 +89,11 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
     ? fs.readFileSync(resolvedConfig, 'utf8')
     : '';
   if (!checkAffinityKvBinding(configSource)) {
-    console.error('Refusing deploy: configure the required AIG_AFFINITY_KV KV binding in wrangler.user.jsonc.');
+    console.error('Refusing deploy: configure the required TIER1_AFFINITY KV binding in wrangler.user.jsonc.');
     process.exitCode = 1;
     process.exit();
   }
-  const dbName = databaseNameForBinding(configSource, 'AIG_USAGE_D1');
+  const dbName = databaseNameForBinding(configSource, 'TOKEN_STATS_DB');
   if (dbName) {
     const migrationArgs = [
       '--yes', wranglerVersion,
