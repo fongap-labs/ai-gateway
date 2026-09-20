@@ -153,7 +153,7 @@ function envFixture() {
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((e) => e.includes('CLOUDFLARE_ACCOUNT_ID')));
   assert.ok(result.errors.some((e) => e.includes('AIG_ACCESS_KEY_<GROUP>')));
-  assert.ok(result.errors.some((e) => e.includes('No TIER')));
+  assert.ok(result.errors.some((e) => e.includes('No AIG_TIER')));
 }
 
 {
