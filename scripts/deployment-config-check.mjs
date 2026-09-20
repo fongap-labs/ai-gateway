@@ -33,7 +33,7 @@ for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
   assert.match(source, /--secrets-file/);
   assert.match(source, /keep-vars/);
   assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /TIER1_AFFINITY/);
+  assert.match(source, /AIG_AFFINITY_KV/);
   assert.match(source, /cloudflare-wrangler\.mjs/);
   assert.match(source, /wrangler\.user\.jsonc/);
 }
@@ -41,7 +41,7 @@ for (const file of ['scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   const source = read(file);
   assert.match(source, /--secrets-file/);
   assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /TIER1_AFFINITY/);
+  assert.match(source, /AIG_AFFINITY_KV/);
   assert.match(source, /cloudflare-wrangler\.mjs/);
 }
 
@@ -50,13 +50,13 @@ const accessGroupPattern = KEY_GROUPS.join('|');
 for (const file of ['scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   const source = read(file);
   for (const group of accessGroups) assert.ok(source.includes(group), `${file} must expose ${group}`);
-  assert.match(source, /GATEWAY_KEY_/);
-  assert.match(source, /GATEWAY_MODELS_/);
+  assert.match(source, /AIG_ACCESS_KEY_/);
+  assert.match(source, /AIG_ACCESS_MODELS_/);
 }
 for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
   const source = read(file);
   assert.match(source, /At least one Gateway Access Group Key/);
-  assert.doesNotMatch(source, /GATEWAY_MODELS_[^\n]*[=:][^\n]*["']\*["']/);
+  assert.doesNotMatch(source, /AIG_ACCESS_MODELS_[^\n]*[=:][^\n]*["']\*["']/);
 }
 
 const pkg = JSON.parse(read('package.json'));
@@ -70,7 +70,7 @@ assert.match(wranglerTool, /wrangler@4\.114\.0/, 'Wrangler pin has one tooling o
 for (const file of ['package.json', 'scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
   assert.doesNotMatch(read(file), /wrangler@\d+\.\d+\.\d+/, `${file} must not duplicate the Wrangler pin`);
 }
-for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry-run', 'TIER1_AFFINITY']) {
+for (const token of ['migrations', 'apply', 'AIG_USAGE_D1', '--remote', '--dry-run', 'AIG_AFFINITY_KV']) {
   assert.ok(wranglerTool.includes(token), `cloudflare-wrangler.mjs must include ${token}`);
 }
 
@@ -91,22 +91,22 @@ assert.deepEqual(
 );
 
 const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /vars\.IS_DEPLOY_ENABLED\s*==\s*'true'/);
-assert.match(workflow, /github\.repository\s*==\s*vars\.DEPLOY_REPOSITORY/);
+assert.match(workflow, /vars\.AIG_IS_DEPLOY_ENABLED\s*==\s*'true'/);
+assert.match(workflow, /github\.repository\s*==\s*vars\.AIG_DEPLOY_REPOSITORY/);
 assert.doesNotMatch(workflow, /fongap\/ai-gateway/);
 assert.match(workflow, /github-deployment-config\.mjs preflight/);
 assert.match(workflow, /prepare --from-env/);
-assert.match(workflow, /TIER1_CREDENTIALS_01:/);
-assert.match(workflow, /TIER1_NODES_01:/);
-assert.match(workflow, /AFFINITY_KV_ID:/);
+assert.match(workflow, /AIG_TIER1_CREDENTIALS_01:/);
+assert.match(workflow, /AIG_TIER1_NODES_01:/);
+assert.match(workflow, /AIG_AFFINITY_KV_ID:/);
 assert.match(workflow, /github-deployment-config\.mjs health-check/);
 assert.doesNotMatch(workflow, /secrets\.TIER[123]_NODES/);
 assert.doesNotMatch(workflow, /vars\.TIER[123]_CREDENTIALS/);
 assert.doesNotMatch(workflow, /GATEWAY_CONFIG|GATEWAY_SECRETS_CONFIG/);
 assert.doesNotMatch(workflow, /deploy[^\n]*--keep-vars/);
 for (const group of accessGroups) {
-  assert.match(workflow, new RegExp(`GATEWAY_KEY_${group}:`));
-  assert.match(workflow, new RegExp(`GATEWAY_MODELS_${group}:`));
+  assert.match(workflow, new RegExp(`AIG_ACCESS_KEY_${group}:`));
+  assert.match(workflow, new RegExp(`AIG_ACCESS_MODELS_${group}:`));
 }
 
 for (const removedExample of [
@@ -136,8 +136,8 @@ const workerVars = JSON.parse(read('config/worker-vars.example.json'));
 assert.equal(Object.hasOwn(workerVars, 'GATEWAY_CONFIG'), false);
 assert.equal(Object.hasOwn(workerVars, 'GATEWAY_SECRETS_CONFIG'), false);
 const accessExample = JSON.parse(read('config/access-keys.example.json'));
-const groupKeyName = new RegExp(`^GATEWAY_KEY_(${accessGroupPattern})$`);
-const groupModelsName = new RegExp(`^GATEWAY_MODELS_(${accessGroupPattern})$`);
+const groupKeyName = new RegExp(`^AIG_ACCESS_KEY_(${accessGroupPattern})$`);
+const groupModelsName = new RegExp(`^AIG_ACCESS_MODELS_(${accessGroupPattern})$`);
 assert.ok(Object.keys(accessExample).some((name) => groupKeyName.test(name)));
 assert.ok(Object.keys(accessExample).some((name) => groupModelsName.test(name)));
 
