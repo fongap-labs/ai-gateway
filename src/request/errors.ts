@@ -9,7 +9,7 @@
 // aggregate diagnostics (requested model / attempt counts where that protocol
 // shape supports them). Raw upstream error messages and per-attempt internal
 // details stay hidden. Both are exposed only when the caller passes
-// `exposeUpstreamInfo` (SHOULD_EXPOSE_UPSTREAM=true).
+// `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
 import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../protocol/http.ts';
 import { anthropicErrorTypeForStatus } from '../protocol/anthropic.ts';
@@ -340,7 +340,7 @@ function familyFailureSetIsRetryable(failureKinds?: Partial<Record<FailureKind, 
     FAILURE_KIND.SERVER,
     FAILURE_KIND.NETWORK,
     FAILURE_KIND.HEADERS_TIMEOUT,
-    FAILURE_KIND.FIRST_EVENT_TIMEOUT,
+    FAILURE_KIND.AIG_FIRST_EVENT_TIMEOUT_MS,
     FAILURE_KIND.STREAM_INTERRUPTED,
   ]);
   return observed.every(([kind]) => retryableKinds.has(kind));
@@ -348,7 +348,7 @@ function familyFailureSetIsRetryable(failureKinds?: Partial<Record<FailureKind, 
 
 function terminalStatusForKind(kind: string): 429 | 502 | 504 {
   if (kind === FAILURE_KIND.RATE_LIMIT || kind === FAILURE_KIND.RATE_LIMIT_GLOBAL) return 429;
-  if (kind === FAILURE_KIND.HEADERS_TIMEOUT || kind === FAILURE_KIND.FIRST_EVENT_TIMEOUT) return 504;
+  if (kind === FAILURE_KIND.HEADERS_TIMEOUT || kind === FAILURE_KIND.AIG_FIRST_EVENT_TIMEOUT_MS) return 504;
   return 502;
 }
 
