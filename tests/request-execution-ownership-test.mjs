@@ -47,8 +47,8 @@ function envFor(nodes, extra = {}) {
   for (const tier of [1, 2, 3]) {
     const tierNodes = nodes.filter((node) => node.__tier === tier);
     if (!tierNodes.length) continue;
-    env[`TIER${tier}_NODES_01`] = JSON.stringify(tierNodes.map(({ __tier, ...node }) => node));
-    env[`TIER${tier}_CREDENTIALS_01`] = JSON.stringify(
+    env[`AIG_TIER${tier}_NODES_01`] = JSON.stringify(tierNodes.map(({ __tier, ...node }) => node));
+    env[`AIG_TIER${tier}_CREDENTIALS_01`] = JSON.stringify(
       Object.fromEntries(tierNodes.map((node) => [node.id, `secret-${node.id}`])),
     );
   }
