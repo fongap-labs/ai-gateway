@@ -14,7 +14,7 @@
 //
 // Design:
 //   * window is 60s, ring of timestamps for the active window;
-//   * the cap is set via the GATEWAY_KEY_RPM env var; 0 disables;
+//   * the cap is set via the AIG_ACCESS_KEY_RPM env var; 0 disables;
 //   * the limiter is keyed on the gateway key fingerprint (NOT the
 //     raw key) so it does not store credentials anywhere;
 //   * a denied request returns 429 with Retry-After: <seconds until
