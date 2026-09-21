@@ -297,7 +297,7 @@ export async function queryTokenDailySeries(env: GatewayEnv, startDayIso: string
   return map;
 }
 
-// Per-model totals for the homepage's "模型使用 · 近 7 天" panel.
+// Per-model totals for the homepage's "Model Usage · Last 7d" panel.
 //
 // Reader canonicalization: rows are grouped by LOWER(TRIM(model)) so
 // historical case variants (Code-Max / code-max / CODE-MAX) merge into ONE
@@ -339,8 +339,8 @@ export const MODEL_STATUS_RECENT_WINDOW_MS = 24 * HOUR_MS;
 // Historical evidence window for the Public Model Status layer. This is the
 // model-hourly retention window (7d): the per-model table is pruned by
 // cleanupModelStats beyond that, so 7d is the maximum "has this model EVER
-// served" lookback we can honestly answer. Used to distinguish 无新记录
-// (recent window empty, history present) from 暂无记录 (no history at all).
+// served" lookback we can honestly answer. Used to distinguish no_recent
+// (recent window empty, history present) from no_record (no history at all).
 export const MODEL_STATUS_HISTORICAL_WINDOW_MS = 7 * DAY_MS;
 
 // Recent-success evidence for the Public Model Status layer
@@ -455,7 +455,7 @@ export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: n
 // P50 and P95 have separate minimum sample thresholds: P50 needs 5
 // samples, P95 needs 20 (the tail is far noisier, so the bar is higher).
 // Below the P50 floor both percentiles are null; between the floors P50
-// is reported and P95 stays null (dashboard tooltip: "P95 样本不足").
+// is reported and P95 stays null (dashboard tooltip: "P95 insufficient samples").
 const TTFT_P50_MIN_SAMPLES = 5;
 const TTFT_P95_MIN_SAMPLES = 20;
 
