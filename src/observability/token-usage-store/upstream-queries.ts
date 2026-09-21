@@ -3,7 +3,7 @@
 //
 // Dashboard consumption reads keep Token totals on physical upstream usage.
 // The activity-series request count uses delivered responses so retries,
-// fallback and hedge attempts do not inflate the public “次请求” metric.
+// fallback and hedge attempts do not inflate the public "requests" metric.
 
 import {
   TABLE, TABLE_MODEL, TABLE_TOTALS, TABLE_DAILY,

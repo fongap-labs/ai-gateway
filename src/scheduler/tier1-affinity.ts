@@ -43,7 +43,7 @@ type AffinityKV = {
 // A minimal Map wrapper with TTL + max capacity + active cleanup. Eviction
 // policy: expired entries first (any position), then oldest-inserted first
 // (Map preserves insertion order in JS). No precise LRU — see the task spec:
-// "不需要实现复杂精准 LRU".
+// "no need to implement complex precise LRU".
 class BoundedTtlMap<V> {
   private _map: Map<string, { value: V, expiresAt: number }>;
   private _max: number;

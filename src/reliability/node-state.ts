@@ -319,7 +319,7 @@ export function applyHealthPenalty(nodeId: string, kind: string): void {
 // does NOT touch activeRequests, healthScore, circuitState or cooldown — those
 // stay driven by the real outcome path for Tier 2/3 and stay neutral for
 // Tier 1 (whose slot/concurrency is owned by tier1-state). Mirroring business
-// stats here is explicitly allowed: "D1/KV 中与业务统计相关的现有能力" stays.
+// stats here is explicitly allowed: existing D1/KV business-statistics capabilities stay.
 export function bumpNodeCounters(nodeId: string, { requests = 0, successes = 0, failures = 0 }: { requests?: number, successes?: number, failures?: number } = {}, now: number = Date.now()): void {
   const s = getNodeState(nodeId);
   if (requests) { s.totalRequests += requests; s.lastUsedAt = now; }
