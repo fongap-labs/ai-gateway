@@ -8,7 +8,7 @@
 // retention use.
 //
 // Timezone note: D1 stores UTC hourly buckets. UTC+8 is used ONLY
-// for natural-day boundaries (今日, 热力图日期, 星期, 月份).
+// for natural-day boundaries (today, heatmap date, weekday, month).
 // Rolling windows (24h, 7d, cumulative) remain UTC-based sliding
 // windows.
 

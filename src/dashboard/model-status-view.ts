@@ -77,8 +77,8 @@ export function filterDashboardModelStatus(status: DashboardModelStatusEnvelope,
 }
 
 // PublicModelStatus wrapper used by the dashboard. `historicalEvidence` is the
-// 7-day retention-window evidence set used to distinguish 无新记录 from
-// 暂无记录; it is optional and defaults to empty (fail-open, never fabricated).
+// 7-day retention-window evidence set used to distinguish no_recent from
+// no_record; it is optional and defaults to empty (fail-open, never fabricated).
 export function publicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Record<string, unknown> | null | undefined, evidence: ReadonlySet<string> = new Set(), now: number = Date.now(), historicalEvidence: ReadonlySet<string> = new Set()): DashboardModelStatusEnvelope {
   const status = getPublicModelStatus(nodes, env, evidence, now, historicalEvidence);
   return filterDashboardModelStatus(status, env?.AIG_DASHBOARD_MODELS);

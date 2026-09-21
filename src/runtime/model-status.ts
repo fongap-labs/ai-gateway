@@ -26,12 +26,12 @@
 // pure read-only projection.
 //
 // Five states (kept stable for the UI):
-//   available     近 24 小时存在成功服务证据,且当前无全部候选故障事实
-//   fluctuating   当前存在明确异常,但近 24 小时仍有成功服务证据
-//   no_recent     近 24 小时无新成功记录,但近 7d 保留窗口内存在成功记录
-//   no_record     模型已配置公开,但统计保留窗口内没有任何成功记录
-//   down          当前已有明确 Runtime 故障事实(全部 serving candidate
-//                 unavailable 且近 24 小时无成功证据)
+//   available     credible success evidence in the last 24h, and no all-candidate failure
+//   fluctuating   current anomalies exist, but success evidence remains in the last 24h
+//   no_recent     no new success in the last 24h, but success exists within the 7d retention window
+//   no_record     model is publicly configured, but no success record in the retention window
+//   down          confirmed runtime failure (all serving candidates unavailable
+//                 and no success evidence in the last 24h)
 //
 // Recent-success evidence source: the existing D1 per-model hourly aggregate
 // (token_usage_model_hourly). A row with requests > 0 in the recent window
@@ -97,8 +97,8 @@ export type PublicModelStatusEntry = {
 //                       normalized once on entry.
 //   historicalEvidence: Set<string> of canonical model keys with success within
 //                       the historical retention window (7d). Used only to
-//                       distinguish 无新记录 (history exists, recent does not)
-//                       from 暂无记录 (no history at all). Empty set is valid
+//                       distinguish no_recent (history exists, recent does not)
+//                       from no_record (no history at all). Empty set is valid
 //                       and honest.
 //   now               : Optional clock for deterministic tests.
 //
@@ -190,13 +190,13 @@ export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Rec
 // Compute the public five-state status for one logical model.
 //
 // Priority (fixed, never reordered):
-//   1. No serving candidate at all            -> down (服务故障)
-//   2. Any candidate runtime-available now    -> available (服务可用)
-//   3. ALL candidates runtime-down + 24h hit  -> fluctuating (服务波动)
-//   4. ALL candidates runtime-down, no 24h hit -> down (服务故障)
-//   5. Some unobserved + 24h hit              -> available (服务可用)
-//   6. No available, not all-down, 7d hit     -> no_recent (无新记录)
-//   7. No available, not all-down, no 7d hit  -> no_record (暂无记录)
+//   1. No serving candidate at all            -> down (service down)
+//   2. Any candidate runtime-available now    -> available (service available)
+//   3. ALL candidates runtime-down + 24h hit  -> fluctuating (service fluctuating)
+//   4. ALL candidates runtime-down, no 24h hit -> down (service down)
+//   5. Some unobserved + 24h hit              -> available (service available)
+//   6. No available, not all-down, 7d hit     -> no_recent (no recent record)
+//   7. No available, not all-down, no 7d hit  -> no_record (no record)
 function modelStatus(name: string, serving: RuntimeNode[], recentEvidence: ReadonlySet<string>, historicalEvidence: ReadonlySet<string>, now: number): PublicModelStatusState {
   if (!serving.length) return 'down';
 
