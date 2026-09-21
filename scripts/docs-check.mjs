@@ -22,7 +22,7 @@ check('docs/ root has no stray .md files', unexpectedDocsRoot.length === 0, unex
 const unexpectedDocsDirs = docsDirs.filter(d => !ALLOWED_DOCS_DIRS.includes(d));
 check(`docs/ only contains allowed subdirectories: ${ALLOWED_DOCS_DIRS.join(', ')}`, unexpectedDocsDirs.length === 0, unexpectedDocsDirs.join(', '));
 
-const ALLOWED_ROOT_MDS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'CLAUDE.md'];
+const ALLOWED_ROOT_MDS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'CLAUDE.md', 'CHANGELOG.md'];
 const LOCALIZED_README_PATTERN = /^README\.[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*\.md$/;
 const rootEntries = fs.readdirSync(root, { withFileTypes: true });
 const rootMds = rootEntries.filter(e => e.isFile() && e.name.endsWith('.md')).map(e => e.name);
