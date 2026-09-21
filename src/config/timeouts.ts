@@ -60,7 +60,7 @@ export function attemptBudgetSliceMs(remainingBudgetMs: number, remainingAttempt
 // 60s request budget and 5 possible attempts, that reduced the first candidate
 // to ~12s total for BOTH headers and first meaningful output. A healthy
 // coding/reasoning model could therefore be timed out long before its
-// configured FIRST_EVENT_TIMEOUT.
+// configured AIG_FIRST_EVENT_TIMEOUT_MS.
 //
 // Reserve-aware allocation lets the current candidate use the remaining
 // request budget except for a small reserve per later candidate. Phase-local
@@ -117,16 +117,16 @@ export function getLimits(env: Record<string, unknown>): Limits {
   let cached = cache.get(env);
   if (cached) return cached;
   cached = {
-    headersTimeoutMs: clampInt(readEnv(env, 'UPSTREAM_HEADER_TIMEOUT'), LIMITS.UPSTREAM_HEADER_TIMEOUT.min, LIMITS.UPSTREAM_HEADER_TIMEOUT.max, LIMITS.UPSTREAM_HEADER_TIMEOUT.def),
-    firstEventTimeoutMs: clampInt(readEnv(env, 'FIRST_EVENT_TIMEOUT'), LIMITS.FIRST_EVENT_TIMEOUT.min, LIMITS.FIRST_EVENT_TIMEOUT.max, LIMITS.FIRST_EVENT_TIMEOUT.def),
-    streamIdleTimeoutMs: clampInt(readEnv(env, 'STREAM_IDLE_TIMEOUT'), LIMITS.STREAM_IDLE_TIMEOUT.min, LIMITS.STREAM_IDLE_TIMEOUT.max, LIMITS.STREAM_IDLE_TIMEOUT.def),
-    rateLimitCooldownMs: clampInt(readEnv(env, 'RATE_LIMIT_COOLDOWN'), LIMITS.RATE_LIMIT_COOLDOWN.min, LIMITS.RATE_LIMIT_COOLDOWN.max, LIMITS.RATE_LIMIT_COOLDOWN.def),
-    authFailCooldownMs: clampInt(readEnv(env, 'AUTH_FAILURE_COOLDOWN'), LIMITS.AUTH_FAILURE_COOLDOWN.min, LIMITS.AUTH_FAILURE_COOLDOWN.max, LIMITS.AUTH_FAILURE_COOLDOWN.def),
-    maxBodyBytes: clampInt(readEnv(env, 'MAX_BODY_BYTES'), LIMITS.MAX_BODY_BYTES.min, LIMITS.MAX_BODY_BYTES.max, LIMITS.MAX_BODY_BYTES.def),
-    failoverBudgetMs: clampInt(readEnv(env, 'FAILOVER_BUDGET_MS'), LIMITS.FAILOVER_BUDGET_MS.min, LIMITS.FAILOVER_BUDGET_MS.max, LIMITS.FAILOVER_BUDGET_MS.def),
-    hedgeDelayMs: clampInt(readEnv(env, 'HEDGE_DELAY_MS'), LIMITS.HEDGE_DELAY_MS.min, LIMITS.HEDGE_DELAY_MS.max, LIMITS.HEDGE_DELAY_MS.def),
-    maxHedgesPerRequest: clampInt(readEnv(env, 'REQUEST_HEDGE_MAX'), LIMITS.REQUEST_HEDGE_MAX.min, LIMITS.REQUEST_HEDGE_MAX.max, LIMITS.REQUEST_HEDGE_MAX.def),
-    gatewayKeyRpm: clampInt(readEnv(env, 'GATEWAY_KEY_RPM'), LIMITS.GATEWAY_KEY_RPM.min, LIMITS.GATEWAY_KEY_RPM.max, LIMITS.GATEWAY_KEY_RPM.def),
+    headersTimeoutMs: clampInt(readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS'), LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.min, LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.max, LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.def),
+    firstEventTimeoutMs: clampInt(readEnv(env, 'AIG_FIRST_EVENT_TIMEOUT_MS'), LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.min, LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.max, LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.def),
+    streamIdleTimeoutMs: clampInt(readEnv(env, 'AIG_STREAM_IDLE_TIMEOUT_MS'), LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.min, LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.max, LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.def),
+    rateLimitCooldownMs: clampInt(readEnv(env, 'AIG_RATE_LIMIT_COOLDOWN_MS'), LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.min, LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.max, LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.def),
+    authFailCooldownMs: clampInt(readEnv(env, 'AIG_AUTH_FAILURE_COOLDOWN_MS'), LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.min, LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.max, LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.def),
+    maxBodyBytes: clampInt(readEnv(env, 'AIG_REQUEST_BODY_MAX_BYTES'), LIMITS.AIG_REQUEST_BODY_MAX_BYTES.min, LIMITS.AIG_REQUEST_BODY_MAX_BYTES.max, LIMITS.AIG_REQUEST_BODY_MAX_BYTES.def),
+    failoverBudgetMs: clampInt(readEnv(env, 'AIG_FAILOVER_BUDGET_MS'), LIMITS.AIG_FAILOVER_BUDGET_MS.min, LIMITS.AIG_FAILOVER_BUDGET_MS.max, LIMITS.AIG_FAILOVER_BUDGET_MS.def),
+    hedgeDelayMs: clampInt(readEnv(env, 'AIG_HEDGE_DELAY_MS'), LIMITS.AIG_HEDGE_DELAY_MS.min, LIMITS.AIG_HEDGE_DELAY_MS.max, LIMITS.AIG_HEDGE_DELAY_MS.def),
+    maxHedgesPerRequest: clampInt(readEnv(env, 'AIG_REQUEST_HEDGE_MAX'), LIMITS.AIG_REQUEST_HEDGE_MAX.min, LIMITS.AIG_REQUEST_HEDGE_MAX.max, LIMITS.AIG_REQUEST_HEDGE_MAX.def),
+    gatewayKeyRpm: clampInt(readEnv(env, 'AIG_ACCESS_KEY_RPM'), LIMITS.AIG_ACCESS_KEY_RPM.min, LIMITS.AIG_ACCESS_KEY_RPM.max, LIMITS.AIG_ACCESS_KEY_RPM.def),
   };
   cache.set(env, cached);
   return cached;

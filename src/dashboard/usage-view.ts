@@ -267,7 +267,7 @@ export async function usageSection(env: Record<string, unknown>, now: number = D
     ${summaryOk ? renderTokenComposition(summary.cumulative) : ''}
     <div class="usage-detail-grid">
       ${activityPanel}
-      ${renderModelUsage(modelUsage, officialNames, env?.DASHBOARD_MODELS)}
+      ${renderModelUsage(modelUsage, officialNames, env?.AIG_DASHBOARD_MODELS)}
     </div>
   </div>
 </section>`;

@@ -81,15 +81,15 @@ export type PublicModelStatusEntry = {
 // model known to the gateway.
 //
 // Source of model names: node mappings are the PRIMARY source — the operator
-// declares models where they actually live (in TIER1/TIER2/TIER3_NODES_*).
-// MODELS_CONFIG is an OPTIONAL metadata layer that may downgrade a model to
+// declares models where they actually live (in TIER1/TIER2/AIG_TIER3_NODES_*).
+// AIG_MODELS_CONFIG is an OPTIONAL metadata layer that may downgrade a model to
 // `visibility: 'internal'` to hide it from the public catalog; it NEVER
 // narrows or widens the visible model set on its own. This keeps the operator
 // from having to enumerate every free model in a separate config file.
 //
 // Inputs:
 //   nodes             : Runtime Node[] (from loadGatewayConfig(env).nodes)
-//   env               : The Worker env (used to read MODELS_CONFIG via
+//   env               : The Worker env (used to read AIG_MODELS_CONFIG via
 //                       loadModelRegistry for visibility filtering only).
 //   evidence          : Set<string> of canonical statistical model keys (trim +
 //                       lowercase) with recent (24h) success. An empty set is the

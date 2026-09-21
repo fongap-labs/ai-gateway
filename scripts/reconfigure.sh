@@ -49,14 +49,14 @@ set -- "$@" --secrets "$SECRETS_FILE" --existing-vars "$EXISTING_VARS_FILE" --ou
 node scripts/plan-node-configuration.mjs "$@"
 printf '{}\n' > "$TMP_ACCESS"
 
-AFFINITY_KV_ID=""
+AIG_AFFINITY_KV_ID=""
 if ! node -e '
 const fs = require("fs");
 const c = fs.existsSync("wrangler.user.jsonc") ? JSON.parse(fs.readFileSync("wrangler.user.jsonc", "utf8")) : {};
 process.exit((c.kv_namespaces || []).some((entry) => entry.binding === "TIER1_AFFINITY" && /^[a-fA-F0-9]{32}$/.test(entry.id || "")) ? 0 : 1);
 '; then
   printf "Tier 1 affinity KV namespace ID (required): "
-  read -r AFFINITY_KV_ID
+  read -r AIG_AFFINITY_KV_ID
 fi
 
 echo "==> Gateway Access Groups"
@@ -68,17 +68,17 @@ for GROUP in AIR PRO MAX ULTRA AGENT; do
     continue
   fi
 
-  printf "new GATEWAY_KEY_%s: " "$GROUP"
+  printf "new AIG_ACCESS_KEY_%s: " "$GROUP"
   stty -echo 2>/dev/null || true
   read -r GROUP_KEY
   stty echo 2>/dev/null || true
   echo ""
-  [ -n "$GROUP_KEY" ] || { echo "GATEWAY_KEY_$GROUP must not be empty when configuring this Group." >&2; exit 1; }
+  [ -n "$GROUP_KEY" ] || { echo "AIG_ACCESS_KEY_$GROUP must not be empty when configuring this Group." >&2; exit 1; }
 
-  printf "GATEWAY_MODELS_%s (CSV, required): " "$GROUP"
+  printf "AIG_ACCESS_MODELS_%s (CSV, required): " "$GROUP"
   read -r GROUP_MODELS
   if [ -z "$(printf '%s' "$GROUP_MODELS" | tr -d '[:space:]')" ]; then
-    echo "GATEWAY_MODELS_$GROUP is required when GATEWAY_KEY_$GROUP is set." >&2
+    echo "AIG_ACCESS_MODELS_$GROUP is required when AIG_ACCESS_KEY_$GROUP is set." >&2
     exit 1
   fi
 
@@ -87,13 +87,13 @@ const fs = require("fs");
 const file = process.argv[1];
 const value = JSON.parse(fs.readFileSync(file, "utf8"));
 const group = process.env.GROUP_NAME;
-value[`GATEWAY_KEY_${group}`] = process.env.GROUP_KEY_VALUE;
-value[`GATEWAY_MODELS_${group}`] = process.env.GROUP_MODELS_VALUE;
+value[`AIG_ACCESS_KEY_${group}`] = process.env.GROUP_KEY_VALUE;
+value[`AIG_ACCESS_MODELS_${group}`] = process.env.GROUP_MODELS_VALUE;
 fs.writeFileSync(file, JSON.stringify(value));
 ' "$TMP_ACCESS"
 done
 
-AFFINITY_KV_ID="$AFFINITY_KV_ID" node -e '
+AIG_AFFINITY_KV_ID="$AIG_AFFINITY_KV_ID" node -e '
 const fs = require("fs");
 const base = fs.existsSync("wrangler.user.jsonc")
   ? JSON.parse(fs.readFileSync("wrangler.user.jsonc", "utf8"))
@@ -103,17 +103,17 @@ const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 base.vars = { ...plan.vars };
 for (const [name, value] of Object.entries(previousVars)) {
-  if (name.startsWith("GATEWAY_MODELS_")) base.vars[name] = value;
+  if (name.startsWith("AIG_ACCESS_MODELS_")) base.vars[name] = value;
 }
 for (const [name, value] of Object.entries(access)) {
-  if (name.startsWith("GATEWAY_MODELS_")) base.vars[name] = value;
+  if (name.startsWith("AIG_ACCESS_MODELS_")) base.vars[name] = value;
 }
 if (!(base.kv_namespaces || []).some((entry) => entry.binding === "TIER1_AFFINITY")) {
-  if (!/^[a-fA-F0-9]{32}$/.test(process.env.AFFINITY_KV_ID || "")) {
+  if (!/^[a-fA-F0-9]{32}$/.test(process.env.AIG_AFFINITY_KV_ID || "")) {
     console.error("Tier 1 affinity KV namespace ID must be 32 hexadecimal characters");
     process.exit(1);
   }
-  base.kv_namespaces = [...(base.kv_namespaces || []), { binding: "TIER1_AFFINITY", id: process.env.AFFINITY_KV_ID }];
+  base.kv_namespaces = [...(base.kv_namespaces || []), { binding: "TIER1_AFFINITY", id: process.env.AIG_AFFINITY_KV_ID }];
 }
 fs.writeFileSync("wrangler.user.jsonc", JSON.stringify(base, null, 2) + "\n");
 ' "$TMP_PLAN" "$TMP_ACCESS"
@@ -124,7 +124,7 @@ const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const bulk = { ...plan.secrets };
 for (const [name, value] of Object.entries(access)) {
-  if (name.startsWith("GATEWAY_KEY_")) bulk[name] = value;
+  if (name.startsWith("AIG_ACCESS_KEY_")) bulk[name] = value;
 }
 fs.writeFileSync(process.argv[3], JSON.stringify(bulk));
 ' "$TMP_PLAN" "$TMP_ACCESS" "$TMP_BULK"

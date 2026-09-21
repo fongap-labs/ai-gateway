@@ -8,14 +8,14 @@
 //   Client presents a credential (Authorization: Bearer or x-api-key)
 //     ↓
 //   The credential is matched (constant-time SHA-256) against each
-//   configured GATEWAY_KEY_<GROUP> secret.
+//   configured AIG_ACCESS_KEY_<GROUP> secret.
 //     ↓
 //   On a hit, the resolved group and its model allowlist are returned.
 //     ↓
 //   The request handler calls authorizeModel() against the configured
 //   logical model set BEFORE entering the scheduler.
 //
-// If no GATEWAY_KEY_<GROUP> is configured, no credential is accepted.
+// If no AIG_ACCESS_KEY_<GROUP> is configured, no credential is accepted.
 // Raw secrets never leave this module. Only the low-cardinality group label
 // is used in logs/stats.
 

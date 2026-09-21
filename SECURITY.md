@@ -20,7 +20,7 @@ If private advisories are unavailable, open a public Issue containing only a req
 
 ## Deployment responsibilities
 
-- Store configured `GATEWAY_KEY_AIR`, `GATEWAY_KEY_PRO`, `GATEWAY_KEY_MAX`, `GATEWAY_KEY_ULTRA`, `GATEWAY_KEY_AGENT` values and all `TIER{1,2,3}_CREDENTIALS_*` shards as Cloudflare Secrets. Store the corresponding `GATEWAY_MODELS_AIR`, `GATEWAY_MODELS_PRO`, `GATEWAY_MODELS_MAX`, `GATEWAY_MODELS_ULTRA`, `GATEWAY_MODELS_AGENT` values and node configs (`TIER{1,2,3}_NODES_*`) as non-secret variables. Node credentials bind by **Tier + node id**; `01..10` are shard numbers only, and Config/Secret shard suffixes do not need to match;
+- Store configured `AIG_ACCESS_KEY_AIR`, `AIG_ACCESS_KEY_PRO`, `AIG_ACCESS_KEY_MAX`, `AIG_ACCESS_KEY_ULTRA`, `AIG_ACCESS_KEY_AGENT` values and all `AIG_TIER{1,2,3}_CREDENTIALS_*` shards as Cloudflare Secrets. Store the corresponding `AIG_ACCESS_MODELS_AIR`, `AIG_ACCESS_MODELS_PRO`, `AIG_ACCESS_MODELS_MAX`, `AIG_ACCESS_MODELS_ULTRA`, `AIG_ACCESS_MODELS_AGENT` values and node configs (`AIG_TIER{1,2,3}_NODES_*`) as non-secret variables. Node credentials bind by **Tier + node id**; `01..10` are shard numbers only, and Config/Secret shard suffixes do not need to match;
 - never commit `.dev.vars`, `.env`, `secrets*.json`, or `wrangler.user.jsonc`;
 - never pass credentials through URL query parameters;
 - keep `/health` and `/metrics` protected;
@@ -33,5 +33,5 @@ If private advisories are unavailable, open a public Issue containing only a req
 - strict upstream header allowlist — client credentials, cookies, forwarded and CF-private headers are never relayed;
 - HTTPS-only upstreams by default; `redirect: 'manual'` so redirects never carry credentials;
 - bounded request/response reads;
-- CORS disabled unless `ALLOWED_ORIGIN` is set explicitly;
+- CORS disabled unless `AIG_CORS_ORIGIN` is set explicitly;
 - credentials are excluded from every response, diagnostic endpoint, and log line.

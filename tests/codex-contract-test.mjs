@@ -65,13 +65,13 @@ function resetMock() {
 
 function makeEnv({ tier1, tier2, tier3, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'codex-contract-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
-    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { AIG_TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(secrets ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -373,7 +373,7 @@ await test('responses first-event failover: empty upstream rotates before any ev
   resetMock();
   routeHandlers['fe-a.example.com'] = () => sseResponse([]);
   routeHandlers['fe-b.example.com'] = () => sseResponse(textLifecycle('ok'));
-  const env = makeEnv({ tier1: [node('fe-a'), node('fe-b')], secrets: { 'fe-a': 'k', 'fe-b': 'k' }, extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' } });
+  const env = makeEnv({ tier1: [node('fe-a'), node('fe-b')], secrets: { 'fe-a': 'k', 'fe-b': 'k' }, extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' } });
   const res = await worker.fetch(responsesRequest({ model: 'code-max', input: 'hi', stream: true }), env, {});
   assert.equal(res.status, 200);
   assert.equal(upstreamCalls.length, 2);

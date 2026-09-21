@@ -75,11 +75,11 @@ $accessKeys = [ordered]@{}
 $accessModels = [ordered]@{}
 $verificationKey = $null
 foreach ($group in @('AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT')) {
-  $key = Read-SecretText "GATEWAY_KEY_$group (empty to skip)"
+  $key = Read-SecretText "AIG_ACCESS_KEY_$group (empty to skip)"
   if ([string]::IsNullOrEmpty($key)) { continue }
-  $models = (Read-Host "GATEWAY_MODELS_$group (CSV, required)").Trim()
+  $models = (Read-Host "AIG_ACCESS_MODELS_$group (CSV, required)").Trim()
   if ([string]::IsNullOrWhiteSpace($models)) {
-    throw "GATEWAY_MODELS_$group is required when GATEWAY_KEY_$group is set."
+    throw "AIG_ACCESS_MODELS_$group is required when AIG_ACCESS_KEY_$group is set."
   }
   $accessKeys[$group] = $key
   $accessModels[$group] = $models
@@ -106,7 +106,7 @@ try {
   $userConfig.name = $workerName
   $varsMap = [ordered]@{}
   foreach ($prop in $plan.vars.PSObject.Properties) { $varsMap[$prop.Name] = $prop.Value }
-  foreach ($group in $accessModels.Keys) { $varsMap["GATEWAY_MODELS_$group"] = $accessModels[$group] }
+  foreach ($group in $accessModels.Keys) { $varsMap["AIG_ACCESS_MODELS_$group"] = $accessModels[$group] }
   $userConfig | Add-Member -NotePropertyName vars -NotePropertyValue $varsMap -Force
   $userConfig | Add-Member -NotePropertyName kv_namespaces -NotePropertyValue @(
     [ordered]@{ binding = 'TIER1_AFFINITY'; id = $affinityKvId }
@@ -116,7 +116,7 @@ try {
   $bulkPath = Join-Path ([IO.Path]::GetTempPath()) ("gateway-secrets-" + [guid]::NewGuid().ToString('N') + '.json')
   $tmpFiles += $bulkPath
   $bulk = [ordered]@{}
-  foreach ($group in $accessKeys.Keys) { $bulk["GATEWAY_KEY_$group"] = $accessKeys[$group] }
+  foreach ($group in $accessKeys.Keys) { $bulk["AIG_ACCESS_KEY_$group"] = $accessKeys[$group] }
   foreach ($prop in $plan.secrets.PSObject.Properties) { $bulk[$prop.Name] = $prop.Value }
   [IO.File]::WriteAllText($bulkPath, ($bulk | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))
 

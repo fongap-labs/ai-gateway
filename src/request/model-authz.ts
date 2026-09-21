@@ -16,18 +16,18 @@
 //     reliability layer.
 //
 // `knownModels` is the Known Model Catalog (collectKnownModels): the union
-// of every explicit `node.models` key and every MODELS_CONFIG key. This is
+// of every explicit `node.models` key and every AIG_MODELS_CONFIG key. This is
 // the single source of model existence for the whole request path.
 //
 // Fail-closed rules:
 //   * An empty catalog grants ZERO models — even an allow-all key can never
 //     call a model that exists nowhere in the gateway.
-//   * authz.allowAll ("*" = legacy key or GATEWAY_MODELS_<GROUP>="*")
+//   * authz.allowAll ("*" = legacy key or AIG_ACCESS_MODELS_<GROUP>="*")
 //     means "all models in the Known Model Catalog", NOT "any model string".
 //   * A per-key allowlist is intersected with the catalog.
 //
 // `authz` is the auth result from authorize(). When authz.allowAll is true
-// (legacy key or GATEWAY_MODELS_<GROUP>="*"), the entire catalog is
+// (legacy key or AIG_ACCESS_MODELS_<GROUP>="*"), the entire catalog is
 // visible/callable. Otherwise the key's allowlist is intersected with the
 // catalog.
 
@@ -55,7 +55,7 @@ export function authorizeModel(requestedModel: string, knownModels: ReadonlySet<
   // cannot conjure a model that exists nowhere in the gateway — a wildcard
   // node + empty catalog serves nothing.
   if (!knownModels || knownModels.size === 0) return { allowed: false, status: 404 };
-  // Allow-all keys (legacy or GATEWAY_MODELS_<GROUP>="*") are bounded
+  // Allow-all keys (legacy or AIG_ACCESS_MODELS_<GROUP>="*") are bounded
   // by the catalog: "*" means every KNOWN model, never any model string.
   if (authz.allowAll) {
     return knownModels.has(requestedModel)

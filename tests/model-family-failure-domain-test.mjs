@@ -55,12 +55,12 @@ function envFor(nodes) {
     id, provider, base_url: baseUrl, priority, models,
   }));
   return {
-    GATEWAY_KEY_ULTRA: ACCESS_KEY,
-    GATEWAY_MODELS_ULTRA: '*',
+    AIG_ACCESS_KEY_ULTRA: ACCESS_KEY,
+    AIG_ACCESS_MODELS_ULTRA: '*',
     TIER1_SCHEDULER_SEED: 'family-domain-test',
-    PROTOCOL_FALLBACKS: 'disable',
-    TIER1_NODES_01: JSON.stringify(configs),
-    TIER1_CREDENTIALS_01: JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, n.credential]))),
+    AIG_PROTOCOL_FALLBACKS: 'disable',
+    AIG_TIER1_NODES_01: JSON.stringify(configs),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, n.credential]))),
   };
 }
 

@@ -64,15 +64,15 @@ function makeEnv({ tier1, tier2, tier3, secrets = {}, extraEnv = {} } = {}) {
   const t2s = subset(tier2);
   const t3s = subset(tier3);
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'stress-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(tier3 ? { TIER3_NODES_01: JSON.stringify(tier3) } : {}),
-    ...(Object.keys(t1s).length ? { TIER1_CREDENTIALS_01: JSON.stringify(t1s) } : {}),
-    ...(Object.keys(t2s).length ? { TIER2_CREDENTIALS_01: JSON.stringify(t2s) } : {}),
-    ...(Object.keys(t3s).length ? { TIER3_CREDENTIALS_01: JSON.stringify(t3s) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(tier3 ? { AIG_TIER3_NODES_01: JSON.stringify(tier3) } : {}),
+    ...(Object.keys(t1s).length ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(t1s) } : {}),
+    ...(Object.keys(t2s).length ? { AIG_TIER2_CREDENTIALS_01: JSON.stringify(t2s) } : {}),
+    ...(Object.keys(t3s).length ? { AIG_TIER3_CREDENTIALS_01: JSON.stringify(t3s) } : {}),
     ...extraEnv,
   };
 }
@@ -157,7 +157,7 @@ await test('S2b explicit max_in_flight=4 remains an opt-in admission ceiling', a
   const env = makeEnv({
     tier1: [node('capped')],
     secrets: { capped: 'k' },
-    extraEnv: { POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }) },
+    extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }) },
   });
   const settled = [];
   const requests = Array.from({ length: 8 }, () => worker.fetch(chatRequest(), env, {}).then((response) => {
@@ -280,7 +280,7 @@ await test('S7 failover wall-clock budget prevents dispatch after the budget is 
   const env = makeEnv({
     tier1: [node('slow'), node('fast')],
     secrets: { slow: 's', fast: 'f' },
-    extraEnv: { FAILOVER_BUDGET_MS: '1200' },
+    extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 504);

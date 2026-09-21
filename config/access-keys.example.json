@@ -1,6 +1,6 @@
 {
-  "GATEWAY_KEY_AIR": "replace-with-a-long-random-air-key",
-  "GATEWAY_MODELS_AIR": "general-air",
-  "GATEWAY_KEY_PRO": "replace-with-a-long-random-pro-key",
-  "GATEWAY_MODELS_PRO": "code-pro"
+  "AIG_ACCESS_KEY_AIR": "replace-with-a-long-random-air-key",
+  "AIG_ACCESS_MODELS_AIR": "general-air",
+  "AIG_ACCESS_KEY_PRO": "replace-with-a-long-random-pro-key",
+  "AIG_ACCESS_MODELS_PRO": "code-pro"
 }

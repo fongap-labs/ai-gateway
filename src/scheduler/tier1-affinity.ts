@@ -14,7 +14,7 @@
 
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 
-const TIER1_AFFINITY_FACTOR = 0.85;
+const AIG_AFFINITY_KV_FACTOR = 0.85;
 const KV_BINDING = 'TIER1_AFFINITY';
 const KEY_PREFIX = 'affinity:v1:';
 const TTL_SECONDS = 30 * 60;
@@ -211,7 +211,7 @@ export function affinityShouldEscape(affinityScore: number, winnerScore: number)
 }
 
 export function tier1AffinityFactor(accountId: string, affinityAccountId: string | null): number {
-  return affinityAccountId && accountId === affinityAccountId ? TIER1_AFFINITY_FACTOR : 1;
+  return affinityAccountId && accountId === affinityAccountId ? AIG_AFFINITY_KV_FACTOR : 1;
 }
 
 export function recordTier1AffinityDecision({ affinityHit = false, escaped = false }: { affinityHit?: boolean, escaped?: boolean } = {}): void {

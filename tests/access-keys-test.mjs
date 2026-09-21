@@ -22,7 +22,7 @@ async function test(name, fn) {
 }
 
 const ENV_MODELS = {
-  MODELS_CONFIG: JSON.stringify({
+  AIG_MODELS_CONFIG: JSON.stringify({
     'code-pro': { policy: 'fast' },
     'general-air': { policy: 'fast' },
   }),
@@ -45,8 +45,8 @@ await test('no configured group fails closed', async () => {
 await test('CSV allowlist is group-scoped and fail-closed', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_PRO: 'pro-secret',
-    GATEWAY_MODELS_PRO: 'code-pro',
+    AIG_ACCESS_KEY_PRO: 'pro-secret',
+    AIG_ACCESS_MODELS_PRO: 'code-pro',
   };
   const result = await authorize(req('pro-secret'), env);
   assert.equal(result.authorized, true);
@@ -58,8 +58,8 @@ await test('CSV allowlist is group-scoped and fail-closed', async () => {
 
 await test('missing or empty group model list grants zero models', async () => {
   for (const models of [undefined, '']) {
-    const env = { ...ENV_MODELS, GATEWAY_KEY_AIR: 'air-secret' };
-    if (models !== undefined) env.GATEWAY_MODELS_AIR = models;
+    const env = { ...ENV_MODELS, AIG_ACCESS_KEY_AIR: 'air-secret' };
+    if (models !== undefined) env.AIG_ACCESS_MODELS_AIR = models;
     const result = await authorize(req('air-secret'), env);
     assert.equal(result.authorized, true);
     assert.equal(result.allowAll, false);
@@ -71,8 +71,8 @@ await test('missing or empty group model list grants zero models', async () => {
 await test('wildcard means all known models, not arbitrary strings', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_MAX: 'max-secret',
-    GATEWAY_MODELS_MAX: '*',
+    AIG_ACCESS_KEY_MAX: 'max-secret',
+    AIG_ACCESS_MODELS_MAX: '*',
   };
   const result = await authorize(req('max-secret'), env);
   assert.equal(result.authorized, true);
@@ -85,8 +85,8 @@ await test('wildcard means all known models, not arbitrary strings', async () =>
 await test('wrong credential is rejected', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_ULTRA: 'ultra-secret',
-    GATEWAY_MODELS_ULTRA: '*',
+    AIG_ACCESS_KEY_ULTRA: 'ultra-secret',
+    AIG_ACCESS_MODELS_ULTRA: '*',
   };
   assert.equal((await authorize(req('wrong'), env)).authorized, false);
 });
@@ -94,11 +94,11 @@ await test('wrong credential is rejected', async () => {
 await test('all five groups resolve independently', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_AIR: 'air', GATEWAY_MODELS_AIR: 'general-air',
-    GATEWAY_KEY_PRO: 'pro', GATEWAY_MODELS_PRO: 'code-pro',
-    GATEWAY_KEY_MAX: 'max', GATEWAY_MODELS_MAX: 'general-air,code-pro',
-    GATEWAY_KEY_ULTRA: 'ultra', GATEWAY_MODELS_ULTRA: '*',
-    GATEWAY_KEY_AGENT: 'agent', GATEWAY_MODELS_AGENT: 'code-pro',
+    AIG_ACCESS_KEY_AIR: 'air', AIG_ACCESS_MODELS_AIR: 'general-air',
+    AIG_ACCESS_KEY_PRO: 'pro', AIG_ACCESS_MODELS_PRO: 'code-pro',
+    AIG_ACCESS_KEY_MAX: 'max', AIG_ACCESS_MODELS_MAX: 'general-air,code-pro',
+    AIG_ACCESS_KEY_ULTRA: 'ultra', AIG_ACCESS_MODELS_ULTRA: '*',
+    AIG_ACCESS_KEY_AGENT: 'agent', AIG_ACCESS_MODELS_AGENT: 'code-pro',
   };
   for (const [secret, group] of [['air', 'AIR'], ['pro', 'PRO'], ['max', 'MAX'], ['ultra', 'ULTRA'], ['agent', 'AGENT']]) {
     const result = await authorize(req(secret), env);
@@ -110,8 +110,8 @@ await test('all five groups resolve independently', async () => {
 await test('authorization result never leaks the raw secret', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_AIR: 'super-secret-value',
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: 'super-secret-value',
+    AIG_ACCESS_MODELS_AIR: '*',
   };
   const serialized = JSON.stringify(await authorize(req('super-secret-value'), env));
   assert.ok(!serialized.includes('super-secret-value'));
@@ -121,8 +121,8 @@ await test('authorization result never leaks the raw secret', async () => {
 await test('unknown allowlist entry emits a catalog warning but creates no model', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_PRO: 'pro',
-    GATEWAY_MODELS_PRO: 'ghost',
+    AIG_ACCESS_KEY_PRO: 'pro',
+    AIG_ACCESS_MODELS_PRO: 'ghost',
   };
   const { diagnostics } = loadAccessKeysConfig(env);
   assert.ok(diagnostics.some((d) => d.includes('ghost') && d.includes('Known Model Catalog')));
@@ -131,17 +131,17 @@ await test('unknown allowlist entry emits a catalog warning but creates no model
 await test('x-api-key is accepted for grouped keys', async () => {
   const env = {
     ...ENV_MODELS,
-    GATEWAY_KEY_AIR: 'air',
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: 'air',
+    AIG_ACCESS_MODELS_AIR: '*',
   };
   const result = await authorize(req('air', 'x-api-key'), env);
   assert.equal(result.authorized, true);
   assert.equal(result.group, 'AIR');
 });
 
-await test('known model catalog is node mappings plus MODELS_CONFIG', async () => {
+await test('known model catalog is node mappings plus AIG_MODELS_CONFIG', async () => {
   const nodes = [{ models: { 'Code-Max': 'up' } }];
-  const env = { MODELS_CONFIG: JSON.stringify({ Air: { policy: 'default' }, OCR: { policy: 'default' } }) };
+  const env = { AIG_MODELS_CONFIG: JSON.stringify({ Air: { policy: 'default' }, OCR: { policy: 'default' } }) };
   const known = collectKnownModels(nodes, env);
   assert.deepEqual([...known].sort(), ['Air', 'Code-Max', 'OCR']);
   assert.ok(!known.has('made-up-model'));

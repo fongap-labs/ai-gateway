@@ -18,7 +18,7 @@ const publicLookup = async () => [{ address: '93.184.216.34', family: 4 }];
 // Node Config stays account-level only. Discovery must derive protocol/surfaces
 // from the same Provider Wire Profile used by runtime.
 const env = {
-  TIER1_NODES_01: JSON.stringify([
+  AIG_TIER1_NODES_01: JSON.stringify([
     {
       id: 'provider-a-01',
       provider: 'provider-a',
@@ -38,7 +38,7 @@ const env = {
       models: { Pro: 'claude-test' },
     },
   ]),
-  TIER1_CREDENTIALS_01: JSON.stringify({
+  AIG_TIER1_CREDENTIALS_01: JSON.stringify({
     'provider-a-01': GENERIC_SECRET,
     'openai-01': OPENAI_SECRET,
     'anthropic-01': ANTHROPIC_SECRET,
@@ -63,8 +63,8 @@ assert.deepEqual(anthropicNode.configuredSurfaces, ['messages']);
 // Discovery must accept the same narrow browser/IME punctuation repair as the
 // deployment bridge.
 const punctuationEnv = {
-  TIER1_NODES_03: '[{"id":"cfworkers-02","provider":"cfworkers","base_url":"https://api.example.com/v1","models":{"Pro":"upstream"}、}]',
-  TIER1_CREDENTIALS_03: JSON.stringify({ 'cfworkers-02': GENERIC_SECRET }),
+  AIG_TIER1_NODES_03: '[{"id":"cfworkers-02","provider":"cfworkers","base_url":"https://api.example.com/v1","models":{"Pro":"upstream"}、}]',
+  AIG_TIER1_CREDENTIALS_03: JSON.stringify({ 'cfworkers-02': GENERIC_SECRET }),
 };
 const punctuationNodes = collectDiscoveryNodes(punctuationEnv);
 assert.equal(punctuationNodes.length, 1);
