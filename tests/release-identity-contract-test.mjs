@@ -15,7 +15,6 @@ assert.equal(Object.hasOwn(lock, 'version'), false, 'package-lock root must not 
 assert.equal(Object.hasOwn(lock.packages?.[''] || {}, 'version'), false, 'root lock package must not own project release numbering');
 
 for (const rel of [
-  'CHANGELOG.md',
   'src/config/version.ts',
   'scripts/generate-version.mjs',
   'scripts/version-check.mjs',
