@@ -7,8 +7,8 @@
 // only depend on primitive arguments and are safe to import and unit-test
 // in isolation.
 
-// Chinese unit formatting for KPI values: 万 (10^4) and 亿 (10^8).
-// < 10000: integer; >= 10000: 万 with 1 decimal; >= 100M: 亿 with 2 decimals.
+// Chinese unit formatting for KPI values: wan (10^4) and yi (10^8).
+// < 10000: integer; >= 10000: wan with 1 decimal; >= 100M: yi with 2 decimals.
 // Never use K/M/B. Exact value available in title attribute.
 export function fmtTokens(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';

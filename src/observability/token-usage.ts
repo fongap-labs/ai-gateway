@@ -28,8 +28,8 @@ const MAX_BUCKETS = 512;
 const MAX_DIMENSION_LENGTH = 80;
 
 // Rolling time windows — isolate-local, so they reset with the isolate and
-// need no bindings. Hour buckets keep the last 24 (≈近 24 小时); day buckets
-// keep the last 7 (≈近 7 天). Pruning on every successful record keeps the
+// need no bindings. Hour buckets keep the last 24 (~last 24h); day buckets
+// keep the last 7 (~last 7d). Pruning on every successful record keeps the
 // two Maps bounded to at most 24 + 7 entries, well inside free-tier memory.
 const HOUR_MS = 3600_000;
 const DAY_MS = 86400_000;
