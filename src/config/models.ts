@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// MODELS_CONFIG: logical model -> { policy, capabilities?, reasoning_efforts?,
+// AIG_MODELS_CONFIG: logical model -> { policy, capabilities?, reasoning_efforts?,
 // modalities? }.
 // This doubles as the Model Registry's config source. `policy` is the failover
 // policy name; `capabilities` (tools / reasoning / vision / stream) and
@@ -12,7 +12,7 @@
 // exposed on any public API surface. Parsed once per
 // isolate; env vars are immutable at runtime.
 //
-// Like the node config, MODELS_CONFIG is strict: unknown fields, an invalid
+// Like the node config, AIG_MODELS_CONFIG is strict: unknown fields, an invalid
 // `policy`, non-boolean capabilities, unknown capability keys, malformed
 // reasoning_efforts, and obvious self-contradictions in declared capabilities
 // are surfaced as diagnostics. The gateway does not infer provider/model
@@ -35,7 +35,7 @@ const DEFAULT_GROUP = 'general';
 const DEFAULT_UI_VISIBLE = true;
 
 /**
- * A parsed MODELS_CONFIG entry. Optional fields are only present when
+ * A parsed AIG_MODELS_CONFIG entry. Optional fields are only present when
  * explicitly configured (or defaulted) by the parse below.
  */
 export type ModelEntry = {
@@ -63,7 +63,7 @@ export function getModelsConfigDiagnostics(env: Record<string, unknown>): string
 function analyzeModels(env: Record<string, unknown>): { models: Record<string, ModelEntry>, errors: string[] } {
   if (cachedEnv === env && cached) return cached;
   cachedEnv = env;
-  const raw = readEnv(env, 'MODELS_CONFIG');
+  const raw = readEnv(env, 'AIG_MODELS_CONFIG');
   const errors: string[] = [];
   const models: Record<string, ModelEntry> = {};
   if (raw) {
@@ -72,40 +72,40 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
       parsed = JSON.parse(raw);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`MODELS_CONFIG invalid JSON (${msg}); fields ignored`);
+      errors.push(`AIG_MODELS_CONFIG invalid JSON (${msg}); fields ignored`);
       cached = { models, errors };
       return cached;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      errors.push('MODELS_CONFIG must be a JSON object { model: { policy, capabilities, reasoning_efforts } }');
+      errors.push('AIG_MODELS_CONFIG must be a JSON object { model: { policy, capabilities, reasoning_efforts } }');
     } else {
       for (const [name, config] of Object.entries(parsed as Record<string, unknown>)) {
-        if (!name.trim()) { errors.push('MODELS_CONFIG: empty model name (keys must be non-empty strings)'); continue; }
+        if (!name.trim()) { errors.push('AIG_MODELS_CONFIG: empty model name (keys must be non-empty strings)'); continue; }
         if (!config || typeof config !== 'object' || Array.isArray(config)) {
-          errors.push(`MODELS_CONFIG: "${name}" must be an object`);
+          errors.push(`AIG_MODELS_CONFIG: "${name}" must be an object`);
           continue;
         }
         const cfg = config as Record<string, unknown>;
         for (const field of Object.keys(cfg)) {
           if (!ALLOWED_ENTRY_FIELDS.has(field)) {
-            errors.push(`MODELS_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_ENTRY_FIELDS].join(', ')})`);
+            errors.push(`AIG_MODELS_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_ENTRY_FIELDS].join(', ')})`);
           }
         }
         // `policy` participates only when explicitly configured; a present
         // value (null included) must be a non-empty string. Unknown policy
-        // names are cross-checked against POLICIES_CONFIG by nodes.ts.
+        // names are cross-checked against AIG_POLICIES_CONFIG by nodes.ts.
         const entry: ModelEntry = { policy: 'default', visibility: DEFAULT_VISIBILITY, ui_visible: DEFAULT_UI_VISIBLE, display_order: DEFAULT_DISPLAY_ORDER, group: DEFAULT_GROUP };
         if (cfg.policy !== undefined) {
           if (typeof cfg.policy === 'string' && cfg.policy.trim()) {
             entry.policy = cfg.policy.trim();
           } else {
-            errors.push(`MODELS_CONFIG: model "${name}": policy must be a non-empty string`);
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": policy must be a non-empty string`);
           }
         }
         const vis = cfg.visibility;
         if (vis !== undefined) {
           if (typeof vis !== 'string' || !VALID_VISIBILITY.has(vis)) {
-            errors.push(`MODELS_CONFIG: model "${name}": visibility must be "public" or "internal"`);
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": visibility must be "public" or "internal"`);
           } else {
             entry.visibility = vis;
           }
@@ -113,7 +113,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const order = cfg.display_order;
         if (order !== undefined) {
           if (typeof order !== 'number' || !Number.isFinite(order) || order < 0) {
-            errors.push(`MODELS_CONFIG: model "${name}": display_order must be a non-negative finite number`);
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": display_order must be a non-negative finite number`);
           } else {
             entry.display_order = order;
           }
@@ -123,7 +123,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const grp = cfg.group;
         if (grp !== undefined) {
           if (typeof grp !== 'string' || !grp.trim()) {
-            errors.push(`MODELS_CONFIG: model "${name}": group must be a non-empty string`);
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": group must be a non-empty string`);
           } else {
             entry.group = grp.trim();
           }
@@ -133,7 +133,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const uiv = cfg.ui_visible;
         if (uiv !== undefined) {
           if (typeof uiv !== 'boolean') {
-            errors.push(`MODELS_CONFIG: model "${name}": ui_visible must be a boolean`);
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": ui_visible must be a boolean`);
           } else {
             entry.ui_visible = uiv;
           }
@@ -141,15 +141,15 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const caps = cfg.capabilities;
         if (caps !== undefined) {
           if (!caps || typeof caps !== 'object' || Array.isArray(caps)) {
-            errors.push(`MODELS_CONFIG: "${name}" capabilities must be an object`);
+            errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities must be an object`);
           } else {
             const capRec = caps as Record<string, unknown>;
             let hadValid = false;
             for (const [key, val] of Object.entries(capRec)) {
               if (!CAPABILITY_KEYS.includes(key)) {
-                errors.push(`MODELS_CONFIG: "${name}" capabilities.${key} is not a supported capability (allowed: ${CAPABILITY_KEYS.join(', ')})`);
+                errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} is not a supported capability (allowed: ${CAPABILITY_KEYS.join(', ')})`);
               } else if (typeof val !== 'boolean') {
-                errors.push(`MODELS_CONFIG: "${name}" capabilities.${key} must be a boolean`);
+                errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} must be a boolean`);
               } else {
                 hadValid = true;
               }
@@ -166,7 +166,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const efforts = cfg.reasoning_efforts;
         if (efforts !== undefined) {
           if (!Array.isArray(efforts) || !efforts.every((e) => typeof e === 'string' && e.trim())) {
-            errors.push(`MODELS_CONFIG: "${name}" reasoning_efforts must be an array of non-empty strings`);
+            errors.push(`AIG_MODELS_CONFIG: "${name}" reasoning_efforts must be an array of non-empty strings`);
           } else {
             entry.reasoning_efforts = efforts.map((e) => e.trim());
           }
@@ -175,7 +175,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         const mods = cfg.modalities;
         if (mods !== undefined) {
           if (!mods || typeof mods !== 'object' || Array.isArray(mods)) {
-            errors.push(`MODELS_CONFIG: "${name}" modalities must be an object { input, output }`);
+            errors.push(`AIG_MODELS_CONFIG: "${name}" modalities must be an object { input, output }`);
           } else {
             const modRec = mods as Record<string, unknown>;
             const sides: { input: string[], output: string[] } = { input: [], output: [] };
@@ -183,7 +183,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             for (const side of ['input', 'output'] as const) {
               const list = modRec[side];
               if (!Array.isArray(list) || !list.every((t) => typeof t === 'string' && MODALITY_TOKENS.has(t.trim()))) {
-                errors.push(`MODELS_CONFIG: "${name}" modalities.${side} must be an array over the closed vocabulary [${[...MODALITY_TOKENS].join(', ')}]`);
+                errors.push(`AIG_MODELS_CONFIG: "${name}" modalities.${side} must be an array over the closed vocabulary [${[...MODALITY_TOKENS].join(', ')}]`);
                 valid = false;
               } else {
                 sides[side] = [...new Set(list.map((t) => t.trim()))];
@@ -197,13 +197,13 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         // infer provider/model feature support or turn capabilities into a
         // second routing engine.
         if (entry.reasoning_efforts?.length && entry.capabilities?.reasoning === false) {
-          errors.push(`MODELS_CONFIG: model "${name}": reasoning_efforts conflicts with capabilities.reasoning=false`);
+          errors.push(`AIG_MODELS_CONFIG: model "${name}": reasoning_efforts conflicts with capabilities.reasoning=false`);
         }
         if (entry.capabilities?.ocr === true && entry.capabilities?.vision === false) {
-          errors.push(`MODELS_CONFIG: model "${name}": capabilities.ocr=true conflicts with capabilities.vision=false`);
+          errors.push(`AIG_MODELS_CONFIG: model "${name}": capabilities.ocr=true conflicts with capabilities.vision=false`);
         }
         if (entry.capabilities?.vision === true && entry.modalities && !entry.modalities.input.includes('image')) {
-          errors.push(`MODELS_CONFIG: model "${name}": capabilities.vision=true requires modalities.input to include "image" when modalities is declared`);
+          errors.push(`AIG_MODELS_CONFIG: model "${name}": capabilities.vision=true requires modalities.input to include "image" when modalities is declared`);
         }
         models[name.trim()] = entry;
       }

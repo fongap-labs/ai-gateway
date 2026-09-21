@@ -76,7 +76,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const route = detectRoute(request.method, pathname);
   const requestStartMs = Date.now();
   const failoverBudgetMs = getLimits(env).failoverBudgetMs;
-  const exposeUpstreamInfo = String(env?.SHOULD_EXPOSE_UPSTREAM ?? '').trim().toLowerCase() === 'true';
+  const exposeUpstreamInfo = String(env?.AIG_SHOULD_EXPOSE_UPSTREAM ?? '').trim().toLowerCase() === 'true';
 
   if (request.method === 'OPTIONS') {
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
@@ -93,7 +93,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return {
       ok: false,
       response: gatewayError(request, env, route, 500,
-        'Gateway misconfigured: no GATEWAY_KEY_<GROUP> is set.', requestId),
+        'Gateway misconfigured: no AIG_ACCESS_KEY_<GROUP> is set.', requestId),
     };
   }
   const authResult: AuthResult = await authorize(request, env);
@@ -171,11 +171,11 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   if (route === 'anthropic_count_tokens') {
-    const mode = String(env?.ANTHROPIC_COUNT_MODE || 'approximate').toLowerCase();
+    const mode = String(env?.AIG_ANTHROPIC_COUNT_MODE || 'approximate').toLowerCase();
     if (!['approximate', 'disabled'].includes(mode)) {
       return {
         ok: false,
-        response: anthropicErrorResponse(request, env, 500, 'ANTHROPIC_COUNT_MODE must be approximate or disabled.', requestId),
+        response: anthropicErrorResponse(request, env, 500, 'AIG_ANTHROPIC_COUNT_MODE must be approximate or disabled.', requestId),
       };
     }
     if (mode === 'disabled') {
@@ -202,7 +202,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const requestedModel = String(bodyJson.model || '');
   const clientWantsStream = bodyJson.stream === true;
   const fakeStream = route === 'openai_chat'
-    && String(env?.HAS_STREAM_GUARD ?? '').trim().toLowerCase() === 'true'
+    && String(env?.AIG_HAS_STREAM_GUARD ?? '').trim().toLowerCase() === 'true'
     && !clientWantsStream;
 
   const gatewayConfigForAuth = loadGatewayConfig(env);

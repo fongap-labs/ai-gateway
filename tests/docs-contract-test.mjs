@@ -73,8 +73,8 @@ const ACCESS_FACT_FILES = [
   'docs/operations/configuration.md', 'docs/operations/deployment.md',
   '.dev.vars.example', 'config/access-keys.example.json',
 ];
-const GROUP_KEY = /GATEWAY_KEY_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
-const GROUP_MODELS = /GATEWAY_MODELS_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
+const GROUP_KEY = /AIG_ACCESS_KEY_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
+const GROUP_MODELS = /AIG_ACCESS_MODELS_(?:AIR|PRO|MAX|ULTRA|AGENT|<GROUP>|\{AIR,PRO,MAX,ULTRA,AGENT\})/;
 for (const file of ACCESS_FACT_FILES) {
   const text = read(file);
   assert.match(text, GROUP_KEY, `${file}: grouped access key required`);

@@ -309,19 +309,19 @@ await test('timeout failures are classified as headers_timeout / first_event_tim
 
 await test('hedge defaults: 3000ms delay, 1 hedge per request, overridable', async () => {
   const defaults = getLimits(ENV);
-  // Speed-first tightening: HEDGE_DELAY_MS default dropped 6000 -> 3000.
+  // Speed-first tightening: AIG_HEDGE_DELAY_MS default dropped 6000 -> 3000.
   // Hedge is also disabled by default through the built-in 'default' policy
   // (hedge.enabled=false); the raw env-var default is still 3000.
-  assert.equal(defaults.hedgeDelayMs, 3_000, 'HEDGE_DELAY_MS default is 3000');
-  assert.equal(defaults.maxHedgesPerRequest, 1, 'REQUEST_HEDGE_MAX default is 1');
-  const overridden = getLimits({ HEDGE_DELAY_MS: '8000', REQUEST_HEDGE_MAX: '2' });
+  assert.equal(defaults.hedgeDelayMs, 3_000, 'AIG_HEDGE_DELAY_MS default is 3000');
+  assert.equal(defaults.maxHedgesPerRequest, 1, 'AIG_REQUEST_HEDGE_MAX default is 1');
+  const overridden = getLimits({ AIG_HEDGE_DELAY_MS: '8000', AIG_REQUEST_HEDGE_MAX: '2' });
   assert.equal(overridden.hedgeDelayMs, 8_000);
   assert.equal(overridden.maxHedgesPerRequest, 2);
   // 0 disables hedging entirely but stays inside the clamped range.
-  assert.equal(getLimits({ REQUEST_HEDGE_MAX: '0' }).maxHedgesPerRequest, 0);
+  assert.equal(getLimits({ AIG_REQUEST_HEDGE_MAX: '0' }).maxHedgesPerRequest, 0);
   // Out-of-range values are clamped, not trusted.
-  assert.equal(getLimits({ REQUEST_HEDGE_MAX: '99' }).maxHedgesPerRequest, 3);
-  assert.equal(getLimits({ HEDGE_DELAY_MS: '-5' }).hedgeDelayMs, 0);
+  assert.equal(getLimits({ AIG_REQUEST_HEDGE_MAX: '99' }).maxHedgesPerRequest, 3);
+  assert.equal(getLimits({ AIG_HEDGE_DELAY_MS: '-5' }).hedgeDelayMs, 0);
 });
 
 await test('dispatchable count keeps busy nodes as soft capacity', async () => {

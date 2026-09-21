@@ -18,8 +18,8 @@ import {
   redirectTargetIsSafe,
 } from '../provider-discovery/ssrf-guard.js';
 
-const CONFIG_RE = /^TIER([123])_NODES_(0[1-9]|10)$/;
-const SECRET_RE = /^TIER([123])_CREDENTIALS_(0[1-9]|10)$/;
+const CONFIG_RE = /^AIG_TIER([123])_NODES_(0[1-9]|10)$/;
+const SECRET_RE = /^AIG_TIER([123])_CREDENTIALS_(0[1-9]|10)$/;
 
 function parseJson(text, label) {
   try {

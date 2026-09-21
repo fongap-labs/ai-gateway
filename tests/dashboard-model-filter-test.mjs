@@ -80,15 +80,15 @@ const envelope = {
       'Code-Pro': 'up-pro',
     },
   }];
-  const out = publicModelStatus(nodes, { DASHBOARD_MODELS: 'code-pro,Code-Ultra' }, new Set(), 1_700_000_000_000);
+  const out = publicModelStatus(nodes, { AIG_DASHBOARD_MODELS: 'code-pro,Code-Ultra' }, new Set(), 1_700_000_000_000);
   assert.deepEqual(out.models.map((m) => m.id), ['Code-Pro', 'Code-Ultra'],
     'dashboard wrapper applies the text variable after public status is computed');
 }
 
 {
-  const vars = collectVarsFromEnv({ DASHBOARD_MODELS: 'Code-Ultra,Code-Max,Code-Pro' });
-  assert.equal(vars.vars.DASHBOARD_MODELS, 'Code-Ultra,Code-Max,Code-Pro',
-    'GitHub deployment bridge admits DASHBOARD_MODELS as a plain Worker text variable');
+  const vars = collectVarsFromEnv({ AIG_DASHBOARD_MODELS: 'Code-Ultra,Code-Max,Code-Pro' });
+  assert.equal(vars.vars.AIG_DASHBOARD_MODELS, 'Code-Ultra,Code-Max,Code-Pro',
+    'GitHub deployment bridge admits AIG_DASHBOARD_MODELS as a plain Worker text variable');
 }
 
 {
@@ -112,9 +112,9 @@ const envelope = {
     officialNames,
   );
   assert.deepEqual(out.map((r) => r.model), ['Code-Pro', 'Code-Max', 'Code-Ultra', '其他'],
-    'usage ranks eligible DASHBOARD_MODELS by Token total and exposes only the top three');
+    'usage ranks eligible AIG_DASHBOARD_MODELS by Token total and exposes only the top three');
   assert.deepEqual(out[3], { model: '其他', total: 110, requests: 14 },
-    'rank 4+ and every model outside DASHBOARD_MODELS are merged into 其他');
+    'rank 4+ and every model outside AIG_DASHBOARD_MODELS are merged into 其他');
 }
 
 {
@@ -144,7 +144,7 @@ const envelope = {
     modelUsage: { available: true, rows: [{ model: 'code-pro', total: 1, requests: 1 }] },
   };
   const html = await usageSection(
-    { DASHBOARD_MODELS: 'Code-Pro' },
+    { AIG_DASHBOARD_MODELS: 'Code-Pro' },
     now,
     stats,
     new Map([['code-pro', 'Code-Pro']]),
@@ -187,7 +187,7 @@ const envelope = {
 
 {
   const html = quickStartSection('https://gateway.example.com/v1');
-  assert.ok(!html.includes('GATEWAY_KEY_AIR'), 'quick start must not imply AIR is the only usable key');
+  assert.ok(!html.includes('AIG_ACCESS_KEY_AIR'), 'quick start must not imply AIR is the only usable key');
   assert.ok(html.includes('GATEWAY_API_KEY'), 'quick start uses a generic client-side gateway key variable');
   assert.ok(html.includes(KEY_GROUPS.join(' / ')), 'quick start key-group list comes from the shared key registry');
 }

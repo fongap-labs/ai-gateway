@@ -23,26 +23,26 @@ const node = (id, extra = {}) => ({
 });
 function makeEnv({ tier1, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_KEY_AIR: 'k',
-    GATEWAY_MODELS_AIR: '*',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_ACCESS_MODELS_AIR: '*',
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(secrets ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
-const policyDiags = (policies) => getPoliciesConfigDiagnostics(makeEnv({ extraEnv: { POLICIES_CONFIG: JSON.stringify(policies) } }));
-const modelDiags = (models) => getModelsConfigDiagnostics(makeEnv({ extraEnv: { MODELS_CONFIG: JSON.stringify(models) } }));
+const policyDiags = (policies) => getPoliciesConfigDiagnostics(makeEnv({ extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify(policies) } }));
+const modelDiags = (models) => getModelsConfigDiagnostics(makeEnv({ extraEnv: { AIG_MODELS_CONFIG: JSON.stringify(models) } }));
 
 // Shards.
 test('collectShards accepts 01..10 and reports out-of-range/malformed names', () => {
   const diags = [];
   const secrets = collectShards(
-    { TIER1_CREDENTIALS_01: '{}', TIER1_CREDENTIALS_09: '{}', TIER1_CREDENTIALS_12: '{}' },
-    SECRET_SHARD_PATTERN, 'TIER1_CREDENTIALS_', 'TIER1_CREDENTIALS_01', 2, diags,
+    { AIG_TIER1_CREDENTIALS_01: '{}', AIG_TIER1_CREDENTIALS_09: '{}', AIG_TIER1_CREDENTIALS_12: '{}' },
+    SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diags,
   );
   assert.deepEqual(secrets.map((s) => s.index), [1, 9]);
   assert.ok(diags.some((d) => /12.*out of range/.test(d)));
-  const tiers = collectShards({ TIER2_NODES_03: '[]' }, TIER_SHARD_PATTERN, 'TIER2_NODES_', 'TIER2_NODES_01', 2, []);
+  const tiers = collectShards({ AIG_TIER2_NODES_03: '[]' }, TIER_SHARD_PATTERN, 'AIG_TIER2_NODES_', 'AIG_TIER2_NODES_01', 2, []);
   assert.equal(tiers[0].tierNumber, 2);
   assert.equal(tiers[0].index, 3);
 });
@@ -126,7 +126,7 @@ test('priority is numeric-only; absent priority uses current default 100', () =>
 test('registry carries declared capabilities and conservative defaults', () => {
   const env = makeEnv({
     tier1: [node('r', { models: {} })], secrets: { r: 'x' },
-    extraEnv: { MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'fast', capabilities: { vision: true }, reasoning_efforts: ['high'] } }) },
+    extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'fast', capabilities: { vision: true }, reasoning_efforts: ['high'] } }) },
   });
   const reg = loadModelRegistry(env);
   assert.equal(reg['code-pro'].capabilities.vision, true);
@@ -146,8 +146,8 @@ test('wildcard and explicit model mappings remain distinct', () => {
   assert.equal(servesModel(node('m', { models: { only: 'x' } }), 'other', new Set(['only', 'other'])), false);
 });
 
-test('MODELS_CONFIG rejects malformed or unknown capability fields', () => {
-  const malformed = loadGatewayConfig(makeEnv({ tier1: [node('m1')], secrets: { m1: 'x' }, extraEnv: { MODELS_CONFIG: '{bad' } }));
+test('AIG_MODELS_CONFIG rejects malformed or unknown capability fields', () => {
+  const malformed = loadGatewayConfig(makeEnv({ tier1: [node('m1')], secrets: { m1: 'x' }, extraEnv: { AIG_MODELS_CONFIG: '{bad' } }));
   assert.equal(malformed.status, 'invalid');
   assert.equal(malformed.ready, false);
   const diags = modelDiags({ m: { capabilities: { visionz: true, reasoning: 'yes' } } });
@@ -155,8 +155,8 @@ test('MODELS_CONFIG rejects malformed or unknown capability fields', () => {
   assert.ok(diags.some((d) => d.includes('reasoning')));
 });
 
-test('MODELS_CONFIG accepts current modalities/ocr/ui fields', () => {
-  const env = makeEnv({ extraEnv: { MODELS_CONFIG: JSON.stringify({
+test('AIG_MODELS_CONFIG accepts current modalities/ocr/ui fields', () => {
+  const env = makeEnv({ extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({
     Omni: { modalities: { input: ['text', 'image', 'audio'], output: ['text', 'audio'] } },
     OCR: { capabilities: { ocr: true }, ui_visible: false },
   }) } });
@@ -167,7 +167,7 @@ test('MODELS_CONFIG accepts current modalities/ocr/ui fields', () => {
   assert.equal(reg.OCR.ui_visible, false);
 });
 
-test('MODELS_CONFIG rejects obvious capability contradictions without provider inference', () => {
+test('AIG_MODELS_CONFIG rejects obvious capability contradictions without provider inference', () => {
   const reasoning = modelDiags({ m: { capabilities: { reasoning: false }, reasoning_efforts: ['high'] } });
   assert.ok(reasoning.some((d) => d.includes('reasoning_efforts conflicts with capabilities.reasoning=false')));
 
@@ -211,7 +211,7 @@ test('budget_split and other retired policy fields are rejected as unknown', () 
 });
 
 test('hedge and max_in_flight current fields validate without coercion', () => {
-  const policies = loadPoliciesConfig(makeEnv({ extraEnv: { POLICIES_CONFIG: JSON.stringify({ p: {
+  const policies = loadPoliciesConfig(makeEnv({ extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ p: {
     max_attempts: 5,
     hedge: { enabled: true, delay_ms: 4000, tiers: ['tier1'] },
     max_in_flight: 4,
@@ -226,12 +226,12 @@ test('hedge and max_in_flight current fields validate without coercion', () => {
 test('invalid policy/model references are fatal end-to-end', () => {
   const badAttempts = loadGatewayConfig(makeEnv({
     tier1: [node('f1')], secrets: { f1: 'x' },
-    extraEnv: { POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 0 } }) },
+    extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 0 } }) },
   }));
   assert.equal(badAttempts.ready, false);
   const missingPolicy = loadGatewayConfig(makeEnv({
     tier1: [node('f2')], secrets: { f2: 'x' },
-    extraEnv: { MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'missing' } }) },
+    extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'missing' } }) },
   }));
   assert.equal(missingPolicy.ready, false);
   assert.ok(missingPolicy.diagnostics.some((d) => d.includes('missing')));

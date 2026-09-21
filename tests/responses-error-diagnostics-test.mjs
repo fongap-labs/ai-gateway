@@ -43,11 +43,11 @@ const node = (id) => ({
 
 function envFor(id, extra = {}) {
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: '*',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: '*',
     TIER1_SCHEDULER_SEED: 'responses-diagnostics-test',
-    TIER1_NODES_01: JSON.stringify([node(id)]),
-    TIER1_CREDENTIALS_01: JSON.stringify({ [id]: 'k' }),
+    AIG_TIER1_NODES_01: JSON.stringify([node(id)]),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ [id]: 'k' }),
     ...extra,
   };
 }
@@ -120,7 +120,7 @@ reset();
 routeHandlers['badreq-exposed.example.com'] = () => json({ error: { message: 'provider-specific bad input' } }, 400);
 const badReqExposed = await worker.fetch(
   request(),
-  envFor('badreq-exposed', { SHOULD_EXPOSE_UPSTREAM: 'true' }),
+  envFor('badreq-exposed', { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' }),
   {},
 );
 assert.equal(badReqExposed.status, 400);

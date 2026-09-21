@@ -4,7 +4,7 @@ This directory owns the ordered schema changes for ai-gateway token-usage observ
 
 ## Production ordering
 
-When `USAGE_D1_ID` is configured, the production deployment path applies D1 migrations **before** publishing the new Worker:
+When `AIG_USAGE_D1_ID` is configured, the production deployment path applies D1 migrations **before** publishing the new Worker:
 
 ```text
 preflight + runtime configuration validation

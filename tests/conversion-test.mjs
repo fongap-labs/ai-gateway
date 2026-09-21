@@ -860,20 +860,20 @@ await run('conversion: stream tool_calls roundtrip (split across chunks)', async
 // ---- protocol-fallbacks config -------------------------------------------
 
 await run('config: loadProtocolFallbacks returns the parsed object', () => {
-  const env = { PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) };
+  const env = { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) };
   const cfg = loadProtocolFallbacks(env);
   assert.deepEqual(cfg, { 'anthropic:messages': ['openai:chat_completions'] });
   assert.deepEqual(getProtocolFallbacksDiagnostics(env), []);
 });
 
 await run('config: getFallbackChain returns parsed surface objects', () => {
-  const env = { PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) };
+  const env = { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }) };
   const chain = getFallbackChain('anthropic_messages', env);
   assert.deepEqual(chain, [{ protocol: 'openai', surface: 'chat_completions' }]);
 });
 
 await run('config: invalid JSON returns {} with diagnostic', () => {
-  const env = { PROTOCOL_FALLBACKS: 'not json' };
+  const env = { AIG_PROTOCOL_FALLBACKS: 'not json' };
   const cfg = loadProtocolFallbacks(env);
   assert.deepEqual(cfg, {});
   const diag = getProtocolFallbacksDiagnostics(env);
@@ -882,7 +882,7 @@ await run('config: invalid JSON returns {} with diagnostic', () => {
 });
 
 await run('config: default ON — unset env applies built-in default chain', () => {
-  // Unset PROTOCOL_FALLBACKS: built-in default chains are applied silently.
+  // Unset AIG_PROTOCOL_FALLBACKS: built-in default chains are applied silently.
   // The defaults are the only safe cross-protocol fallbacks for the routes
   // that have a complete Request + Response + Stream + Error converter
   // (Anthropic Messages <-> OpenAI Chat Completions).
@@ -895,7 +895,7 @@ await run('config: default ON — unset env applies built-in default chain', () 
 });
 
 await run('config: default ON — empty string is treated as unset', () => {
-  const cfg = loadProtocolFallbacks({ PROTOCOL_FALLBACKS: '' });
+  const cfg = loadProtocolFallbacks({ AIG_PROTOCOL_FALLBACKS: '' });
   assert.deepEqual(cfg, {
     'anthropic:messages': ['openai:chat_completions'],
     'openai:chat_completions': ['anthropic:messages'],
@@ -904,9 +904,9 @@ await run('config: default ON — empty string is treated as unset', () => {
 
 await run('config: "disable" literal turns the default off', () => {
   // The magic literal is the documented opt-out path for explicit Native-Only behavior.
-  const cfg = loadProtocolFallbacks({ PROTOCOL_FALLBACKS: 'disable' });
+  const cfg = loadProtocolFallbacks({ AIG_PROTOCOL_FALLBACKS: 'disable' });
   assert.deepEqual(cfg, {}, 'disable literal produces empty config');
-  assert.deepEqual(getFallbackChain('anthropic_messages', { PROTOCOL_FALLBACKS: 'disable' }), []);
+  assert.deepEqual(getFallbackChain('anthropic_messages', { AIG_PROTOCOL_FALLBACKS: 'disable' }), []);
 });
 
 await run('config: explicit empty JSON overrides default (intentional turn-off)', () => {
@@ -914,9 +914,9 @@ await run('config: explicit empty JSON overrides default (intentional turn-off)'
   // operator wrote JSON, we honor it literally. This is the contract that
   // makes the default safe to ship: operators can always pin a route to
   // off without giving up the rest of the default.
-  const cfg = loadProtocolFallbacks({ PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' });
+  const cfg = loadProtocolFallbacks({ AIG_PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' });
   assert.deepEqual(cfg, { 'anthropic:messages': [] });
-  assert.deepEqual(getFallbackChain('anthropic_messages', { PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' }), []);
+  assert.deepEqual(getFallbackChain('anthropic_messages', { AIG_PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' }), []);
 });
 
 await run('config: "disable" + explicit JSON both yield the same opt-out (sanity)', () => {
@@ -925,14 +925,14 @@ await run('config: "disable" + explicit JSON both yield the same opt-out (sanity
   // case still preserves a per-route key in the config map (so a future
   // route that DOES have a default would not be affected). This test pins
   // that distinction in the loadProtocolFallbacks output.
-  const disable = loadProtocolFallbacks({ PROTOCOL_FALLBACKS: 'disable' });
-  const explicit = loadProtocolFallbacks({ PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' });
+  const disable = loadProtocolFallbacks({ AIG_PROTOCOL_FALLBACKS: 'disable' });
+  const explicit = loadProtocolFallbacks({ AIG_PROTOCOL_FALLBACKS: '{"anthropic:messages":[]}' });
   assert.equal(Object.keys(disable).length, 0, 'disable drops the key entirely');
   assert.equal(Object.keys(explicit).length, 1, 'explicit empty keeps the key');
 });
 
 await run('config: bad key format -> diagnostic, key rejected', () => {
-  const env = { PROTOCOL_FALLBACKS: '{"foo": ["bar"]}' };
+  const env = { AIG_PROTOCOL_FALLBACKS: '{"foo": ["bar"]}' };
   const cfg = loadProtocolFallbacks(env);
   assert.deepEqual(cfg, {}, 'bad key is not accepted');
   const diag = getProtocolFallbacksDiagnostics(env);
@@ -942,7 +942,7 @@ await run('config: bad key format -> diagnostic, key rejected', () => {
 });
 
 await run('config: bad value -> diagnostic, value not accepted', () => {
-  const env = { PROTOCOL_FALLBACKS: '{"anthropic:messages": ["foo"]}' };
+  const env = { AIG_PROTOCOL_FALLBACKS: '{"anthropic:messages": ["foo"]}' };
   const cfg = loadProtocolFallbacks(env);
   // The key is valid but the value is not -> the entry must be dropped.
   assert.deepEqual(cfg['anthropic:messages'] ?? null, null,
@@ -954,7 +954,7 @@ await run('config: bad value -> diagnostic, value not accepted', () => {
 await run('config: unsupported conversion source -> blocking error', () => {
   // A "fongap" protocol is not in the closed protocol set (openai / anthropic),
   // so it must be rejected by SUPPORTED_CONVERSIONS lookup.
-  const env = { PROTOCOL_FALLBACKS: '{"fongap:studio": ["openai:chat_completions"]}' };
+  const env = { AIG_PROTOCOL_FALLBACKS: '{"fongap:studio": ["openai:chat_completions"]}' };
   const cfg = loadProtocolFallbacks(env);
   assert.deepEqual(cfg, {}, 'unsupported source produces empty config');
   const diag = getProtocolFallbacksDiagnostics(env);
@@ -963,7 +963,7 @@ await run('config: unsupported conversion source -> blocking error', () => {
 });
 
 await run('config: unsupported conversion target -> blocking error', () => {
-  const env = { PROTOCOL_FALLBACKS: '{"anthropic:messages": ["openai:responses"]}' };
+  const env = { AIG_PROTOCOL_FALLBACKS: '{"anthropic:messages": ["openai:responses"]}' };
   const cfg = loadProtocolFallbacks(env);
   assert.deepEqual(cfg, {}, 'unsupported target produces empty config');
   const diag = getProtocolFallbacksDiagnostics(env);
@@ -1004,12 +1004,12 @@ function resetMock() {
 
 function makeEnv({ tier1, tier2, secrets, extraEnv } = {}) {
   return {
-    GATEWAY_KEY_AIR: ACCESS_KEY,
-    GATEWAY_MODELS_AIR: 'claude-x',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: 'claude-x',
     TIER1_SCHEDULER_SEED: 'conversion-test',
-    ...(tier1 ? { TIER1_NODES_01: JSON.stringify(tier1) } : {}),
-    ...(tier2 ? { TIER2_NODES_01: JSON.stringify(tier2) } : {}),
-    ...(secrets ? { TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
+    ...(tier1 ? { AIG_TIER1_NODES_01: JSON.stringify(tier1) } : {}),
+    ...(tier2 ? { AIG_TIER2_NODES_01: JSON.stringify(tier2) } : {}),
+    ...(secrets ? { AIG_TIER1_CREDENTIALS_01: JSON.stringify(secrets) } : {}),
     ...extraEnv,
   };
 }
@@ -1092,8 +1092,8 @@ await run('handler: Anthropic exhausted -> OpenAI conversion success', async () 
     tier1: [anthropicNode('a1'), openaiNode('o1')],
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1129,8 +1129,8 @@ await run('handler: native available -> OpenAI fallback is never called', async 
     tier1: [anthropicNode('a1'), openaiNode('o1')],
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1148,7 +1148,7 @@ await run('handler: conversion disabled (no fallback) -> Anthropic exhausted is 
   routeHandlers['a1.example.com'] = () => jsonUpstream({ error: { message: 'overloaded' } }, 529);
   // OpenAI node is present and would be reachable, but no fallback is configured.
   routeHandlers['o1.example.com'] = () => jsonUpstream(okOpenAICompletion());
-  // PROTOCOL_FALLBACKS=disable pins the Native-Only contract: the openai
+  // AIG_PROTOCOL_FALLBACKS=disable pins the Native-Only contract: the openai
   // node is reachable but must NOT be invoked across the protocol boundary.
   // The Default-ON path is covered by Contract 03 in
   // architecture-contract-test.mjs and the explicit-JSON path is covered
@@ -1156,7 +1156,7 @@ await run('handler: conversion disabled (no fallback) -> Anthropic exhausted is 
   const env = makeEnv({
     tier1: [anthropicNode('a1'), openaiNode('o1')],
     secrets: { a1: 'k', o1: 'k' },
-    extraEnv: { PROTOCOL_FALLBACKS: 'disable' },
+    extraEnv: { AIG_PROTOCOL_FALLBACKS: 'disable' },
   });
   const res = await worker.fetch(messagesRequest({
     model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }],
@@ -1178,10 +1178,10 @@ await run('handler: OpenAI 429 then 200 -> fallback retries and succeeds', async
     tier1: [anthropicNode('a1'), openaiNode('o1'), openaiNode('o2')],
     secrets: { a1: 'k', o1: 'k', o2: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
-      MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
-      POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1209,7 +1209,7 @@ await run('handler: client abort -> 499', async () => {
   const env = makeEnv({
     tier1: [anthropicNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { FAILOVER_BUDGET_MS: '30000' },
+    extraEnv: { AIG_FAILOVER_BUDGET_MS: '30000' },
   });
   const controller = new AbortController();
   const req = new Request('https://gateway.example.com/v1/messages', {
@@ -1282,8 +1282,8 @@ await run('handler: first-event timeout -> rotates to next node', async () => {
     secrets: { a1: 'k', a2: 'k' },
     extraEnv: {
       // Enough budget for a1's first-event timeout (~2.5s) plus a2's response.
-      FAILOVER_BUDGET_MS: '6000',
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_FAILOVER_BUDGET_MS: '6000',
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1310,10 +1310,10 @@ await run('handler: conversion shares max_attempts budget with native', async ()
     tier1: [anthropicNode('a1'), anthropicNode('a2'), openaiNode('o1')],
     secrets: { a1: 'k', a2: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
-      MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
-      POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3 } }),
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3 } }),
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1336,9 +1336,9 @@ await run('handler: conversion shares failover_budget_ms', async () => {
     tier1: [anthropicNode('a1'), openaiNode('o1')],
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
-      FAILOVER_BUDGET_MS: '30000', // Normal budget
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_FAILOVER_BUDGET_MS: '30000', // Normal budget
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1371,7 +1371,7 @@ await run('handler: hedge never crosses protocol', async () => {
     return new ReadableStream({
       async pull(controller) {
         if (i >= lines.length) return;
-        await new Promise(r => setTimeout(r, 200)); // Delay longer than HEDGE_DELAY_MS
+        await new Promise(r => setTimeout(r, 200)); // Delay longer than AIG_HEDGE_DELAY_MS
         controller.enqueue(encoder.encode(lines[i++]));
         // Then close slowly - but hedge should fire before this
       },
@@ -1386,11 +1386,11 @@ await run('handler: hedge never crosses protocol', async () => {
     tier1: [anthropicNode('a1'), anthropicNode('a2'), openaiNode('o1')],
     secrets: { a1: 'k', a2: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
-      HEDGE_DELAY_MS: '50', // Fast hedge trigger
-      MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
-      POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: true, tiers: ['tier1'] } } }),
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_HEDGE_DELAY_MS: '50', // Fast hedge trigger
+      AIG_MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'default' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, hedge: { enabled: true, tiers: ['tier1'] } } }),
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1419,8 +1419,8 @@ await run('handler: conversion error does not pollute node health', async () => 
     tier1: [anthropicNode('a1'), openaiNode('o1')],
     secrets: { a1: 'k', o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1450,8 +1450,8 @@ await run('regression: no native candidate + configured fallback -> 200 via Open
     tier1: [openaiNode('o1')],
     secrets: { o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1475,16 +1475,16 @@ await run('regression: no native candidate + configured fallback -> 200 via Open
 
 await run('regression: no native candidate + no fallback configured -> 404', async () => {
   resetMock();
-  // OpenAI chat node present and would serve the model, but PROTOCOL_FALLBACKS
+  // OpenAI chat node present and would serve the model, but AIG_PROTOCOL_FALLBACKS
   // is NOT configured. No implicit cross-protocol conversion may happen.
-  // PROTOCOL_FALLBACKS=disable pins the Native-Only contract for this
+  // AIG_PROTOCOL_FALLBACKS=disable pins the Native-Only contract for this
   // regression; the Default-ON path is covered by Contract 03 in
   // architecture-contract-test.mjs.
   routeHandlers['o1.example.com'] = () => jsonUpstream(okOpenAICompletion());
   const env = makeEnv({
     tier1: [openaiNode('o1')],
     secrets: { o1: 'k' },
-    extraEnv: { PROTOCOL_FALLBACKS: 'disable' },
+    extraEnv: { AIG_PROTOCOL_FALLBACKS: 'disable' },
   });
   const res = await worker.fetch(messagesRequest({
     model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }],
@@ -1503,8 +1503,8 @@ await run('regression: fallback configured but target node lacks the model -> 40
     tier1: [openaiNode('o1', { models: { 'other-model': 'up' } })],
     secrets: { o1: 'k' },
     extraEnv: {
-      PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-      SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
     },
   });
   const res = await worker.fetch(messagesRequest({
@@ -1538,7 +1538,7 @@ await run('handler: OpenAI Chat client + only Anthropic upstream -> success (non
   const env = makeEnv({
     tier1: [anthropicNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', messages: [{ role: 'user', content: 'hi' }],
@@ -1588,7 +1588,7 @@ await run('handler: OpenAI Chat client + only Anthropic upstream -> success (str
   const env = makeEnv({
     tier1: [anthropicNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', stream: true, messages: [{ role: 'user', content: 'hi' }],
@@ -1640,9 +1640,9 @@ await run('handler: OpenAI Chat client + Anthropic 529 -> rotation 429 retry', a
     tier1: [anthropicNode('a1'), anthropicNode('a2')],
     secrets: { a1: 'k', a2: 'k' },
     extraEnv: {
-      SHOULD_EXPOSE_UPSTREAM: 'true',
-      MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
-      POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+      AIG_MODELS_CONFIG: JSON.stringify({ 'claude-x': { policy: 'fast' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ fast: { max_attempts: 3 } }),
     },
   });
   const res = await worker.fetch(chatCompletionsRequest({
@@ -1707,7 +1707,7 @@ await run('handler: OpenAI Chat native success unchanged when native node availa
   const env = makeEnv({
     tier1: [openaiNode('o1')],
     secrets: { o1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' },
   });
   const res = await worker.fetch(chatCompletionsRequest({
     model: 'claude-x', messages: [{ role: 'user', content: 'hi' }],
@@ -1796,7 +1796,7 @@ await run('handler: OpenAI Responses client + only Anthropic upstream (no fallba
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true', AIG_ACCESS_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1812,7 +1812,7 @@ await run('handler: OpenAI Responses client + only Anthropic upstream (no fallba
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true', AIG_ACCESS_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi', stream: true,
@@ -1828,7 +1828,7 @@ await run('handler: OpenAI Responses client + Anthropic 529 (no fallback) -> 404
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { GATEWAY_MODELS_AIR: 'code-max' },
+    extraEnv: { AIG_ACCESS_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1846,7 +1846,7 @@ await run('handler: OpenAI Responses client + only OpenAI Responses upstream -> 
   const env = makeEnv({
     tier1: [openaiResponsesNodeOnly('r1')],
     secrets: { r1: 'k' },
-    extraEnv: { SHOULD_EXPOSE_UPSTREAM: 'true', GATEWAY_MODELS_AIR: 'code-max' },
+    extraEnv: { AIG_SHOULD_EXPOSE_UPSTREAM: 'true', AIG_ACCESS_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max', input: 'hi',
@@ -1873,7 +1873,7 @@ await run('handler: OpenAI Responses client + Anthropic upstream with tool_use (
   const env = makeEnv({
     tier1: [anthropicResponsesNode('a1')],
     secrets: { a1: 'k' },
-    extraEnv: { GATEWAY_MODELS_AIR: 'code-max' },
+    extraEnv: { AIG_ACCESS_MODELS_AIR: 'code-max' },
   });
   const res = await worker.fetch(responsesApiRequest({
     model: 'code-max',

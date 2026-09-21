@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// PROTOCOL_FALLBACKS: cross-protocol route fallback chains.
+// AIG_PROTOCOL_FALLBACKS: cross-protocol route fallback chains.
 //
 // Shape:
 //   {
@@ -33,7 +33,7 @@
 // (Anthropic Messages <-> OpenAI Chat Completions, bidirectional) are the safe
 // and widely-expected fallback for operators who carry both an Anthropic pool
 // and an OpenAI-compatible pool. Operators who want the legacy Native-Only
-// behavior can opt out with `PROTOCOL_FALLBACKS=disable`.
+// behavior can opt out with `AIG_PROTOCOL_FALLBACKS=disable`.
 //
 // Only explicitly supported conversions are allowed. Unsupported conversions
 // produce blocking configuration errors (not warnings).
@@ -55,7 +55,7 @@ export const SUPPORTED_CONVERSIONS: Readonly<Record<string, string[]>> = Object.
   'openai:chat_completions': ['anthropic:messages'],
 });
 
-// Built-in default chain. Applied when PROTOCOL_FALLBACKS is unset/empty.
+// Built-in default chain. Applied when AIG_PROTOCOL_FALLBACKS is unset/empty.
 // The default is the only one allowed without an explicit operator JSON
 // value; see header for the three-mode contract.
 export const DEFAULT_FALLBACK_CHAIN: Readonly<Record<string, string[]>> = Object.freeze({
@@ -87,7 +87,7 @@ export function getProtocolFallbacksDiagnostics(env: Record<string, unknown>): s
 function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Record<string, string[]>, errors: string[] } {
   if (cachedEnv === env && cached) return cached;
   cachedEnv = env;
-  const raw = readEnv(env, 'PROTOCOL_FALLBACKS');
+  const raw = readEnv(env, 'AIG_PROTOCOL_FALLBACKS');
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   const errors: string[] = [];
   const config: Record<string, string[]> = {};
@@ -110,18 +110,18 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
       parsed = JSON.parse(trimmed);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`PROTOCOL_FALLBACKS invalid JSON (${msg}); fallbacks disabled`);
+      errors.push(`AIG_PROTOCOL_FALLBACKS invalid JSON (${msg}); fallbacks disabled`);
       cached = { config, errors };
       return cached;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      errors.push('PROTOCOL_FALLBACKS must be a JSON object { "protocol:surface": ["protocol:surface", ...] }');
+      errors.push('AIG_PROTOCOL_FALLBACKS must be a JSON object { "protocol:surface": ["protocol:surface", ...] }');
     } else {
       for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
         const parsedKey = parseSurfaceKey(key, errors, '');
         if (!parsedKey) continue;
         if (!Array.isArray(value)) {
-          errors.push(`PROTOCOL_FALLBACKS: "${key}" must be a JSON array of "protocol:surface" strings`);
+          errors.push(`AIG_PROTOCOL_FALLBACKS: "${key}" must be a JSON array of "protocol:surface" strings`);
           continue;
         }
         // Empty array is a valid operator choice — it pins this route to
@@ -143,11 +143,11 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
         if (targets.length > 0) {
           const allowed = SUPPORTED_CONVERSIONS[parsedKey];
           if (!allowed) {
-            errors.push(`PROTOCOL_FALLBACKS: "${parsedKey}" is not a supported conversion source (supported: ${Object.keys(SUPPORTED_CONVERSIONS).join(', ')})`);
+            errors.push(`AIG_PROTOCOL_FALLBACKS: "${parsedKey}" is not a supported conversion source (supported: ${Object.keys(SUPPORTED_CONVERSIONS).join(', ')})`);
           } else {
             for (const target of targets) {
               if (!allowed.includes(target)) {
-                errors.push(`PROTOCOL_FALLBACKS: "${parsedKey}" -> "${target}" is not a supported conversion (allowed: ${allowed.join(', ')})`);
+                errors.push(`AIG_PROTOCOL_FALLBACKS: "${parsedKey}" -> "${target}" is not a supported conversion (allowed: ${allowed.join(', ')})`);
               }
             }
           }
@@ -163,7 +163,7 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
 }
 
 function parseSurfaceKey(raw: string, errors: string[], parentKey: string): string | null {
-  const prefix = parentKey ? `PROTOCOL_FALLBACKS: "${parentKey}" entry` : 'PROTOCOL_FALLBACKS key';
+  const prefix = parentKey ? `AIG_PROTOCOL_FALLBACKS: "${parentKey}" entry` : 'AIG_PROTOCOL_FALLBACKS key';
   if (typeof raw !== 'string' || !raw.trim()) {
     errors.push(`${prefix} must be a non-empty "protocol:surface" string`);
     return null;

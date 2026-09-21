@@ -32,7 +32,7 @@ export const PROTOCOLS = Object.freeze(['openai', 'anthropic']);
 //   anthropic   -> messages | count_tokens
 //
 // `count_tokens` is included as a Discovery capability because the runtime
-// ANTHROPIC_COUNT_MODE knob exists and can be sourced from the
+// AIG_ANTHROPIC_COUNT_MODE knob exists and can be sourced from the
 // provider, but Runtime Node schema (src/config/nodes.ts) does NOT yet
 // declare it as a `surfaces` entry. The runtime check therefore treats
 // count_tokens as advisory-only unless and until the Runtime schema is

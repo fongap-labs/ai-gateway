@@ -41,7 +41,7 @@ export type DashboardModelStatusEnvelope = {
   models: PublicModelStatusEntry[],
 };
 
-// Optional dashboard-only allowlist. DASHBOARD_MODELS is a comma-separated
+// Optional dashboard-only allowlist. AIG_DASHBOARD_MODELS is a comma-separated
 // Worker text variable. It affects only the public model-status rows:
 // routing, authorization, /v1/models, fallback and observability are untouched.
 // Matching is canonical/case-insensitive, display keeps the official logical
@@ -81,7 +81,7 @@ export function filterDashboardModelStatus(status: DashboardModelStatusEnvelope,
 // 暂无记录; it is optional and defaults to empty (fail-open, never fabricated).
 export function publicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Record<string, unknown> | null | undefined, evidence: ReadonlySet<string> = new Set(), now: number = Date.now(), historicalEvidence: ReadonlySet<string> = new Set()): DashboardModelStatusEnvelope {
   const status = getPublicModelStatus(nodes, env, evidence, now, historicalEvidence);
-  return filterDashboardModelStatus(status, env?.DASHBOARD_MODELS);
+  return filterDashboardModelStatus(status, env?.AIG_DASHBOARD_MODELS);
 }
 
 // Flat list of { id, status } rows from the status envelope.
