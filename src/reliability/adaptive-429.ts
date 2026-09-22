@@ -49,10 +49,19 @@ function automaticCooldownMs(stage: number): number {
 function pruneIfNeeded(): void {
   if (states.size <= MAX_ENTRIES) return;
   const entries = [...states.entries()].sort((a, b) => a[1].last429At - b[1].last429At);
-  const remove = states.size - Math.floor(MAX_ENTRIES * 0.75);
-  for (let i = 0; i < remove; i++) {
+  const targetSize = Math.floor(MAX_ENTRIES * 0.75);
+  let remove = states.size - targetSize;
+  if (remove <= 0) return;
+  let deleted = 0;
+  for (let i = 0; i < entries.length && deleted < remove; i++) {
     const entry = entries[i];
-    if (entry) states.delete(entry[0]);
+    if (entry && states.has(entry[0])) {
+      states.delete(entry[0]);
+      deleted++;
+      // Recalculate remove count in case of concurrent modifications
+      remove = states.size - Math.floor(MAX_ENTRIES * 0.75);
+      if (remove <= 0) break;
+    }
   }
 }
 

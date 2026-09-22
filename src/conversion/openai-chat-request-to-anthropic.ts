@@ -21,9 +21,16 @@ export { ConversionError };
 
 // Single default policy for max_tokens. Anthropic REQUIRES max_tokens on
 // /v1/messages; OpenAI Chat Completions treats it as optional. When the
-// client omits it we apply this single, named default rather than scattering
-// magic numbers throughout the converter. Exported so tests/docs share one fact.
+// client omits it we apply a context-aware default (1/4 of context window,
+// capped at 4096) rather than scattering magic numbers throughout the
+// converter. Exported so tests/docs share one fact.
 export const DEFAULT_MAX_TOKENS = 1024;
+
+function defaultMaxTokensForContextWindow(contextWindow: number | null | undefined): number {
+  if (!contextWindow || contextWindow <= 0) return DEFAULT_MAX_TOKENS;
+  // Use 1/4 of context window, capped at 4096 as a reasonable default
+  return Math.min(Math.floor(contextWindow / 4), 4096);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -167,7 +174,8 @@ function convertToolMessage(msg: Record<string, unknown>): ToolResultBlock {
 
 // Converts an OpenAI Chat Completions request body into an Anthropic Messages
 // request body. Rejects fields that cannot be converted without semantic loss.
-export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown>): Record<string, unknown> {
+// Optional contextWindow allows a context-aware default for max_tokens.
+export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown>, contextWindow?: number | null): Record<string, unknown> {
   if (!isRecord(body)) {
     throw new ConversionError('conversion_not_supported: request body is not an object');
   }
@@ -180,7 +188,7 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
     throw new ConversionError('conversion_not_supported: model is required');
   }
 
-  // max_tokens: single default policy when omitted.
+  // max_tokens: context-aware default when omitted.
   if (body.max_tokens !== undefined) {
     const mt = body.max_tokens;
     if (typeof mt !== 'number' || !Number.isInteger(mt) || mt <= 0) {
@@ -188,7 +196,7 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
     }
     out.max_tokens = mt;
   } else {
-    out.max_tokens = DEFAULT_MAX_TOKENS;
+    out.max_tokens = defaultMaxTokensForContextWindow(contextWindow);
   }
 
   if (body.temperature !== undefined) out.temperature = body.temperature;

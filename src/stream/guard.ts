@@ -242,7 +242,7 @@ export async function ensureFirstSseEvent(
     void consumeSseEventsWithReader(reader, check, consumed, () => settled)
       .then(() => { if (!settled) finishErr(GUARD_ERROR.EMPTY); })
       .catch((error) => {
-        if (!settled) finishErr(error?.code || GUARD_ERROR.EMPTY);
+        if (!settled) finishErr(error instanceof GuardError ? error.code : GUARD_ERROR.EMPTY);
       });
   });
 }

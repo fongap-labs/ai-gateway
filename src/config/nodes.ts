@@ -175,7 +175,9 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
         : '';
       const secretTier = ID_PATTERN.test(rawId) ? credentialTiers.get(rawId) : undefined;
       if (secretTier && secretTier !== tier) {
-        diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}.`);
+        // Credential tier mismatch is a fatal configuration error — the node
+        // must not be created, and the entire config becomes invalid.
+        diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}. Credential tier mismatch is not allowed.`);
         conflict = true;
         continue;
       }

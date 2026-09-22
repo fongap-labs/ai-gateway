@@ -207,6 +207,35 @@ await run('conversion: OpenAI Chat -> Anthropic request — text roundtrip', () 
   assert.equal(out.system, undefined);
 });
 
+await run('conversion: OpenAI Chat -> Anthropic request — context-aware default max_tokens', () => {
+  // 128k context window -> default should be min(128000/4, 4096) = 4096
+  const out = convertOpenAIChatRequestToAnthropic({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'hi' }],
+  }, 128000);
+  assert.equal(out.max_tokens, 4096);
+  
+  // 8k context window -> default should be 8192/4 = 2048
+  const out2 = convertOpenAIChatRequestToAnthropic({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: 'hi' }],
+  }, 8192);
+  assert.equal(out2.max_tokens, 2048);
+  
+  // Unknown/zero context window -> falls back to DEFAULT_MAX_TOKENS
+  const out3 = convertOpenAIChatRequestToAnthropic({
+    model: 'unknown-model',
+    messages: [{ role: 'user', content: 'hi' }],
+  }, 0);
+  assert.equal(out3.max_tokens, DEFAULT_MAX_TOKENS);
+  
+  const out4 = convertOpenAIChatRequestToAnthropic({
+    model: 'unknown-model',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+  assert.equal(out4.max_tokens, DEFAULT_MAX_TOKENS);
+});
+
 await run('conversion: OpenAI Chat -> Anthropic request — system (string) + developer (string)', () => {
   const out = convertOpenAIChatRequestToAnthropic({
     model: 'gpt-4o',

@@ -12,6 +12,11 @@
 // ever requires global admission control, that belongs in a separate explicit
 // coordination design rather than an undocumented binding path.
 //
+// WARNING: In a multi-isolate deployment (e.g. Cloudflare Workers with multiple
+// instances), the effective RPM limit is `AIG_ACCESS_KEY_RPM × isolate_count`,
+// because each isolate enforces the cap independently. Set the cap accordingly
+// or accept the soft limit.
+//
 // Design:
 //   * window is 60s, ring of timestamps for the active window;
 //   * the cap is set via the AIG_ACCESS_KEY_RPM env var; 0 disables;

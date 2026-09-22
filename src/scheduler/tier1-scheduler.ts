@@ -158,8 +158,11 @@ export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: 
 function sampleTwo(arr: RuntimeNode[], rng: () => number = Math.random, affinityNode: RuntimeNode | null = null): { a: RuntimeNode, b: RuntimeNode } {
   if (affinityNode) {
     const peers = arr.filter((node) => node.id !== affinityNode.id);
+    if (peers.length === 0) {
+      // No peer available for P2C with affinity; fall back to single candidate
+      return { a: affinityNode, b: affinityNode };
+    }
     const peer = peers[Math.floor(rng() * peers.length)];
-    if (!peer) throw new Error('tier1 P2C invariant: affinity candidate requires a peer');
     return { a: affinityNode, b: peer };
   }
   const i = Math.floor(rng() * arr.length);

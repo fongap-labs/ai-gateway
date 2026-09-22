@@ -64,8 +64,8 @@ await test('once the oldest stamp falls out of the window, the slot frees up', (
 
 await test('denied request retry-after reflects the oldest stamp', () => {
   __resetKeyRpmForTests();
-  // First request at t=0; the 6th is at t=30000 — retry-after should
-  // be ceil((0 + 60000 - 30000) / 1000) = 30 seconds.
+  // First request at t=0; the 6th is at t=300ms — retry-after should
+  // be ceil((0 + 60000 - 300) / 1000) = 60 seconds.
   for (let i = 0; i < 5; i += 1) {
     admitKeyRequest('k3', 5, now + i);
   }

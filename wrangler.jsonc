@@ -9,5 +9,7 @@
   },
   "triggers": {
     "crons": ["0 3 * * *"]
+    // Cron runs in UTC (Cloudflare Workers does not support timezone in cron expressions).
+    // 0 3 * * * = 03:00 UTC daily.
   }
 }

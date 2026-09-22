@@ -67,23 +67,11 @@ AIG_TIER1_NODES_01='[
 # AIG_REQUEST_HEDGE_MAX="1"             # default: 1
 # AIG_ACCESS_KEY_RPM="600"                  # default: 0 (disabled)
 # AIG_LOG_LEVEL="info"
+# AIG_DASHBOARD_MODELS="Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air"
 # AIG_SHOULD_EXPOSE_UPSTREAM="false"
 # AIG_HAS_STREAM_GUARD="false"
 # AIG_CAN_USE_HTTP="false"
 # AIG_ANTHROPIC_COUNT_MODE="approximate"
-# AIG_DASHBOARD_MODELS="Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air"
-
-# ============ Protocol fallback (optional) ============
-# Current supported conversion is bidirectional Anthropic Messages <-> OpenAI Chat.
-# OpenAI Responses is Native Only for protocol conversion.
-# Unset/empty uses the built-in bidirectional chain; "disable" turns conversion off;
-# explicit JSON replaces the built-in mapping.
-# AIG_PROTOCOL_FALLBACKS='{"anthropic:messages":["openai:chat_completions"],"openai:chat_completions":["anthropic:messages"]}'
-
-# ============ Token-usage stream hint (optional, fail-open) ============
-# Ask OpenAI-compatible streaming upstreams to report usage in the final chunk.
-# "auto" (default) follows provider quirks; "on" forces it; "off" disables it.
-# Missing provider usage is recorded as missing and is never estimated.
 # AIG_USAGE_INCLUDE_MODE="auto"
 # AIG_USAGE_EXCLUDE_PROVIDERS="my-llm-provider"
 

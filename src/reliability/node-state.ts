@@ -358,7 +358,7 @@ function maybeCleanup(now: number): void {
     // nodeState.size inside the loop, so a bound of `nodeState.size - target`
     // would shrink with every deletion and terminate early, leaving the map
     // over MAX_STATE_ENTRIES.
-    const excess = nodeState.size - target;
+    let excess = nodeState.size - target;
     // NEVER evict a state that is still doing work: an active stream owns a
     // concurrency slot (activeRequests > 0) and a half-open probe owns
     // probeInFlight. Deleting either would reset the counters to a fresh
@@ -375,6 +375,8 @@ function maybeCleanup(now: number): void {
       if (s.activeRequests > 0 || s.probeInFlight) continue;
       nodeState.delete(entry[0]);
       deleted++;
+      // Recalculate excess after each deletion since nodeState.size has changed
+      excess = nodeState.size - target;
     }
   }
 }

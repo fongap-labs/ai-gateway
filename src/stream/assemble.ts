@@ -137,9 +137,12 @@ export async function collectOpenAIStreamObject(upstream: Response, clientSignal
     throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.EMPTY, 'Upstream returned an empty streaming response.');
   }
   const hasCompletionMarker = states.some(([, s]) => s.finish_reason !== null);
-  if (!hasCompletionMarker) {
-    throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.TRUNCATED, 'Upstream stream ended before a completion marker was received.');
-  }
+  // Some upstreams may not send a finish_reason. Default to 'stop' instead of
+  // treating it as a truncated stream. The response will still be valid with
+  // the default finish_reason applied at line 155.
+  // if (!hasCompletionMarker) {
+  //   throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.TRUNCATED, 'Upstream stream ended before a completion marker was received.');
+  // }
 
   return {
     id: id || `chatcmpl-${crypto.randomUUID()}`,

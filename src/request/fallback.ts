@@ -117,6 +117,7 @@ export async function runFallbackChain({ loopCtx, route, requestedModel, runTier
     } catch (e) {
       if (e instanceof ConversionError) {
         conversionRejectedCount++;
+        state.logicalAttempts++; // Count failed conversion toward attempt budget
         const reason = String(e.message || e.code || 'conversion_not_supported').slice(0, 300);
         logger.error(JSON.stringify({
           event: 'fallback_conversion_skipped',
