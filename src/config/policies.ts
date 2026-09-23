@@ -267,11 +267,12 @@ export function getPolicy(modelName: string, modelsConfig: Record<string, { poli
   const explicitPolicy = modelsConfig[modelName]?.policy;
   const normalized = modelName.trim().toLowerCase();
   const tier = normalized.split('-').at(-1);
-  const inferredPolicy = tier === 'air'
-    ? 'fast'
-    : tier && ['pro', 'max', 'ultra'].includes(tier)
-      ? 'long-reasoning'
-      : 'default';
+  let inferredPolicy = 'default';
+  if (tier === 'air') {
+    inferredPolicy = 'fast';
+  } else if (tier && ['pro', 'max', 'ultra'].includes(tier)) {
+    inferredPolicy = 'long-reasoning';
+  }
   const policyName = explicitPolicy || inferredPolicy;
   return policiesConfig[policyName] ?? policiesConfig.default ?? BUILTIN_POLICIES.default;
 }
