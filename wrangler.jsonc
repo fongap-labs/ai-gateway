@@ -2,7 +2,13 @@
   "name": "ai-gateway",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-06",
-  "workers_dev": true,
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "api.135468.xyz",
+      "custom_domain": true
+    }
+  ],
   "keep_vars": true,
   "observability": {
     "enabled": true
