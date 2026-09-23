@@ -12,6 +12,8 @@
 //   Code-Max <-> Code-Pro, then Code-Ultra; Code-Ultra may fall back to
 //   Code-Max/Code-Pro. Code models never cross into the non-Code family.
 //   Max <-> Pro, then Ultra; Ultra may fall back to Max/Pro.
+//   Purpose-prefixed aliases preserve their prefix while changing only the
+//   capability tier, for example Audit-Ultra -> Audit-Max -> Audit-Pro.
 //   Air may move upward to Pro -> Max -> Ultra, but once it moves upward it
 //   never returns to Air.
 //   Interchangeable families get at most two evaluation rounds. The second
