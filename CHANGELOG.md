@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: make the built-in reliability baseline self-sufficient with six logical attempts, 30s header timeout, 60s first-event timeout, and a 120s request-wide failover budget.
+
 - refactor: align merge CI with Action Worker using ci-evidence and centralized PR Governance.
 
 - fix: drive dashboard quick-start access groups and public endpoint from runtime configuration instead of front-end constants.
