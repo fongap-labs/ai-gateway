@@ -117,14 +117,16 @@ await test('401/403 rotate with auth cooldown and do not count toward circuit', 
   }
 });
 
-await test('client errors stop immediately without penalty', async () => {
-  for (const status of [400, 402 - 2, 413, 415, 422]) {
+await test('400 rotates locally while hard client errors stop without penalty', async () => {
+  const rejected = classifyUpstreamStatus(400, new Headers(), ENV, now);
+  assert.equal(rejected.action, 'rotate');
+  assert.equal(rejected.cooldownMs, 0);
+  assert.equal(rejected.counted, false);
+  for (const status of [413, 415, 422]) {
     const c = classifyUpstreamStatus(status, new Headers(), ENV, now);
-    if (status === 400) {
-      assert.equal(c.action, 'stop');
-      assert.equal(c.cooldownMs, 0);
-      assert.equal(c.counted, false);
-    }
+    assert.equal(c.action, 'stop');
+    assert.equal(c.cooldownMs, 0);
+    assert.equal(c.counted, false);
   }
   const id = 'ce1';
   acquireSlot(id, now); tick(1);
