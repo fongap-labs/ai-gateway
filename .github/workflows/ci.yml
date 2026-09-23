@@ -11,13 +11,15 @@ on:
 
 permissions:
   contents: read
+  statuses: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate-merge:
+  ci-evidence:
+    name: ci-evidence
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,3 +64,18 @@ jobs:
 
       - name: Validate (deploy)
         run: npm run validate:deploy
+
+  validate-merge:
+    name: validate-merge
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs:
+      - ci-evidence
+    steps:
+      - name: Validate merge policy
+        uses: fongap-labs/action-worker/.github/actions/validate-merge-policy@main
+        with:
+          ci-result: ${{ needs.ci-evidence.result }}
+          head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          require-pr-governance: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
