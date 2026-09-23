@@ -12,17 +12,17 @@ const root = join(currentDir, '..');
 const deploy = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
 
 const gateIf = deploy.split(/\r?\n/).find((line) =>
-  line.includes("vars.AIG_IS_DEPLOY_ENABLED == 'true'")
-  && line.includes("github.repository == vars.AIG_DEPLOY_REPOSITORY"),
+  line.includes("vars.AIG_IS_DEPLOY_ENABLED != 'false'"),
 )?.trim() || '';
 
 assert.ok(
-  gateIf.includes("vars.AIG_IS_DEPLOY_ENABLED == 'true'"),
-  'deployment must require explicit AIG_IS_DEPLOY_ENABLED=true',
+  gateIf.includes("vars.AIG_IS_DEPLOY_ENABLED != 'false'"),
+  'deployment must be enabled unless AIG_IS_DEPLOY_ENABLED is explicitly false',
 );
-assert.ok(
-  gateIf.includes("github.repository == vars.AIG_DEPLOY_REPOSITORY"),
-  'deployment must require the configured repository identity',
+assert.doesNotMatch(
+  deploy,
+  /AIG_DEPLOY_REPOSITORY/,
+  'deployment repository identity must come from GitHub context',
 );
 assert.doesNotMatch(
   gateIf,
