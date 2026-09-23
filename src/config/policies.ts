@@ -13,7 +13,7 @@ import type { PolicyConfig } from '../types/policy.ts';
 const MIN_ATTEMPTS = 1;
 const MAX_ATTEMPTS = 8;
 const TIER_KEYS = ['tier1', 'tier2', 'tier3'];
-const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'first_event_timeout_ms', 'max_in_flight']);
+const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'first_event_timeout_ms', 'failover_budget_ms', 'max_in_flight']);
 
 type HedgePolicy = { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
 type TierAttempts = { tier1?: number, tier2?: number, tier3?: number } | null;
@@ -28,6 +28,7 @@ const BUILTIN_POLICIES: Readonly<{
     tierAttempts: null,
     hedge: { enabled: true, tiers: ['tier1'] },
     firstEventTimeoutMs: null,
+    failoverBudgetMs: null,
     maxInFlight: null,
   },
   fast: {
@@ -35,6 +36,7 @@ const BUILTIN_POLICIES: Readonly<{
     tierAttempts: null,
     hedge: { enabled: false },
     firstEventTimeoutMs: null,
+    failoverBudgetMs: 60_000,
     maxInFlight: null,
   },
   'long-reasoning': {
@@ -42,6 +44,7 @@ const BUILTIN_POLICIES: Readonly<{
     tierAttempts: null,
     hedge: { enabled: false },
     firstEventTimeoutMs: 60_000,
+    failoverBudgetMs: 180_000,
     maxInFlight: null,
   },
 });
@@ -108,8 +111,12 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
         const firstEventTimeoutMs = cfg.first_event_timeout_ms === undefined
           ? (base?.firstEventTimeoutMs ?? null)
           : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
-        if (firstEventTimeoutMs !== null && firstEventTimeoutMs > getLimits(env).failoverBudgetMs) {
-          errors.push(`AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds AIG_FAILOVER_BUDGET_MS (${getLimits(env).failoverBudgetMs})`);
+        const failoverBudgetMs = cfg.failover_budget_ms === undefined
+          ? (base?.failoverBudgetMs ?? null)
+          : parseFailoverBudgetMs(cfg.failover_budget_ms, key, errors);
+        const effectiveFailoverBudgetMs = failoverBudgetMs ?? getLimits(env).failoverBudgetMs;
+        if (firstEventTimeoutMs !== null && firstEventTimeoutMs > effectiveFailoverBudgetMs) {
+          errors.push(`AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`);
         }
         const maxInFlight = cfg.max_in_flight === undefined
           ? (base?.maxInFlight ?? null)
@@ -145,6 +152,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           tierAttempts,
           hedge,
           firstEventTimeoutMs,
+          failoverBudgetMs,
           maxInFlight,
         };
       }
@@ -207,6 +215,15 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
   return any ? out : null;
 }
 
+function parseFailoverBudgetMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1_000 || value > 900_000) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": failover_budget_ms must be an integer between 1000 and 900000`);
+    return null;
+  }
+  return value;
+}
+
 function parseFirstEventTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 5_000 || value > 600_000) {
@@ -228,6 +245,13 @@ function parseMaxInFlight(value: unknown, policyName: string, errors: string[]):
 }
 
 export function getPolicy(modelName: string, modelsConfig: Record<string, { policy?: string }>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
-  const policyName = modelsConfig[modelName]?.policy || 'default';
+  const explicitPolicy = modelsConfig[modelName]?.policy;
+  const normalized = modelName.trim().toLowerCase();
+  const inferredPolicy = ['air', 'code-air'].includes(normalized)
+    ? 'fast'
+    : ['pro', 'max', 'ultra', 'code-pro', 'code-max', 'code-ultra'].includes(normalized)
+      ? 'long-reasoning'
+      : 'default';
+  const policyName = explicitPolicy || inferredPolicy;
   return policiesConfig[policyName] ?? policiesConfig.default ?? BUILTIN_POLICIES.default;
 }
