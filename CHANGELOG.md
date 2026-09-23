@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- fix: make default gateway policy production-ready: AGENT keys inherit the known Code model family when no allowlist is supplied, Air uses fast routing, and Pro/Max/Ultra use a 180s long-reasoning failover budget with explicit policy overrides preserved.
+- fix: align built-in model policies with fallback topology: Air gets a bounded four-model pass, reasoning models get the full six-attempt family plan with 60s phase timeouts and a 180s request budget, while access-key allowlists remain fail-closed.
 
 - refactor: align merge CI with Action Worker using ci-evidence and centralized PR Governance.
 
