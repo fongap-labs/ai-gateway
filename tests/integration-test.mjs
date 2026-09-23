@@ -431,9 +431,9 @@ await test('model_missing 404 cools only that mapping; sibling model on same nod
   assert.equal((await sibling.json()).choices[0].message.content, 'sibling-ok');
 });
 
-await test('client-class 400 stops immediately instead of rotating', async () => {
+await test('client-class 400 rotates to another provider-key slot', async () => {
   routeHandlers['bad-a.example.com'] = () => jsonResponse({ error: { message: 'bad request' } }, 400);
-  routeHandlers['bad-b.example.com'] = () => jsonResponse(okChat());
+  routeHandlers['bad-b.example.com'] = () => jsonResponse(okChat('healthy'));
   recordTier1Ttft('bad-a', 'general-air', 50);
   recordTier1Ttft('bad-b', 'general-air', 2_000);
   const env = makeEnv({
@@ -441,8 +441,9 @@ await test('client-class 400 stops immediately instead of rotating', async () =>
     secrets: { 'bad-a': 'a', 'bad-b': 'b' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
-  assert.equal(res.status, 400);
-  assert.equal(upstreamCalls.length, 1);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).choices[0].message.content, 'healthy');
+  assert.deepEqual(upstreamCalls.map((c) => c.host), ['bad-a.example.com', 'bad-b.example.com']);
 });
 
 await test('HTTP 200 with non-JSON garbage rotates and penalizes the bad node', async () => {
