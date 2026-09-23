@@ -47,7 +47,7 @@ export type FailureClassification = {
   explicitRetryAfter?: boolean,
 };
 
-const CLIENT_STOP_STATUSES = new Set([400, 413, 415, 422]);
+const CLIENT_STOP_STATUSES = new Set([413, 415, 422]);
 
 function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number): FailureClassification {
   const limits = getLimits(env);
@@ -78,6 +78,13 @@ export function classifyUpstreamStatus(status: number, headers: Headers, env: Ga
   if (status === 413 && looksLikeProviderRateLimit(body)) return rateLimitClassification(headers, env, now);
   if (status === 401 || status === 403) {
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false };
+  }
+  // A 400 from one OpenAI-compatible upstream is not proof that the client
+  // request is invalid everywhere. Treat it as request-local incompatibility:
+  // the current node/account is excluded by recordOutcome(), then routing may
+  // continue through another provider/key without applying shared cooldown.
+  if (status === 400) {
+    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
   }
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
