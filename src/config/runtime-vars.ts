@@ -33,13 +33,13 @@ export interface RuntimeBoolVar {
 }
 
 export const RUNTIME_TUNABLES = [
-  { name: 'AIG_UPSTREAM_HEADER_TIMEOUT_MS', type: 'int', min: 5_000, max: 600_000, def: 15_000 },
-  { name: 'AIG_FIRST_EVENT_TIMEOUT_MS', type: 'int', min: 5_000, max: 600_000, def: 30_000 },
+  { name: 'AIG_UPSTREAM_HEADER_TIMEOUT_MS', type: 'int', min: 5_000, max: 600_000, def: 30_000 },
+  { name: 'AIG_FIRST_EVENT_TIMEOUT_MS', type: 'int', min: 5_000, max: 600_000, def: 60_000 },
   { name: 'AIG_STREAM_IDLE_TIMEOUT_MS', type: 'int', min: 10_000, max: 600_000, def: 120_000 },
   { name: 'AIG_RATE_LIMIT_COOLDOWN_MS', type: 'int', min: 1_000, max: 600_000, def: 30_000 },
   { name: 'AIG_AUTH_FAILURE_COOLDOWN_MS', type: 'int', min: 60_000, max: 7 * 86_400_000, def: 3_600_000 },
   { name: 'AIG_REQUEST_BODY_MAX_BYTES', type: 'int', min: 1024, max: 100 * 1024 * 1024, def: 20 * 1024 * 1024 },
-  { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 60_000 },
+  { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 120_000 },
   { name: 'AIG_HEDGE_DELAY_MS', type: 'int', min: 0, max: 600_000, def: 3_000 },
   { name: 'AIG_REQUEST_HEDGE_MAX', type: 'int', min: 0, max: 3, def: 1 },
   // Per-isolate, per-key RPM cap. Counts request-START moments in a
