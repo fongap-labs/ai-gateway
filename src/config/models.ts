@@ -39,7 +39,7 @@ const DEFAULT_UI_VISIBLE = true;
  * explicitly configured (or defaulted) by the parse below.
  */
 export type ModelEntry = {
-  policy: string,
+  policy?: string,
   visibility: string,
   ui_visible: boolean,
   display_order: number,
@@ -94,7 +94,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         // `policy` participates only when explicitly configured; a present
         // value (null included) must be a non-empty string. Unknown policy
         // names are cross-checked against AIG_POLICIES_CONFIG by nodes.ts.
-        const entry: ModelEntry = { policy: 'default', visibility: DEFAULT_VISIBILITY, ui_visible: DEFAULT_UI_VISIBLE, display_order: DEFAULT_DISPLAY_ORDER, group: DEFAULT_GROUP };
+        const entry: ModelEntry = { visibility: DEFAULT_VISIBILITY, ui_visible: DEFAULT_UI_VISIBLE, display_order: DEFAULT_DISPLAY_ORDER, group: DEFAULT_GROUP };
         if (cfg.policy !== undefined) {
           if (typeof cfg.policy === 'string' && cfg.policy.trim()) {
             entry.policy = cfg.policy.trim();
