@@ -1,9 +1,9 @@
 {
   "default": {
-    "max_attempts": 5
+    "max_attempts": 6
   },
   "long-reasoning": {
-    "max_attempts": 3,
+    "max_attempts": 6,
     "first_event_timeout_ms": 60000
   }
 }
