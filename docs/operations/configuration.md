@@ -25,7 +25,7 @@ AIG_ACCESS_KEY_<GROUP>
 AIG_ACCESS_MODELS_<GROUP>
 ```
 
-Groups do not inherit from one another. `AIR`, `PRO`, `MAX`, and `ULTRA` remain fail-closed when their model allowlist is missing or empty. `AGENT` is optimized for central governance: when `AIG_ACCESS_MODELS_AGENT` is omitted, it receives only the known `Code-Air`, `Code-Pro`, `Code-Max`, and `Code-Ultra` logical models. Setting `AIG_ACCESS_MODELS_AGENT` explicitly overrides that default; an explicitly empty value grants zero models. The group name is an authorization boundary only; it does not assign Tier 1 scheduler priority.
+Groups do not inherit from one another. An empty or missing model allowlist grants zero models for every group, including `AGENT`. The group name is an authorization boundary only; it does not assign Tier 1 scheduler priority.
 
 ## Node configuration
 
@@ -172,6 +172,7 @@ Example:
     "max_attempts": 5,
     "tier_attempts": null,
     "hedge": { "enabled": true, "tiers": ["tier1"] },
+    "headers_timeout_ms": null,
     "first_event_timeout_ms": null,
     "failover_budget_ms": null,
     "max_in_flight": null
@@ -179,11 +180,11 @@ Example:
 }
 ```
 
-`max_attempts` is the request-wide logical-attempt ceiling. Tier caps must fit inside it. `failover_budget_ms` optionally overrides the global request budget for one policy. Without an explicit model policy, `Air`/`Code-Air` use the built-in `fast` policy, while `Pro`/`Max`/`Ultra` and their `Code-*` variants use `long-reasoning` (`max_attempts=3`, no hedge, `first_event_timeout_ms=60000`, `failover_budget_ms=180000`). Other models use `default`. An explicit `AIG_MODELS_CONFIG.<model>.policy` always wins. There is one cross-tier allocation model: hard Tier precedence. `budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema and are rejected as unknown fields.
+`max_attempts` is the request-wide logical-attempt ceiling. Tier caps must fit inside it. `headers_timeout_ms`, `first_event_timeout_ms`, and `failover_budget_ms` optionally override the global request timing for one policy. Without an explicit model policy, `Air`/`Code-Air` use the built-in `fast` policy (`max_attempts=4`, 60s failover budget), exposing one pass across Air → Pro → Max → Ultra. `Pro`/`Max`/`Ultra` and their `Code-*` variants use `long-reasoning` (`max_attempts=6`, no hedge, 60s header timeout, 60s first-event timeout, 180s failover budget), matching the full 3/2/1 family fallback plan. Other models use `default`. An explicit `AIG_MODELS_CONFIG.<model>.policy` always wins. There is one cross-tier allocation model: hard Tier precedence. `budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema and are rejected as unknown fields.
 
 ## Request timing
 
-`AIG_FAILOVER_BUDGET_MS` is the global wall-clock budget for a request unless the resolved model policy supplies `failover_budget_ms`. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset the resolved budget. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
+`AIG_FAILOVER_BUDGET_MS` is the global wall-clock budget for a request unless the resolved model policy supplies `failover_budget_ms`. `AIG_UPSTREAM_HEADER_TIMEOUT_MS` and `AIG_FIRST_EVENT_TIMEOUT_MS` remain the global phase defaults, while a model policy may override them with `headers_timeout_ms` and `first_event_timeout_ms`. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset the resolved budget. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
 
 ## Usage accounting
 
