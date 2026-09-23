@@ -138,7 +138,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   let attemptHeadersTimeout: number;
   if (c.hedgedAttempt && c.attemptDeadlineMs) {
     attemptHeadersTimeout = attemptHeadersTimeoutMs(
-      limits.headersTimeoutMs,
+      policy.headersTimeoutMs ?? limits.headersTimeoutMs,
       Math.max(1, c.attemptDeadlineMs - Date.now()),
       1,
     );
@@ -147,7 +147,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     const attemptBudgetMs = attemptBudgetWindowMs(remainingBudgetMs, remainingDispatchableAttempts);
     c.attemptDeadlineMs = Date.now() + attemptBudgetMs;
     attemptHeadersTimeout = attemptHeadersTimeoutMs(
-      limits.headersTimeoutMs,
+      policy.headersTimeoutMs ?? limits.headersTimeoutMs,
       attemptBudgetMs,
       1,
     );
