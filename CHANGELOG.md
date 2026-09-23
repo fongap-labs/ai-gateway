@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: infer built-in request policies from the tier suffix of prefixed logical model names such as `Audit-Ultra` and `Editor-Air`.
+
 - fix: configure the Cloudflare custom domain with a valid host-only route pattern.
 
 

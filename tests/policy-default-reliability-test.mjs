@@ -26,6 +26,8 @@ assert.equal(getPolicy('Code-Air', inferredModels, builtins), builtins.fast);
 assert.equal(getPolicy('Code-Pro', inferredModels, builtins), builtins['long-reasoning']);
 assert.equal(getPolicy('Code-Max', inferredModels, builtins), builtins['long-reasoning']);
 assert.equal(getPolicy('Code-Ultra', inferredModels, builtins), builtins['long-reasoning']);
+assert.equal(getPolicy('Audit-Ultra', {}, builtins), builtins['long-reasoning']);
+assert.equal(getPolicy('Editor-Air', {}, builtins), builtins.fast);
 assert.equal(getPolicy('Other', inferredModels, builtins), builtins.default);
 
 const customPolicies = loadPoliciesConfig({
@@ -39,6 +41,7 @@ const explicitModels = loadModelsConfig({
   }),
 });
 assert.equal(getPolicy('Code-Pro', explicitModels, customPolicies), customPolicies.review);
+assert.equal(getPolicy('Audit-Ultra', { 'Audit-Ultra': { policy: 'fast' } }, builtins), builtins.fast);
 assert.equal(customPolicies.review.headersTimeoutMs, 90_000);
 assert.equal(customPolicies.review.failoverBudgetMs, 240_000);
 

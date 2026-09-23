@@ -157,7 +157,10 @@ await test('S2b explicit max_in_flight=4 remains an opt-in admission ceiling', a
   const env = makeEnv({
     tier1: [node('capped')],
     secrets: { capped: 'k' },
-    extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }) },
+    extraEnv: {
+      AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'default' } }),
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_in_flight: 4 } }),
+    },
   });
   const settled = [];
   const requests = Array.from({ length: 8 }, () => worker.fetch(chatRequest(), env, {}).then((response) => {
@@ -184,6 +187,9 @@ await test('S3 tier fallback drains eligible Tier 1 candidates before Tier 2 ser
     tier1: tier1Ids.map((id) => node(id)),
     tier2: [node('t2')],
     secrets: { t1a: '1', t1b: '2', t1c: '3', t1d: '4', t2: '5' },
+    extraEnv: {
+      AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'default' } }),
+    },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
@@ -280,7 +286,10 @@ await test('S7 failover wall-clock budget prevents dispatch after the budget is 
   const env = makeEnv({
     tier1: [node('slow'), node('fast')],
     secrets: { slow: 's', fast: 'f' },
-    extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
+    extraEnv: {
+      AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'default' } }),
+      AIG_FAILOVER_BUDGET_MS: '1200',
+    },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 504);

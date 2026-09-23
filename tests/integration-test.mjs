@@ -647,14 +647,17 @@ await test('failover wall-clock budget stops before dispatching a fresh node', a
     return jsonResponse({}, 502);
   };
   routeHandlers['budget-b.example.com'] = () => jsonResponse(okChat());
-  recordTier1Ttft('budget-a', 'general-air', 50);
-  recordTier1Ttft('budget-b', 'general-air', 2_000);
+  recordTier1Ttft('budget-a', 'budget-test', 50);
+  recordTier1Ttft('budget-b', 'budget-test', 2_000);
   const env = makeEnv({
-    tier1: [openaiNode('budget-a'), openaiNode('budget-b')],
+    tier1: [
+      openaiNode('budget-a', { models: { 'budget-test': 'up-model' } }),
+      openaiNode('budget-b', { models: { 'budget-test': 'up-model' } }),
+    ],
     secrets: { 'budget-a': 'a', 'budget-b': 'b' },
     extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
   });
-  const res = await worker.fetch(chatRequest(), env, {});
+  const res = await worker.fetch(chatRequest({ model: 'budget-test' }), env, {});
   assert.equal(res.status, 504);
   assert.deepEqual(upstreamCalls.map((c) => c.host), ['budget-a.example.com']);
 });
