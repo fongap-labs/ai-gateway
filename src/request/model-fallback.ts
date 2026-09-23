@@ -182,6 +182,14 @@ export function buildModelFallbackPlan(
   const rounds = buildModelFallbackRounds(requestedModel, knownModels);
   if (!family) return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
 
+  const isPrefixedFamily = family.requestedKey !== family.requestedTier;
+  const hasConfiguredSibling = (rounds[0] ?? []).some(
+    (model) => keyOf(model) !== family.requestedKey,
+  );
+  if (isPrefixedFamily && !hasConfiguredSibling) {
+    return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
+  }
+
   const budget = normalizedBudget(maxAttempts);
   const firstRound = rounds[0] ?? [requestedModel];
   const first = firstRoundPlan(family.requestedTier, family.template, firstRound, budget);
