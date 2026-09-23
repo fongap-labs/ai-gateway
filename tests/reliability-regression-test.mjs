@@ -126,6 +126,17 @@ await test('meaningful-output guards reject empty protocol objects', () => {
   assert.equal(isAnthropicMessageMeaningful({ content: [] }), false);
 });
 
+await test('400 rotates locally while hard client statuses still stop', () => {
+  const rejected = classifyUpstreamStatus(400, new Headers(), {});
+  assert.equal(rejected.kind, 'client');
+  assert.equal(rejected.action, 'rotate');
+  assert.equal(rejected.cooldownMs, 0);
+  assert.equal(rejected.counted, false);
+  for (const status of [413, 415, 422]) {
+    assert.equal(classifyUpstreamStatus(status, new Headers(), {}).action, 'stop');
+  }
+});
+
 await test('409 stops while 408 rotates', () => {
   assert.equal(classifyUpstreamStatus(409, new Headers(), {}).action, 'stop');
   assert.equal(classifyUpstreamStatus(408, new Headers(), {}).action, 'rotate');

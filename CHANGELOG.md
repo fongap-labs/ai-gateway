@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: rotate to another upstream after a node-local HTTP 400 rejection instead of terminating the whole request.
+
 - fix: update the Fongap Labs dashboard link to https://labs.fongap.com.
 
 - fix: default deployment to enabled and derive repository identity from GitHub context.
