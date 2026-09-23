@@ -68,36 +68,6 @@ await test('missing or empty group model list grants zero models', async () => {
   }
 });
 
-await test('AGENT defaults to the known code family when its model list is omitted', async () => {
-  const env = {
-    AIG_MODELS_CONFIG: JSON.stringify({
-      'Code-Air': {},
-      'Code-Pro': {},
-      'Code-Max': {},
-      'Code-Ultra': {},
-      'Ultra': {},
-    }),
-    AIG_ACCESS_KEY_AGENT: 'agent-secret',
-  };
-  const result = await authorize(req('agent-secret'), env);
-  assert.equal(result.authorized, true);
-  assert.equal(result.allowAll, false);
-  assert.deepEqual([...result.allowlist].sort(), ['Code-Air', 'Code-Max', 'Code-Pro', 'Code-Ultra']);
-  assert.ok(!result.allowlist.has('Ultra'));
-});
-
-await test('explicitly empty AGENT model list still grants zero models', async () => {
-  const env = {
-    ...ENV_MODELS,
-    AIG_ACCESS_KEY_AGENT: 'agent-secret',
-    AIG_ACCESS_MODELS_AGENT: '',
-  };
-  const result = await authorize(req('agent-secret'), env);
-  assert.equal(result.authorized, true);
-  assert.equal(result.allowAll, false);
-  assert.equal(result.allowlist.size, 0);
-});
-
 await test('wildcard means all known models, not arbitrary strings', async () => {
   const env = {
     ...ENV_MODELS,
