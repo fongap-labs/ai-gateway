@@ -63,8 +63,9 @@ assert.equal(decideDeploy({ ...base, triggerEvent: 'push', headRepo: 'someone/ai
 assert.equal(decideDeploy({ ...base, triggerEvent: 'push', changedFiles: ['README.md', 'docs/README.md'] }).deploy, false, 'docs-only change must skip deploy');
 assert.equal(decideDeploy({ event: 'workflow_dispatch' }).deploy, true, 'manual Deploy workflow may enter its own validation gate');
 
-assert.match(deploy, /vars\.AIG_IS_DEPLOY_ENABLED == 'true'/);
-assert.match(deploy, /github\.repository == vars\.AIG_DEPLOY_REPOSITORY/);
+assert.match(deploy, /vars\.AIG_IS_DEPLOY_ENABLED != 'false'/);
+assert.doesNotMatch(deploy, /AIG_DEPLOY_REPOSITORY/);
+assert.match(deploy, /THIS_REPO: \$\{\{ github\.repository \}\}/);
 assert.doesNotMatch(deploy, /github\.repository == 'fongap-labs\/ai-gateway'/);
 assert.doesNotMatch(deploy, /github\.repository == 'fongap\/ai-gateway'/);
 
