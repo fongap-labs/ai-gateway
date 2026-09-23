@@ -39,7 +39,7 @@ const DEFAULT_UI_VISIBLE = true;
  * explicitly configured (or defaulted) by the parse below.
  */
 export type ModelEntry = {
-  policy: string,
+  policy?: string,
   visibility: string,
   ui_visible: boolean,
   display_order: number,
@@ -94,7 +94,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         // `policy` participates only when explicitly configured; a present
         // value (null included) must be a non-empty string. Unknown policy
         // names are cross-checked against AIG_POLICIES_CONFIG by nodes.ts.
-        const entry: ModelEntry = { policy: 'default', visibility: DEFAULT_VISIBILITY, ui_visible: DEFAULT_UI_VISIBLE, display_order: DEFAULT_DISPLAY_ORDER, group: DEFAULT_GROUP };
+        const entry: ModelEntry = { visibility: DEFAULT_VISIBILITY, ui_visible: DEFAULT_UI_VISIBLE, display_order: DEFAULT_DISPLAY_ORDER, group: DEFAULT_GROUP };
         if (cfg.policy !== undefined) {
           if (typeof cfg.policy === 'string' && cfg.policy.trim()) {
             entry.policy = cfg.policy.trim();
@@ -144,17 +144,17 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities must be an object`);
           } else {
             const capRec = caps as Record<string, unknown>;
-            let hadValid = false;
+            let hasValidCapability = false;
             for (const [key, val] of Object.entries(capRec)) {
               if (!CAPABILITY_KEYS.includes(key)) {
                 errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} is not a supported capability (allowed: ${CAPABILITY_KEYS.join(', ')})`);
               } else if (typeof val !== 'boolean') {
                 errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} must be a boolean`);
               } else {
-                hadValid = true;
+                hasValidCapability = true;
               }
             }
-            if (hadValid) {
+            if (hasValidCapability) {
               // The filter predicate guarantees boolean values; the assertion
               // only re-states that for Object.fromEntries.
               entry.capabilities = Object.fromEntries(
@@ -179,17 +179,17 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
           } else {
             const modRec = mods as Record<string, unknown>;
             const sides: { input: string[], output: string[] } = { input: [], output: [] };
-            let valid = true;
+            let isValidModality = true;
             for (const side of ['input', 'output'] as const) {
               const list = modRec[side];
               if (!Array.isArray(list) || !list.every((t) => typeof t === 'string' && MODALITY_TOKENS.has(t.trim()))) {
                 errors.push(`AIG_MODELS_CONFIG: "${name}" modalities.${side} must be an array over the closed vocabulary [${[...MODALITY_TOKENS].join(', ')}]`);
-                valid = false;
+                isValidModality = false;
               } else {
                 sides[side] = [...new Set(list.map((t) => t.trim()))];
               }
             }
-            if (valid) entry.modalities = { input: sides.input, output: sides.output };
+            if (isValidModality) entry.modalities = { input: sides.input, output: sides.output };
           }
         }
         // Small-scope capability consistency checks. These validate only
