@@ -13,7 +13,7 @@ import type { PolicyConfig } from '../types/policy.ts';
 const MIN_ATTEMPTS = 1;
 const MAX_ATTEMPTS = 8;
 const TIER_KEYS = ['tier1', 'tier2', 'tier3'];
-const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'first_event_timeout_ms', 'failover_budget_ms', 'max_in_flight']);
+const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'headers_timeout_ms', 'first_event_timeout_ms', 'failover_budget_ms', 'max_in_flight']);
 
 type HedgePolicy = { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
 type TierAttempts = { tier1?: number, tier2?: number, tier3?: number } | null;
@@ -27,22 +27,25 @@ const BUILTIN_POLICIES: Readonly<{
     maxAttempts: 5,
     tierAttempts: null,
     hedge: { enabled: true, tiers: ['tier1'] },
+    headersTimeoutMs: null,
     firstEventTimeoutMs: null,
     failoverBudgetMs: null,
     maxInFlight: null,
   },
   fast: {
-    maxAttempts: 1,
+    maxAttempts: 4,
     tierAttempts: null,
     hedge: { enabled: false },
+    headersTimeoutMs: null,
     firstEventTimeoutMs: null,
     failoverBudgetMs: 60_000,
     maxInFlight: null,
   },
   'long-reasoning': {
-    maxAttempts: 3,
+    maxAttempts: 6,
     tierAttempts: null,
     hedge: { enabled: false },
+    headersTimeoutMs: 60_000,
     firstEventTimeoutMs: 60_000,
     failoverBudgetMs: 180_000,
     maxInFlight: null,
@@ -108,6 +111,9 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
         const hedge = cfg.hedge === undefined
           ? (base?.hedge ?? null)
           : parseHedge(cfg.hedge, key, errors);
+        const headersTimeoutMs = cfg.headers_timeout_ms === undefined
+          ? (base?.headersTimeoutMs ?? null)
+          : parseHeadersTimeoutMs(cfg.headers_timeout_ms, key, errors);
         const firstEventTimeoutMs = cfg.first_event_timeout_ms === undefined
           ? (base?.firstEventTimeoutMs ?? null)
           : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
@@ -115,6 +121,9 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           ? (base?.failoverBudgetMs ?? null)
           : parseFailoverBudgetMs(cfg.failover_budget_ms, key, errors);
         const effectiveFailoverBudgetMs = failoverBudgetMs ?? getLimits(env).failoverBudgetMs;
+        if (headersTimeoutMs !== null && headersTimeoutMs > effectiveFailoverBudgetMs) {
+          errors.push(`AIG_POLICIES_CONFIG: "${key}": headers_timeout_ms (${headersTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`);
+        }
         if (firstEventTimeoutMs !== null && firstEventTimeoutMs > effectiveFailoverBudgetMs) {
           errors.push(`AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`);
         }
@@ -123,7 +132,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           : parseMaxInFlight(cfg.max_in_flight, key, errors);
 
         let attempts: number;
-        let maxAttemptsValid = true;
+        let isMaxAttemptsValid = true;
         if (cfg.max_attempts !== undefined) {
           const rawMax = cfg.max_attempts;
           if (typeof rawMax !== 'number'
@@ -132,7 +141,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
             || rawMax > MAX_ATTEMPTS) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
             attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
-            maxAttemptsValid = false;
+            isMaxAttemptsValid = false;
           } else {
             attempts = rawMax;
           }
@@ -140,7 +149,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
         }
 
-        if (tierAttempts && tierAttemptsValid && maxAttemptsValid) {
+        if (tierAttempts && tierAttemptsValid && isMaxAttemptsValid) {
           const tierAttemptsTotal = Object.values(tierAttempts).reduce((sum, value) => sum + (value ?? 0), 0);
           if (tierAttemptsTotal > attempts) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": tier_attempts total exceeds max_attempts (${tierAttemptsTotal} > ${attempts})`);
@@ -151,6 +160,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           maxAttempts: attempts,
           tierAttempts,
           hedge,
+          headersTimeoutMs,
           firstEventTimeoutMs,
           failoverBudgetMs,
           maxInFlight,
@@ -199,7 +209,7 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
     return null;
   }
   const out: { tier1?: number, tier2?: number, tier3?: number } = {};
-  let any = false;
+  let hasAnyTierAttempt = false;
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!TIER_KEYS.includes(key)) {
       errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts.${key} is not a valid tier (allowed: ${TIER_KEYS.join(', ')})`);
@@ -210,9 +220,18 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
       continue;
     }
     out[key as 'tier1' | 'tier2' | 'tier3'] = val;
-    any = true;
+    hasAnyTierAttempt = true;
   }
-  return any ? out : null;
+  return hasAnyTierAttempt ? out : null;
+}
+
+function parseHeadersTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 5_000 || value > 600_000) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": headers_timeout_ms must be an integer between 5000 and 600000`);
+    return null;
+  }
+  return value;
 }
 
 function parseFailoverBudgetMs(value: unknown, policyName: string, errors: string[]): number | null {
