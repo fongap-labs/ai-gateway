@@ -310,6 +310,12 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  buildModelFallbackPlan('General-Air', catalog('General-Air'), 5),
+  [[{ model: 'General-Air', attemptCap: null }]],
+  'an isolated prefixed tier alias must keep the legacy policy-owned attempt budget',
+);
+
+assert.deepEqual(
   buildModelFallbackPlan('Custom-Model', catalog('Custom-Model', 'Max', 'Pro'), 1),
   [[{ model: 'Custom-Model', attemptCap: null }]],
   'unknown model families keep their original policy-owned attempt budget',
