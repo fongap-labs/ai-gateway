@@ -129,7 +129,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
 
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, node.credential, requestId);
   const controller = new AbortController();
-  let headersTimeoutHit = false;
+  let hasHeadersTimeoutHit = false;
   if (c.hedgeAbort) {
     const onHedgeAbort = () => controller.abort();
     if (c.hedgeAbort.signal.aborted) onHedgeAbort();
@@ -153,7 +153,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     );
   }
   const timeoutId = setTimeout(() => {
-    headersTimeoutHit = true;
+    hasHeadersTimeoutHit = true;
     controller.abort();
   }, attemptHeadersTimeout);
   const onClientAbort = () => controller.abort();
@@ -175,7 +175,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     clearTimeout(timeoutId);
     detach();
     const latencyMs = Date.now() - startMs;
-    if (request.signal?.aborted && !headersTimeoutHit) {
+    if (request.signal?.aborted && !hasHeadersTimeoutHit) {
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request.', requestId) };
     }
@@ -197,7 +197,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       );
       return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
     }
-    const classification = classifyNetworkError(headersTimeoutHit);
+    const classification = classifyNetworkError(hasHeadersTimeoutHit);
     recordOutcome(state, node, classification, c, { latencyMs });
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.debug(`upstream fetch failed on ${node.id}: ${errorMessage}`);
