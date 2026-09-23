@@ -126,7 +126,7 @@ function shell({ title, body }: { title: string, body: string }): string {
 
 <footer>
   <div class="wrap footer-row">
-    <span>© 2026 <a href="https://i.135468.xyz/" target="_blank" rel="noopener noreferrer">Fongap Labs</a></span>
+    <span>© 2026 <a href="https://labs.fongap.com" target="_blank" rel="noopener noreferrer">Fongap Labs</a></span>
     <span class="footer-sep" aria-hidden="true">·</span>
     <a href="${GITHUB_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>
     <span class="footer-sep" aria-hidden="true">·</span>

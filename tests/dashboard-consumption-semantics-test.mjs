@@ -65,8 +65,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
     'brand slogan stays in the compact header instead of a hero block');
   assert.ok(!source.includes('一个入口，应对所有变化'),
     'the old marketing hero copy is removed from the public dashboard');
-  assert.ok(source.includes('href="https://i.135468.xyz/"') && source.includes('>Fongap Labs</a>'),
-    'footer brand link points to i.135468.xyz');
+  assert.ok(source.includes('href="https://labs.fongap.com"') && source.includes('>Fongap Labs</a>'),
+    'footer brand link points to labs.fongap.com');
 }
 
 console.log('dashboard consumption semantics tests passed.');
