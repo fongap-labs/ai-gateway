@@ -352,15 +352,21 @@ await test('claude system and tools pass through natively', async () => {
 
 // ---- error shapes -----------------------------------------------------------
 
-await test('claude upstream 400 is an Anthropic invalid_request_error', async () => {
+await test('claude upstream 400 rotates to another provider-key slot', async () => {
   resetMock();
-  routeHandlers['ce400.example.com'] = () => jsonUpstream({ type: 'error', error: { type: 'invalid_request_error', message: 'bad shape' } }, 400);
-  const env = makeEnv({ tier1: [node('ce400')], secrets: { 'ce400': 'k' } });
+  routeHandlers['ce400-a.example.com'] = () => jsonUpstream({ type: 'error', error: { type: 'invalid_request_error', message: 'bad shape' } }, 400);
+  routeHandlers['ce400-b.example.com'] = () => jsonUpstream(okMessage({ content: [{ type: 'text', text: 'recovered' }] }));
+  recordTier1Ttft('ce400-a', 'claude-x', 50);
+  recordTier1Ttft('ce400-b', 'claude-x', 2_000);
+  const env = makeEnv({
+    tier1: [node('ce400-a'), node('ce400-b')],
+    secrets: { 'ce400-a': 'a', 'ce400-b': 'b' },
+  });
   const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }), env, {});
-  assert.equal(res.status, 400);
+  assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(body.type, 'error');
-  assert.equal(body.error.type, 'invalid_request_error');
+  assert.equal(body.content[0].text, 'recovered');
+  assert.deepEqual(upstreamCalls.map((c) => c.host), ['ce400-a.example.com', 'ce400-b.example.com']);
 });
 
 await test('claude missing/invalid gateway key is a 401 authentication_error', async () => {
