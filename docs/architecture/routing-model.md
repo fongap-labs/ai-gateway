@@ -166,7 +166,7 @@ Model-family and protocol fallback share the same hard `max_attempts` and wall-c
 
 ## Failover budget
 
-`FAILOVER_BUDGET_MS` limits the entire request wall clock; the default is 60 seconds. Neither protocol fallback nor model-family fallback receives a fresh clock.
+`FAILOVER_BUDGET_MS` limits the entire request wall clock; the default is 120 seconds. Neither protocol fallback nor model-family fallback receives a fresh clock.
 
 The attempt allocator preserves bounded escape time for later request-plan opportunities rather than equal-splitting the whole budget. Live candidates and reachable compatible family passes participate in that reserve. Known duplicate failure domains are pruned from future reserve planning.
 
