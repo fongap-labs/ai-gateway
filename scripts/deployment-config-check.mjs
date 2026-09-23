@@ -91,8 +91,8 @@ assert.deepEqual(
 );
 
 const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /vars\.AIG_IS_DEPLOY_ENABLED\s*==\s*'true'/);
-assert.match(workflow, /github\.repository\s*==\s*vars\.AIG_DEPLOY_REPOSITORY/);
+assert.match(workflow, /vars\.AIG_IS_DEPLOY_ENABLED\s*!=\s*'false'/);
+assert.doesNotMatch(workflow, /AIG_DEPLOY_REPOSITORY/);
 assert.doesNotMatch(workflow, /fongap\/ai-gateway/);
 assert.match(workflow, /github-deployment-config\.mjs preflight/);
 assert.match(workflow, /prepare --from-env/);
