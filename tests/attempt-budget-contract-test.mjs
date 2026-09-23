@@ -14,6 +14,8 @@ import {
   attemptBudgetSliceMs,
   attemptBudgetWindowMs,
   attemptFirstEventTimeoutMs,
+  attemptHeadersTimeoutMs,
+  getLimits,
   MIN_FAILOVER_RESERVE_MS,
 } from '../src/config/timeouts.ts';
 
@@ -25,14 +27,21 @@ const root = join(__dirname, '..');
 assert.equal(attemptBudgetSliceMs(60_000, 5), 12_000);
 assert.equal(attemptBudgetSliceMs(240_000, 5), 48_000);
 
-// Default production-shaped request: 60s budget / 5 possible attempts.
-// Old live behavior allowed only 12s. The new allocator reserves 5s for each
-// later candidate and gives the preferred candidate the remaining 40s.
+// Default production-shaped request: 120s budget / 6 possible attempts.
+// The allocator reserves 5s for each later candidate and gives the preferred
+// candidate the remaining 95s while preserving the full 3/2/1 family plan.
 assert.equal(MIN_FAILOVER_RESERVE_MS, 5_000);
-assert.equal(attemptBudgetWindowMs(60_000, 5), 40_000);
+assert.equal(attemptBudgetWindowMs(120_000, 6), 95_000);
 
-// long-reasoning shape: 60s request budget / 3 attempts -> 50s for the
-// preferred candidate, retaining 5s escape windows for two alternates.
+const defaults = getLimits({});
+assert.equal(defaults.headersTimeoutMs, 30_000);
+assert.equal(defaults.firstEventTimeoutMs, 60_000);
+assert.equal(defaults.failoverBudgetMs, 120_000);
+assert.equal(attemptHeadersTimeoutMs(defaults.headersTimeoutMs, 95_000, 1), 30_000);
+assert.equal(attemptFirstEventTimeoutMs(defaults.firstEventTimeoutMs, 65_000, 1), 60_000);
+
+// A smaller explicit budget still degrades predictably for operators that
+// intentionally override the default.
 assert.equal(attemptBudgetWindowMs(60_000, 3), 50_000);
 
 // Once only one candidate remains it may use the whole remaining request
@@ -44,15 +53,10 @@ assert.equal(attemptBudgetWindowMs(10_000, 5), 2_000);
 assert.equal(attemptBudgetWindowMs(15_000, 3), 5_000);
 assert.equal(attemptBudgetWindowMs(0, 5), 1);
 
-// Under the default 40s primary window, a healthy upstream returning headers
-// in 5s still receives the full configured 30s first-event wait. This is the
-// behavior the old 12s absolute slice prevented.
-assert.equal(attemptFirstEventTimeoutMs(30_000, 35_000, 1), 30_000);
-
 // If every candidate consumes its entire worst-case window, the reserve is
 // still usable in sequence rather than being consumed by the first attempt.
-let remaining = 60_000;
-for (let attempts = 5; attempts > 1; attempts--) {
+let remaining = 120_000;
+for (let attempts = 6; attempts > 1; attempts--) {
   const window = attemptBudgetWindowMs(remaining, attempts);
   remaining -= window;
 }
