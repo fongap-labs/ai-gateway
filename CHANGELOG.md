@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: align built-in model policies with fallback topology: Air gets a bounded four-model pass, reasoning models get the full six-attempt family plan with 60s phase timeouts and a 180s request budget, while access-key allowlists remain fail-closed.
+
 - refactor: align merge CI with Action Worker using ci-evidence and centralized PR Governance.
 
 - fix: drive dashboard quick-start access groups and public endpoint from runtime configuration instead of front-end constants.

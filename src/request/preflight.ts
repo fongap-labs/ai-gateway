@@ -75,7 +75,6 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const pathname = normalizePath(requestUrl.pathname);
   const route = detectRoute(request.method, pathname);
   const requestStartMs = Date.now();
-  const failoverBudgetMs = getLimits(env).failoverBudgetMs;
   const exposeUpstreamInfo = String(env?.AIG_SHOULD_EXPOSE_UPSTREAM ?? '').trim().toLowerCase() === 'true';
 
   if (request.method === 'OPTIONS') {
@@ -269,6 +268,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   const policy = getPolicy(requestedModel, loadModelsConfig(env), loadPoliciesConfig(env));
+  const failoverBudgetMs = policy.failoverBudgetMs ?? limits.failoverBudgetMs;
   return {
     ok: true,
     request,
