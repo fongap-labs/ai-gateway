@@ -169,7 +169,7 @@ Example:
 ```json
 {
   "default": {
-    "max_attempts": 6,
+    "max_attempts": 5,
     "tier_attempts": null,
     "hedge": { "enabled": true, "tiers": ["tier1"] },
     "first_event_timeout_ms": null,
@@ -181,8 +181,6 @@ Example:
 `max_attempts` is the request-wide logical-attempt ceiling. Tier caps must fit inside it. There is one cross-tier allocation model: hard Tier precedence. `budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema and are rejected as unknown fields.
 
 ## Request timing
-
-The built-in baseline uses a 30s upstream-header timeout, 60s first-event timeout, 120s request-wide failover budget, and 6 logical attempts. These defaults are designed to preserve the full 3/2/1 compatible-model fallback plan without forcing ordinary deployments to add tuning variables.
 
 `AIG_FAILOVER_BUDGET_MS` is one wall-clock budget for the whole request. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset it. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
 
