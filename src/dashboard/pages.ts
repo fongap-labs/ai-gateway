@@ -12,7 +12,7 @@ import { getCachedDashboardStats, usageSection } from './usage-view.ts';
 import { quickStartSection } from './quick-start-view.ts';
 import type { RuntimeNode } from '../types/node.ts';
 
-export const GITHUB_URL = 'https://github.com/fongap/ai-gateway';
+export const GITHUB_URL = 'https://github.com/fongap-labs/ai-gateway';
 export const DOCUMENTATION_URL = `${GITHUB_URL}/tree/main/docs`;
 export { __resetDashboardCacheForTests } from './usage-view.ts';
 
