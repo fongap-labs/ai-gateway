@@ -266,9 +266,10 @@ function parseMaxInFlight(value: unknown, policyName: string, errors: string[]):
 export function getPolicy(modelName: string, modelsConfig: Record<string, { policy?: string }>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
   const explicitPolicy = modelsConfig[modelName]?.policy;
   const normalized = modelName.trim().toLowerCase();
-  const inferredPolicy = ['air', 'code-air'].includes(normalized)
+  const tier = normalized.split('-').at(-1);
+  const inferredPolicy = tier === 'air'
     ? 'fast'
-    : ['pro', 'max', 'ultra', 'code-pro', 'code-max', 'code-ultra'].includes(normalized)
+    : tier && ['pro', 'max', 'ultra'].includes(tier)
       ? 'long-reasoning'
       : 'default';
   const policyName = explicitPolicy || inferredPolicy;
