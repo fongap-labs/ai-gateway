@@ -321,4 +321,23 @@ assert.deepEqual(
   'unknown model families keep their original policy-owned attempt budget',
 );
 
+
+assert.deepEqual(
+  buildModelFallbackRounds(
+    'Research-Reasoning-Ultra',
+    catalog('Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'),
+  ),
+  [
+    ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
+    ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
+  ],
+  'arbitrary multi-segment family prefixes must inherit tier fallback without code changes',
+);
+
+assert.equal(
+  hasModelFamilyFallback('Research-Reasoning-Max'),
+  true,
+  'new prefixed families are recognized from the final capability tier alone',
+);
+
 console.log('model-family fallback tests passed.');
