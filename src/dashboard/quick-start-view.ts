@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { KEY_GROUPS } from '../config/access-keys.ts';
 import { escapeHtml } from './format.ts';
 
 function snippetPane({ id, active, code }: { id: string, active: boolean, code: string }): string {
@@ -20,11 +19,11 @@ function snippetPane({ id, active, code }: { id: string, active: boolean, code: 
   </div>`;
 }
 
-export function quickStartSection(apiBase: string): string {
+export function quickStartSection({ apiBase, accessGroups }: { apiBase: string, accessGroups: readonly string[] }): string {
   const origin = new URL(apiBase).origin;
-  const groups = KEY_GROUPS.join(' / ');
-  const openai = `# Key 组：${groups}\nGATEWAY_API_KEY=<YOUR_GATEWAY_KEY>\nOPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=$GATEWAY_API_KEY`;
-  const anthropic = `# Key 组：${groups}\nGATEWAY_API_KEY=<YOUR_GATEWAY_KEY>\nANTHROPIC_BASE_URL=${origin}\nANTHROPIC_AUTH_TOKEN=$GATEWAY_API_KEY`;
+  const groups = accessGroups.length > 0 ? accessGroups.join(' / ') : '未配置';
+  const openai = `# Key 组：${groups}\nOPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=<YOUR_GATEWAY_KEY>`;
+  const anthropic = `# Key 组：${groups}\nANTHROPIC_BASE_URL=${origin}\nANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>`;
   const tabs = [
     { id: 'openai', label: 'OpenAI 协议' },
     { id: 'anthropic', label: 'Anthropic 协议' },

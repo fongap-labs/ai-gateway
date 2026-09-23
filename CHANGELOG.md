@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: drive dashboard quick-start access groups and public endpoint from runtime configuration instead of front-end constants.
+
 - fix: rotate to another upstream after a node-local HTTP 400 rejection instead of terminating the whole request.
 
 - fix: update the Fongap Labs dashboard link to https://labs.fongap.com.
