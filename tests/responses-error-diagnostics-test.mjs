@@ -106,14 +106,15 @@ assert.equal(dead.headers.get('x-gateway-provider'), null);
 reset();
 routeHandlers['badreq.example.com'] = () => json({ error: { message: 'bad input' } }, 400);
 const badReq = await worker.fetch(request(), envFor('badreq'), {});
-assert.equal(badReq.status, 400);
+assert.equal(badReq.status, 502);
 const badReqBody = await badReq.json();
-assert.equal(badReqBody.error.type, 'invalid_request_error');
+assert.equal(badReqBody.error.type, 'api_error');
 assert.equal(badReqBody.error.code, null);
-assert.equal(badReq.headers.get('x-gateway-error-code'), null);
+assert.equal(badReq.headers.get('x-gateway-error-code'), 'gateway_upstream_exhausted');
 assert.equal(badReq.headers.get('x-gateway-attempts'), '1');
 assert.equal(badReq.headers.get('x-gateway-dispatches'), '1');
-assert.equal(badReqBody.error.message, 'Upstream rejected the request with HTTP 400.');
+assert.equal(badReq.headers.get('x-gateway-failure-kinds'), 'client:1');
+assert.equal(badReqBody.error.message, 'All attempted nodes failed for model "code-max".');
 assert.ok(!JSON.stringify(badReqBody).includes('bad input'), 'raw upstream 4xx message must be hidden by default');
 
 reset();
@@ -123,9 +124,10 @@ const badReqExposed = await worker.fetch(
   envFor('badreq-exposed', { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' }),
   {},
 );
-assert.equal(badReqExposed.status, 400);
+assert.equal(badReqExposed.status, 502);
 const badReqExposedBody = await badReqExposed.json();
-assert.equal(badReqExposedBody.error.message, 'provider-specific bad input');
+assert.equal(badReqExposedBody.error.message, 'All attempted nodes failed for model "code-max".');
+assert.equal(badReqExposed.headers.get('x-gateway-failure-kinds'), 'client:1');
 
 reset();
 const unknown = await worker.fetch(request('not-a-model'), envFor('unused'), {});
