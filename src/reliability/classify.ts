@@ -113,8 +113,8 @@ function looksLikeModelMissing(body: unknown): boolean {
   return /(not found|does not exist|unknown|no such|not supported|invalid model)/.test(text);
 }
 
-export function classifyNetworkError(kindHeadersTimeout: boolean): FailureClassification {
-  return kindHeadersTimeout
+export function classifyNetworkError(isHeadersTimeout: boolean): FailureClassification {
+  return isHeadersTimeout
     ? { kind: KIND.HEADERS_TIMEOUT, action: 'rotate', cooldownMs: 0, counted: true }
     : { kind: KIND.NETWORK, action: 'rotate', cooldownMs: 0, counted: true };
 }
