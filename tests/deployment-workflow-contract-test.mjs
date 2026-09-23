@@ -84,7 +84,8 @@ assert.match(deploy, /GITHUB_SHA: \$\{\{ needs\.deploy-policy\.outputs\.target_s
 assert.match(deploy, /health-check --from-env --expected-build "\$DEPLOYED_SHA"/);
 assert.match(deploy, /Deployed SHA/);
 
-assert.match(bridge, /EXTRA_VAR_ALLOW\s*=\s*new Set\(\['GITHUB_SHA'\]\)/);
+assert.match(bridge, /EXTRA_VAR_ALLOW\s*=\s*new Set\(\['GITHUB_SHA', 'AIG_PUBLIC_URL'\]\)/,
+  'deployment bridge must pass AIG_PUBLIC_URL into Worker runtime metadata');
 assert.ok(bridge.includes('`${origin}/health`'), 'remote verifier must call /health');
 assert.equal(bridge.includes('`${origin}/version`'), false, 'remote verifier must not call /version');
 assert.match(bridge, /healthBody\?\.build !== expectedBuild/);

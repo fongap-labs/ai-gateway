@@ -76,7 +76,7 @@ Core GitHub Variables include:
 
 The Deploy workflow derives repository identity from GitHub's native `github.repository` / `GITHUB_REPOSITORY` context. No `AIG_DEPLOY_REPOSITORY` variable is used.
 - `CLOUDFLARE_ACCOUNT_ID`
-- `AIG_PUBLIC_URL`
+- `AIG_PUBLIC_URL` — canonical public gateway origin; deployment also passes it to the Worker so dashboard client examples match production configuration
 - at least one `AIG_TIER{1,2,3}_NODES_XX` shard
 - `AIG_AFFINITY_KV_ID` when Tier 1 affinity is used
 - optional `AIG_USAGE_D1_ID`

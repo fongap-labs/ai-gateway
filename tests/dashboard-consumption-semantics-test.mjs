@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadUpstreamDaily } from '../src/observability/token-usage-store.ts';
+import { quickStartSection } from '../src/dashboard/quick-start-view.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -67,6 +68,33 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
     'the old marketing hero copy is removed from the public dashboard');
   assert.ok(source.includes('href="https://labs.fongap.com"') && source.includes('>Fongap Labs</a>'),
     'footer brand link points to labs.fongap.com');
+}
+
+
+{
+  const html = quickStartSection({
+    apiBase: 'https://runtime.example/v1',
+    accessGroups: ['MAX'],
+  });
+  assert.ok(html.includes('Key 组：MAX'), 'quick start renders only configured access groups');
+  assert.ok(!html.includes('AIR / PRO / MAX / ULTRA / AGENT'),
+    'quick start must not hard-code the full access-group catalog');
+  assert.ok(html.includes('OPENAI_BASE_URL') && html.includes('https://runtime.example/v1'),
+    'OpenAI quick start uses the runtime public URL');
+  assert.ok(html.includes('OPENAI_API_KEY') && html.includes('&lt;YOUR_GATEWAY_KEY&gt;'),
+    'OpenAI quick start uses the standard client API-key variable directly');
+  assert.ok(html.includes('ANTHROPIC_BASE_URL') && html.includes('https://runtime.example'),
+    'Anthropic quick start uses the same runtime public origin');
+  assert.ok(!html.includes('GATEWAY_API_KEY'),
+    'quick start does not introduce a gateway-only shell indirection');
+}
+
+{
+  const pages = fs.readFileSync(join(root, 'src', 'dashboard', 'pages.ts'), 'utf8');
+  assert.ok(pages.includes('AIG_PUBLIC_URL'),
+    'dashboard quick start derives its public endpoint from backend runtime metadata');
+  assert.ok(pages.includes('loadAccessKeysConfig(env).keys.map'),
+    'dashboard quick start derives access groups from configured gateway keys');
 }
 
 console.log('dashboard consumption semantics tests passed.');

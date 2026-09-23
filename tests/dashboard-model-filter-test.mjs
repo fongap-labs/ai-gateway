@@ -14,7 +14,6 @@ import {
   usageSection,
 } from '../src/dashboard/usage-view.ts';
 import { quickStartSection } from '../src/dashboard/quick-start-view.ts';
-import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { THEME_CSS } from '../src/dashboard/theme.ts';
 import { collectVarsFromEnv } from '../scripts/github-deployment-config.mjs';
 
@@ -186,10 +185,13 @@ const envelope = {
 }
 
 {
-  const html = quickStartSection('https://gateway.example.com/v1');
+  const html = quickStartSection({
+    apiBase: 'https://gateway.example.com/v1',
+    accessGroups: ['MAX'],
+  });
   assert.ok(!html.includes('AIG_ACCESS_KEY_AIR'), 'quick start must not imply AIR is the only usable key');
-  assert.ok(html.includes('GATEWAY_API_KEY'), 'quick start uses a generic client-side gateway key variable');
-  assert.ok(html.includes(KEY_GROUPS.join(' / ')), 'quick start key-group list comes from the shared key registry');
+  assert.ok(!html.includes('GATEWAY_API_KEY'), 'quick start uses standard client API-key variables directly');
+  assert.ok(html.includes('Key 组：MAX'), 'quick start key-group list comes from runtime access configuration');
 }
 
 console.log('dashboard model filter tests passed.');
