@@ -116,7 +116,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           : parseMaxInFlight(cfg.max_in_flight, key, errors);
 
         let attempts: number;
-        let maxAttemptsValid = true;
+        let isMaxAttemptsValid = true;
         if (cfg.max_attempts !== undefined) {
           const rawMax = cfg.max_attempts;
           if (typeof rawMax !== 'number'
@@ -125,7 +125,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
             || rawMax > MAX_ATTEMPTS) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
             attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
-            maxAttemptsValid = false;
+            isMaxAttemptsValid = false;
           } else {
             attempts = rawMax;
           }
@@ -133,7 +133,7 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
         }
 
-        if (tierAttempts && tierAttemptsValid && maxAttemptsValid) {
+        if (tierAttempts && tierAttemptsValid && isMaxAttemptsValid) {
           const tierAttemptsTotal = Object.values(tierAttempts).reduce((sum, value) => sum + (value ?? 0), 0);
           if (tierAttemptsTotal > attempts) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": tier_attempts total exceeds max_attempts (${tierAttemptsTotal} > ${attempts})`);
@@ -191,7 +191,7 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
     return null;
   }
   const out: { tier1?: number, tier2?: number, tier3?: number } = {};
-  let any = false;
+  let hasAnyTierAttempt = false;
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!TIER_KEYS.includes(key)) {
       errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts.${key} is not a valid tier (allowed: ${TIER_KEYS.join(', ')})`);
@@ -202,9 +202,9 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
       continue;
     }
     out[key as 'tier1' | 'tier2' | 'tier3'] = val;
-    any = true;
+    hasAnyTierAttempt = true;
   }
-  return any ? out : null;
+  return hasAnyTierAttempt ? out : null;
 }
 
 function parseFirstEventTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
