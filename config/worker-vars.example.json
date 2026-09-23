@@ -24,7 +24,7 @@
   },
   "AIG_POLICIES_CONFIG": {
     "default": {
-      "max_attempts": 5
+      "max_attempts": 6
     }
   },
   "AIG_DASHBOARD_MODELS": "Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air",
