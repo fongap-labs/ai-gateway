@@ -24,7 +24,7 @@ const BUILTIN_POLICIES: Readonly<{
   'long-reasoning': PolicyConfig,
 }> = Object.freeze({
   default: {
-    maxAttempts: 5,
+    maxAttempts: 6,
     tierAttempts: null,
     hedge: { enabled: true, tiers: ['tier1'] },
     firstEventTimeoutMs: null,
@@ -38,7 +38,7 @@ const BUILTIN_POLICIES: Readonly<{
     maxInFlight: null,
   },
   'long-reasoning': {
-    maxAttempts: 3,
+    maxAttempts: 6,
     tierAttempts: null,
     hedge: { enabled: false },
     firstEventTimeoutMs: 60_000,
