@@ -71,9 +71,10 @@ The tracked `wrangler.jsonc` is the repository baseline. Local Worker name, bind
 
 Core GitHub Variables include:
 
-- `AIG_IS_DEPLOY_ENABLED=true` to enable production deployment
-- `AIG_DEPLOY_REPOSITORY` set to the repository allowed to deploy
+- optional `AIG_IS_DEPLOY_ENABLED=false` emergency kill switch; when unset, production deployment is enabled
 - PR governance targets `${GITHUB_REPOSITORY_OWNER}/action-worker`; no repository variable is required
+
+The Deploy workflow derives repository identity from GitHub's native `github.repository` / `GITHUB_REPOSITORY` context. No `AIG_DEPLOY_REPOSITORY` variable is used.
 - `CLOUDFLARE_ACCOUNT_ID`
 - `AIG_PUBLIC_URL`
 - at least one `AIG_TIER{1,2,3}_NODES_XX` shard
