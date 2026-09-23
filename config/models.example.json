@@ -1,10 +1,10 @@
 {
   "general-air": { "policy": "fast" },
   "code-pro": {
-    "policy": "default",
+    "policy": "fast",
     "capabilities": { "tools": true, "reasoning": true, "vision": false, "stream": true },
     "reasoning_efforts": ["low", "medium", "high"]
   },
-  "code-max": { "policy": "long-reasoning" },
-  "internal-shadow": { "policy": "default", "visibility": "internal" }
+  "code-max": { "policy": "stable" },
+  "internal-shadow": { "policy": "stable", "visibility": "internal" }
 }
