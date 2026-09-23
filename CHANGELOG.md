@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: make default gateway policy production-ready: AGENT keys inherit the known Code model family when no allowlist is supplied, Air uses fast routing, and Pro/Max/Ultra use a 180s long-reasoning failover budget with explicit policy overrides preserved.
+
 - refactor: align merge CI with Action Worker using ci-evidence and centralized PR Governance.
 
 - fix: drive dashboard quick-start access groups and public endpoint from runtime configuration instead of front-end constants.
