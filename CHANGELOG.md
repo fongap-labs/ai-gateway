@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: preserve logical-model prefixes during family fallback so aliases such as `Audit-Ultra` can fail over to `Audit-Max` and `Audit-Pro` without crossing model families.
+
 - fix: infer built-in request policies from the tier suffix of prefixed logical model names such as `Audit-Ultra` and `Editor-Air`.
 
 - fix: configure the Cloudflare custom domain with a valid host-only route pattern.
