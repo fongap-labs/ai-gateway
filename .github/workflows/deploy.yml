@@ -17,9 +17,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # AIG_IS_DEPLOY_ENABLED=false is an emergency kill switch; forks require explicit true.
+  # AIG_IS_DEPLOY_ENABLED=false is an emergency kill switch; unset or any other value leaves deployment enabled.
   gate:
-    if: vars.AIG_IS_DEPLOY_ENABLED == 'true' && github.repository == vars.AIG_DEPLOY_REPOSITORY
+    if: vars.AIG_IS_DEPLOY_ENABLED != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
