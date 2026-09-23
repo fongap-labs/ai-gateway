@@ -10,10 +10,9 @@
 //   AIG_ACCESS_MODELS_<GROUP>   = "Model1,Model2"   (CSV; "*" = all)
 //
 // Rules:
-//   * Each group is independent. No inheritance.
-//   * AIR/PRO/MAX/ULTRA stay fail-closed when their model list is missing or empty.
-//   * AGENT defaults to the known Code-Air/Code-Pro/Code-Max/Code-Ultra family when
-//     AIG_ACCESS_MODELS_AGENT is omitted; an explicitly empty value still grants zero.
+//   * Each group is independent. No inheritance, no implicit defaults.
+//   * Allowlist semantics are fail-closed: a missing or empty
+//     AIG_ACCESS_MODELS_<GROUP> grants ZERO models.
 //   * "*" alone grants every currently-known logical model.
 //   * Access Models referencing a model that is NOT currently known emit a
 //     diagnostic warning. The referenced model is NOT auto-created.
@@ -27,21 +26,10 @@ import type { RuntimeNode } from '../types/node.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 
 export const KEY_GROUPS: readonly string[] = Object.freeze(['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT']);
-const DEFAULT_AGENT_MODEL_KEYS = new Set(['code-air', 'code-pro', 'code-max', 'code-ultra']);
-
-function applyDefaultAgentModels(out: { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] }, knownModels: ReadonlySet<string> | null): void {
-  if (!knownModels) return;
-  for (const model of knownModels) {
-    if (DEFAULT_AGENT_MODEL_KEYS.has(model.trim().toLowerCase())) out.allowlist.add(model);
-  }
-}
 
 function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<string> | null): { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] } {
   const out: { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] } = { allowAll: false, allowlist: new Set(), warnings: [], errors: [] };
-  if (raw === undefined || raw === null) {
-    if (group === 'AGENT') applyDefaultAgentModels(out, knownModels);
-    return out;
-  }
+  if (raw === undefined || raw === null) return out;
   if (typeof raw !== 'string') {
     out.errors.push(`AIG_ACCESS_MODELS_${group} must be a CSV string ("Model1,Model2" or "*")`);
     return out;
