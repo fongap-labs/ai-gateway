@@ -12,8 +12,8 @@
 //   Code-Max <-> Code-Pro, then Code-Ultra; Code-Ultra may fall back to
 //   Code-Max/Code-Pro. Code models never cross into the non-Code family.
 //   Max <-> Pro, then Ultra; Ultra may fall back to Max/Pro.
-//   Purpose-prefixed aliases preserve their prefix while changing only the
-//   capability tier, for example Audit-Ultra -> Audit-Max -> Audit-Pro.
+//   Any logical family preserves every prefix segment and changes only the
+//   final capability tier, for example Audit-Ultra -> Audit-Max -> Audit-Pro.
 //   Air may move upward to Pro -> Max -> Ultra, but once it moves upward it
 //   never returns to Air.
 //   Interchangeable families get at most two evaluation rounds. The second
@@ -26,10 +26,7 @@
 
 import type { RuntimeNode } from '../types/node.ts';
 
-const FALLBACK_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  'code-ultra': Object.freeze(['code-ultra', 'code-max', 'code-pro']),
-  'code-max': Object.freeze(['code-max', 'code-pro', 'code-ultra']),
-  'code-pro': Object.freeze(['code-pro', 'code-max', 'code-ultra']),
+const TIER_FALLBACK_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
   ultra: Object.freeze(['ultra', 'max', 'pro']),
   max: Object.freeze(['max', 'pro', 'ultra']),
   pro: Object.freeze(['pro', 'max', 'ultra']),
@@ -41,16 +38,6 @@ type ModelFamily = {
   requestedTier: string,
   template: readonly string[],
 };
-
-const FAMILY_SUFFIXES = Object.freeze([
-  'code-ultra',
-  'code-max',
-  'code-pro',
-  'ultra',
-  'max',
-  'pro',
-  'air',
-] as const);
 
 const THREE_MEMBER_FIRST_ROUND_CAPS = Object.freeze([3, 2, 1]);
 const AIR_FIRST_ROUND_CAPS = Object.freeze([3, 1, 1, 1]);
@@ -67,25 +54,17 @@ function keyOf(model: string): string {
 
 function resolveFamily(model: string): ModelFamily | null {
   const requestedKey = keyOf(model);
-  const exact = FALLBACK_ORDER[requestedKey];
-  if (exact) {
-    return { requestedKey, requestedTier: requestedKey, template: exact };
-  }
+  const parts = requestedKey.split('-').filter(Boolean);
+  const requestedTier = parts.at(-1) ?? '';
+  const order = TIER_FALLBACK_ORDER[requestedTier];
+  if (!order) return null;
 
-  for (const suffix of FAMILY_SUFFIXES) {
-    const marker = `-${suffix}`;
-    if (!requestedKey.endsWith(marker)) continue;
-    const prefix = requestedKey.slice(0, -marker.length);
-    if (!prefix) continue;
-    const order = FALLBACK_ORDER[suffix];
-    if (!order) continue;
-    return {
-      requestedKey,
-      requestedTier: suffix,
-      template: order.map((tier) => `${prefix}-${tier}`),
-    };
-  }
-  return null;
+  const prefix = parts.slice(0, -1).join('-');
+  return {
+    requestedKey,
+    requestedTier,
+    template: order.map((tier) => prefix ? `${prefix}-${tier}` : tier),
+  };
 }
 
 function catalogByKey(knownModels: ReadonlySet<string>): Map<string, string> {
