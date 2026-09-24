@@ -2,7 +2,7 @@ name: Dispatch PR Governance
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, closed]
 
 permissions:
   statuses: write
@@ -21,6 +21,7 @@ jobs:
       - name: Dispatch central governance
         env:
           AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+          ACTION: ${{ github.event.action }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -52,25 +53,35 @@ jobs:
           on_error() {
             local code=$?
             set +e
-            set_status failure "PR governance dispatch failed"
+            if [ "$ACTION" != "closed" ]; then
+              set_status failure "PR governance dispatch failed"
+            fi
             exit "$code"
           }
           trap on_error ERR
 
-          set_status pending "PR governance dispatch pending"
+          if [ "$ACTION" != "closed" ]; then
+            set_status pending "PR governance dispatch pending"
+          fi
 
           if [ -z "$AW_DISPATCH_TOKEN" ]; then
             echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
             false
           fi
 
+          event_type="run-pr-governance"
+          if [ "$ACTION" = "closed" ]; then
+            event_type="cancel-pr-work"
+          fi
+
           payload="$(
             jq -cn \
+              --arg event_type "$event_type" \
               --arg request_id "$REQUEST_ID" \
               --arg repository "$REPOSITORY" \
               --argjson pr_number "$PR_NUMBER" \
               '{
-                event_type: "run-pr-governance",
+                event_type: $event_type,
                 client_payload: {
                   schema_version: "1",
                   request_id: $request_id,
