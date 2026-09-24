@@ -85,6 +85,9 @@ Conversion          supported Chat ↔ Messages semantic bridge
 Stream              first-event guards, SSE lifecycle, commit boundary
 OAuth               Tier 2 subscription credentials: provider registry (AIG_OAUTH_PROVIDERS),
                     PKCE onboarding routes, AES-GCM token store, dispatch-time resolution
+Subscription        provider-specific subscription request shaping: adapter registry,
+                    codex/claude/google adapters (headers, body normalization,
+                    dispatch refusal for unverified entitlement backends)
 Observability       logs, metrics, D1/token usage, diagnostics
 Runtime             runtime availability and public read-only projections
 Dashboard           presentation only
@@ -116,7 +119,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - Tier 2 subscription (`auth:"oauth"`) credentials are resolved at dispatch time from the OAuth token store: isolate cache first, D1 only on cache miss or near expiry, refresh inside a 5-minute margin; resolution failures are pre-dispatch auth rotations with an isolate-local negative cache so a broken subscription does not hammer the provider's token endpoint.
 - Refresh-token rotation safety: one in-flight resolution per node per isolate (singleflight), and refresh persists land only through a compare-and-swap on the persisted `refresh_version`; a losing writer reloads the winner's credential, so exactly one refresh token remains the persisted authority. Durable Objects are not introduced for this.
 - Provider account identity (e.g., the OpenAI `account_id`) is persisted in plaintext beside the credential and applied as the `chatgpt-account-id` header for OpenAI-protocol subscription dispatches only; it never pollutes the RuntimeNode schema.
-- Providers without a verified subscription backend (`dispatch_ready: false`, the built-in `google` default) keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable.
+- Providers without a verified subscription backend (the built-in `google` default, whose adapter refuses) keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable. The subscription adapter registry (`src/subscription/`) is the single dispatchability authority: an `auth:"oauth"` node whose provider has no adapter, or whose adapter refuses to shape the request, rotates pre-dispatch.
 - Subscription access/refresh tokens are AES-GCM encrypted with the `AIG_TOKEN_ENCRYPTION_KEY` Worker secret; a missing key disables all subscription onboarding and resolution (fail-closed), and tokens are never stored in D1 as plaintext.
 - OAuth onboarding (`/oauth/start`, `/oauth/callback/<provider>`, `/oauth/paste`) uses PKCE S256 with a single-use D1 flow state (10-minute TTL); `/oauth/start` requires a gateway access key and a matching Tier 2 node, and every callback/paste consumes its state row regardless of outcome.
 - Built-in OAuth defaults for the three mainstream subscription providers (anthropic, openai, google) embed public constants from their open-source CLIs; `AIG_OAUTH_PROVIDERS` entries replace defaults per-provider (wholesale). Providers with a `manual_redirect_url` (Google) use the manual code-paste flow because their OAuth client does not allow arbitrary gateway redirect URIs.
