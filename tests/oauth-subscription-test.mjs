@@ -95,7 +95,8 @@ class MockOAuthD1 {
             return {};
           }
           if (/INSERT INTO subscription_tokens/.test(query)) {
-            const [nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt] = values;
+            // values: nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId
+            const [nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId] = values;
             const existing = self.tokens.get(nodeId);
             self.tokens.set(nodeId, {
               node_id: nodeId, provider,
@@ -104,14 +105,37 @@ class MockOAuthD1 {
               token_iv: tokenIv,
               refresh_iv: refreshIv ?? existing?.refresh_iv ?? null,
               expires_at: expiresAt, status: 'active', updated_at: updatedAt,
+              account_id: accountId ?? existing?.account_id ?? null,
+              refresh_version: 0,
             });
-            return {};
+            return { meta: { changes: 1 } };
+          }
+          // CAS refresh persist: last two binds are (nodeId, expectedVersion).
+          if (/refresh_version = refresh_version \+ 1/.test(query)) {
+            const nodeId = values[values.length - 2];
+            const expectedVersion = values[values.length - 1];
+            const row = self.tokens.get(nodeId);
+            if (!row || row.refresh_version !== expectedVersion) {
+              return { meta: { changes: 0 } };
+            }
+            // values: accessEnc, tokenIv, refreshEnc, refreshIv, expiresAt, now, nodeId, expectedVersion
+            const [accessEnc, tokenIv, refreshEnc, refreshIv, expiresAt, updatedAt] = values;
+            self.tokens.set(nodeId, {
+              ...row,
+              access_token_enc: accessEnc,
+              token_iv: tokenIv,
+              refresh_token_enc: refreshEnc ?? row.refresh_token_enc,
+              refresh_iv: refreshIv ?? row.refresh_iv,
+              expires_at: expiresAt, status: 'active', updated_at: updatedAt,
+              refresh_version: row.refresh_version + 1,
+            });
+            return { meta: { changes: 1 } };
           }
           if (/UPDATE subscription_tokens SET status/.test(query)) {
             const [status, updatedAt, nodeId] = values;
             const row = self.tokens.get(nodeId);
             if (row) self.tokens.set(nodeId, { ...row, status, updated_at: updatedAt });
-            return {};
+            return { meta: { changes: row ? 1 : 0 } };
           }
           return {};
         },
@@ -724,13 +748,24 @@ await test('google manual paste: GET /oauth/paste shows form', async () => {
   assert.ok(body.includes('name="code"'), 'code input present');
 });
 
-await test('google refresh includes client_secret', async () => {
+await test('google refresh includes client_secret when dispatch_ready is overridden true', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
     tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
     db,
   });
-  delete env.AIG_OAUTH_PROVIDERS;
+  // Wholesal replacement of the google default: same public constants, but
+  // dispatch_ready explicitly true (operator-verified adapter).
+  env.AIG_OAUTH_PROVIDERS = JSON.stringify({
+    google: {
+      authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      token_url: 'https://oauth2.googleapis.com/token',
+      client_id: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
+      client_secret: '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',
+      scope: 'https://www.googleapis.com/auth/cloud-platform',
+      dispatch_ready: true,
+    },
+  });
   await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'old', refreshToken: 'g-refresh', expiresAt: Date.now() - 1000 });
   let refreshBody = null;
   withMockFetch(async (input, init) => {
@@ -748,6 +783,161 @@ await test('google refresh includes client_secret', async () => {
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
   assert.ok(refreshBody?.includes('client_secret'), 'client_secret in refresh');
+});
+
+await test('google dispatch fails closed by default (no verified subscription adapter)', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS; // built-in google default: dispatchReady false
+  // Even a validly stored token must not dispatch through the unverified
+  // OpenAI-compatible path.
+  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'valid-token', refreshToken: 'g-refresh', expiresAt: Date.now() + 3600_000 });
+  let upstreamContacted = false;
+  withMockFetch(async () => {
+    upstreamContacted = true;
+    throw new Error('upstream must not be contacted');
+  });
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.equal(res.status, 502, 'dispatch fails closed to exhaustion');
+  assert.equal(upstreamContacted, false);
+});
+
+// ---- P1: refresh singleflight, CAS rotation, account identity ---------------
+
+const { resolveSubscriptionCredential, REFRESH_MARGIN_MS: MARGIN } = await import('../src/oauth/resolve.ts');
+const { persistRefreshedToken } = await import('../src/oauth/token-store.ts');
+
+function tier2OAuthRuntimeNode(id, provider = 'mock') {
+  return {
+    id, tier: 'tier-2', provider, protocol: 'openai', surfaces: ['chat_completions'],
+    baseUrl: `https://${id}.example.com/v1`, credential: '', priority: 100,
+    models: { 'Code-Max': 'up-model' }, auth: 'oauth',
+  };
+}
+
+await test('singleflight: 100 concurrent resolves issue exactly one refresh', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({ db });
+  await storeSubscriptionToken(env, {
+    nodeId: 'sf-1', provider: 'mock', accessToken: 'stale', refreshToken: 'rt-1',
+    expiresAt: Date.now() - 1000,
+  });
+  let refreshCalls = 0;
+  withMockFetch(async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'auth.mock.example.com') {
+      refreshCalls++;
+      await new Promise((r) => setTimeout(r, 30));
+      return new Response(JSON.stringify({ access_token: 'fresh-sf', refresh_token: 'rt-2', expires_in: 3600 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const node = tier2OAuthRuntimeNode('sf-1');
+  const results = await Promise.all(Array.from({ length: 100 }, () => resolveSubscriptionCredential(env, node)));
+  assert.equal(refreshCalls, 1, 'exactly one refresh in the isolate');
+  assert.ok(results.every((r) => r.ok && r.token === 'fresh-sf'));
+  const stored = await loadSubscriptionToken(env, 'sf-1');
+  assert.equal(stored.refreshVersion, 1, 'CAS winner persisted version 1');
+  assert.equal(stored.refreshToken, 'rt-2');
+});
+
+await test('CAS: a stale refresh writer loses and never clobbers the rotated token', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({ db });
+  await storeSubscriptionToken(env, {
+    nodeId: 'cas-1', provider: 'mock', accessToken: 'old', refreshToken: 'rt-1',
+    expiresAt: Date.now() - 1000,
+  });
+  withMockFetch(async () => new Response(JSON.stringify({ access_token: 'winner', refresh_token: 'rt-2', expires_in: 3600 }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  }));
+  const node = tier2OAuthRuntimeNode('cas-1');
+  const resolved = await resolveSubscriptionCredential(env, node);
+  assert.ok(resolved.ok && resolved.token === 'winner');
+  // A stale writer that loaded version 0 AFTER the winner persisted version 1.
+  const stalePersist = await persistRefreshedToken(env, {
+    nodeId: 'cas-1', accessToken: 'loser', refreshToken: 'rt-stale',
+    expiresAt: Date.now() + 3600_000, expectedVersion: 0,
+  });
+  assert.equal(stalePersist, false, 'stale CAS write rejected');
+  const stored = await loadSubscriptionToken(env, 'cas-1');
+  assert.equal(stored.refreshVersion, 1, 'winner version untouched');
+  assert.equal(stored.accessToken, 'winner');
+  assert.equal(stored.refreshToken, 'rt-2', 'rotated RT2 remains the single authority');
+});
+
+await test('account_id from token exchange is persisted and sent as chatgpt-account-id for openai nodes', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'codex-sub', provider: 'openai', auth: 'oauth', base_url: 'https://codex-sub.example.com/v1', models: { 'Code-Max': 'gpt-codex' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS; // built-in openai default (auth.openai.com, automatic)
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'auth.openai.com') {
+      return new Response(JSON.stringify({
+        access_token: 'codex-access', refresh_token: 'codex-refresh',
+        expires_in: 3600, account_id: 'acct-12345',
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.hostname === 'codex-sub.example.com') {
+      const acct = init?.headers?.get('chatgpt-account-id');
+      assert.equal(acct, 'acct-12345', 'chatgpt-account-id header applied');
+      return new Response(JSON.stringify({
+        choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+
+  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-sub', {
+    headers: { authorization: `Bearer ${ACCESS_KEY}` },
+  }), env, {});
+  assert.equal(start.status, 302, 'openai default is an automatic redirect flow');
+  const state = new URL(start.headers.get('location')).searchParams.get('state');
+  const callback = await worker.fetch(new Request(
+    `https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`,
+  ), env, {});
+  assert.equal(callback.status, 200);
+  const stored = await loadSubscriptionToken(env, 'codex-sub');
+  assert.equal(stored.accountId, 'acct-12345', 'account_id persisted in plaintext');
+
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.equal(res.status, 200);
+});
+
+await test('non-openai oauth nodes never send chatgpt-account-id', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [tier2OauthNode('an-sub', 'mock')],
+    db,
+  });
+  await storeSubscriptionToken(env, {
+    nodeId: 'an-sub', provider: 'mock', accessToken: 'tok', refreshToken: null,
+    accountId: 'acct-should-not-send', expiresAt: Date.now() + 3600_000,
+  });
+  let sawAccountHeader = false;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'an-sub.example.com') {
+      sawAccountHeader = !!init?.headers?.get('chatgpt-account-id');
+      return new Response(JSON.stringify({
+        choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.equal(res.status, 200);
+  assert.equal(sawAccountHeader, false, 'chatgpt-account-id is an OpenAI subscription header only');
 });
 
 console.log(`\nAll OAuth tests: ${passed} passed, ${failed} failed.`);

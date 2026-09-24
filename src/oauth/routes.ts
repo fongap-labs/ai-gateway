@@ -81,7 +81,7 @@ function lookupNode(ctx: OAuthRouteContext, provider: string, nodeId: string): {
   return { found: true, providerMatches: node.provider === provider && node.auth === 'oauth' };
 }
 
-type TokenExchangePayload = { access_token?: unknown, refresh_token?: unknown, expires_in?: unknown };
+type TokenExchangePayload = { access_token?: unknown, refresh_token?: unknown, expires_in?: unknown, account_id?: unknown };
 
 async function exchangeCodeForTokens(
   providerConfig: OAuthProviderConfig, code: string, redirectUri: string, codeVerifier: string,
@@ -116,9 +116,12 @@ async function completeTokenExchange(env: GatewayEnv, providerConfig: OAuthProvi
     return htmlResponse(502, 'Token exchange failed', 'Restart onboarding from /oauth/start.');
   }
   const { expiresInSec, refreshToken } = resolveExpiry(exchanged.payload);
+  const accountId = typeof exchanged.payload.account_id === 'string' && exchanged.payload.account_id.trim()
+    ? exchanged.payload.account_id.trim() : null;
   const stored = await storeSubscriptionToken(env, {
     nodeId, provider: providerName,
     accessToken: exchanged.payload.access_token, refreshToken,
+    accountId,
     expiresAt: Date.now() + expiresInSec * 1000,
   });
   if (!stored) {

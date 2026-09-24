@@ -5,29 +5,33 @@
 //
 // Resolution order (per node, per isolate):
 //   1. Isolate-local cache, if the token has more than REFRESH_MARGIN_MS of
-//      life remaining - the scheduling hot path never touches D1 here.
+//      life remaining — the scheduling hot path never touches D1 here.
 //   2. D1 load (cache miss): decrypt + cache when the token is still fresh.
 //   3. Refresh: when the cached/stored token is inside the margin, exchange
-//      the refresh token at the provider's token endpoint, persist and cache
-//      the new access token.
+//      the refresh token at the provider's token endpoint and persist the
+//      rotated credential with a compare-and-swap on refresh_version.
+//
+// Refresh-token rotation safety:
+//   - Isolate-level singleflight: concurrent requests for one node share a
+//     single refresh Promise, so one isolate never issues parallel refreshes.
+//   - Cross-isolate compare-and-swap: the D1 persist only lands when the
+//     stored refresh_version still matches; a losing writer reloads the
+//     winner's credential instead of clobbering it, so exactly one refresh
+//     token survives as the persisted authority.
 //
 // Failure modes are all fail-closed: the resolver returns ok:false and the
 // dispatch layer rotates the attempt to another node. A subscription node
 // never receives traffic with a missing or stale credential.
 
 import { getOAuthProvider } from './provider-configs.ts';
-import { loadSubscriptionToken, storeSubscriptionToken, markTokenStatus } from './token-store.ts';
+import { loadSubscriptionToken, persistRefreshedToken, markTokenStatus } from './token-store.ts';
 import type { StoredSubscriptionToken } from './token-store.ts';
 import type { RuntimeNode } from '../types/node.ts';
 
-// Refresh when the access token has less than this much life left, so an
-// in-flight request is unlikely to send a token that expires mid-stream.
-export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
-
-type CacheEntry = { token: string, expiresAt: number };
+type CacheEntry = { token: string, expiresAt: number, accountId: string | null };
 const isolateCache = new Map<string, CacheEntry>();
 
-export type ResolveFailureReason = 'unconfigured_provider' | 'no_token' | 'refresh_failed' | 'store_unavailable';
+export type ResolveFailureReason = 'unconfigured_provider' | 'adapter_missing' | 'no_token' | 'refresh_failed' | 'store_unavailable';
 
 // Negative cache: a failed refresh is remembered for this long so concurrent
 // requests do not hammer the provider's token endpoint when a subscription
@@ -35,8 +39,16 @@ export type ResolveFailureReason = 'unconfigured_provider' | 'no_token' | 'refre
 export const RESOLUTION_FAILURE_TTL_MS = 60 * 1000;
 const resolutionFailures = new Map<string, { until: number, reason: ResolveFailureReason }>();
 
+// Refresh when the access token has less than this much life left, so an
+// in-flight request is unlikely to send a token that expires mid-stream.
+export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+// Isolate-level singleflight: one in-flight resolution per node. Concurrent
+// requests await the same Promise instead of issuing parallel refreshes.
+const inFlightResolutions = new Map<string, Promise<ResolveResult>>();
+
 export type ResolveResult =
-  | { ok: true, token: string }
+  | { ok: true, token: string, accountId: string | null }
   | { ok: false, reason: ResolveFailureReason };
 
 // PKCE token refresh against the provider's token endpoint. Never logs token
@@ -48,13 +60,13 @@ async function refreshAccessToken(
 ): Promise<{ ok: true, token: string, expiresInSec: number, refreshToken: string | null } | { ok: false }> {
   const providerConfig = getOAuthProvider(env, provider);
   if (!providerConfig) return { ok: false };
-  let response: Response;
   const params: Record<string, string> = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: providerConfig.clientId,
   };
   if (providerConfig.clientSecret) params.client_secret = providerConfig.clientSecret;
+  let response: Response;
   try {
     response = await fetch(providerConfig.tokenUrl, {
       method: 'POST',
@@ -79,40 +91,31 @@ async function refreshAccessToken(
   return { ok: true, token, expiresInSec, refreshToken: rotatedRefresh };
 }
 
-async function persistAndCache(
-  env: Record<string, unknown>,
-  nodeId: string,
-  token: string,
-  expiresAt: number,
-): Promise<boolean> {
-  isolateCache.set(nodeId, { token, expiresAt });
-  return true;
+function cacheToken(nodeId: string, token: string, expiresAt: number, accountId: string | null): void {
+  isolateCache.set(nodeId, { token, expiresAt, accountId });
 }
 
-// Resolve the access token for a subscription node. Cache-first; D1 and the
-// refresh endpoint are only touched on cache miss or near expiry.
-export async function resolveSubscriptionCredential(
+// Single resolution pass without the singleflight wrapper.
+async function resolveOnce(
   env: Record<string, unknown>,
   node: RuntimeNode,
 ): Promise<ResolveResult> {
-  if (!node.auth || node.auth !== 'oauth') {
-    return { ok: false, reason: 'unconfigured_provider' };
-  }
   const now = Date.now();
-  const recentFailure = resolutionFailures.get(node.id);
-  if (recentFailure) {
-    if (recentFailure.until > now) {
-      return { ok: false, reason: recentFailure.reason };
-    }
-    resolutionFailures.delete(node.id);
-  }
   const cached = isolateCache.get(node.id);
   if (cached && cached.expiresAt > now + REFRESH_MARGIN_MS) {
-    return { ok: true, token: cached.token };
+    return { ok: true, token: cached.token, accountId: cached.accountId };
   }
 
   const providerConfig = getOAuthProvider(env, node.provider);
   if (!providerConfig) return { ok: false, reason: 'unconfigured_provider' };
+  if (providerConfig.dispatchReady === false) {
+    // OAuth onboarding may have succeeded, but no verified subscription
+    // backend (endpoint + request shape + entitlement semantics) exists for
+    // this provider behind the OpenAI-compatible profile. Dispatch fails
+    // closed rather than pretending the entitlement is consumable.
+    resolutionFailures.set(node.id, { until: now + RESOLUTION_FAILURE_TTL_MS, reason: 'adapter_missing' });
+    return { ok: false, reason: 'adapter_missing' };
+  }
 
   let stored: StoredSubscriptionToken | null = null;
   try {
@@ -126,8 +129,8 @@ export async function resolveSubscriptionCredential(
   }
 
   if (stored.expiresAt > now + REFRESH_MARGIN_MS) {
-    await persistAndCache(env, node.id, stored.accessToken, stored.expiresAt);
-    return { ok: true, token: stored.accessToken };
+    cacheToken(node.id, stored.accessToken, stored.expiresAt, stored.accountId);
+    return { ok: true, token: stored.accessToken, accountId: stored.accountId };
   }
 
   if (!stored.refreshToken) {
@@ -143,19 +146,60 @@ export async function resolveSubscriptionCredential(
     return { ok: false, reason: 'refresh_failed' };
   }
   const expiresAt = now + refreshed.expiresInSec * 1000;
-  const persisted = await storeSubscriptionToken(env, {
+  const nextRefreshToken = refreshed.refreshToken ?? stored.refreshToken;
+
+  // Compare-and-swap persist. A lost CAS means another isolate (or a
+  // completed singleflight peer) rotated first; reload the winner's state
+  // and serve it instead of clobbering with a stale refresh token.
+  const persisted = await persistRefreshedToken(env, {
     nodeId: node.id,
-    provider: node.provider,
     accessToken: refreshed.token,
-    refreshToken: refreshed.refreshToken ?? stored.refreshToken,
+    refreshToken: nextRefreshToken,
     expiresAt,
+    expectedVersion: stored.refreshVersion,
   });
-  if (!persisted) return { ok: false, reason: 'store_unavailable' };
-  await persistAndCache(env, node.id, refreshed.token, expiresAt);
-  return { ok: true, token: refreshed.token };
+  if (!persisted) {
+    const winner = await loadSubscriptionToken(env, node.id);
+    if (winner && winner.expiresAt > now + REFRESH_MARGIN_MS) {
+      cacheToken(node.id, winner.accessToken, winner.expiresAt, winner.accountId);
+      return { ok: true, token: winner.accessToken, accountId: winner.accountId };
+    }
+    return { ok: false, reason: 'store_unavailable' };
+  }
+  cacheToken(node.id, refreshed.token, expiresAt, stored.accountId);
+  return { ok: true, token: refreshed.token, accountId: stored.accountId };
+}
+
+// Resolve the access token for a subscription node. Cache-first; the
+// negative cache answers immediately for recently failed nodes; the
+// singleflight map collapses concurrent resolutions of one node into one
+// refresh.
+export function resolveSubscriptionCredential(
+  env: Record<string, unknown>,
+  node: RuntimeNode,
+): Promise<ResolveResult> {
+  if (!node.auth || node.auth !== 'oauth') {
+    return Promise.resolve({ ok: false, reason: 'unconfigured_provider' });
+  }
+  const now = Date.now();
+  const recentFailure = resolutionFailures.get(node.id);
+  if (recentFailure) {
+    if (recentFailure.until > now) {
+      return Promise.resolve({ ok: false, reason: recentFailure.reason });
+    }
+    resolutionFailures.delete(node.id);
+  }
+  const inFlight = inFlightResolutions.get(node.id);
+  if (inFlight) return inFlight;
+  const attempt = resolveOnce(env, node).finally(() => {
+    inFlightResolutions.delete(node.id);
+  });
+  inFlightResolutions.set(node.id, attempt);
+  return attempt;
 }
 
 export function __resetSubscriptionCacheForTests(): void {
   isolateCache.clear();
   resolutionFailures.clear();
+  inFlightResolutions.clear();
 }
