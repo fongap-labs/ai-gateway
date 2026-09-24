@@ -57,4 +57,42 @@ const retryAfter = Number(response.headers.get('retry-after'));
 assert.ok(Number.isFinite(retryAfter) && retryAfter >= 25 && retryAfter <= 30);
 assert.equal(body?.error?.details?.failure_kinds?.rate_limit, 3);
 assert.deepEqual(calls.map((c) => c.model), ['up-code-ultra', 'up-code-max', 'up-code-pro']);
+
+calls.length = 0;
+__resetAllStateForTests();
+__resetTier1StateForTests();
+__resetTier1AffinityForTests();
+
+const auditNodes = [
+  { id: 'audit-ultra-rl', provider: 'provider-audit-ultra', base_url: 'https://audit-ultra-rl.example.com/v1', priority: 10, models: { 'Audit-Ultra': 'up-audit-ultra' } },
+  { id: 'audit-max-rl', provider: 'provider-audit-max', base_url: 'https://audit-max-rl.example.com/v1', priority: 10, models: { 'Audit-Max': 'up-audit-max' } },
+  { id: 'audit-pro-rl', provider: 'provider-audit-pro', base_url: 'https://audit-pro-rl.example.com/v1', priority: 10, models: { 'Audit-Pro': 'up-audit-pro' } },
+];
+
+const auditEnv = {
+  AIG_ACCESS_KEY_AGENT: ACCESS_KEY,
+  AIG_ACCESS_MODELS_AGENT: '*',
+  AIG_PROTOCOL_FALLBACKS: 'disable',
+  AIG_TIER1_NODES_01: JSON.stringify(auditNodes),
+  AIG_TIER1_CREDENTIALS_01: JSON.stringify({
+    'audit-ultra-rl': 'k-audit-ultra',
+    'audit-max-rl': 'k-audit-max',
+    'audit-pro-rl': 'k-audit-pro',
+  }),
+};
+
+const auditRequest = new Request('https://gateway.example.com/v1/chat/completions', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
+  body: JSON.stringify({ model: 'Audit-Ultra', messages: [{ role: 'user', content: 'review the architecture' }] }),
+});
+
+const auditResponse = await worker.fetch(auditRequest, auditEnv, {});
+assert.equal(auditResponse.status, 503);
+assert.deepEqual(
+  calls.map((c) => c.model),
+  ['up-audit-ultra', 'up-audit-max', 'up-audit-pro'],
+  'prefixed logical aliases must fail over across configured sibling tiers',
+);
+
 console.log('family rate-limit retry test passed.');
