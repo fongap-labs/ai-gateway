@@ -43,8 +43,26 @@ export type SubscriptionPreparedRequest = {
   body: Record<string, unknown> | null,
 };
 
+/** Read-only view of a failed subscription response an adapter may
+ *  interpret. Values are exactly what the upstream produced; nothing is
+ *  sanitized or truncated before the adapter sees it. */
+export type SubscriptionFailureView = {
+  status: number,
+  headers: Headers,
+  /** The upstream error body text (bounded by the dispatch diagnostic
+   *  read limit), or the empty string when none was captured. */
+  body: string,
+};
+
 export type SubscriptionAdapter = {
   /** Shape one subscription request. Returns null when the request cannot
    *  be shaped for this provider (fail-closed rotation). */
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null,
+  /** Interpret an upstream failure for quota-window semantics. Returns a
+   *  cooldown hint in milliseconds when the provider's entitlement window
+   * (resets_at / window-reset markers) implies waiting longer than
+   *  Retry-After alone, or null to leave the generic classification
+   *  untouched. Hints are advisory: the caller caps them and still applies
+   *  its own recovery model (cooldown expiry -> probe -> restore). */
+  quotaResetHint?(failure: SubscriptionFailureView, now: number): number | null,
 };
