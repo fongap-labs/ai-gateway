@@ -253,7 +253,21 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   if (!upstream.ok) {
     detach();
     const errorText = await safeReadErrorBody(upstream, DIAGNOSTIC_BYTES, c.attemptDeadlineMs);
-    const classification = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
+    let classification = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
+    // Subscription entitlement windows: the provider adapter owns the
+    // interpretation of quota-reset markers (resets_at / window-reset).
+    // The hint can only EXTEND the rate-limit cooldown, never shorten it,
+    // and stays capped inside the adapter — recovery remains the normal
+    // cooldown-expiry -> probe -> restore flow.
+    if (node.auth === 'oauth' && classification.kind === 'rate_limit') {
+      const quotaAdapter = getSubscriptionAdapter(node.provider);
+      const hint = quotaAdapter?.quotaResetHint
+        ? quotaAdapter.quotaResetHint({ status: upstream.status, headers: upstream.headers, body: errorText }, Date.now())
+        : null;
+      if (hint !== null && hint > classification.cooldownMs) {
+        classification = { ...classification, cooldownMs: hint };
+      }
+    }
     // Some compatible providers include usage even on an HTTP error. Preserve
     // only that explicit report; malformed/non-JSON bodies remain "missing".
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));

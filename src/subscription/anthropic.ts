@@ -15,7 +15,8 @@
 // CCH billing-block signing (CLIProxyAPI's extra-paranoid layer) is NOT part
 // of the mainstream shape and is not implemented here.
 
-import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionAdapter } from './types.ts';
+import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
+import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
 
 export const CLAUDE_OAUTH_REQUIRED_BETAS: readonly string[] = Object.freeze([
   'claude-code-20250219',
@@ -24,6 +25,17 @@ export const CLAUDE_OAUTH_REQUIRED_BETAS: readonly string[] = Object.freeze([
   'fine-grained-tool-streaming-2025-05-14',
 ]);
 export const CLAUDE_CLI_USER_AGENT = 'claude-cli/1.0.57 (external, cli)';
+
+// Claude/Anthropic quota markers: the platform exposes per-dimension
+// remaining-seconds headers on 429s and a resets_in_seconds field in the
+// quota error body. Hints only — the caller caps and recovers.
+const CLAUDE_RESET_HEADERS = Object.freeze([
+  'anthropic-ratelimit-requests-reset',
+  'anthropic-ratelimit-tokens-reset',
+  'anthropic-ratelimit-input-tokens-reset',
+  'anthropic-ratelimit-output-tokens-reset',
+]);
+const CLAUDE_RESET_BODY_FIELDS = Object.freeze(['resets_in_seconds', 'reset_at', 'resets_at']);
 
 export const claudeSubscriptionAdapter: SubscriptionAdapter = {
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null {
@@ -46,5 +58,13 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
       },
       body: null,
     };
+  },
+
+  quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {
+    if (failure.status !== 429) return null;
+    const relative = hintFromSecondsHeaders(failure.headers, CLAUDE_RESET_HEADERS);
+    const fromBody = hintFromResetBody(failure.body, CLAUDE_RESET_BODY_FIELDS);
+    const resetAt = hintFromResetHeaders(failure.headers, CLAUDE_RESET_HEADERS, now) ?? fromBody;
+    return capHint(resetAt, relative, now);
   },
 };
