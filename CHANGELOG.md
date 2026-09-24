@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- ci: add a trusted project entrypoint for Action Worker centralized CI.
+
 - refactor: derive model fallback families from the final capability tier so new prefixed Pro/Max/Ultra families require no code changes.
 
 - fix: preserve logical-model compatibility during family fallback so prefixed aliases such as `Audit-Ultra` can fail over to `Audit-Max` and `Audit-Pro` without crossing model families.
