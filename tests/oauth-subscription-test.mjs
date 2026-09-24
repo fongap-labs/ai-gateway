@@ -154,11 +154,23 @@ const OAUTH_PROVIDERS_VAR = JSON.stringify({
     scope: 'mock.scope',
     upstream_headers: { 'x-subscription-beta': 'mock-beta' },
   },
+  // The openai override points at the mock endpoints so dispatch-path
+  // tests exercise the real codex adapter against test doubles.
+  openai: {
+    authorize_url: 'https://auth.mock.example.com/authorize',
+    token_url: 'https://auth.mock.example.com/token',
+    client_id: 'mock-openai-client-id',
+    scope: 'openid profile',
+    upstream_headers: { 'x-subscription-beta': 'mock-beta' },
+  },
+  // The anthropic override points at the mock endpoints so dispatch-path
+  // tests exercise the real claude adapter against test doubles.
   anthropic: {
-    authorize_url: 'https://claude.test.example.com/oauth/authorize',
-    token_url: 'https://claude.test.example.com/oauth/token',
+    authorize_url: 'https://auth.mock.example.com/authorize',
+    token_url: 'https://auth.mock.example.com/token',
     client_id: 'override-anthropic-client-id',
     scope: 'oauth override',
+    upstream_headers: { 'x-subscription-beta': 'mock-beta' },
   },
 });
 
@@ -507,9 +519,9 @@ const chatRequest = () => new Request('https://gateway.example.com/v1/chat/compl
 
 await test('Tier 2 oauth node dispatches with the resolved Bearer token', async () => {
   const db = new MockOAuthD1();
-  const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
+  const env = makeEnv({ tier2: [tier2OauthNode('sub1', 'openai')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock', accessToken: 'resolved-token', refreshToken: null,
+    nodeId: 'sub1', provider: 'openai', accessToken: 'resolved-token', refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
 
@@ -611,9 +623,9 @@ await test('expired token with no refresh token fails closed and rotates', async
 
 await test('refresh flow rotates the access token through the provider endpoint', async () => {
   const db = new MockOAuthD1();
-  const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
+  const env = makeEnv({ tier2: [tier2OauthNode('sub1', 'openai')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock', accessToken: 'stale-token', refreshToken: 'refresh-1',
+    nodeId: 'sub1', provider: 'openai', accessToken: 'stale-token', refreshToken: 'refresh-1',
     expiresAt: Date.now() - 1000,
   });
 
@@ -748,41 +760,50 @@ await test('google manual paste: GET /oauth/paste shows form', async () => {
   assert.ok(body.includes('name="code"'), 'code input present');
 });
 
-await test('google refresh includes client_secret when dispatch_ready is overridden true', async () => {
+await test('anthropic override with client_secret includes it in the refresh grant', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
+    tier2: [tier2OauthNode('an-secret', 'anthropic', { base_url: 'https://an-secret.example.com' })],
     db,
   });
-  // Wholesal replacement of the google default: same public constants, but
-  // dispatch_ready explicitly true (operator-verified adapter).
+  // A confidential-client override (client_secret present) must reach the
+  // refresh grant body; public PKCE providers simply omit the secret.
   env.AIG_OAUTH_PROVIDERS = JSON.stringify({
-    google: {
-      authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
-      token_url: 'https://oauth2.googleapis.com/token',
-      client_id: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
-      client_secret: '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',
-      scope: 'https://www.googleapis.com/auth/cloud-platform',
-      dispatch_ready: true,
+    anthropic: {
+      authorize_url: 'https://auth.mock.example.com/authorize',
+      token_url: 'https://auth.mock.example.com/token',
+      client_id: 'confidential-client-id',
+      client_secret: 'confidential-secret',
+      scope: 'oauth override',
     },
   });
-  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'old', refreshToken: 'g-refresh', expiresAt: Date.now() - 1000 });
+  await storeSubscriptionToken(env, { nodeId: 'an-secret', provider: 'anthropic', accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 });
   let refreshBody = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
-    if (url.hostname === 'oauth2.googleapis.com') {
+    if (url.hostname === 'auth.mock.example.com' && url.pathname === '/token') {
       refreshBody = String(init?.body || '');
       return new Response(JSON.stringify({ access_token: 'fresh', expires_in: 3600 }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    if (url.hostname === 'gen-lang.example.com') {
+    if (url.hostname === 'an-secret.example.com') {
       assert.equal(init?.headers?.get('authorization'), 'Bearer fresh');
-      return new Response(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({
+        type: 'message', role: 'assistant', model: 'up-model',
+        content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     throw new Error(`unexpected: ${url}`);
   });
-  const res = await worker.fetch(chatRequest(), env, {});
+  const messagesReq = new Request('https://gateway.example.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': ACCESS_KEY },
+    body: JSON.stringify({ model: 'Code-Max', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  const res = await worker.fetch(messagesReq, env, {});
   assert.equal(res.status, 200);
   assert.ok(refreshBody?.includes('client_secret'), 'client_secret in refresh');
+  assert.ok(refreshBody?.includes('confidential-secret'), 'the configured secret value is sent');
 });
 
 await test('google dispatch fails closed by default (no verified subscription adapter)', async () => {
@@ -791,9 +812,10 @@ await test('google dispatch fails closed by default (no verified subscription ad
     tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
     db,
   });
-  delete env.AIG_OAUTH_PROVIDERS; // built-in google default: dispatchReady false
-  // Even a validly stored token must not dispatch through the unverified
-  // OpenAI-compatible path.
+  delete env.AIG_OAUTH_PROVIDERS; // built-in google default
+  // Even a validly stored token must not dispatch: the google subscription
+  // adapter refuses (no verified Gemini subscription backend exists behind
+  // the OpenAI-compatible profile).
   await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'valid-token', refreshToken: 'g-refresh', expiresAt: Date.now() + 3600_000 });
   let upstreamContacted = false;
   withMockFetch(async () => {
@@ -916,11 +938,11 @@ await test('account_id from token exchange is persisted and sent as chatgpt-acco
 await test('non-openai oauth nodes never send chatgpt-account-id', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [tier2OauthNode('an-sub', 'mock')],
+    tier2: [tier2OauthNode('an-sub', 'anthropic', { base_url: 'https://an-sub.example.com' })],
     db,
   });
   await storeSubscriptionToken(env, {
-    nodeId: 'an-sub', provider: 'mock', accessToken: 'tok', refreshToken: null,
+    nodeId: 'an-sub', provider: 'anthropic', accessToken: 'tok', refreshToken: null,
     accountId: 'acct-should-not-send', expiresAt: Date.now() + 3600_000,
   });
   let sawAccountHeader = false;
@@ -929,15 +951,38 @@ await test('non-openai oauth nodes never send chatgpt-account-id', async () => {
     if (url.hostname === 'an-sub.example.com') {
       sawAccountHeader = !!init?.headers?.get('chatgpt-account-id');
       return new Response(JSON.stringify({
-        choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
+        type: 'message', role: 'assistant', model: 'up-model',
+        content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     throw new Error(`unexpected: ${url}`);
   });
-  const res = await worker.fetch(chatRequest(), env, {});
+  const messagesReq = new Request('https://gateway.example.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': ACCESS_KEY },
+    body: JSON.stringify({ model: 'Code-Max', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  const res = await worker.fetch(messagesReq, env, {});
   assert.equal(res.status, 200);
   assert.equal(sawAccountHeader, false, 'chatgpt-account-id is an OpenAI subscription header only');
+});
+
+await test('oauth node with an unknown provider fails closed (no subscription adapter)', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({ tier2: [tier2OauthNode('mystery-sub')], db });
+  await storeSubscriptionToken(env, {
+    nodeId: 'mystery-sub', provider: 'mock', accessToken: 'tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let upstreamContacted = false;
+  withMockFetch(async () => {
+    upstreamContacted = true;
+    throw new Error('upstream must not be contacted');
+  });
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.equal(res.status, 502, 'no adapter -> fail-closed rotation to exhaustion');
+  assert.equal(upstreamContacted, false);
 });
 
 // ---- P3: Codex subscription protocol normalization -----------------------------
