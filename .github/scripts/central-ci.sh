@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Central execution contract: invoked by fongap-labs/action-worker.
 set -Eeuo pipefail
 
 TARGET_ROOT="${1:-}"
