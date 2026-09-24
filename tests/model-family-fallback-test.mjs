@@ -17,6 +17,8 @@ function catalog(...models) {
 const all = catalog(
   'Code-Ultra', 'Code-Max', 'Code-Pro',
   'Ultra', 'Max', 'Pro', 'Air',
+  'Audit-Ultra', 'Audit-Max', 'Audit-Pro',
+  'Editor-Air', 'Editor-Pro', 'Editor-Max', 'Editor-Ultra',
 );
 
 assert.deepEqual(
@@ -221,7 +223,46 @@ assert.deepEqual(
 
 assert.equal(hasModelFamilyFallback('Code-Max'), true);
 assert.equal(hasModelFamilyFallback('Max'), true);
+assert.equal(hasModelFamilyFallback('Audit-Ultra'), true);
+assert.equal(hasModelFamilyFallback('Editor-Air'), true);
 assert.equal(hasModelFamilyFallback('Custom-Model'), false);
+
+assert.deepEqual(
+  buildModelFallbackRounds('Audit-Ultra', all),
+  [
+    ['Audit-Ultra', 'Audit-Max', 'Audit-Pro'],
+    ['Audit-Ultra', 'Audit-Max', 'Audit-Pro'],
+  ],
+  'prefixed Ultra aliases must fall back inside the same logical family',
+);
+
+assert.deepEqual(
+  buildModelFallbackPlan('Audit-Ultra', all, 6)[0],
+  [
+    { model: 'Audit-Ultra', attemptCap: 3 },
+    { model: 'Audit-Max', attemptCap: 2 },
+    { model: 'Audit-Pro', attemptCap: 1 },
+  ],
+  'prefixed reasoning families keep the standard 3-2-1 attempt plan',
+);
+
+assert.deepEqual(
+  buildModelFallbackRounds('Editor-Air', all),
+  [
+    ['Editor-Air', 'Editor-Pro', 'Editor-Max', 'Editor-Ultra'],
+    ['Editor-Pro', 'Editor-Max', 'Editor-Ultra'],
+  ],
+  'prefixed Air aliases move upward only inside the same logical family',
+);
+
+assert.deepEqual(
+  buildModelFallbackRounds('Audit-Ultra', catalog('Audit-Ultra', 'Audit-Pro', 'Max')),
+  [
+    ['Audit-Ultra', 'Audit-Pro'],
+    ['Audit-Ultra', 'Audit-Pro'],
+  ],
+  'prefixed families must not borrow bare or differently prefixed aliases',
+);
 
 assert.deepEqual(
   modelFallbackCandidates('Code-Max', all),
@@ -269,9 +310,34 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  buildModelFallbackPlan('General-Air', catalog('General-Air'), 5),
+  [[{ model: 'General-Air', attemptCap: null }]],
+  'an isolated prefixed tier alias must keep the legacy policy-owned attempt budget',
+);
+
+assert.deepEqual(
   buildModelFallbackPlan('Custom-Model', catalog('Custom-Model', 'Max', 'Pro'), 1),
   [[{ model: 'Custom-Model', attemptCap: null }]],
   'unknown model families keep their original policy-owned attempt budget',
+);
+
+
+assert.deepEqual(
+  buildModelFallbackRounds(
+    'Research-Reasoning-Ultra',
+    catalog('Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'),
+  ),
+  [
+    ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
+    ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
+  ],
+  'arbitrary multi-segment family prefixes must inherit tier fallback without code changes',
+);
+
+assert.equal(
+  hasModelFamilyFallback('Research-Reasoning-Max'),
+  true,
+  'new prefixed families are recognized from the final capability tier alone',
 );
 
 console.log('model-family fallback tests passed.');

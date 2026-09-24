@@ -8,12 +8,15 @@
 // changes only the logical model while preserving the client route, request,
 // wall-clock budget, logical-attempt budget, and reliability machinery.
 //
-// The policy is intentionally closed and bounded:
-//   Code-Max <-> Code-Pro, then Code-Ultra; Code-Ultra may fall back to
-//   Code-Max/Code-Pro. Code models never cross into the non-Code family.
-//   Max <-> Pro, then Ultra; Ultra may fall back to Max/Pro.
-//   Air may move upward to Pro -> Max -> Ultra, but once it moves upward it
-//   never returns to Air.
+// The policy is intentionally bounded:
+//   Every logical family is identified by its final capability tier while all
+//   preceding segments remain the family prefix. For example,
+//   Code-Ultra -> Code-Max -> Code-Pro and
+//   Audit-Ultra -> Audit-Max -> Audit-Pro.
+//   Bare Ultra/Max/Pro use the same tier policy with an empty prefix.
+//   Air may move upward to Pro -> Max -> Ultra inside the same family, but once
+//   it moves upward it never returns to Air.
+//   Fallback never crosses logical-family prefixes.
 //   Interchangeable families get at most two evaluation rounds. The second
 //   round exists only to re-check capacity that may have recovered while other
 //   model pools were being tried. There is never an unbounded cycle.
@@ -24,15 +27,18 @@
 
 import type { RuntimeNode } from '../types/node.ts';
 
-const FALLBACK_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  'code-ultra': Object.freeze(['code-ultra', 'code-max', 'code-pro']),
-  'code-max': Object.freeze(['code-max', 'code-pro', 'code-ultra']),
-  'code-pro': Object.freeze(['code-pro', 'code-max', 'code-ultra']),
+const TIER_FALLBACK_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
   ultra: Object.freeze(['ultra', 'max', 'pro']),
   max: Object.freeze(['max', 'pro', 'ultra']),
   pro: Object.freeze(['pro', 'max', 'ultra']),
   air: Object.freeze(['air', 'pro', 'max', 'ultra']),
 });
+
+type ModelFamily = {
+  requestedKey: string,
+  requestedTier: string,
+  template: readonly string[],
+};
 
 const THREE_MEMBER_FIRST_ROUND_CAPS = Object.freeze([3, 2, 1]);
 const AIR_FIRST_ROUND_CAPS = Object.freeze([3, 1, 1, 1]);
@@ -45,6 +51,21 @@ export type ModelFallbackPass = {
 
 function keyOf(model: string): string {
   return model.trim().toLowerCase();
+}
+
+function resolveFamily(model: string): ModelFamily | null {
+  const requestedKey = keyOf(model);
+  const parts = requestedKey.split('-').filter(Boolean);
+  const requestedTier = parts.at(-1) ?? '';
+  const order = TIER_FALLBACK_ORDER[requestedTier];
+  if (!order) return null;
+
+  const prefix = parts.slice(0, -1).join('-');
+  return {
+    requestedKey,
+    requestedTier,
+    template: order.map((tier) => prefix ? `${prefix}-${tier}` : tier),
+  };
 }
 
 function catalogByKey(knownModels: ReadonlySet<string>): Map<string, string> {
@@ -66,9 +87,9 @@ export function buildModelFallbackRounds(
   requestedModel: string,
   knownModels: ReadonlySet<string>,
 ): string[][] {
-  const requestedKey = keyOf(requestedModel);
-  const template = FALLBACK_ORDER[requestedKey];
-  if (!template) return [[requestedModel]];
+  const family = resolveFamily(requestedModel);
+  if (!family) return [[requestedModel]];
+  const { requestedKey, requestedTier, template } = family;
 
   const catalog = catalogByKey(knownModels);
   const firstRound: string[] = [];
@@ -82,8 +103,8 @@ export function buildModelFallbackRounds(
   // Air is one-way upward. A request that already moved to Pro/Max/Ultra must
   // not later fall back down to Air. Other family members are mutually
   // interchangeable and may therefore be re-evaluated once.
-  const secondRound = requestedKey === 'air'
-    ? firstRound.filter((model) => keyOf(model) !== 'air')
+  const secondRound = requestedTier === 'air'
+    ? firstRound.filter((model) => keyOf(model) !== requestedKey)
     : [...firstRound];
 
   return secondRound.length > 0 ? [firstRound, secondRound] : [firstRound];
@@ -137,14 +158,21 @@ export function buildModelFallbackPlan(
   knownModels: ReadonlySet<string>,
   maxAttempts: number = DEFAULT_FAMILY_ATTEMPT_BUDGET,
 ): ModelFallbackPass[][] {
-  const requestedKey = keyOf(requestedModel);
-  const template = FALLBACK_ORDER[requestedKey];
+  const family = resolveFamily(requestedModel);
   const rounds = buildModelFallbackRounds(requestedModel, knownModels);
-  if (!template) return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
+  if (!family) return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
+
+  const isPrefixedFamily = family.requestedKey !== family.requestedTier;
+  const hasConfiguredSibling = (rounds[0] ?? []).some(
+    (model) => keyOf(model) !== family.requestedKey,
+  );
+  if (isPrefixedFamily && !hasConfiguredSibling) {
+    return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
+  }
 
   const budget = normalizedBudget(maxAttempts);
   const firstRound = rounds[0] ?? [requestedModel];
-  const first = firstRoundPlan(requestedKey, template, firstRound, budget);
+  const first = firstRoundPlan(family.requestedTier, family.template, firstRound, budget);
   const allowed = new Set(first.map((pass) => pass.model));
   const out: ModelFallbackPass[][] = [first];
 
@@ -162,7 +190,7 @@ export function buildModelFallbackPlan(
 
 /** True when the requested model belongs to a configured fallback family. */
 export function hasModelFamilyFallback(requestedModel: string): boolean {
-  return Boolean(FALLBACK_ORDER[keyOf(requestedModel)]);
+  return resolveFamily(requestedModel) !== null;
 }
 
 /** Unique model candidates, preserving first-appearance order. */

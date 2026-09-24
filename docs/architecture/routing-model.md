@@ -26,21 +26,18 @@ Static node `priority` is meaningful for Tier 2/3 and deliberately ignored by Ti
 
 Logical-model fallback is separate from protocol fallback. Protocol fallback changes wire protocol/surface for the same logical model; family fallback changes the logical model while preserving the client route and requested-model identity.
 
-The closed family policy is:
+Family membership is derived from the final capability tier. Every preceding name segment is preserved as the logical-family prefix, so new families do not require source changes.
 
 ```text
-Code-Ultra → Code-Max → Code-Pro
-Code-Max   → Code-Pro → Code-Ultra
-Code-Pro   → Code-Max → Code-Ultra
-
-Ultra → Max → Pro
-Max   → Pro → Ultra
-Pro   → Max → Ultra
-
-Air → Pro → Max → Ultra
+<family>-Ultra → <family>-Max → <family>-Pro
+<family>-Max   → <family>-Pro → <family>-Ultra
+<family>-Pro   → <family>-Max → <family>-Ultra
+<family>-Air   → <family>-Pro → <family>-Max → <family>-Ultra
 ```
 
-Code models never cross into the non-Code family. `Air` may move upward; `Ultra / Max / Pro` never fall back down to `Air`.
+The same rules apply to unprefixed `Ultra / Max / Pro / Air`. Examples include `Code-*`, `Audit-*`, and any future family that exposes matching sibling tiers in the known-model catalog.
+
+Fallback never crosses family prefixes. `Air` may move upward inside its family; `Ultra / Max / Pro` never fall back down to `Air`. If no compatible sibling is configured, the requested logical model keeps the legacy single-model behavior and policy-owned attempt budget.
 
 `max_attempts` is the request-wide hard ceiling and family planning never raises it. First-round family allocation widens before it deepens. Compatible families get at most a bounded second evaluation round, and that round may use only budget left from the same request.
 
