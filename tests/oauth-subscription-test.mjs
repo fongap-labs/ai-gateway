@@ -1044,5 +1044,103 @@ await test('plain API-key responses nodes are not codex-normalized', async () =>
   assert.equal(seenOriginator, null, 'Originator not sent for API-key nodes');
 });
 
+// ---- P3: Claude OAuth mainstream reverse-proxy shape ------------------------
+
+function anthropicMessagesRequest(extraHeaders = {}) {
+  return new Request('https://gateway.example.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': ACCESS_KEY, ...extraHeaders },
+    body: JSON.stringify({ model: 'Code-Max', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+}
+
+const anthropicUpstreamOk = () => new Response(JSON.stringify({
+  type: 'message', role: 'assistant', model: 'up-model',
+  content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
+  usage: { input_tokens: 1, output_tokens: 1 },
+}), { status: 200, headers: { 'content-type': 'application/json' } });
+
+await test('claude oauth dispatch without client beta gets required oauth beta flags', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'claude-sub', provider: 'anthropic', auth: 'oauth', base_url: 'https://claude-up.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS;
+  await storeSubscriptionToken(env, {
+    nodeId: 'claude-sub', provider: 'anthropic', accessToken: 'claude-tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let seenBeta = null; let seenXApp = null; let seenUa = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'claude-up.example.com') {
+      seenBeta = init?.headers?.get('anthropic-beta');
+      seenXApp = init?.headers?.get('x-app');
+      seenUa = init?.headers?.get('user-agent');
+      return anthropicUpstreamOk();
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const res = await worker.fetch(anthropicMessagesRequest(), env, {});
+  assert.equal(res.status, 200);
+  assert.ok(seenBeta.includes('oauth-2025-04-20'), 'oauth beta flag present');
+  assert.ok(seenBeta.includes('claude-code-20250219'), 'claude-code beta flag present');
+  assert.equal(seenXApp, 'cli');
+  assert.ok(seenUa.startsWith('claude-cli/'), 'first-party claude-cli user agent');
+});
+
+await test('claude oauth dispatch merges client betas without duplicates', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'claude-sub', provider: 'anthropic', auth: 'oauth', base_url: 'https://claude-up.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS;
+  await storeSubscriptionToken(env, {
+    nodeId: 'claude-sub', provider: 'anthropic', accessToken: 'claude-tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let seenBeta = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'claude-up.example.com') {
+      seenBeta = init?.headers?.get('anthropic-beta');
+      return anthropicUpstreamOk();
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const res = await worker.fetch(anthropicMessagesRequest({
+    'anthropic-beta': 'token-counting-2024-11-01,oauth-2025-04-20',
+  }), env, {});
+  assert.equal(res.status, 200);
+  const betas = seenBeta.split(',').map((s) => s.trim());
+  assert.ok(betas.includes('token-counting-2024-11-01'), 'client beta preserved');
+  assert.ok(betas.includes('claude-code-20250219'), 'required beta appended');
+  assert.equal(betas.filter((b) => b === 'oauth-2025-04-20').length, 1, 'no duplicate oauth beta');
+  assert.ok(betas.includes('interleaved-thinking-2025-05-14'));
+});
+
+await test('plain API-key anthropic nodes get no forced oauth betas', async () => {
+  const env = makeEnv({
+    tier1: [{ id: 'claude-key', provider: 'anthropic', base_url: 'https://claude-key.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
+    extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'claude-key': 'sk-ant-key' }) },
+  });
+  let seenBeta = null; let seenXApp = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'claude-key.example.com') {
+      seenBeta = init?.headers?.get('anthropic-beta');
+      seenXApp = init?.headers?.get('x-app');
+      return anthropicUpstreamOk();
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const res = await worker.fetch(anthropicMessagesRequest(), env, {});
+  assert.equal(res.status, 200);
+  assert.equal(seenBeta, null, 'no forced betas for API-key nodes');
+  assert.equal(seenXApp, null, 'no x-app for API-key nodes');
+});
+
 console.log(`\nAll OAuth tests: ${passed} passed, ${failed} failed.`);
 if (failed) process.exit(1);

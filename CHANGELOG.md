@@ -1,6 +1,8 @@
-﻿# Changelog
+# Changelog
 
 ## [Unreleased]
+
+- feat: apply the mainstream reverse-proxy shape to Claude OAuth subscription dispatch — merge the required beta flags (claude-code-20250219, oauth-2025-04-20, interleaved-thinking-2025-05-14, fine-grained-tool-streaming-2025-05-14) into the client-supplied anthropic-beta list and send x-app plus a first-party claude-cli user agent; plain API-key nodes are untouched. CCH billing-block signing remains unimplemented (CLIProxyAPI-only extra layer).
 
 - ci: cancel centralized PR work when a pull request is closed.
 
