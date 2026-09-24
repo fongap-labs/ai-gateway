@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- refactor: move heavy CI and scheduled validation to Action Worker while keeping only a thin repository dispatch bridge.
+
 - ci: add a trusted project entrypoint for Action Worker centralized CI.
 
 - refactor: derive model fallback families from the final capability tier so new prefixed Pro/Max/Ultra families require no code changes.
