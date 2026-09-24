@@ -23,6 +23,11 @@ export type StoredSubscriptionToken = {
   provider: string,
   accessToken: string,
   refreshToken: string | null,
+  /** Provider account identity (e.g., OpenAI ChatGPT account id). Not a
+   *  secret; used as a request header by subscription upstreams. */
+  accountId: string | null,
+  /** Monotonic compare-and-swap guard for refresh-token rotation. */
+  refreshVersion: number,
   expiresAt: number,
   status: string,
 };
@@ -53,7 +58,7 @@ type D1Like = {
     bind: (...values: unknown[]) => {
       first: () => Promise<unknown>,
       all: () => Promise<{ results: unknown[] }>,
-      run: () => Promise<unknown>,
+      run: () => Promise<{ meta?: { changes?: number } } | unknown>,
     },
   },
 };
@@ -136,6 +141,9 @@ export async function purgeExpiredFlowStates(env: Record<string, unknown>): Prom
 
 // ---- Subscription tokens ----------------------------------------------------
 
+// Initial onboarding (or re-authorization) of a subscription credential.
+// Resets the refresh compare-and-swap version. The OAuth onboarding flow is
+// the only caller that may overwrite a credential unconditionally.
 export async function storeSubscriptionToken(
   env: Record<string, unknown>,
   input: {
@@ -143,7 +151,57 @@ export async function storeSubscriptionToken(
     provider: string,
     accessToken: string,
     refreshToken: string | null,
+    accountId?: string | null,
     expiresAt: number,
+  },
+): Promise<boolean> {
+  const db = d1(env);
+  if (!db) return false;
+  if (!hasTokenKey(env)) return false;
+  const accessEnc = await encryptSecret(env, input.accessToken);
+  if (!accessEnc) return false;
+  const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
+  const accountId = input.accountId?.trim() || null;
+  const now = Date.now();
+  try {
+    await db.prepare(
+      `INSERT INTO subscription_tokens
+         (node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, updated_at, account_id, refresh_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 0)
+       ON CONFLICT(node_id) DO UPDATE SET
+         provider = excluded.provider,
+         access_token_enc = excluded.access_token_enc,
+         refresh_token_enc = COALESCE(excluded.refresh_token_enc, subscription_tokens.refresh_token_enc),
+         refresh_iv = COALESCE(excluded.refresh_iv, subscription_tokens.refresh_iv),
+         expires_at = excluded.expires_at,
+         status = 'active',
+         updated_at = excluded.updated_at,
+         account_id = COALESCE(excluded.account_id, subscription_tokens.account_id),
+         refresh_version = 0`,
+    ).bind(
+      input.nodeId, input.provider,
+      accessEnc.ciphertextB64, refreshEnc?.ciphertextB64 ?? null,
+      accessEnc.ivB64, refreshEnc?.ivB64 ?? null,
+      input.expiresAt, now, accountId,
+    ).run();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Compare-and-swap persist of a refreshed credential. The write only lands
+// when the stored refresh_version still equals the version the refresher
+// loaded; a concurrent rotation winner (this isolate via singleflight or
+// another isolate) makes the write a no-op and the caller must reload.
+export async function persistRefreshedToken(
+  env: Record<string, unknown>,
+  input: {
+    nodeId: string,
+    accessToken: string,
+    refreshToken: string | null,
+    expiresAt: number,
+    expectedVersion: number,
   },
 ): Promise<boolean> {
   const db = d1(env);
@@ -154,25 +212,27 @@ export async function storeSubscriptionToken(
   const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
   const now = Date.now();
   try {
-    await db.prepare(
-      `INSERT INTO subscription_tokens
-         (node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
-       ON CONFLICT(node_id) DO UPDATE SET
-         provider = excluded.provider,
-         access_token_enc = excluded.access_token_enc,
-         refresh_token_enc = COALESCE(excluded.refresh_token_enc, subscription_tokens.refresh_token_enc),
-         refresh_iv = COALESCE(excluded.refresh_iv, subscription_tokens.refresh_iv),
-         expires_at = excluded.expires_at,
+    const result = await db.prepare(
+      `UPDATE subscription_tokens SET
+         access_token_enc = ?,
+         token_iv = ?,
+         refresh_token_enc = COALESCE(?, refresh_token_enc),
+         refresh_iv = COALESCE(?, refresh_iv),
+         expires_at = ?,
          status = 'active',
-         updated_at = excluded.updated_at`,
+         updated_at = ?,
+         refresh_version = refresh_version + 1
+       WHERE node_id = ? AND refresh_version = ?`,
     ).bind(
-      input.nodeId, input.provider,
-      accessEnc.ciphertextB64, refreshEnc?.ciphertextB64 ?? null,
-      accessEnc.ivB64, refreshEnc?.ivB64 ?? null,
+      accessEnc.ciphertextB64, accessEnc.ivB64,
+      refreshEnc?.ciphertextB64 ?? null, refreshEnc?.ivB64 ?? null,
       input.expiresAt, now,
+      input.nodeId, input.expectedVersion,
     ).run();
-    return true;
+    const changes = (result as { meta?: { changes?: number } } | null)?.meta?.changes;
+    // D1 reports meta.changes; when unavailable treat any completed write as
+    // a win (older D1 mocks) — the singleflight path is still race-free.
+    return changes === undefined ? true : changes > 0;
   } catch {
     return false;
   }
@@ -187,7 +247,7 @@ export async function loadSubscriptionToken(
   if (!hasTokenKey(env)) return null;
   try {
     const row = await db.prepare(
-      'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status FROM subscription_tokens WHERE node_id = ?',
+      'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, account_id, refresh_version FROM subscription_tokens WHERE node_id = ?',
     ).bind(nodeId).first();
     if (!row || typeof row !== 'object') return null;
     const record = row as Record<string, unknown>;
@@ -213,6 +273,8 @@ export async function loadSubscriptionToken(
       provider: record.provider,
       accessToken,
       refreshToken,
+      accountId: typeof record.account_id === 'string' && record.account_id ? record.account_id : null,
+      refreshVersion: typeof record.refresh_version === 'number' ? record.refresh_version : 0,
       expiresAt: record.expires_at,
       status: typeof record.status === 'string' ? record.status : 'active',
     };

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: harden subscription entitlement dispatch — isolate-level refresh singleflight plus cross-isolate compare-and-swap on a persisted refresh_version so token rotation keeps exactly one authoritative refresh token; persist the provider account id and send it as `chatgpt-account-id` for OpenAI subscription dispatches; fail-close runtime dispatch for providers without a verified subscription backend (built-in `google` default, override via `dispatch_ready`).
+
 - fix: bind runtime build identity to the validated AI Gateway source SHA instead of the Action Worker runner SHA.
 
 - feat: add Tier 2 subscription OAuth adapters with Tier 2-only `auth:"oauth"` nodes, PKCE onboarding, AES-GCM token storage, dispatch-time refresh, built-in provider defaults, and fail-closed deployment configuration.
