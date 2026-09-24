@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- refactor: move pull-request CI to Action Worker while retaining main and scheduled validation until deployment is centralized.
+
 - ci: add a lightweight GitHub Actions merge gate for centralized Action Worker evidence.
 
 - ci: add a trusted project entrypoint for Action Worker centralized CI.
