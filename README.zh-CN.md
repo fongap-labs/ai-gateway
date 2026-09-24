@@ -53,9 +53,12 @@ Tier 3  付费 API 托底
 
 Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provider-Model 热度动态分流；模型家族 fallback 也有明确上限。
 
+Tier 2 同时支持静态 API-Key 节点和**订阅节点**（`auth: "oauth"`）：运营者自己的 Claude / Codex / Gemini 订阅通过 PKCE 授权接入，Token 以 AES-GCM 加密存储在 D1，调度时自动刷新、按需解析，全程 fail-closed。详见 [Configuration — Tier 2 订阅](docs/operations/configuration.md#tier-2-subscriptions-oauth)。
+
 核心行为：
 
 - **多 Provider / 多 Key 聚合**：客户端只看到一个逻辑入口。
+- **订阅权益接入**：OAuth (PKCE) 授权、Token 加密存储、自动刷新。
 - **额度保护**：429 进入恢复机制，模型型 404 只隔离对应映射。
 - **流式安全**：真正内容开始输出后，不再透明切换上游。
 - **放大可见**：Token、成功请求、TTFT、retry / fallback / hedge 分开统计。
@@ -70,6 +73,16 @@ Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provid
 项目目前已经进入 **稳定性阶段**：除非真实生产数据证明现有架构有结构性问题，否则不再继续调整架构。后续重点看真实 429、fallback / hedge 放大、D1 写入量和 TTFT。
 
 ## 快速开始
+
+### 通过 GitHub Actions 部署（推荐）
+
+Fork 或推送本仓库到 GitHub 后，在仓库设置里配好变量即可——本地不需要 Node.js，也不需要 wrangler：
+
+1. **Variables**（Settings → Secrets and variables → Actions → Variables）：`CLOUDFLARE_ACCOUNT_ID`、`AIG_PUBLIC_URL`、节点分片（`AIG_TIER{1,2,3}_NODES_01..10`）、访问模型 allowlist 以及需要的运行时开关。
+2. **Secrets**：`CLOUDFLARE_API_TOKEN`、`AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`、凭据分片（`AIG_TIER{1,2,3}_CREDENTIALS_01..10`）。使用 Tier 2 订阅时另需 `AIG_TOKEN_ENCRYPTION_KEY`（`openssl rand -base64 32` 生成）。
+3. 推送到 `main`（或手动运行 **Deploy** workflow）。CI 会校验配置、应用 D1 迁移、原子部署 Worker、健康检查，失败自动回滚。
+
+### 本地部署（备选）
 
 要求：Node.js **>=22.18.0**、Cloudflare 账户，以及至少一个上游凭据。
 

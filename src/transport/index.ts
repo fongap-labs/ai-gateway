@@ -36,11 +36,19 @@ export function resolveUpstreamPath(protocol: Protocol, surface: Surface): strin
 
 // Protocol-aware upstream headers. Client auth material never reaches the
 // upstream for either protocol; the node credential is applied in the
-// protocol's native auth header shape.
-export function buildUpstreamHeadersFor(protocol: Protocol, request: Request, credential: string, requestId: string): Headers {
+// protocol's native auth header shape. `options.auth === 'oauth'` switches
+// the Anthropic shape from x-api-key to Bearer for subscription nodes, and
+// `options.extraHeaders` applies deployment-owned subscription headers.
+export function buildUpstreamHeadersFor(
+  protocol: Protocol,
+  request: Request,
+  credential: string,
+  requestId: string,
+  options?: { auth?: 'oauth', extraHeaders?: Readonly<Record<string, string>> },
+): Headers {
   switch (protocol) {
-    case 'openai': return buildOpenAIHeaders(request, credential, requestId);
-    case 'anthropic': return buildAnthropicHeaders(request, credential, requestId);
+    case 'openai': return buildOpenAIHeaders(request, credential, requestId, options?.extraHeaders);
+    case 'anthropic': return buildAnthropicHeaders(request, credential, requestId, options);
     default: throw new Error(`unknown protocol: ${protocol}`);
   }
 }

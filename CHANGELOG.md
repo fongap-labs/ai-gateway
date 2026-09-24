@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: add Tier 2 subscription OAuth adapters — `auth:"oauth"` Tier 2-only node marker, PKCE onboarding routes (`/oauth/start`, `/oauth/callback/<provider>`), AES-GCM encrypted subscription token store in D1, dispatch-time credential resolution with isolate caching and automatic refresh, and deployment-owned provider registry via `AIG_OAUTH_PROVIDERS` plus `AIG_TOKEN_ENCRYPTION_KEY` (fail-closed when unset).
+
 - refactor: move pull-request CI to Action Worker while retaining main and scheduled validation until deployment is centralized.
 
 - ci: add a lightweight GitHub Actions merge gate for centralized Action Worker evidence.

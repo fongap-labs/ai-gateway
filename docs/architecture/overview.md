@@ -73,7 +73,8 @@ Logical-model fallback is a separate outer orchestration layer. The closed famil
 ```text
 Model Registry     logical model policy and declared capabilities
 Node config         provider name, base URL, logical→upstream model mapping,
-                    optional Tier 2/3 priority, credential binding
+                    optional Tier 2/3 priority, credential binding,
+                    optional Tier 2-only `auth:"oauth"` subscription marker
 Provider Profile    provider → protocol + routable surfaces
 Request             native/protocol/model-family fallback orchestration and shared budgets
 Scheduler           which eligible node should receive the next attempt
@@ -82,16 +83,19 @@ Transport           how to call the selected upstream endpoint
 Protocol            client request validation and protocol-specific errors
 Conversion          supported Chat ↔ Messages semantic bridge
 Stream              first-event guards, SSE lifecycle, commit boundary
+OAuth               Tier 2 subscription credentials: provider registry (AIG_OAUTH_PROVIDERS),
+                    PKCE onboarding routes, AES-GCM token store, dispatch-time resolution
 Observability       logs, metrics, D1/token usage, diagnostics
 Runtime             runtime availability and public read-only projections
 Dashboard           presentation only
 ```
 
-These boundaries are intentional. Transport does not select nodes. Scheduler and Reliability do not parse provider wire events. Model-family fallback does not replace node scheduling or reliability state; it only decides which compatible logical model is evaluated next after the current pool is exhausted. Provider profiles are the single owner of protocol/surface structure; account records cannot override them.
+These boundaries are intentional. Transport does not select nodes. Scheduler and Reliability do not parse provider wire events. Model-family fallback does not replace node scheduling or reliability state; it only decides which compatible logical model is evaluated next after the current pool is exhausted. Provider profiles are the single owner of protocol/surface structure; account records cannot override them. OAuth owns subscription credential storage and resolution; the scheduler never reads the token store, and a resolution failure surfaces as a pre-dispatch auth rotation.
 
 ## Current invariants
 
-- Account-level Node Config accepts `id`, `provider`, `base_url`, `models`, and optional `priority`; `protocol`, `surfaces`, and `limits` are rejected.
+- Account-level Node Config accepts `id`, `provider`, `base_url`, `models`, optional `priority`, and the Tier 2-only `auth:"oauth"` subscription marker; `protocol`, `surfaces`, and `limits` are rejected.
+- `auth:"oauth"` is valid only on Tier 2 nodes; Tier 2 subscription nodes must not declare a static credential in `AIG_TIER{N}_CREDENTIALS_*` (one credential source per node).
 - Provider Wire Profiles derive runtime protocol/surfaces: `anthropic` → Messages, `openai` → Chat + Responses, all other providers → OpenAI-compatible Chat.
 - Native OpenAI Chat targets `/v1/chat/completions` upstream.
 - Native OpenAI Responses targets `/v1/responses` upstream.
@@ -109,6 +113,10 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - A hedge twin remains in the primary request's protocol and surface.
 - Tier 1 uses Eligibility → soft Affinity → P2C with passive TTFT and bounded heat protection; access-key groups do not alter its score.
 - Tier 2/3 remain separate from Tier 1 adaptive state.
+- Tier 2 subscription (`auth:"oauth"`) credentials are resolved at dispatch time from the OAuth token store: isolate cache first, D1 only on cache miss or near expiry, refresh inside a 5-minute margin; resolution failures are pre-dispatch auth rotations with an isolate-local negative cache so a broken subscription does not hammer the provider's token endpoint.
+- Subscription access/refresh tokens are AES-GCM encrypted with the `AIG_TOKEN_ENCRYPTION_KEY` Worker secret; a missing key disables all subscription onboarding and resolution (fail-closed), and tokens are never stored in D1 as plaintext.
+- OAuth onboarding (`/oauth/start`, `/oauth/callback/<provider>`, `/oauth/paste`) uses PKCE S256 with a single-use D1 flow state (10-minute TTL); `/oauth/start` requires a gateway access key and a matching Tier 2 node, and every callback/paste consumes its state row regardless of outcome.
+- Built-in OAuth defaults for the three mainstream subscription providers (anthropic, openai, google) embed public constants from their open-source CLIs; `AIG_OAUTH_PROVIDERS` entries replace defaults per-provider (wholesale). Providers with a `manual_redirect_url` (Google) use the manual code-paste flow because their OAuth client does not allow arbitrary gateway redirect URIs.
 - Short-lived scheduler/reliability state is isolate-local best-effort and disappears with the isolate.
 - D1 Token totals track real physical upstream-reported usage, while public `次请求` uses successfully delivered request counts.
 - D1 token usage and public model status are observability, not routing authority.
@@ -126,6 +134,8 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - Logical-model fallback policy: `src/request/model-fallback.ts` and its contract tests.
 - Protocol fallback matrix: protocol fallback config/conversion modules and their contract tests.
 - Failure taxonomy: `src/reliability/classify.ts`.
+- OAuth provider registry (subscription endpoints/clients/scopes/headers): `src/oauth/provider-configs.ts` parsing `AIG_OAUTH_PROVIDERS`; token storage/refresh and onboarding routes: `src/oauth/`.
+- Subscription token schema: `migrations/0011_subscription_tokens.sql` (owned by `src/oauth/token-store.ts`; observability never reads or writes these tables).
 
 Architecture documentation summarizes these sources; it must be corrected when executable behavior changes.
 
