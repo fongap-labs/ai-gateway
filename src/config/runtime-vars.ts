@@ -7,8 +7,8 @@
 // (timeouts.ts) derives its clamp limits from the int entries; docs and
 // example configs reference the same names.
 //
-// Sensitive values (AIG_ACCESS_KEY_<GROUP>, TIER*_CREDENTIALS_*, CLOUDFLARE_API_TOKEN)
-// are NOT listed here — they are Secrets, never plain Worker variables.
+// Sensitive values (AIG_ACCESS_KEY_<GROUP>, TIER*_CREDENTIALS_*, AIG_TOKEN_ENCRYPTION_KEY,
+// CLOUDFLARE_API_TOKEN) are NOT listed here - they are Secrets, never plain Worker variables.
 //
 // CLOUDFLARE_ACCOUNT_ID and AIG_USAGE_D1_ID are deployment identifiers.
 // AIG_PUBLIC_URL is deployment-owned runtime metadata used by the dashboard;
@@ -60,6 +60,11 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_LOG_LEVEL', def: 'info' },
   { name: 'AIG_PROTOCOL_FALLBACKS', def: '' },
   { name: 'AIG_DASHBOARD_MODELS', def: '' },
+  // Tier 2 subscription OAuth provider registry: JSON object keyed by
+  // provider name -> { authorize_url, token_url, client_id, scope,
+  // upstream_headers? }. Unset disables all subscription onboarding and
+  // resolution (fail-closed). See docs/operations/configuration.md.
+  { name: 'AIG_OAUTH_PROVIDERS', def: '' },
 ];
 
 export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [

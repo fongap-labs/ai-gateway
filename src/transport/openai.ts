@@ -11,7 +11,7 @@
 //
 // Surfaces:
 //   chat_completions -> {base_url}/v1/chat/completions
-//   responses        -> {base_url}/v1/responses   (NATIVE — never converted
+//   responses        -> {base_url}/v1/responses   (NATIVE - never converted
 //                                                     to/from chat completions)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,8 +44,9 @@ export function resolveOpenAIPath(surface: Surface): string {
 // Strict upstream header allowlist. Client auth material is never forwarded;
 // the only Authorization header is the one built from the Runtime Node
 // credential. See buildUpstreamHeadersFor (transport/index.ts) for the
-// protocol dispatch.
-export function buildOpenAIHeaders(request: Request, credential: string, requestId: string): Headers {
+// protocol dispatch. `extraHeaders` carries deployment-owned subscription
+// headers resolved by the request layer (never client-supplied values).
+export function buildOpenAIHeaders(request: Request, credential: string, requestId: string, extraHeaders?: Readonly<Record<string, string>>): Headers {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${credential}`);
   headers.set('Content-Type', request.headers.get('content-type') || 'application/json');
@@ -55,12 +56,23 @@ export function buildOpenAIHeaders(request: Request, credential: string, request
   headers.set('X-Request-ID', requestId);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('Idempotency-Key', idempotencyKey.slice(0, 256));
+  applyExtraUpstreamHeaders(headers, extraHeaders);
   return headers;
+}
+
+// Applies deployment-owned subscription headers last so they can override
+// protocol defaults (e.g. a provider-specific beta header). Values are from
+// AIG_OAUTH_PROVIDERS, never from the client request.
+export function applyExtraUpstreamHeaders(headers: Headers, extraHeaders?: Readonly<Record<string, string>>): void {
+  if (!extraHeaders) return;
+  for (const [name, value] of Object.entries(extraHeaders)) {
+    headers.set(name, value);
+  }
 }
 
 // OpenAI Responses first-real-output predicate for the first-event guard:
 // a `response.*.delta` event carries model output; lifecycle events
-// (response.created / output_item.added / …) do NOT commit the failover
+// (response.created / output_item.added / ...) do NOT commit the failover
 // boundary, so a node that announces itself and then dies can still be
 // rotated away from.
 export function isResponsesRealOutput(json: unknown): boolean {
@@ -71,7 +83,7 @@ export function isResponsesRealOutput(json: unknown): boolean {
 }
 
 // OpenAI Chat meaningful-output predicate for the Tier 1 first-event guard.
-// The original Chat guard committed on ANY parseable non-error event — a bare
+// The original Chat guard committed on ANY parseable non-error event - a bare
 // role-only delta ({"delta":{"role":"assistant"}}) closed the failover boundary
 // and was recorded as TTFT, even though no real token had flowed. For Tier 1's
 // passive TTFT learning this is only used when the node is tier-1, so Tier 2/3
@@ -79,7 +91,7 @@ export function isResponsesRealOutput(json: unknown): boolean {
 // increment, or a tool-call increment; role-only / empty / usage-only deltas do
 // NOT commit, so a node that announces itself and then dies can still rotate.
 // OpenAI Chat meaningful-output predicate for the Tier 1 first-event guard.
-  // The original Chat guard committed on ANY parseable non-error event — a bare
+  // The original Chat guard committed on ANY parseable non-error event - a bare
   // role-only delta ({"delta":{"role":"assistant"}}) closed the failover
   // boundary and was recorded as TTFT, even though no real token had flowed. For Tier 1's
   // passive TTFT learning this is only used when the node is tier-1, so Tier 2/3
@@ -111,7 +123,7 @@ function isMeaningfulToolCall(call: unknown): boolean {
   ));
 }
 
-// Conversion-aware predicate for cross-protocol O→A streaming (OpenAI upstream,
+// Conversion-aware predicate for cross-protocol O->A streaming (OpenAI upstream,
 // Anthropic client). The Anthropic stream converter does NOT convert reasoning
 // content, so the failover boundary must NOT commit on reasoning-only deltas.
 // Real output = non-empty text OR tool-call increment only.
@@ -124,7 +136,7 @@ export function isOpenAIChatRealOutputForConversion(json: unknown): boolean {
     if (!delta || typeof delta !== 'object') continue;
     if (typeof delta.content === 'string' && delta.content.trim().length > 0) return true;
     if (Array.isArray(delta.tool_calls) && delta.tool_calls.some(isMeaningfulToolCall)) return true;
-    // reasoning / reasoning_content deliberately NOT counted: the O→A converter
+    // reasoning / reasoning_content deliberately NOT counted: the O->A converter
     // drops them, so committing the failover boundary on them would produce
     // an honest-commit but empty-output stream for the Anthropic client.
   }
@@ -141,7 +153,7 @@ export function isOpenAIChatCompletionMeaningful(json: unknown): boolean {
     if (typeof reasoning === 'string' && reasoning.trim().length > 0) return true;
     if (Array.isArray(message.tool_calls) && message.tool_calls.some(isMeaningfulToolCall)) return true;
     // Legitimate refusal: the model declined to answer. This is valid output,
-    // not an empty response — do not rotate away from it.
+    // not an empty response - do not rotate away from it.
     if (typeof message.refusal === 'string' && message.refusal.trim().length > 0) return true;
   }
   return false;

@@ -51,11 +51,11 @@ Tier 3  付费 API 托底
 
 每个请求共用一套 attempt 和时间预算。原生协议优先；跨协议只支持 **OpenAI Chat Completions ↔ Anthropic Messages**，**OpenAI Responses 保持 Native Only**。
 
-Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provider-Model 热度动态分流；模型家族 fallback 也有明确上限。
+Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provider-Model 热度动态分流；模型家族 fallback 也有明确上限。\n\nTier 2 同时支持静态 API-Key 节点和**订阅节点**（`auth: "oauth"`）：运营者自己的 Claude / Codex / Gemini 订阅通过 PKCE 授权接入，Token 以 AES-GCM 加密存储在 D1，调度时自动刷新、按需解析，全程 fail-closed。详见 [Configuration - Tier 2 订阅](docs/operations/configuration.md#tier-2-subscriptions-oauth)。
 
 核心行为：
 
-- **多 Provider / 多 Key 聚合**：客户端只看到一个逻辑入口。
+- **多 Provider / 多 Key 聚合**：客户端只看到一个逻辑入口。\n- **订阅权益接入**：OAuth (PKCE) 授权、Token 加密存储、自动刷新。
 - **额度保护**：429 进入恢复机制，模型型 404 只隔离对应映射。
 - **流式安全**：真正内容开始输出后，不再透明切换上游。
 - **放大可见**：Token、成功请求、TTFT、retry / fallback / hedge 分开统计。
