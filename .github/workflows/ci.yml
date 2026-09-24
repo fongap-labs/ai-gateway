@@ -1,83 +1,61 @@
 name: CI
 
-# Pull-request CI is executed centrally by fongap-labs/action-worker.
-# Main and scheduled validation remain local until deployment is centralized.
-
 on:
   push:
-    branches:
-      - main
-  schedule:
-    - cron: '0 3 * * *'
+    branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  statuses: read
+permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-dispatch-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci-evidence:
-    name: ci-evidence
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  dispatch:
+    name: Dispatch Central CI
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
+      - name: Notify Action Worker
+        env:
+          AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+          REQUEST_ID: ci-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
+          [ -n "$AW_DISPATCH_TOKEN" ] || {
+            echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
+            exit 77
+          }
 
-      - name: Install dependencies
-        run: npm ci
+          payload="$(
+            jq -cn \
+              --arg request_id "$REQUEST_ID" \
+              --arg repository "$REPOSITORY" \
+              --arg head_sha "$HEAD_SHA" \
+              '{
+                event_type: "run-central-ci-ref",
+                client_payload: {
+                  schema_version: "1",
+                  request_id: $request_id,
+                  repository: $repository,
+                  head_sha: $head_sha
+                }
+              }'
+          )"
 
-      - name: Validate (merge)
-        run: npm run validate:merge
-
-      - name: Dry-run Worker bundle
-        run: npm run check:deploy
-
-  validate-deploy:
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate (deploy)
-        run: npm run validate:deploy
-
-  validate-merge:
-    name: validate-merge
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    needs:
-      - ci-evidence
-    steps:
-      - name: Validate merge policy
-        uses: fongap-labs/action-worker/.github/actions/validate-merge-policy@main
-        with:
-          ci-result: ${{ needs.ci-evidence.result }}
-          head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
-          require-pr-governance: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
+          curl -fsS \
+            --retry 2 \
+            --retry-delay 1 \
+            --request POST \
+            --header "Authorization: Bearer $AW_DISPATCH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
+            --data "$payload"
