@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: bind runtime build identity to the validated AI Gateway source SHA instead of the Action Worker runner SHA.
+
 - feat: add Tier 2 subscription OAuth adapters with Tier 2-only `auth:"oauth"` nodes, PKCE onboarding, AES-GCM token storage, dispatch-time refresh, built-in provider defaults, and fail-closed deployment configuration.
 
 - refactor: dispatch production deploy through Action Worker and remove repository-local deployment credentials, orchestration, and gate logic.
