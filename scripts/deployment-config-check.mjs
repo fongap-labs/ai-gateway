@@ -83,7 +83,7 @@ for (const removed of [
 }
 
 const workflowDir = path.join(root, '.github', 'workflows');
-const permanentWorkflows = ['ci.yml', 'deploy.yml', 'dispatch-pr-governance.yml', 'model-discovery.yml'];
+const permanentWorkflows = ['ci.yml', 'deploy.yml', 'dispatch-pr-governance.yml', 'model-discovery.yml', 'validate-central-merge.yml'];
 assert.deepEqual(
   fs.readdirSync(workflowDir).filter((name) => /\.ya?ml$/i.test(name)).sort(),
   permanentWorkflows,
