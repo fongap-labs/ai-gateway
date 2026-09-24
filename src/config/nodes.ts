@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+﻿// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
 // Config Layer: environment shards -> Runtime Node list.
@@ -11,7 +11,7 @@
 //   id, provider, base_url, models
 // Optional:
 //   priority (non-negative integer number, default 100)
-//   auth ("oauth"; Tier 2 only — marks a subscription node whose credential
+//   auth ("oauth"; Tier 2 only 鈥?marks a subscription node whose credential
 //         is resolved from the OAuth token store at dispatch time instead of
 //         a static AIG_TIER{N}_CREDENTIALS_* secret)
 //
@@ -134,25 +134,25 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
 
   const credentials = new Map<string, string>();
   const credentialTiers = new Map<string, string>();
-  let conflict = false;
+  let hasConflict = false;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedSecretShards) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON object { nodeId: credential }`);
-      conflict = true;
+      hasConflict = true;
       continue;
     }
     const shardTier = `tier-${shard.tierNumber}`;
     for (const [nodeId, credential] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof credential !== 'string' || !credential.trim()) {
         diagnostics.push(`${shard.key}: credential for "${nodeId}" is empty`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       if (credentials.has(nodeId)) {
         diagnostics.push(`credential id "${nodeId}" defined in multiple secret shards (${credentialTiers.get(nodeId)} and ${shardTier})`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       credentials.set(nodeId, credential);
@@ -160,7 +160,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
-  const allowInsecure = getBool(env, 'AIG_CAN_USE_HTTP', false);
+  const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -169,7 +169,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON array of node objects`);
-      conflict = true;
+      hasConflict = true;
       continue;
     }
     for (const rawNode of parsed) {
@@ -180,14 +180,14 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
       const secretTier = ID_PATTERN.test(rawId) ? credentialTiers.get(rawId) : undefined;
       if (secretTier && secretTier !== tier) {
         diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}.`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
-      const node = buildRuntimeNode(rawNode, tier, credentials, allowInsecure, shard.key, diagnostics);
+      const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics);
       if (!node) continue;
       if (seenIds.has(node.id)) {
         diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key})`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       seenIds.set(node.id, shard.key);
@@ -201,7 +201,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   }
 
   if (auxDiagnostics.length > 0) status = 'invalid';
-  else if (conflict || nodes.length === 0) status = 'invalid';
+  else if (hasConflict || nodes.length === 0) status = 'invalid';
   else if (nodes.length < nodesDeclared) status = 'degraded';
   else status = 'ready';
   const ready = status === 'ready' || status === 'degraded';
@@ -233,7 +233,7 @@ function buildRuntimeNode(
   rawNode: unknown,
   tier: NodeTier,
   credentials: Map<string, string>,
-  allowInsecure: boolean,
+  isHttpAllowed: boolean,
   sourceKey: string,
   diagnostics: string[],
 ): RuntimeNode | null {
@@ -295,7 +295,7 @@ function buildRuntimeNode(
     diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
     return null;
   }
-  if (!allowInsecure && url.protocol !== 'https:') {
+  if (!isHttpAllowed && url.protocol !== 'https:') {
     diagnostics.push(`node "${id}": base_url must use https:// (set AIG_CAN_USE_HTTP=true to override)`);
     return null;
   }
