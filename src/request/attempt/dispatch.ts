@@ -19,6 +19,7 @@ import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/in
 import { streamUsageSupported } from '../../config/provider-quirks.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
+import { getSubscriptionAdapter } from '../../subscription/index.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -28,19 +29,6 @@ import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
-
-// Claude OAuth subscription upstreams require the beta flags below; they are
-// the mainstream reverse-proxy shape (claude-relay-service sends the same
-// set for OAuth accounts) and tell the backend to accept the OAuth bearer
-// credential for the subscription entitlement. The client's own beta list is
-// preserved and these are appended when missing.
-const CLAUDE_OAUTH_REQUIRED_BETAS = Object.freeze([
-  'claude-code-20250219',
-  'oauth-2025-04-20',
-  'interleaved-thinking-2025-05-14',
-  'fine-grained-tool-streaming-2025-05-14',
-]);
-const CLAUDE_CLI_USER_AGENT = 'claude-cli/1.0.57 (external, cli)';
 
 // AttemptContext and AttemptOutcome are defined in src/types/request.ts
 // (the cross-module source of truth). attempt.ts receives its context from
@@ -133,14 +121,43 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageSupported(node, env)) {
     outboundObject = withUsageStreamOptions(outboundObject);
   }
-  // Codex subscription semantics: the ChatGPT/Codex Responses backend
-  // expects the `instructions` field to exist on the Responses wire shape
-  // (first-party codex-tui always sends one, empty when none). Only the
-  // subscription path normalizes it; plain API-key Responses nodes are
-  // forwarded exactly as the client sent them.
-  if (node.auth === 'oauth' && node.provider === 'openai' && surface === 'responses'
-    && (outboundObject.instructions === undefined || outboundObject.instructions === null)) {
-    outboundObject = { ...outboundObject, instructions: '' };
+
+  // Tier 2 subscription nodes resolve their credential from the OAuth token
+  // store at dispatch time (isolate cache first; D1/refresh only on miss),
+  // then hand the resolved credential to the provider's subscription
+  // adapter, which owns the subscription-specific request shape (headers,
+  // body normalization). Adapter or resolution failure is a pre-dispatch
+  // auth end: no upstream contact, no physical attempt accounting, and the
+  // node rotates for this request.
+  let credential = node.credential;
+  let subscriptionExtraHeaders: Readonly<Record<string, string>> | undefined;
+  if (node.auth === 'oauth') {
+    const resolved = await resolveSubscriptionCredential(env, node);
+    if (!resolved.ok) {
+      logger.info(`oauth credential resolution failed node=${node.id} reason=${resolved.reason}`);
+      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    }
+    credential = resolved.token;
+    const adapter = getSubscriptionAdapter(node.provider);
+    const providerConfig = getOAuthProvider(env, node.provider);
+    if (!adapter) {
+      logger.info(`oauth credential resolved but no subscription adapter exists node=${node.id} provider=${node.provider}`);
+      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    }
+    const prepared = adapter.prepare({
+      node, credential: resolved, request, body: outboundObject, surface,
+    });
+    if (!prepared) {
+      logger.info(`subscription adapter refused dispatch node=${node.id} provider=${node.provider}`);
+      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    }
+    if (prepared.body) outboundObject = prepared.body;
+    // Adapter headers win over provider-config headers; both are
+    // deployment/first-party values, never client identity material.
+    subscriptionExtraHeaders = {
+      ...(providerConfig?.upstreamHeaders || {}),
+      ...prepared.headers,
+    };
   }
   const outboundBody = JSON.stringify(outboundObject);
 
@@ -151,55 +168,8 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     return rotateWithNeutralEnd(state, node, classifyPreDispatchInvalidBaseUrl().kind, c, true);
   }
 
-  // Tier 2 subscription nodes resolve their credential from the OAuth token
-  // store at dispatch time (isolate cache first; D1/refresh only on miss).
-  // A resolution failure is a pre-dispatch auth end: no upstream contact, no
-  // physical attempt accounting, and the node rotates for this request.
-  let credential = node.credential;
-  let oauthExtraHeaders: Readonly<Record<string, string>> | undefined;
-  if (node.auth === 'oauth') {
-    const resolved = await resolveSubscriptionCredential(env, node);
-    if (!resolved.ok) {
-      logger.info(`oauth credential resolution failed node=${node.id} reason=${resolved.reason}`);
-      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
-    }
-    credential = resolved.token;
-    const providerConfig = getOAuthProvider(env, node.provider);
-    // Subscription headers follow the mainstream reverse-proxy shape for each
-    // upstream (client-supplied identity values are never forwarded).
-    // OpenAI/Codex: account id + first-party originator marker.
-    const codexHeaders = node.provider === 'openai' ? {
-      ...(resolved.accountId ? { 'chatgpt-account-id': resolved.accountId } : {}),
-      Originator: 'codex-tui',
-    } : undefined;
-    // Anthropic/Claude: OAuth accounts authenticate the subscription through
-    // the required beta flags; the client's own beta list is preserved and
-    // the required flags are appended when missing. x-app and a first-party
-    // claude-cli user agent complete the client shape.
-    let anthropicSubscriptionHeaders: Record<string, string> | undefined;
-    if (node.provider === 'anthropic') {
-      const clientBeta = (request.headers.get('anthropic-beta') || '')
-        .split(',').map((part) => part.trim()).filter(Boolean);
-      const seen = new Set(clientBeta);
-      const mergedBeta = [
-        ...clientBeta,
-        ...CLAUDE_OAUTH_REQUIRED_BETAS.filter((beta) => !seen.has(beta)),
-      ].join(',');
-      anthropicSubscriptionHeaders = {
-        'anthropic-beta': mergedBeta,
-        'x-app': 'cli',
-        'user-agent': CLAUDE_CLI_USER_AGENT,
-      };
-    }
-    oauthExtraHeaders = {
-      ...(providerConfig?.upstreamHeaders || {}),
-      ...(codexHeaders || {}),
-      ...(anthropicSubscriptionHeaders || {}),
-    };
-  }
-
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,
-    node.auth === 'oauth' ? { auth: 'oauth', extraHeaders: oauthExtraHeaders } : undefined);
+    node.auth === 'oauth' ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined);
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
   if (c.hedgeAbort) {

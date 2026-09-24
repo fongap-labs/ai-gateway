@@ -189,11 +189,11 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
   one; Claude/Codex are public PKCE clients and do not). Setting
   `manual_redirect_url` selects the manual code-paste flow — omit it (or set
   your own gateway callback via the default) for the automatic redirect flow.
-  `dispatch_ready: false` (default true for every entry unless stated) keeps
-  OAuth onboarding working while failing runtime dispatch closed; the
-  built-in `google` default uses it because no verified Gemini subscription
-  backend exists behind the OpenAI-compatible profile. Flip it only after a
-  subscription adapter has been verified against the real backend.
+  Dispatch eligibility is owned by the subscription adapter registry
+  (`src/subscription/`), not by configuration: providers whose adapter is
+  missing or refuses (the built-in `google` default, because no verified
+  Gemini subscription backend exists behind the OpenAI-compatible profile)
+  keep OAuth onboarding working while failing runtime dispatch closed.
 
 - `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
   Generate with: `openssl rand -base64 32`. Without it, subscription

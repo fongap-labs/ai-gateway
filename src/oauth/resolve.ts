@@ -31,7 +31,7 @@ import type { RuntimeNode } from '../types/node.ts';
 type CacheEntry = { token: string, expiresAt: number, accountId: string | null };
 const isolateCache = new Map<string, CacheEntry>();
 
-export type ResolveFailureReason = 'unconfigured_provider' | 'adapter_missing' | 'no_token' | 'refresh_failed' | 'store_unavailable';
+export type ResolveFailureReason = 'unconfigured_provider' | 'no_token' | 'refresh_failed' | 'store_unavailable';
 
 // Negative cache: a failed refresh is remembered for this long so concurrent
 // requests do not hammer the provider's token endpoint when a subscription
@@ -47,8 +47,12 @@ export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 // requests await the same Promise instead of issuing parallel refreshes.
 const inFlightResolutions = new Map<string, Promise<ResolveResult>>();
 
+/** The resolved (ok) subscription credential handed to subscription
+ *  adapters and the dispatch header path. */
+export type ResolvedSubscriptionCredential = { ok: true, token: string, accountId: string | null };
+
 export type ResolveResult =
-  | { ok: true, token: string, accountId: string | null }
+  | ResolvedSubscriptionCredential
   | { ok: false, reason: ResolveFailureReason };
 
 // PKCE token refresh against the provider's token endpoint. Never logs token
@@ -108,14 +112,6 @@ async function resolveOnce(
 
   const providerConfig = getOAuthProvider(env, node.provider);
   if (!providerConfig) return { ok: false, reason: 'unconfigured_provider' };
-  if (providerConfig.dispatchReady === false) {
-    // OAuth onboarding may have succeeded, but no verified subscription
-    // backend (endpoint + request shape + entitlement semantics) exists for
-    // this provider behind the OpenAI-compatible profile. Dispatch fails
-    // closed rather than pretending the entitlement is consumable.
-    resolutionFailures.set(node.id, { until: now + RESOLUTION_FAILURE_TTL_MS, reason: 'adapter_missing' });
-    return { ok: false, reason: 'adapter_missing' };
-  }
 
   let stored: StoredSubscriptionToken | null = null;
   try {
