@@ -41,6 +41,11 @@ export type OAuthProviderConfig = {
    *  This is required for providers whose OAuth client does not allow
    *  arbitrary redirect URIs (e.g., Google). */
   manualRedirectUrl?: string,
+  /** Whether dispatch through this provider's subscription entitlement is
+   *  verified and allowed. False means OAuth onboarding works but runtime
+   *  dispatch fails closed until a subscription adapter is verified.
+   *  Absent means true (dispatchable). */
+  dispatchReady?: boolean,
   upstreamHeaders: OAuthUpstreamHeaders,
 };
 
@@ -63,6 +68,11 @@ const DEFAULT_PROVIDERS: OAuthProvidersConfig = Object.freeze({
     scope: 'openid email profile offline_access',
     upstreamHeaders: Object.freeze({}),
   }),
+  // Google onboarding is supported, but no verified Gemini/Code Assist
+  // subscription backend (endpoint + request shape + entitlement headers)
+  // exists behind the OpenAI-compatible Chat profile, so dispatch fails
+  // closed. Flip dispatch_ready via AIG_OAUTH_PROVIDERS only after a
+  // subscription adapter has been verified against the real backend.
   google: Object.freeze({
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -70,6 +80,7 @@ const DEFAULT_PROVIDERS: OAuthProvidersConfig = Object.freeze({
     clientSecret: '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',
     scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs',
     manualRedirectUrl: 'https://codeassist.google.com/authcode',
+    dispatchReady: false,
     upstreamHeaders: Object.freeze({}),
   }),
 });
@@ -123,6 +134,9 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
     manualRedirectUrl = murl;
   }
 
+  const dispatchReady = raw.dispatch_ready === undefined ? true
+    : (raw.dispatch_ready === true || raw.dispatch_ready === 'true');
+
   let upstreamHeaders: OAuthUpstreamHeaders = {};
   if (raw.upstream_headers !== undefined) {
     if (!isRecord(raw.upstream_headers)) {
@@ -143,6 +157,7 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
     authorizeUrl, tokenUrl, clientId, scope,
     ...(clientSecret ? { clientSecret } : {}),
     ...(manualRedirectUrl ? { manualRedirectUrl } : {}),
+    ...(!dispatchReady ? { dispatchReady: false } : {}),
     upstreamHeaders,
   });
 }

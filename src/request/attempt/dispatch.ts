@@ -143,7 +143,12 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     }
     credential = resolved.token;
     const providerConfig = getOAuthProvider(env, node.provider);
-    oauthExtraHeaders = providerConfig?.upstreamHeaders;
+    // ChatGPT/Codex subscription upstreams identify the subscription account
+    // via the chatgpt-account-id header (OpenAI OAuth token responses carry
+    // account_id). Other providers contribute only their configured headers.
+    const accountHeader = node.provider === 'openai' && resolved.accountId
+      ? { 'chatgpt-account-id': resolved.accountId } : undefined;
+    oauthExtraHeaders = { ...(providerConfig?.upstreamHeaders || {}), ...(accountHeader || {}) };
   }
 
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,

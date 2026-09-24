@@ -155,11 +155,11 @@ The three mainstream international providers ship with **built-in defaults**
 (public OAuth constants from their open-source CLIs) — no
 `AIG_OAUTH_PROVIDERS` configuration is required to onboard them:
 
-| Provider key | Subscription | Flow |
-| --- | --- | --- |
-| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) |
-| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) |
-| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) |
+| Provider key | Subscription | Onboarding | Dispatch |
+| --- | --- | --- | --- |
+| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer, native Messages) |
+| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id`) |
+| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | **Fail-closed** — no verified Gemini subscription backend behind the OpenAI-compatible profile |
 
 To onboard with defaults, configure the Tier 2 node with the matching
 provider name and run the onboarding flow below. To override a default or
@@ -189,6 +189,11 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
   one; Claude/Codex are public PKCE clients and do not). Setting
   `manual_redirect_url` selects the manual code-paste flow — omit it (or set
   your own gateway callback via the default) for the automatic redirect flow.
+  `dispatch_ready: false` (default true for every entry unless stated) keeps
+  OAuth onboarding working while failing runtime dispatch closed; the
+  built-in `google` default uses it because no verified Gemini subscription
+  backend exists behind the OpenAI-compatible profile. Flip it only after a
+  subscription adapter has been verified against the real backend.
 
 - `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
   Generate with: `openssl rand -base64 32`. Without it, subscription
@@ -219,8 +224,20 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
    the tokens, and confirms.
 
 Flow states are single-use and expire after 10 minutes. Token refresh happens
-automatically at dispatch time (5-minute expiry margin) with an isolate-local
-cache and a 60-second negative cache on refresh failures.
+automatically at dispatch time with an isolate-local cache and:
+
+- a 5-minute expiry margin before proactive refresh;
+- isolate-level singleflight (concurrent requests for one node share a
+  single refresh);
+- cross-isolate compare-and-swap on a persisted `refresh_version`, so a
+  losing refresh writer reloads the winner's rotated credential instead of
+  clobbering it — one refresh token remains the single persisted authority;
+- a 60-second negative cache on refresh failures so a broken subscription
+  does not hammer the provider's token endpoint.
+
+The OpenAI OAuth response's `account_id` is persisted (plaintext, not a
+secret) and sent as the `chatgpt-account-id` header on every Codex
+subscription dispatch.
 
 ## Runtime variables
 
