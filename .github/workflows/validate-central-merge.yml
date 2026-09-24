@@ -1,8 +1,7 @@
 name: Validate Central Merge
 
 on:
-  repository_dispatch:
-    types: [validate-central-merge]
+  status:
 
 permissions:
   contents: read
@@ -11,7 +10,7 @@ permissions:
 
 jobs:
   validate:
-    if: ${{ github.event.client_payload.schema_version == '1' }}
+    if: ${{ github.event.context == 'PR Governance' && github.event.state == 'success' }}
     uses: fongap-labs/action-worker/.github/workflows/validate-central-merge.yml@main
     with:
-      head_sha: ${{ github.event.client_payload.head_sha }}
+      head_sha: ${{ github.event.sha }}
