@@ -14,9 +14,21 @@
 //     first-party client always sends one (empty when none). Client-provided
 //     instructions pass through verbatim.
 
-import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionAdapter } from './types.ts';
+import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
+import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
 
 const CODEX_ORIGINATOR = 'codex-tui';
+
+// Codex/ChatGPT subscription quota markers: absolute window-reset
+// instants (epoch seconds) on headers plus a seconds-until-reset body
+// field on quota errors. Hints only — the caller caps and recovers.
+const CODEX_RESET_HEADERS = Object.freeze([
+  'x-codex-primary-used-window-reset',
+  'x-codex-secondary-used-window-reset',
+  'x-ratelimit-reset-requests',
+  'x-ratelimit-reset-tokens',
+]);
+const CODEX_RESET_BODY_FIELDS = Object.freeze(['resets_in_seconds', 'reset_at', 'resets_at']);
 
 export const codexSubscriptionAdapter: SubscriptionAdapter = {
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null {
@@ -34,5 +46,13 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
       body = { ...ctx.body, instructions: '' };
     }
     return { headers, body };
+  },
+
+  quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {
+    if (failure.status !== 429) return null;
+    const resetAt = hintFromResetHeaders(failure.headers, CODEX_RESET_HEADERS, now)
+      ?? hintFromResetBody(failure.body, CODEX_RESET_BODY_FIELDS);
+    const relative = hintFromSecondsHeaders(failure.headers, CODEX_RESET_HEADERS);
+    return capHint(resetAt, relative, now);
   },
 };

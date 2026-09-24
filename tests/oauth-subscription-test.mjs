@@ -1187,5 +1187,84 @@ await test('plain API-key anthropic nodes get no forced oauth betas', async () =
   assert.equal(seenXApp, null, 'no x-app for API-key nodes');
 });
 
+// ---- Quota reset hints (entitlement windows as cooldown hints) ---------------
+
+const { getNodeState } = await import('../src/reliability/node-state.ts');
+
+await test('codex subscription 429 with window-reset header extends the cooldown to the quota window', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [tier2OauthNode('codex-quota', 'openai')],
+    db,
+  });
+  await storeSubscriptionToken(env, {
+    nodeId: 'codex-quota', provider: 'openai', accessToken: 'tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  const resetEpoch = Math.floor((Date.now() + 2 * 3600_000) / 1000); // 2h out
+  withMockFetch(async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'codex-quota.example.com') {
+      return new Response(JSON.stringify({ error: { message: 'quota exceeded' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'x-codex-primary-used-window-reset': String(resetEpoch) },
+      });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.ok([429, 502].includes(res.status), `request ends rate-limited or exhausted (got ${res.status})`);
+  const state = getNodeState('codex-quota');
+  assert.ok(state.cooldownUntil > Date.now() + 3600_000,
+    `quota window hint extends cooldown beyond 1h (until ${state.cooldownUntil})`);
+});
+
+await test('codex subscription 429 without reset markers keeps the default rate-limit cooldown', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [tier2OauthNode('codex-plain', 'openai')],
+    db,
+  });
+  await storeSubscriptionToken(env, {
+    nodeId: 'codex-plain', provider: 'openai', accessToken: 'tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  withMockFetch(async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'codex-plain.example.com') {
+      return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+        status: 429, headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  await worker.fetch(chatRequest(), env, {});
+  const state = getNodeState('codex-plain');
+  assert.ok(state.cooldownUntil <= Date.now() + 60_000,
+    'no hint -> short default cooldown (no quota extension)');
+});
+
+await test('plain API-key nodes never consume subscription quota hints', async () => {
+  const env = makeEnv({
+    tier1: [{ id: 'key-node', provider: 'openai', base_url: 'https://key-node.example.com/v1', models: { 'Code-Max': 'gpt-x' } }],
+    extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'key-node': 'sk-plain' }) },
+  });
+  const resetEpoch = Math.floor((Date.now() + 5 * 3600_000) / 1000); // 5h out
+  withMockFetch(async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'key-node.example.com') {
+      return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'x-codex-primary-used-window-reset': String(resetEpoch) },
+      });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  await worker.fetch(chatRequest(), env, {});
+  const state = getNodeState('key-node');
+  assert.ok(state.cooldownUntil <= Date.now() + 60_000,
+    'API-key nodes keep the default cooldown regardless of quota markers');
+});
+
 console.log(`\nAll OAuth tests: ${passed} passed, ${failed} failed.`);
 if (failed) process.exit(1);
