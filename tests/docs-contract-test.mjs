@@ -177,10 +177,14 @@ for (const file of DOCS) {
 
 const deployYml = read('.github/workflows/deploy.yml');
 const { RUNTIME_VAR_NAMES, RUNTIME_TUNABLES } = await import('../src/config/runtime-vars.ts');
+assert.match(deployYml, /run-ai-gateway-deploy/);
+assert.match(deployYml, /AW_DISPATCH_TOKEN/);
+assert.match(deployYml, /source_repository/);
+assert.match(deployYml, /source_sha/);
 for (const name of RUNTIME_VAR_NAMES) {
-  assert.ok(deployYml.includes(`${name}:`), `deploy.yml must inject ${name}`);
+  assert.equal(deployYml.includes(`${name}:`), false, `business deploy bridge must not inject ${name}`);
 }
-ok(`deploy.yml injects all ${RUNTIME_VAR_NAMES.length} runtime variables`);
+ok(`deploy.yml keeps all ${RUNTIME_VAR_NAMES.length} runtime variables in the central deploy owner`);
 
 const devVars = read('.dev.vars.example');
 assert.match(devVars, /Defaults live in src\/config\/runtime-vars\.ts/i,

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- refactor: dispatch production deploy through Action Worker and remove repository-local deployment credentials, orchestration, and gate logic.
+
 - refactor: move pull-request CI to Action Worker while retaining main and scheduled validation until deployment is centralized.
 
 - ci: add a lightweight GitHub Actions merge gate for centralized Action Worker evidence.
