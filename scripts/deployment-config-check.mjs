@@ -91,23 +91,18 @@ assert.deepEqual(
 );
 
 const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /vars\.AIG_IS_DEPLOY_ENABLED\s*!=\s*'false'/);
-assert.doesNotMatch(workflow, /AIG_DEPLOY_REPOSITORY/);
-assert.doesNotMatch(workflow, /fongap\/ai-gateway/);
-assert.match(workflow, /github-deployment-config\.mjs preflight/);
-assert.match(workflow, /prepare --from-env/);
-assert.match(workflow, /AIG_TIER1_CREDENTIALS_01:/);
-assert.match(workflow, /AIG_TIER1_NODES_01:/);
-assert.match(workflow, /AIG_AFFINITY_KV_ID:/);
-assert.match(workflow, /github-deployment-config\.mjs health-check/);
-assert.doesNotMatch(workflow, /secrets\.TIER[123]_NODES/);
-assert.doesNotMatch(workflow, /vars\.TIER[123]_CREDENTIALS/);
-assert.doesNotMatch(workflow, /GATEWAY_CONFIG|GATEWAY_SECRETS_CONFIG/);
-assert.doesNotMatch(workflow, /deploy[^\n]*--keep-vars/);
-for (const group of accessGroups) {
-  assert.match(workflow, new RegExp(`AIG_ACCESS_KEY_${group}:`));
-  assert.match(workflow, new RegExp(`AIG_ACCESS_MODELS_${group}:`));
-}
+assert.match(workflow, /workflow_dispatch:/);
+assert.match(workflow, /Dispatch Central Deploy/);
+assert.match(workflow, /AW_DISPATCH_TOKEN/);
+assert.match(workflow, /run-ai-gateway-deploy/);
+assert.match(workflow, /source_repository/);
+assert.match(workflow, /source_sha/);
+assert.doesNotMatch(workflow, /CLOUDFLARE_API_TOKEN/);
+assert.doesNotMatch(workflow, /wrangler@/);
+assert.doesNotMatch(workflow, /AIG_TIER[123]_CREDENTIALS_/);
+assert.doesNotMatch(workflow, /AIG_TIER[123]_NODES_/);
+assert.doesNotMatch(workflow, /AIG_ACCESS_KEY_/);
+assert.doesNotMatch(workflow, /AIG_IS_DEPLOY_ENABLED/);
 
 for (const removedExample of [
   'config/tier2-nodes.example.json',
