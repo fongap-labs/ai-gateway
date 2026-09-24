@@ -157,7 +157,7 @@ The three mainstream international providers ship with **built-in defaults**
 
 | Provider key | Subscription | Onboarding | Dispatch |
 | --- | --- | --- | --- |
-| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Bearer + native Messages. **Experimental**: the first-party Claude Code client also injects a billing system block and CCH request signing; unsigned subscription traffic is not verified against the real backend — live-test with your own subscription before relying on it. |
+| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Enabled — mainstream reverse-proxy shape: Bearer + required OAuth beta flags (`claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14`, merged with client-supplied betas) + `x-app: cli` + first-party claude-cli user agent. CCH billing-block signing (CLIProxyAPI's extra-paranoid layer) is not implemented; live-verify with your own subscription. |
 | `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id` + `Originator: codex-tui` + `instructions` normalization on the Responses surface) |
 | `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | **Fail-closed** — no verified Gemini subscription backend behind the OpenAI-compatible profile |
 

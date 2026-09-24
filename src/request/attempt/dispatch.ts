@@ -29,6 +29,19 @@ import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
 
+// Claude OAuth subscription upstreams require the beta flags below; they are
+// the mainstream reverse-proxy shape (claude-relay-service sends the same
+// set for OAuth accounts) and tell the backend to accept the OAuth bearer
+// credential for the subscription entitlement. The client's own beta list is
+// preserved and these are appended when missing.
+const CLAUDE_OAUTH_REQUIRED_BETAS = Object.freeze([
+  'claude-code-20250219',
+  'oauth-2025-04-20',
+  'interleaved-thinking-2025-05-14',
+  'fine-grained-tool-streaming-2025-05-14',
+]);
+const CLAUDE_CLI_USER_AGENT = 'claude-cli/1.0.57 (external, cli)';
+
 // AttemptContext and AttemptOutcome are defined in src/types/request.ts
 // (the cross-module source of truth). attempt.ts receives its context from
 // handler.ts via dispatchWithHedge(args, tierNodes).
@@ -152,16 +165,37 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     }
     credential = resolved.token;
     const providerConfig = getOAuthProvider(env, node.provider);
-    // ChatGPT/Codex subscription upstreams identify the subscription account
-    // via the chatgpt-account-id header (OpenAI OAuth token responses carry
-    // account_id) and require the first-party originator marker; client-
-    // supplied values are never forwarded. Other providers contribute only
-    // their configured headers.
+    // Subscription headers follow the mainstream reverse-proxy shape for each
+    // upstream (client-supplied identity values are never forwarded).
+    // OpenAI/Codex: account id + first-party originator marker.
     const codexHeaders = node.provider === 'openai' ? {
       ...(resolved.accountId ? { 'chatgpt-account-id': resolved.accountId } : {}),
       Originator: 'codex-tui',
     } : undefined;
-    oauthExtraHeaders = { ...(providerConfig?.upstreamHeaders || {}), ...(codexHeaders || {}) };
+    // Anthropic/Claude: OAuth accounts authenticate the subscription through
+    // the required beta flags; the client's own beta list is preserved and
+    // the required flags are appended when missing. x-app and a first-party
+    // claude-cli user agent complete the client shape.
+    let anthropicSubscriptionHeaders: Record<string, string> | undefined;
+    if (node.provider === 'anthropic') {
+      const clientBeta = (request.headers.get('anthropic-beta') || '')
+        .split(',').map((part) => part.trim()).filter(Boolean);
+      const seen = new Set(clientBeta);
+      const mergedBeta = [
+        ...clientBeta,
+        ...CLAUDE_OAUTH_REQUIRED_BETAS.filter((beta) => !seen.has(beta)),
+      ].join(',');
+      anthropicSubscriptionHeaders = {
+        'anthropic-beta': mergedBeta,
+        'x-app': 'cli',
+        'user-agent': CLAUDE_CLI_USER_AGENT,
+      };
+    }
+    oauthExtraHeaders = {
+      ...(providerConfig?.upstreamHeaders || {}),
+      ...(codexHeaders || {}),
+      ...(anthropicSubscriptionHeaders || {}),
+    };
   }
 
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,
