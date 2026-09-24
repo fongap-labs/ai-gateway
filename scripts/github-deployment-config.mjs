@@ -130,6 +130,13 @@ export function collectVarsFromEnv(env) {
     if (CREDENTIAL_NAMES.has(name) || NODE_SECRET.test(name)) continue;
     if (RUNTIME_VAR_PATTERN.test(name) || EXTRA_VAR_ALLOW.has(name)) vars[name] = String(value);
   }
+  // Central deploys run in the control-plane repository, where the runner's
+  // reserved GITHUB_SHA is the control-plane HEAD, not the gateway source.
+  // GITHUB_ENV cannot override reserved GITHUB_* variables, so deployment
+  // identity is exported as DEPLOYED_SHA and takes precedence here.
+  if (typeof env?.DEPLOYED_SHA === 'string' && env.DEPLOYED_SHA.trim() !== '') {
+    vars.GITHUB_SHA = env.DEPLOYED_SHA.trim();
+  }
   return { vars };
 }
 

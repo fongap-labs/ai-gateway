@@ -135,6 +135,25 @@ function envFixture() {
   assert.ok(!('AIG_TIER1_CREDENTIALS_02' in collectSecretsFromEnv(env).secrets));
 }
 
+// Central deploys export the gateway source SHA as DEPLOYED_SHA because
+// GITHUB_ENV cannot override the reserved GITHUB_SHA (which holds the
+// control-plane HEAD there). DEPLOYED_SHA must win the build identity.
+{
+  const env = envFixture();
+  env.GITHUB_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  env.DEPLOYED_SHA = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const vars = collectVarsFromEnv(env).vars;
+  assert.equal(vars.GITHUB_SHA, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'DEPLOYED_SHA takes precedence over reserved GITHUB_SHA');
+  assert.ok(!('DEPLOYED_SHA' in vars), 'DEPLOYED_SHA never leaks into Worker vars');
+}
+
+{
+  const env = envFixture();
+  env.GITHUB_SHA = 'cccccccccccccccccccccccccccccccccccccccc';
+  const vars = collectVarsFromEnv(env).vars;
+  assert.equal(vars.GITHUB_SHA, 'cccccccccccccccccccccccccccccccccccccccc', 'without DEPLOYED_SHA the env GITHUB_SHA is kept');
+}
+
 {
   const result = preflight(envFixture());
   assert.equal(result.ok, true);
