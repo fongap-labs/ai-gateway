@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: prefer DEPLOYED_SHA over reserved GITHUB_SHA for the Worker build identity in central deploys so the control-plane runner's default SHA is never baked into the gateway (repo-local deploys unchanged).
+
 - feat: add Tier 2 subscription OAuth adapters with Tier 2-only `auth:"oauth"` nodes, PKCE onboarding, AES-GCM token storage, dispatch-time refresh, built-in provider defaults, and fail-closed deployment configuration.
 
 - refactor: dispatch production deploy through Action Worker and remove repository-local deployment credentials, orchestration, and gate logic.
