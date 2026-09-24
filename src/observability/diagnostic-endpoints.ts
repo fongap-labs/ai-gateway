@@ -27,7 +27,7 @@ export const APP_META = Object.freeze({
 // runtime source and are never generated, inferred, or validated by the app.
 const SHA_RE = /^[0-9a-f]{7,40}$/;
 export function resolveBuildSha(env: Record<string, unknown>): string {
-  const raw = String(env?.GITHUB_SHA ?? '').trim();
+  const raw = String(env?.AIG_BUILD_SHA ?? '').trim();
   return SHA_RE.test(raw) ? raw : 'unknown';
 }
 

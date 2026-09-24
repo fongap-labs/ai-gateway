@@ -4,6 +4,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { verifyRemote } from '../scripts/github-deployment-config.mjs';
 import { readFileSync } from 'node:fs';
+import { resolveBuildSha } from '../src/observability/diagnostic-endpoints.ts';
+
+test('runtime build identity uses the gateway-scoped source SHA only', () => {
+  const sourceSha = 'a'.repeat(40);
+  const controlSha = 'b'.repeat(40);
+  assert.equal(resolveBuildSha({ AIG_BUILD_SHA: sourceSha, GITHUB_SHA: controlSha }), sourceSha);
+  assert.equal(resolveBuildSha({ GITHUB_SHA: controlSha }), 'unknown');
+});
 
 test('online verification rejects the wrong Worker build before accepting health', async () => {
   const original = globalThis.fetch;

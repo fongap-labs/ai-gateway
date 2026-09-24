@@ -718,7 +718,7 @@ await test('/v1/models derives public models from actual strict node mappings', 
 await test('/health.build reports deployment commit and /version stays removed', async () => {
   const build = 'a1b2c3d4e5f6';
   const env = makeEnv({
-    tier1: [openaiNode('identity')], secrets: { identity: 'k' }, extraEnv: { GITHUB_SHA: build },
+    tier1: [openaiNode('identity')], secrets: { identity: 'k' }, extraEnv: { AIG_BUILD_SHA: build },
   });
   const health = await worker.fetch(new Request('https://gateway.example.com/health', {
     headers: { authorization: `Bearer ${ACCESS_KEY}` },
