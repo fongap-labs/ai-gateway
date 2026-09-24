@@ -11,7 +11,7 @@
 //   id, provider, base_url, models
 // Optional:
 //   priority (non-negative integer number, default 100)
-//   auth ("oauth"; Tier 2 only 鈥?marks a subscription node whose credential
+//   auth ("oauth"; Tier 2 only - marks a subscription node whose credential
 //         is resolved from the OAuth token store at dispatch time instead of
 //         a static AIG_TIER{N}_CREDENTIALS_* secret)
 //
