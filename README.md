@@ -51,11 +51,11 @@ Providers and keys
 
 Each request shares one attempt and wall-clock budget. Native protocol routes are tried first. Cross-protocol fallback is limited to **OpenAI Chat Completions ↔ Anthropic Messages**; **OpenAI Responses stays native-only**.
 
-Tier 1 reshapes traffic using live availability, in-flight pressure, TTFT, 429 cooldown/recovery, and provider-model heat. Model-family fallback is bounded as well.
+Tier 1 reshapes traffic using live availability, in-flight pressure, TTFT, 429 cooldown/recovery, and provider-model heat. Model-family fallback is bounded as well.\n\nTier 2 supports both static API-key nodes and **subscription nodes** (`auth: "oauth"`): operator-owned Claude / Codex / Gemini subscriptions onboarded through PKCE, stored AES-GCM encrypted in D1, refreshed automatically at dispatch time, and resolved fail-closed. See [Configuration - Tier 2 subscriptions](docs/operations/configuration.md#tier-2-subscriptions-oauth).
 
 Core behavior:
 
-- **Multi-provider / multi-key pooling** behind one logical endpoint.
+- **Multi-provider / multi-key pooling** behind one logical endpoint.\n- **Subscription entitlements** via OAuth (PKCE) with encrypted token storage and automatic refresh.
 - **Quota-aware reliability** with narrow 404 isolation and 429 recovery.
 - **Streaming safety**: transparent failover stops after meaningful output begins.
 - **Visible amplification**: Token usage, delivered requests, TTFT, retry/fallback/hedge work stay distinct.

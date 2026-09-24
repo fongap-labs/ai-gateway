@@ -73,6 +73,30 @@ Rules:
 
 There is one current node shape. No alternate or compatibility schema is retained.
 
+### Subscription nodes (`auth: "oauth"`, Tier 2 only)
+
+Tier 2 nodes may declare `"auth": "oauth"` to mark a subscription-entitlement
+node whose credential is an OAuth access token resolved at dispatch time from
+the subscription token store instead of a static
+`AIG_TIER{N}_CREDENTIALS_*` secret.
+
+```json
+{
+  "id": "claude-sub-1",
+  "provider": "anthropic",
+  "auth": "oauth",
+  "base_url": "https://api.anthropic.com",
+  "models": { "Code-Max": "claude-sonnet-4-5" }
+}
+```
+
+Rules:
+
+- `auth: "oauth"` is valid only on Tier 2 nodes; Tier 1/3 nodes declaring it are configuration errors.
+- Subscription nodes must not have a static credential in `AIG_TIER{N}_CREDENTIALS_*` — one credential source per node.
+- Without `AIG_OAUTH_PROVIDERS` and `AIG_TOKEN_ENCRYPTION_KEY` configured, subscription nodes stay unusable (fail-closed) and receive no traffic.
+- Onboarding: open `/oauth/start?provider=<name>&node=<node-id>` with a gateway access key; the browser completes the provider consent and returns to `/oauth/callback/<name>`.
+
 ## Provider wire profiles
 
 Protocol and API surfaces are Provider capabilities and are defined once in `src/config/provider-profile.ts`:
@@ -116,8 +140,87 @@ Tier 1 → Tier 2 → Tier 3
 ```
 
 - Tier 1: free/effectively free capacity; primary reliability focus.
-- Tier 2: reserved for future membership/subscription entitlement capacity.
+- Tier 2: subscription entitlement capacity. Static API-key nodes and `auth: "oauth"` subscription nodes share this tier; the tier stays free of Tier 1 adaptive machinery.
 - Tier 3: paid API capacity; protected final fallback.
+
+## Tier 2 subscriptions (OAuth)
+
+Tier 2 subscription nodes link an operator-owned provider subscription
+(Claude Pro/Max, ChatGPT/Codex, Google One AI Premium, or any
+OAuth-authorized upstream) through the gateway's PKCE onboarding flow.
+
+### Built-in provider defaults
+
+The three mainstream international providers ship with **built-in defaults**
+(public OAuth constants from their open-source CLIs) — no
+`AIG_OAUTH_PROVIDERS` configuration is required to onboard them:
+
+| Provider key | Subscription | Flow |
+| --- | --- | --- |
+| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) |
+| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) |
+| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) |
+
+To onboard with defaults, configure the Tier 2 node with the matching
+provider name and run the onboarding flow below. To override a default or
+add a new provider, set `AIG_OAUTH_PROVIDERS`.
+
+### Variables and secrets
+
+- `AIG_OAUTH_PROVIDERS` (plain Variable, JSON, optional) — per-provider OAuth
+  registry. User entries **replace** built-in defaults at the provider level
+  (wholesale, not field-by-field). Unset uses built-in defaults only:
+
+```json
+{
+  "google": {
+    "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "client_id": "<your own client id>",
+    "client_secret": "<your own client secret>",
+    "scope": "https://www.googleapis.com/auth/cloud-platform",
+    "manual_redirect_url": null,
+    "upstream_headers": {}
+  }
+}
+```
+
+  `client_secret` is for confidential OAuth clients (Google always requires
+  one; Claude/Codex are public PKCE clients and do not). Setting
+  `manual_redirect_url` selects the manual code-paste flow — omit it (or set
+  your own gateway callback via the default) for the automatic redirect flow.
+
+- `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
+  Generate with: `openssl rand -base64 32`. Without it, subscription
+  onboarding and resolution are disabled (fail-closed).
+
+- `AIG_PUBLIC_URL` (Variable, already required by the dashboard) — derives
+  the OAuth redirect URI `/oauth/callback/<provider>`.
+
+### Onboarding flow
+
+**Claude / Codex (automatic)**:
+
+1. Open `GET /oauth/start?provider=anthropic&node=<node-id>` (or
+   `provider=openai`) with a gateway access key in the browser.
+2. Approve the consent screen; the provider redirects back to
+   `/oauth/callback/<provider>` and the gateway completes the exchange.
+
+**Gemini (manual paste)**:
+
+1. Open `GET /oauth/start?provider=google&node=<node-id>` with a gateway
+   access key in the browser.
+2. Approve the Google consent screen. Google redirects to its own
+   `codeassist.google.com/authcode` page (its OAuth client does not allow
+   arbitrary gateway callback URLs) which displays the authorization code.
+3. Copy the code and paste it at the `/oauth/paste` link shown on the start
+   page.
+4. The gateway exchanges the code with PKCE and `client_secret`, stores
+   the tokens, and confirms.
+
+Flow states are single-use and expire after 10 minutes. Token refresh happens
+automatically at dispatch time (5-minute expiry margin) with an isolate-local
+cache and a 60-second negative cache on refresh failures.
 
 ## Runtime variables
 
@@ -134,7 +237,7 @@ Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 - `AIG_REQUEST_HEDGE_MAX`
 - `AIG_ACCESS_KEY_RPM`
 
-Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, and `AIG_DASHBOARD_MODELS`.
+Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, `AIG_DASHBOARD_MODELS`, and `AIG_OAUTH_PROVIDERS` (see [Tier 2 subscriptions](#tier-2-subscriptions-oauth)).
 
 ## Dashboard model display
 

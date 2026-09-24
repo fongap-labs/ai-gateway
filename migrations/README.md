@@ -52,6 +52,7 @@ Keep each new migration focused and forward-compatible. Do not rely on a Worker 
 | `0008_token_usage_cache_tokens.sql` | Adds Anthropic prompt-cache creation/read token breakdown columns to usage tables |
 | `0009_upstream_attempt_usage.sql` | Adds physical upstream-attempt usage alongside delivered-response statistics; historical values are initialized from known delivered usage as a lower bound |
 | `0010_cache_observation.sql` | Adds protocol-neutral upstream effective-input and explicit cache-observation counters; historical cache-observation coverage is intentionally not reconstructed |
+| `0011_subscription_tokens.sql` | Adds Tier 2 subscription OAuth credential storage (`subscription_tokens`, AES-GCM encrypted) and single-use PKCE flow states (`oauth_flow_states`) |
 
 The SQL files themselves are the schema-change source of truth; this table is only an index.
 

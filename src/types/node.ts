@@ -3,7 +3,7 @@
 //
 // Runtime Node shape produced by the config layer. Canonical type consumed
 // by the scheduler, reliability, and request layers (src/types/domain.d.ts
-// has been deleted — see docs/governance/typescript-migration.md).
+// has been deleted - see docs/governance/typescript-migration.md).
 
 import type { Protocol, Surface } from './protocol.ts';
 
@@ -29,4 +29,10 @@ export type RuntimeNode = {
   credential: string,
   priority: number,
   models: NodeModelMap,
+  /**
+   * Tier 2 subscription nodes resolve their credential at dispatch time from
+   * the OAuth token store instead of a static AIG_TIER2_CREDENTIALS_* secret.
+   * Undefined for static-credential nodes (Tier 1-3 API-key nodes).
+   */
+  auth?: 'oauth',
 };

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: add Tier 2 subscription OAuth adapters with Tier 2-only `auth:"oauth"` nodes, PKCE onboarding, AES-GCM token storage, dispatch-time refresh, built-in provider defaults, and fail-closed deployment configuration.
+
 - refactor: dispatch production deploy through Action Worker and remove repository-local deployment credentials, orchestration, and gate logic.
 
 - refactor: move pull-request CI to Action Worker while retaining main and scheduled validation until deployment is centralized.

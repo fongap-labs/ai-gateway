@@ -9,7 +9,7 @@
 // src/scheduler and src/reliability.
 //
 // Surface:
-//   messages -> {base_url}/v1/messages  (NATIVE — never converted to/from
+//   messages -> {base_url}/v1/messages  (NATIVE - never converted to/from
 //                                         OpenAI chat completions)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,16 +29,24 @@ export function resolveAnthropicPath(surface: Surface): string {
 }
 
 // Anthropic-native upstream headers. The credential is sent as `x-api-key`
-// (the Anthropic auth header) — NOT "Authorization: Bearer", which is an
+// (the Anthropic auth header) - NOT "Authorization: Bearer", which is an
 // OpenAI-ism. The client's own gateway key (x-api-key / Authorization) is
 // never forwarded: only the node credential reaches the upstream.
 //
 // anthropic-version: forwarded from the client when present, otherwise the
 // current stable version. anthropic-beta: forwarded verbatim when the client
-// opted into a beta feature — dropping it would silently change behavior.
-export function buildAnthropicHeaders(request: Request, credential: string, requestId: string): Headers {
+// opted into a beta feature - dropping it would silently change behavior.
+//
+// Subscription nodes (auth:"oauth") authenticate with a Bearer token instead
+// of x-api-key; `extraHeaders` may carry deployment-owned subscription
+// headers (e.g. an OAuth beta header) resolved by the request layer.
+export function buildAnthropicHeaders(request: Request, credential: string, requestId: string, options?: { auth?: 'oauth', extraHeaders?: Readonly<Record<string, string>> }): Headers {
   const headers = new Headers();
-  headers.set('x-api-key', credential);
+  if (options?.auth === 'oauth') {
+    headers.set('Authorization', `Bearer ${credential}`);
+  } else {
+    headers.set('x-api-key', credential);
+  }
   const clientVersion = request.headers.get('anthropic-version');
   headers.set('anthropic-version', clientVersion || '2023-06-01');
   const clientBeta = request.headers.get('anthropic-beta');
@@ -48,6 +56,11 @@ export function buildAnthropicHeaders(request: Request, credential: string, requ
   headers.set('User-Agent', 'ai-gateway');
   headers.set('Accept-Encoding', 'identity');
   headers.set('X-Request-ID', requestId);
+  if (options?.extraHeaders) {
+    for (const [name, value] of Object.entries(options.extraHeaders)) {
+      headers.set(name, value);
+    }
+  }
   return headers;
 }
 
@@ -55,12 +68,12 @@ export function buildAnthropicHeaders(request: Request, credential: string, requ
 // only content_block_delta events carrying text / thinking / tool-input
 // deltas are real model output. Lifecycle events (message_start,
 // content_block_start, content_block_stop, ping, message_delta) are NOT
-// commit points — a node that streams them before dying can still fail over.
+// commit points - a node that streams them before dying can still fail over.
 // Anthropic-native first-real-output predicate for the first-event guard:
   // only content_block_delta events carrying text / thinking / tool-input
   // deltas are real model output. Lifecycle events (message_start,
   // content_block_start, content_block_stop, ping, message_delta) are NOT
-  // commit points — a node that streams them before dying can still fail over.
+  // commit points - a node that streams them before dying can still fail over.
   export function isAnthropicNativeRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   if (json?.type !== 'content_block_delta') return false;
@@ -81,7 +94,7 @@ export function isAnthropicMessageMeaningful(json: unknown): boolean {
   return false;
 }
 
-// Conversion-aware predicate for cross-protocol A→O streaming (Anthropic upstream,
+// Conversion-aware predicate for cross-protocol A->O streaming (Anthropic upstream,
 // OpenAI client). The OpenAI stream converter throws on thinking_delta, so the
 // failover boundary must NOT commit on thinking-only deltas. Real output =
 // non-empty text_delta OR input_json_delta only.
@@ -91,7 +104,7 @@ export function isAnthropicNativeRealOutputForConversion(json: unknown): boolean
   const delta = isRecord(json.delta) ? json.delta : {};
   if (delta?.type === 'text_delta') return typeof delta.text === 'string' && delta.text.trim().length > 0;
   if (delta?.type === 'input_json_delta') return typeof delta.partial_json === 'string' && delta.partial_json.trim().length > 0;
-  // thinking_delta deliberately NOT counted: the A→O converter throws on it,
+  // thinking_delta deliberately NOT counted: the A->O converter throws on it,
   // so committing the failover boundary on it would produce a hard error
   // instead of a clean failover for the OpenAI client.
   return false;

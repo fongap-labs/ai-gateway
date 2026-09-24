@@ -12,11 +12,13 @@
 import { attemptHeadersTimeoutMs, attemptBudgetWindowMs } from '../../config/timeouts.ts';
 import { recordNeutralEnd, bumpNodeCounters } from '../../reliability/node-state.ts';
 import { releaseTier1Slot } from '../../reliability/tier1-state.ts';
-import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyHedgeRaceLoss } from '../../reliability/classify.ts';
+import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyHedgeRaceLoss, KIND } from '../../reliability/classify.ts';
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
 import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/index.ts';
 import { streamUsageSupported } from '../../config/provider-quirks.ts';
+import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
+import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -34,7 +36,7 @@ const DIAGNOSTIC_BYTES = 4096;
 // ---- One attempt against one node -----------------------------------------
 
 // Wrapper around dispatchAttempt. Every path inside either contacted (or tried
-// to contact) an upstream — charging failover budget by default — or opted out
+// to contact) an upstream - charging failover budget by default - or opted out
 // explicitly on a pre-dispatch path. Normalizing here guarantees every outcome
 // carries a defined `budgetCharged`, so the main loop never has to infer
 // charging from a failure-kind string. Successful dispatches get one debug
@@ -51,7 +53,7 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
   if (outcome.budgetCharged === undefined) outcome.budgetCharged = true;
   if (outcome.response?.ok) {
     // Successful dispatches never pass through recordOutcome, so charge them
-    // here — exactly once, like every failure/neutral path. A committed
+    // here - exactly once, like every failure/neutral path. A committed
     // response reached an upstream, so it always charges the dispatch count;
     // a hedge twin still never charges the logical attempt.
     c.state.dispatches++;
@@ -112,7 +114,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // This is a passive protocol hint (include_usage) that changes nothing the
   // client sees and is gated by provider quirks + operator switches, so an
   // upstream that rejects the field can be opted out per provider. The field
-  // only exists on the OpenAI chat_completions wire format — native Responses
+  // only exists on the OpenAI chat_completions wire format - native Responses
   // and Anthropic bodies are never touched. Non-stream requests already carry
   // usage in the body and are never touched here.
   if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageSupported(node, env)) {
@@ -127,7 +129,25 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     return rotateWithNeutralEnd(state, node, classifyPreDispatchInvalidBaseUrl().kind, c, true);
   }
 
-  const headers = buildUpstreamHeadersFor(upstreamProtocol, request, node.credential, requestId);
+  // Tier 2 subscription nodes resolve their credential from the OAuth token
+  // store at dispatch time (isolate cache first; D1/refresh only on miss).
+  // A resolution failure is a pre-dispatch auth end: no upstream contact, no
+  // physical attempt accounting, and the node rotates for this request.
+  let credential = node.credential;
+  let oauthExtraHeaders: Readonly<Record<string, string>> | undefined;
+  if (node.auth === 'oauth') {
+    const resolved = await resolveSubscriptionCredential(env, node);
+    if (!resolved.ok) {
+      logger.info(`oauth credential resolution failed node=${node.id} reason=${resolved.reason}`);
+      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    }
+    credential = resolved.token;
+    const providerConfig = getOAuthProvider(env, node.provider);
+    oauthExtraHeaders = providerConfig?.upstreamHeaders;
+  }
+
+  const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,
+    node.auth === 'oauth' ? { auth: 'oauth', extraHeaders: oauthExtraHeaders } : undefined);
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
   if (c.hedgeAbort) {
