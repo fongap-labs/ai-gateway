@@ -82,6 +82,7 @@ function envFixture() {
     AIG_USAGE_D1_ID: 'd1-id',
     AIG_AFFINITY_KV_ID: 'kv-id',
     AIG_PUBLIC_URL: 'https://gw.example.com',
+    AIG_BUILD_SHA: 'a'.repeat(40),
     AIG_RATE_LIMIT_COOLDOWN_MS: '15000',
     AIG_FIRST_EVENT_TIMEOUT_MS: '15000',
     AIG_MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'default' } }),
@@ -118,6 +119,8 @@ function envFixture() {
   const env = envFixture();
   const vars = collectVarsFromEnv(env).vars;
   const secrets = collectSecretsFromEnv(env).secrets;
+  assert.ok('AIG_BUILD_SHA' in vars);
+  assert.ok(!('GITHUB_SHA' in vars));
   assert.ok('AIG_TIER1_NODES_01' in vars);
   assert.ok(!('AIG_TIER1_NODES_01' in secrets));
   assert.ok('AIG_TIER1_CREDENTIALS_01' in secrets);
