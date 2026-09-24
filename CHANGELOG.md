@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- ci: add a lightweight GitHub Actions merge gate for centralized Action Worker evidence.
+
 - ci: add a trusted project entrypoint for Action Worker centralized CI.
 
 - refactor: derive model fallback families from the final capability tier so new prefixed Pro/Max/Ultra families require no code changes.

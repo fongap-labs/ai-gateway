@@ -1,0 +1,70 @@
+name: Validate Central Merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: PR head commit validated by Action Worker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  statuses: read
+
+concurrency:
+  group: validate-central-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-merge:
+    name: validate-merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Validate Action Worker evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          RUN_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          CONTROL_RUN_PREFIX: https://github.com/fongap-labs/action-worker/actions/runs/
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Invalid head SHA." >&2
+            exit 64
+          }
+
+          [ "$RUN_SHA" = "$HEAD_SHA" ] || {
+            echo "::error::Workflow ref does not match the requested PR head." >&2
+            exit 65
+          }
+
+          status_json="$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA/status")"
+
+          validate_context() {
+            local context="$1"
+            local state
+            local target_url
+
+            state="$(jq -r --arg context "$context" '.statuses | map(select(.context == $context)) | .[0].state // ""' <<<"$status_json")"
+            target_url="$(jq -r --arg context "$context" '.statuses | map(select(.context == $context)) | .[0].target_url // ""' <<<"$status_json")"
+
+            [ "$state" = "success" ] || {
+              echo "::error::$context is not successful: ${state:-missing}" >&2
+              exit 1
+            }
+
+            [[ "$target_url" == "$CONTROL_RUN_PREFIX"* ]] || {
+              echo "::error::$context was not produced by the Action Worker control plane." >&2
+              exit 1
+            }
+          }
+
+          validate_context "CI Evidence"
+          validate_context "PR Governance"
+
+          echo "Action Worker CI Evidence and PR Governance are both successful."
