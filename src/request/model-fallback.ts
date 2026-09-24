@@ -8,14 +8,15 @@
 // changes only the logical model while preserving the client route, request,
 // wall-clock budget, logical-attempt budget, and reliability machinery.
 //
-// The policy is intentionally closed and bounded:
-//   Code-Max <-> Code-Pro, then Code-Ultra; Code-Ultra may fall back to
-//   Code-Max/Code-Pro. Code models never cross into the non-Code family.
-//   Max <-> Pro, then Ultra; Ultra may fall back to Max/Pro.
-//   Any logical family preserves every prefix segment and changes only the
-//   final capability tier, for example Audit-Ultra -> Audit-Max -> Audit-Pro.
-//   Air may move upward to Pro -> Max -> Ultra, but once it moves upward it
-//   never returns to Air.
+// The policy is intentionally bounded:
+//   Every logical family is identified by its final capability tier while all
+//   preceding segments remain the family prefix. For example,
+//   Code-Ultra -> Code-Max -> Code-Pro and
+//   Audit-Ultra -> Audit-Max -> Audit-Pro.
+//   Bare Ultra/Max/Pro use the same tier policy with an empty prefix.
+//   Air may move upward to Pro -> Max -> Ultra inside the same family, but once
+//   it moves upward it never returns to Air.
+//   Fallback never crosses logical-family prefixes.
 //   Interchangeable families get at most two evaluation rounds. The second
 //   round exists only to re-check capacity that may have recovered while other
 //   model pools were being tried. There is never an unbounded cycle.
