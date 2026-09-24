@@ -1,299 +1,59 @@
 name: Deploy
 
-# Automatic deploys follow successful Action Worker Central CI Evidence for the
-# current main HEAD. Secret shard variables remain local until deploy execution
-# itself is centralized.
 on:
-  status:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: deploy-main
+  group: deploy-dispatch-main
   cancel-in-progress: false
 
 jobs:
-  # AIG_IS_DEPLOY_ENABLED=false is an emergency kill switch; unset or any other value leaves deployment enabled.
-  gate:
-    if: >-
-      ${{
-        vars.AIG_IS_DEPLOY_ENABLED != 'false'
-        && (
-          github.event_name == 'workflow_dispatch'
-          || (
-            github.event.context == 'CI Evidence'
-            && github.event.state == 'success'
-          )
-        )
-      }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      deploy: ${{ steps.decide.outputs.deploy }}
-    steps:
-      - name: Checkout target commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.sha || github.sha }}
-          fetch-depth: 2
+  dispatch:
+    name: Dispatch Central Deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
 
-      - name: Resolve default branch HEAD
-        id: source
+    steps:
+      - name: Notify Action Worker
         env:
-          GH_TOKEN: ${{ github.token }}
+          AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          REQUEST_ID: deploy-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
-          default_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$default_branch" --jq '.sha')"
-          echo "default_sha=$default_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Decide deploy eligibility
-        id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          STATUS_CONTEXT: ${{ github.event.context }}
-          STATUS_STATE: ${{ github.event.state }}
-          STATUS_TARGET_URL: ${{ github.event.target_url }}
-          HEAD_SHA: ${{ github.event.sha || github.sha }}
-          DEFAULT_SHA: ${{ steps.source.outputs.default_sha }}
-        run: node scripts/deploy-gate-decision.mjs
-
-  deploy-policy:
-    name: deploy-policy
-    needs: gate
-    if: needs.gate.outputs.deploy == 'true'
-    permissions:
-      contents: read
-      actions: read
-    uses: fongap-labs/action-worker/.github/workflows/validate-deploy-policy.yml@main
-    with:
-      target_sha: ${{ github.event.sha || github.sha }}
-      ci_workflow: ci.yml
-      require_default_head: true
-
-  manual-validate:
-    needs:
-      - gate
-      - deploy-policy
-    if: needs.gate.outputs.deploy == 'true' && github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.deploy-policy.outputs.target_sha }}
-          fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate (deploy suite — single entry point)
-        run: npm run validate:deploy
-
-      - name: Dry-run Worker bundle
-        run: npm run check:deploy
-
-  deploy:
-    needs:
-      - gate
-      - deploy-policy
-      - manual-validate
-    # `always()` lets automatic deploys continue when manual-validate is skipped.
-    if: always() && needs.gate.outputs.deploy == 'true' && needs.deploy-policy.result == 'success' && (needs.manual-validate.result == 'success' || needs.manual-validate.result == 'skipped')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      DEPLOYED_SHA: ${{ needs.deploy-policy.outputs.target_sha }}
-      GITHUB_SHA: ${{ needs.deploy-policy.outputs.target_sha }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      AIG_USAGE_D1_ID: ${{ vars.AIG_USAGE_D1_ID }}
-      AIG_AFFINITY_KV_ID: ${{ vars.AIG_AFFINITY_KV_ID }}
-      AIG_PUBLIC_URL: ${{ vars.AIG_PUBLIC_URL }}
-      AIG_MODELS_CONFIG: ${{ vars.AIG_MODELS_CONFIG }}
-      AIG_POLICIES_CONFIG: ${{ vars.AIG_POLICIES_CONFIG }}
-      AIG_RATE_LIMIT_COOLDOWN_MS: ${{ vars.AIG_RATE_LIMIT_COOLDOWN_MS }}
-      AIG_FIRST_EVENT_TIMEOUT_MS: ${{ vars.AIG_FIRST_EVENT_TIMEOUT_MS }}
-      AIG_STREAM_IDLE_TIMEOUT_MS: ${{ vars.AIG_STREAM_IDLE_TIMEOUT_MS }}
-      AIG_AUTH_FAILURE_COOLDOWN_MS: ${{ vars.AIG_AUTH_FAILURE_COOLDOWN_MS }}
-      AIG_REQUEST_BODY_MAX_BYTES: ${{ vars.AIG_REQUEST_BODY_MAX_BYTES }}
-      AIG_FAILOVER_BUDGET_MS: ${{ vars.AIG_FAILOVER_BUDGET_MS }}
-      AIG_UPSTREAM_HEADER_TIMEOUT_MS: ${{ vars.AIG_UPSTREAM_HEADER_TIMEOUT_MS }}
-      AIG_HEDGE_DELAY_MS: ${{ vars.AIG_HEDGE_DELAY_MS }}
-      AIG_REQUEST_HEDGE_MAX: ${{ vars.AIG_REQUEST_HEDGE_MAX }}
-      AIG_ACCESS_KEY_RPM: ${{ vars.AIG_ACCESS_KEY_RPM }}
-      AIG_CORS_ORIGIN: ${{ vars.AIG_CORS_ORIGIN }}
-      AIG_USAGE_INCLUDE_MODE: ${{ vars.AIG_USAGE_INCLUDE_MODE }}
-      AIG_USAGE_EXCLUDE_PROVIDERS: ${{ vars.AIG_USAGE_EXCLUDE_PROVIDERS }}
-      AIG_SHOULD_EXPOSE_UPSTREAM: ${{ vars.AIG_SHOULD_EXPOSE_UPSTREAM }}
-      AIG_LOG_LEVEL: ${{ vars.AIG_LOG_LEVEL }}
-      AIG_HAS_STREAM_GUARD: ${{ vars.AIG_HAS_STREAM_GUARD }}
-      AIG_CAN_USE_HTTP: ${{ vars.AIG_CAN_USE_HTTP }}
-      AIG_ANTHROPIC_COUNT_MODE: ${{ vars.AIG_ANTHROPIC_COUNT_MODE }}
-      AIG_PROTOCOL_FALLBACKS: ${{ vars.AIG_PROTOCOL_FALLBACKS }}
-      AIG_DASHBOARD_MODELS: ${{ vars.AIG_DASHBOARD_MODELS }}
-      AIG_TIER1_NODES_01: ${{ vars.AIG_TIER1_NODES_01 }}
-      AIG_TIER1_NODES_02: ${{ vars.AIG_TIER1_NODES_02 }}
-      AIG_TIER1_NODES_03: ${{ vars.AIG_TIER1_NODES_03 }}
-      AIG_TIER1_NODES_04: ${{ vars.AIG_TIER1_NODES_04 }}
-      AIG_TIER1_NODES_05: ${{ vars.AIG_TIER1_NODES_05 }}
-      AIG_TIER1_NODES_06: ${{ vars.AIG_TIER1_NODES_06 }}
-      AIG_TIER1_NODES_07: ${{ vars.AIG_TIER1_NODES_07 }}
-      AIG_TIER1_NODES_08: ${{ vars.AIG_TIER1_NODES_08 }}
-      AIG_TIER1_NODES_09: ${{ vars.AIG_TIER1_NODES_09 }}
-      AIG_TIER1_NODES_10: ${{ vars.AIG_TIER1_NODES_10 }}
-      AIG_TIER2_NODES_01: ${{ vars.AIG_TIER2_NODES_01 }}
-      AIG_TIER2_NODES_02: ${{ vars.AIG_TIER2_NODES_02 }}
-      AIG_TIER2_NODES_03: ${{ vars.AIG_TIER2_NODES_03 }}
-      AIG_TIER2_NODES_04: ${{ vars.AIG_TIER2_NODES_04 }}
-      AIG_TIER2_NODES_05: ${{ vars.AIG_TIER2_NODES_05 }}
-      AIG_TIER2_NODES_06: ${{ vars.AIG_TIER2_NODES_06 }}
-      AIG_TIER2_NODES_07: ${{ vars.AIG_TIER2_NODES_07 }}
-      AIG_TIER2_NODES_08: ${{ vars.AIG_TIER2_NODES_08 }}
-      AIG_TIER2_NODES_09: ${{ vars.AIG_TIER2_NODES_09 }}
-      AIG_TIER2_NODES_10: ${{ vars.AIG_TIER2_NODES_10 }}
-      AIG_TIER3_NODES_01: ${{ vars.AIG_TIER3_NODES_01 }}
-      AIG_TIER3_NODES_02: ${{ vars.AIG_TIER3_NODES_02 }}
-      AIG_TIER3_NODES_03: ${{ vars.AIG_TIER3_NODES_03 }}
-      AIG_TIER3_NODES_04: ${{ vars.AIG_TIER3_NODES_04 }}
-      AIG_TIER3_NODES_05: ${{ vars.AIG_TIER3_NODES_05 }}
-      AIG_TIER3_NODES_06: ${{ vars.AIG_TIER3_NODES_06 }}
-      AIG_TIER3_NODES_07: ${{ vars.AIG_TIER3_NODES_07 }}
-      AIG_TIER3_NODES_08: ${{ vars.AIG_TIER3_NODES_08 }}
-      AIG_TIER3_NODES_09: ${{ vars.AIG_TIER3_NODES_09 }}
-      AIG_TIER3_NODES_10: ${{ vars.AIG_TIER3_NODES_10 }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      AIG_ACCESS_KEY_AIR: ${{ secrets.AIG_ACCESS_KEY_AIR }}
-      AIG_ACCESS_MODELS_AIR: ${{ vars.AIG_ACCESS_MODELS_AIR }}
-      AIG_ACCESS_KEY_PRO: ${{ secrets.AIG_ACCESS_KEY_PRO }}
-      AIG_ACCESS_MODELS_PRO: ${{ vars.AIG_ACCESS_MODELS_PRO }}
-      AIG_ACCESS_KEY_MAX: ${{ secrets.AIG_ACCESS_KEY_MAX }}
-      AIG_ACCESS_MODELS_MAX: ${{ vars.AIG_ACCESS_MODELS_MAX }}
-      AIG_ACCESS_KEY_ULTRA: ${{ secrets.AIG_ACCESS_KEY_ULTRA }}
-      AIG_ACCESS_MODELS_ULTRA: ${{ vars.AIG_ACCESS_MODELS_ULTRA }}
-      AIG_ACCESS_KEY_AGENT: ${{ secrets.AIG_ACCESS_KEY_AGENT }}
-      AIG_ACCESS_MODELS_AGENT: ${{ vars.AIG_ACCESS_MODELS_AGENT }}
-      AIG_TIER1_CREDENTIALS_01: ${{ secrets.AIG_TIER1_CREDENTIALS_01 }}
-      AIG_TIER1_CREDENTIALS_02: ${{ secrets.AIG_TIER1_CREDENTIALS_02 }}
-      AIG_TIER1_CREDENTIALS_03: ${{ secrets.AIG_TIER1_CREDENTIALS_03 }}
-      AIG_TIER1_CREDENTIALS_04: ${{ secrets.AIG_TIER1_CREDENTIALS_04 }}
-      AIG_TIER1_CREDENTIALS_05: ${{ secrets.AIG_TIER1_CREDENTIALS_05 }}
-      AIG_TIER1_CREDENTIALS_06: ${{ secrets.AIG_TIER1_CREDENTIALS_06 }}
-      AIG_TIER1_CREDENTIALS_07: ${{ secrets.AIG_TIER1_CREDENTIALS_07 }}
-      AIG_TIER1_CREDENTIALS_08: ${{ secrets.AIG_TIER1_CREDENTIALS_08 }}
-      AIG_TIER1_CREDENTIALS_09: ${{ secrets.AIG_TIER1_CREDENTIALS_09 }}
-      AIG_TIER1_CREDENTIALS_10: ${{ secrets.AIG_TIER1_CREDENTIALS_10 }}
-      AIG_TIER2_CREDENTIALS_01: ${{ secrets.AIG_TIER2_CREDENTIALS_01 }}
-      AIG_TIER2_CREDENTIALS_02: ${{ secrets.AIG_TIER2_CREDENTIALS_02 }}
-      AIG_TIER2_CREDENTIALS_03: ${{ secrets.AIG_TIER2_CREDENTIALS_03 }}
-      AIG_TIER2_CREDENTIALS_04: ${{ secrets.AIG_TIER2_CREDENTIALS_04 }}
-      AIG_TIER2_CREDENTIALS_05: ${{ secrets.AIG_TIER2_CREDENTIALS_05 }}
-      AIG_TIER2_CREDENTIALS_06: ${{ secrets.AIG_TIER2_CREDENTIALS_06 }}
-      AIG_TIER2_CREDENTIALS_07: ${{ secrets.AIG_TIER2_CREDENTIALS_07 }}
-      AIG_TIER2_CREDENTIALS_08: ${{ secrets.AIG_TIER2_CREDENTIALS_08 }}
-      AIG_TIER2_CREDENTIALS_09: ${{ secrets.AIG_TIER2_CREDENTIALS_09 }}
-      AIG_TIER2_CREDENTIALS_10: ${{ secrets.AIG_TIER2_CREDENTIALS_10 }}
-      AIG_TIER3_CREDENTIALS_01: ${{ secrets.AIG_TIER3_CREDENTIALS_01 }}
-      AIG_TIER3_CREDENTIALS_02: ${{ secrets.AIG_TIER3_CREDENTIALS_02 }}
-      AIG_TIER3_CREDENTIALS_03: ${{ secrets.AIG_TIER3_CREDENTIALS_03 }}
-      AIG_TIER3_CREDENTIALS_04: ${{ secrets.AIG_TIER3_CREDENTIALS_04 }}
-      AIG_TIER3_CREDENTIALS_05: ${{ secrets.AIG_TIER3_CREDENTIALS_05 }}
-      AIG_TIER3_CREDENTIALS_06: ${{ secrets.AIG_TIER3_CREDENTIALS_06 }}
-      AIG_TIER3_CREDENTIALS_07: ${{ secrets.AIG_TIER3_CREDENTIALS_07 }}
-      AIG_TIER3_CREDENTIALS_08: ${{ secrets.AIG_TIER3_CREDENTIALS_08 }}
-      AIG_TIER3_CREDENTIALS_09: ${{ secrets.AIG_TIER3_CREDENTIALS_09 }}
-      AIG_TIER3_CREDENTIALS_10: ${{ secrets.AIG_TIER3_CREDENTIALS_10 }}
-    steps:
-      - name: Checkout target commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.deploy-policy.outputs.target_sha }}
-          fetch-depth: 2
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Preflight deployment configuration
-        run: node scripts/github-deployment-config.mjs preflight
-
-      - name: Validate runtime configuration
-        run: |
-          node scripts/github-deployment-config.mjs prepare --from-env \
-            --wrangler "$RUNNER_TEMP/wrangler.github.json" \
-            --secrets "$RUNNER_TEMP/gateway-secrets.json" \
-            --summary "$RUNNER_TEMP/deployment-summary.txt"
-
-      - name: Apply D1 migrations
-        if: env.AIG_USAGE_D1_ID != ''
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          AIG_USAGE_D1_ID: ${{ vars.AIG_USAGE_D1_ID }}
-        run: npx --yes wrangler@4.114.0 d1 migrations apply ai-gateway-stats --remote -c "$RUNNER_TEMP/wrangler.github.json"
-
-      - name: Deploy Worker (atomic code+secrets)
-        id: deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.114.0 deploy --secrets-file "$RUNNER_TEMP/gateway-secrets.json" -c "$RUNNER_TEMP/wrangler.github.json"
-
-      - name: Verify deployed gateway
-        id: health-check
-        run: |
-          for attempt in 1 2 3; do
-            if node scripts/github-deployment-config.mjs health-check --from-env --expected-build "$DEPLOYED_SHA"; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::notice::Post-deploy health check attempt ${attempt}/3 failed; retrying in 5s."
-              sleep 5
-            fi
-          done
-          echo "::error::Post-deploy health check failed after 3 attempts."
-          exit 1
-
-      - name: Rollback to previous Worker version
-        id: rollback
-        if: failure() && steps.deploy.outcome == 'success'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          echo "::notice::Rolling back Worker code for deployed SHA: ${DEPLOYED_SHA}"
-          npx --yes wrangler@4.114.0 rollback -c "$RUNNER_TEMP/wrangler.github.json"
-
-      - name: Verify rolled-back gateway
-        if: failure() && steps.rollback.outcome == 'success'
-        run: |
-          node scripts/github-deployment-config.mjs health-check --from-env || {
-            echo "::error::Rollback health check also failed — the previous version may not be healthy either. Manual intervention required."
-            exit 1
+          [ -n "$AW_DISPATCH_TOKEN" ] || {
+            echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
+            exit 77
           }
 
-      - name: Deployment summary
-        if: success()
-        env:
-          DEPLOYED_SHA: ${{ env.DEPLOYED_SHA }}
-        run: |
-          {
-            cat "$RUNNER_TEMP/deployment-summary.txt"
-            echo ""
-            echo "Identity"
-            echo "  Deployed SHA: ${DEPLOYED_SHA}"
-          } | tee "$GITHUB_STEP_SUMMARY"
+          payload="$(
+            jq -cn \
+              --arg request_id "$REQUEST_ID" \
+              --arg source_repository "$SOURCE_REPOSITORY" \
+              --arg source_sha "$SOURCE_SHA" \
+              '{
+                event_type: "run-ai-gateway-deploy",
+                client_payload: {
+                  schema_version: "1",
+                  request_id: $request_id,
+                  source_repository: $source_repository,
+                  source_sha: $source_sha
+                }
+              }'
+          )"
+
+          curl -fsS \
+            --retry 2 \
+            --retry-delay 1 \
+            --request POST \
+            --header "Authorization: Bearer $AW_DISPATCH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
+            --data "$payload"

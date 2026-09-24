@@ -34,11 +34,9 @@ test('online verification rejects the wrong Worker build before accepting health
   } finally { globalThis.fetch = original; }
 });
 
-test('manual deployment gate includes types and links; rollback verification follows successful rollback', () => {
+test('deployment validation remains project-owned while orchestration is central', () => {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
   assert.match(pkg.scripts['validate:deploy'], /npm run typecheck/);
   assert.match(pkg.scripts['validate:deploy'], /npm run check:links/);
-  const workflow = readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /health-check --from-env --expected-build "\$DEPLOYED_SHA"/);
-  assert.match(workflow, /Verify rolled-back gateway\s+if: failure\(\) && steps\.rollback\.outcome == 'success'/);
+  assert.match(pkg.scripts['check:deploy'], /cloudflare-wrangler\.mjs deploy --dry-run/);
 });
