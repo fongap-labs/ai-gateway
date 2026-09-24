@@ -15,6 +15,7 @@ import { modelFallbackCandidates } from './model-fallback.ts';
 import { detectRoute, normalizePath, acceptsHtml } from './router.ts';
 import { dashboardResponse } from '../dashboard/pages.ts';
 import { readmeStatusSvgResponse } from '../dashboard/readme-status.ts';
+import { handleOAuthRoute } from '../oauth/routes.ts';
 import { corsHeaders, readBodyTextWithLimit, BodyTooLargeError } from '../protocol/http.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import {
@@ -85,6 +86,20 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
   if (request.method === 'GET' && pathname === '/readme-status.svg') {
     return { ok: false, response: await readmeStatusSvgResponse(env) };
+  }
+
+  // OAuth onboarding routes. Handled before the access-key presence check so
+  // the browser redirect callback (which carries no gateway key) can complete.
+  // /oauth/start requires a gateway key (checked inside the handler); the
+  // callback and paste routes are authorized by their single-use D1 state.
+  if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
+    const config = loadGatewayConfig(env);
+    const oauthResponse = await handleOAuthRoute(request, env, {
+      tier2Nodes: (config.tiers[2] || []).map((node) => ({
+        id: node.id, provider: node.provider, auth: node.auth,
+      })),
+    }, pathname);
+    return { ok: false, response: oauthResponse };
   }
 
   const accessConfig = loadAccessKeysConfig(env);

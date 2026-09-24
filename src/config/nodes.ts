@@ -11,6 +11,9 @@
 //   id, provider, base_url, models
 // Optional:
 //   priority (non-negative integer number, default 100)
+//   auth ("oauth"; Tier 2 only - marks a subscription node whose credential
+//         is resolved from the OAuth token store at dispatch time instead of
+//         a static AIG_TIER{N}_CREDENTIALS_* secret)
 //
 // Protocol and surfaces are NOT account-level configuration. They come from
 // the provider wire profile so one provider contract is defined exactly once.
@@ -32,7 +35,8 @@ export const SECRET_SHARD_PATTERN = /^AIG_TIER([123])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
+const ALLOWED_AUTH_MODES = new Set(['oauth']);
 
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
@@ -130,25 +134,25 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
 
   const credentials = new Map<string, string>();
   const credentialTiers = new Map<string, string>();
-  let conflict = false;
+  let hasConflict = false;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedSecretShards) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON object { nodeId: credential }`);
-      conflict = true;
+      hasConflict = true;
       continue;
     }
     const shardTier = `tier-${shard.tierNumber}`;
     for (const [nodeId, credential] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof credential !== 'string' || !credential.trim()) {
         diagnostics.push(`${shard.key}: credential for "${nodeId}" is empty`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       if (credentials.has(nodeId)) {
         diagnostics.push(`credential id "${nodeId}" defined in multiple secret shards (${credentialTiers.get(nodeId)} and ${shardTier})`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       credentials.set(nodeId, credential);
@@ -156,7 +160,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
-  const allowInsecure = getBool(env, 'AIG_CAN_USE_HTTP', false);
+  const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -165,7 +169,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON array of node objects`);
-      conflict = true;
+      hasConflict = true;
       continue;
     }
     for (const rawNode of parsed) {
@@ -176,14 +180,14 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
       const secretTier = ID_PATTERN.test(rawId) ? credentialTiers.get(rawId) : undefined;
       if (secretTier && secretTier !== tier) {
         diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}.`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
-      const node = buildRuntimeNode(rawNode, tier, credentials, allowInsecure, shard.key, diagnostics);
+      const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics);
       if (!node) continue;
       if (seenIds.has(node.id)) {
         diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key})`);
-        conflict = true;
+        hasConflict = true;
         continue;
       }
       seenIds.set(node.id, shard.key);
@@ -197,7 +201,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   }
 
   if (auxDiagnostics.length > 0) status = 'invalid';
-  else if (conflict || nodes.length === 0) status = 'invalid';
+  else if (hasConflict || nodes.length === 0) status = 'invalid';
   else if (nodes.length < nodesDeclared) status = 'degraded';
   else status = 'ready';
   const ready = status === 'ready' || status === 'degraded';
@@ -229,7 +233,7 @@ function buildRuntimeNode(
   rawNode: unknown,
   tier: NodeTier,
   credentials: Map<string, string>,
-  allowInsecure: boolean,
+  isHttpAllowed: boolean,
   sourceKey: string,
   diagnostics: string[],
 ): RuntimeNode | null {
@@ -254,9 +258,27 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, auth)`);
       return null;
     }
+  }
+
+  // auth:"oauth" marks a Tier 2 subscription node whose credential is
+  // resolved at dispatch time from the OAuth token store instead of a static
+  // AIG_TIER{N}_CREDENTIALS_* secret. Tier roles are permanent architecture
+  // boundaries, so the marker is only valid on Tier 2.
+  const auth = rec.auth === undefined ? undefined : rec.auth;
+  if (auth !== undefined && typeof auth !== 'string') {
+    diagnostics.push(`node "${id}": auth must be the string "oauth" when present`);
+    return null;
+  }
+  if (auth !== undefined && !ALLOWED_AUTH_MODES.has(auth)) {
+    diagnostics.push(`node "${id}": unknown auth mode "${auth}" (allowed: ${[...ALLOWED_AUTH_MODES].join(', ')})`);
+    return null;
+  }
+  if (auth === 'oauth' && tier !== 'tier-2') {
+    diagnostics.push(`node "${id}": auth:"oauth" is a Tier 2 subscription marker and is not allowed on ${tier}`);
+    return null;
   }
 
   const provider = typeof rec.provider === 'string' ? rec.provider.trim() : '';
@@ -273,7 +295,7 @@ function buildRuntimeNode(
     diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
     return null;
   }
-  if (!allowInsecure && url.protocol !== 'https:') {
+  if (!isHttpAllowed && url.protocol !== 'https:') {
     diagnostics.push(`node "${id}": base_url must use https:// (set AIG_CAN_USE_HTTP=true to override)`);
     return null;
   }
@@ -282,9 +304,17 @@ function buildRuntimeNode(
     return null;
   }
 
-  const credential = credentials.get(id);
-  if (!credential) {
+  // Static-credential nodes require a matching secret shard entry. OAuth
+  // subscription nodes resolve their credential at dispatch time and a
+  // static secret entry would be a configuration error (two credential
+  // sources for one node), so the presence check is skipped for them.
+  const credential = credentials.get(id) || '';
+  if (auth === undefined && !credential) {
     diagnostics.push(`node "${id}": no credential found in AIG_TIER{N}_CREDENTIALS_*; node excluded`);
+    return null;
+  }
+  if (auth === 'oauth' && credentials.get(id)) {
+    diagnostics.push(`node "${id}": auth:"oauth" nodes must not have a static credential in AIG_TIER{N}_CREDENTIALS_*; the OAuth token store owns their credential`);
     return null;
   }
 
@@ -304,6 +334,7 @@ function buildRuntimeNode(
     credential,
     priority,
     models,
+    ...(auth === 'oauth' ? { auth: 'oauth' as const } : {}),
   };
 }
 
