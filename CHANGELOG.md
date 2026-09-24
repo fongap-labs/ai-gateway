@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- refactor: move heavy CI and scheduled validation to Action Worker while keeping only a thin repository dispatch bridge.
+- refactor: move pull-request CI to Action Worker while retaining main and scheduled validation until deployment is centralized.
 
 - ci: add a lightweight GitHub Actions merge gate for centralized Action Worker evidence.
 
