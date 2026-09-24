@@ -1,12 +1,10 @@
 name: Deploy
 
-# Automatic deploys follow successful CI on main. Secret shard variables remain
-# explicit because GitHub Actions cannot enumerate Secret values dynamically.
+# Automatic deploys follow successful Action Worker Central CI Evidence for the
+# current main HEAD. Secret shard variables remain local until deploy execution
+# itself is centralized.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  status:
   workflow_dispatch:
 
 permissions:
@@ -19,7 +17,17 @@ concurrency:
 jobs:
   # AIG_IS_DEPLOY_ENABLED=false is an emergency kill switch; unset or any other value leaves deployment enabled.
   gate:
-    if: vars.AIG_IS_DEPLOY_ENABLED != 'false'
+    if: >-
+      ${{
+        vars.AIG_IS_DEPLOY_ENABLED != 'false'
+        && (
+          github.event_name == 'workflow_dispatch'
+          || (
+            github.event.context == 'CI Evidence'
+            && github.event.state == 'success'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -28,18 +36,29 @@ jobs:
       - name: Checkout target commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.sha || github.sha }}
           fetch-depth: 2
+
+      - name: Resolve default branch HEAD
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          default_branch="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
+          default_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$default_branch" --jq '.sha')"
+          echo "default_sha=$default_sha" >> "$GITHUB_OUTPUT"
 
       - name: Decide deploy eligibility
         id: decide
         env:
           EVENT: ${{ github.event_name }}
-          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
-          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-          THIS_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          STATUS_CONTEXT: ${{ github.event.context }}
+          STATUS_STATE: ${{ github.event.state }}
+          STATUS_TARGET_URL: ${{ github.event.target_url }}
+          HEAD_SHA: ${{ github.event.sha || github.sha }}
+          DEFAULT_SHA: ${{ steps.source.outputs.default_sha }}
         run: node scripts/deploy-gate-decision.mjs
 
   deploy-policy:
@@ -51,7 +70,7 @@ jobs:
       actions: read
     uses: fongap-labs/action-worker/.github/workflows/validate-deploy-policy.yml@main
     with:
-      target_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+      target_sha: ${{ github.event.sha || github.sha }}
       ci_workflow: ci.yml
       require_default_head: true
 
