@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: complete the Codex subscription request protocol — first-party `Originator: codex-tui` header and `instructions` field normalization (empty string when absent) on the Responses surface for OpenAI subscription dispatches; plain API-key nodes remain untouched.
+
 - feat: harden subscription entitlement dispatch — isolate-level refresh singleflight plus cross-isolate compare-and-swap on a persisted refresh_version so token rotation keeps exactly one authoritative refresh token; persist the provider account id and send it as `chatgpt-account-id` for OpenAI subscription dispatches; fail-close runtime dispatch for providers without a verified subscription backend (built-in `google` default, override via `dispatch_ready`).
 
 - fix: bind runtime build identity to the validated AI Gateway source SHA instead of the Action Worker runner SHA.

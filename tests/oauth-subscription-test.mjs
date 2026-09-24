@@ -940,5 +940,109 @@ await test('non-openai oauth nodes never send chatgpt-account-id', async () => {
   assert.equal(sawAccountHeader, false, 'chatgpt-account-id is an OpenAI subscription header only');
 });
 
+// ---- P3: Codex subscription protocol normalization -----------------------------
+
+await test('codex oauth dispatch sends Originator and normalizes empty instructions on responses', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'codex-sub', provider: 'openai', auth: 'oauth', base_url: 'https://codex-up.example.com', models: { 'Code-Max': 'gpt-codex' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS;
+  await storeSubscriptionToken(env, {
+    nodeId: 'codex-sub', provider: 'openai', accessToken: 'codex-tok', refreshToken: null,
+    accountId: 'acct-xyz', expiresAt: Date.now() + 3600_000,
+  });
+  let seenOriginator = null;
+  let seenBody = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'codex-up.example.com') {
+      seenOriginator = init?.headers?.get('originator');
+      seenBody = JSON.parse(String(init?.body || '{}'));
+      return new Response(JSON.stringify({
+        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
+        model: 'gpt-codex', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const responsesRequest = new Request('https://gateway.example.com/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
+    body: JSON.stringify({ model: 'Code-Max', input: 'hi' }), // no instructions field
+  });
+  const res = await worker.fetch(responsesRequest, env, {});
+  assert.equal(res.status, 200);
+  assert.equal(seenOriginator, 'codex-tui', 'Originator header applied');
+  assert.equal(seenBody.instructions, '', 'instructions normalized to empty string when absent');
+  assert.equal(seenBody.model, 'gpt-codex');
+});
+
+await test('codex oauth responses with client instructions are preserved', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'codex-sub', provider: 'openai', auth: 'oauth', base_url: 'https://codex-up.example.com', models: { 'Code-Max': 'gpt-codex' } }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS;
+  await storeSubscriptionToken(env, {
+    nodeId: 'codex-sub', provider: 'openai', accessToken: 'codex-tok', refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let seenBody = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'codex-up.example.com') {
+      seenBody = JSON.parse(String(init?.body || '{}'));
+      return new Response(JSON.stringify({
+        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
+        model: 'gpt-codex', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const responsesRequest = new Request('https://gateway.example.com/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
+    body: JSON.stringify({ model: 'Code-Max', input: 'hi', instructions: 'custom system prompt' }),
+  });
+  const res = await worker.fetch(responsesRequest, env, {});
+  assert.equal(res.status, 200);
+  assert.equal(seenBody.instructions, 'custom system prompt', 'client instructions preserved');
+});
+
+await test('plain API-key responses nodes are not codex-normalized', async () => {
+  const env = makeEnv({
+    tier1: [{ id: 'plain-resp', provider: 'openai', base_url: 'https://plain-up.example.com', models: { 'Code-Max': 'gpt-x' } }],
+    extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'plain-resp': 'sk-plain' }) },
+  });
+  let seenBody = null; let seenOriginator = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'plain-up.example.com') {
+      seenBody = JSON.parse(String(init?.body || '{}'));
+      seenOriginator = init?.headers?.get('originator');
+      return new Response(JSON.stringify({
+        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
+        model: 'gpt-x', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const responsesRequest = new Request('https://gateway.example.com/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
+    body: JSON.stringify({ model: 'Code-Max', input: 'hi' }),
+  });
+  const res = await worker.fetch(responsesRequest, env, {});
+  assert.equal(res.status, 200);
+  assert.equal(seenBody.instructions, undefined, 'instructions not injected for API-key nodes');
+  assert.equal(seenOriginator, null, 'Originator not sent for API-key nodes');
+});
+
 console.log(`\nAll OAuth tests: ${passed} passed, ${failed} failed.`);
 if (failed) process.exit(1);

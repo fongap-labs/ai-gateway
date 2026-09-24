@@ -120,6 +120,15 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageSupported(node, env)) {
     outboundObject = withUsageStreamOptions(outboundObject);
   }
+  // Codex subscription semantics: the ChatGPT/Codex Responses backend
+  // expects the `instructions` field to exist on the Responses wire shape
+  // (first-party codex-tui always sends one, empty when none). Only the
+  // subscription path normalizes it; plain API-key Responses nodes are
+  // forwarded exactly as the client sent them.
+  if (node.auth === 'oauth' && node.provider === 'openai' && surface === 'responses'
+    && (outboundObject.instructions === undefined || outboundObject.instructions === null)) {
+    outboundObject = { ...outboundObject, instructions: '' };
+  }
   const outboundBody = JSON.stringify(outboundObject);
 
   let targetUrl: URL | string;
@@ -145,10 +154,14 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     const providerConfig = getOAuthProvider(env, node.provider);
     // ChatGPT/Codex subscription upstreams identify the subscription account
     // via the chatgpt-account-id header (OpenAI OAuth token responses carry
-    // account_id). Other providers contribute only their configured headers.
-    const accountHeader = node.provider === 'openai' && resolved.accountId
-      ? { 'chatgpt-account-id': resolved.accountId } : undefined;
-    oauthExtraHeaders = { ...(providerConfig?.upstreamHeaders || {}), ...(accountHeader || {}) };
+    // account_id) and require the first-party originator marker; client-
+    // supplied values are never forwarded. Other providers contribute only
+    // their configured headers.
+    const codexHeaders = node.provider === 'openai' ? {
+      ...(resolved.accountId ? { 'chatgpt-account-id': resolved.accountId } : {}),
+      Originator: 'codex-tui',
+    } : undefined;
+    oauthExtraHeaders = { ...(providerConfig?.upstreamHeaders || {}), ...(codexHeaders || {}) };
   }
 
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,

@@ -157,8 +157,8 @@ The three mainstream international providers ship with **built-in defaults**
 
 | Provider key | Subscription | Onboarding | Dispatch |
 | --- | --- | --- | --- |
-| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer, native Messages) |
-| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id`) |
+| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Bearer + native Messages. **Experimental**: the first-party Claude Code client also injects a billing system block and CCH request signing; unsigned subscription traffic is not verified against the real backend — live-test with your own subscription before relying on it. |
+| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id` + `Originator: codex-tui` + `instructions` normalization on the Responses surface) |
 | `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | **Fail-closed** — no verified Gemini subscription backend behind the OpenAI-compatible profile |
 
 To onboard with defaults, configure the Tier 2 node with the matching
@@ -237,7 +237,10 @@ automatically at dispatch time with an isolate-local cache and:
 
 The OpenAI OAuth response's `account_id` is persisted (plaintext, not a
 secret) and sent as the `chatgpt-account-id` header on every Codex
-subscription dispatch.
+subscription dispatch. Codex subscription dispatches also carry the
+first-party `Originator: codex-tui` marker and normalize a missing
+`instructions` field to an empty string on the Responses surface (the
+ChatGPT backend expects the field to exist).
 
 ## Runtime variables
 
