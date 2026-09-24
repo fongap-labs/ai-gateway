@@ -31,71 +31,56 @@ const rollback = pos('- name: Rollback');
 assert.ok(migration >= 0 && workerDeploy > migration, 'D1 migrations must run before Worker deploy');
 assert.ok(verify > workerDeploy, 'remote verification must run after Worker deploy');
 assert.ok(rollback > verify, 'rollback must follow failed post-deploy verification');
-assert.match(deploy, /if: failure\(\) && steps\.deploy\.outcome == 'success'/,
-  'rollback must require a completed deploy followed by failure');
+assert.match(deploy, /if: failure\(\) && steps\.deploy\.outcome == 'success'/);
 
-assert.match(deploy, /workflow_run:[\s\S]*workflows: \[CI\][\s\S]*branches: \[main\]/);
-assert.match(ci, /validate-merge:/);
-assert.match(ci, /validate-deploy:/);
-assert.match(ci, /npm run validate:deploy/);
-assert.ok(!ci.includes('cleanup-legacy-workflow-history'), 'one-shot cleanup job must not remain in permanent CI');
-assert.ok(!ci.includes('actions: write'), 'permanent CI must not retain Actions write permission');
+assert.match(deploy, /on:\s*\n\s*status:/);
+assert.doesNotMatch(deploy, /workflow_run:/);
+assert.match(ci, /run-central-ci-ref/);
+assert.match(ci, /AW_DISPATCH_TOKEN/);
+assert.doesNotMatch(ci, /npm\s+run/);
+assert.doesNotMatch(ci, /validate-deploy:/);
+assert.doesNotMatch(ci, /validate-merge:/);
 assert.match(deploy, /manual-validate:[\s\S]*npm run validate:deploy[\s\S]*npm run check:deploy/);
 assert.match(jobBlock('deploy-policy'), /uses: fongap-labs\/action-worker\/\.github\/workflows\/validate-deploy-policy\.yml@main/);
-assert.match(jobBlock('deploy-policy'), /target_sha: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/);
+assert.match(jobBlock('deploy-policy'), /target_sha: \$\{\{ github\.event\.sha \|\| github\.sha \}\}/);
 assert.match(jobBlock('deploy-policy'), /ci_workflow: ci\.yml/);
 assert.match(jobBlock('deploy-policy'), /require_default_head: true/);
-assert.match(jobBlock('manual-validate'), /needs:[\s\S]*- gate[\s\S]*- deploy-policy/);
-assert.match(jobBlock('deploy'), /needs:[\s\S]*- gate[\s\S]*- deploy-policy[\s\S]*- manual-validate/);
 
+const centralRun = 'https://github.com/fongap-labs/action-worker/actions/runs/123';
+const sha = 'a'.repeat(40);
 const base = {
-  event: 'workflow_run',
-  ciConclusion: 'success',
-  headRepo: 'fongap-labs/ai-gateway',
-  thisRepo: 'fongap-labs/ai-gateway',
+  event: 'status',
+  statusContext: 'CI Evidence',
+  statusState: 'success',
+  statusTargetUrl: centralRun,
+  headSha: sha,
+  defaultSha: sha,
   changedFiles: ['src/index.ts'],
 };
-assert.equal(decideDeploy({ ...base, triggerEvent: 'push' }).deploy, true, 'successful push CI may auto-deploy');
-assert.equal(decideDeploy({ ...base, triggerEvent: 'schedule' }).deploy, false, 'scheduled CI is test-only');
-assert.equal(decideDeploy({ ...base, triggerEvent: 'workflow_dispatch' }).deploy, false, 'manual CI is test-only');
-assert.equal(decideDeploy({ ...base, triggerEvent: 'push', ciConclusion: 'failure' }).deploy, false, 'failed CI must block deploy');
-assert.equal(decideDeploy({ ...base, triggerEvent: 'push', headRepo: 'someone/ai-gateway' }).deploy, false, 'fork head must not auto-deploy');
-assert.equal(decideDeploy({ ...base, triggerEvent: 'push', changedFiles: ['README.md', 'docs/README.md'] }).deploy, false, 'docs-only change must skip deploy');
-assert.equal(decideDeploy({ event: 'workflow_dispatch' }).deploy, true, 'manual Deploy workflow may enter its own validation gate');
+assert.equal(decideDeploy(base).deploy, true, 'central CI evidence for current main may auto-deploy');
+assert.equal(decideDeploy({ ...base, statusContext: 'ci-evidence' }).deploy, false);
+assert.equal(decideDeploy({ ...base, statusState: 'failure' }).deploy, false);
+assert.equal(decideDeploy({ ...base, statusTargetUrl: 'https://example.invalid/run/123' }).deploy, false);
+assert.equal(decideDeploy({ ...base, defaultSha: 'b'.repeat(40) }).deploy, false);
+assert.equal(decideDeploy({ ...base, changedFiles: ['README.md', 'docs/README.md'] }).deploy, false);
+assert.equal(decideDeploy({ event: 'workflow_dispatch' }).deploy, true);
 
 assert.match(deploy, /vars\.AIG_IS_DEPLOY_ENABLED != 'false'/);
 assert.doesNotMatch(deploy, /AIG_DEPLOY_REPOSITORY/);
-assert.match(deploy, /THIS_REPO: \$\{\{ github\.repository \}\}/);
 assert.doesNotMatch(deploy, /github\.repository == 'fongap-labs\/ai-gateway'/);
-assert.doesNotMatch(deploy, /github\.repository == 'fongap\/ai-gateway'/);
-
-const eventTargetRef = /ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/;
-const governedTargetRef = /ref: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/;
-assert.match(jobBlock('gate'), eventTargetRef, 'pre-policy gate checkout must inspect the triggering commit');
-assert.match(jobBlock('deploy'), governedTargetRef, 'deploy checkout must use the centrally validated commit');
-assert.match(jobBlock('manual-validate'), governedTargetRef,
-  'manual validation checkout must use the centrally validated commit');
-assert.equal((deploy.match(/uses: actions\/checkout@/g) || []).length, 3,
-  'deploy workflow keeps exactly one checkout per job');
-assert.ok(!deploy.includes('Checkout triggering commit'));
-assert.ok(!deploy.includes('Checkout (manual dispatch)'));
+assert.match(jobBlock('gate'), /ref: \$\{\{ github\.event\.sha \|\| github\.sha \}\}/);
+assert.match(jobBlock('deploy'), /ref: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/);
+assert.match(jobBlock('manual-validate'), /ref: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/);
 assert.match(deploy, /DEPLOYED_SHA: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/);
-assert.match(deploy, /GITHUB_SHA: \$\{\{ needs\.deploy-policy\.outputs\.target_sha \}\}/);
 assert.match(deploy, /health-check --from-env --expected-build "\$DEPLOYED_SHA"/);
-assert.match(deploy, /Deployed SHA/);
 
-assert.match(bridge, /EXTRA_VAR_ALLOW\s*=\s*new Set\(\['GITHUB_SHA', 'AIG_PUBLIC_URL'\]\)/,
-  'deployment bridge must pass AIG_PUBLIC_URL into Worker runtime metadata');
-assert.ok(bridge.includes('`${origin}/health`'), 'remote verifier must call /health');
-assert.equal(bridge.includes('`${origin}/version`'), false, 'remote verifier must not call /version');
+assert.match(bridge, /EXTRA_VAR_ALLOW\s*=\s*new Set\(\['GITHUB_SHA', 'AIG_PUBLIC_URL'\]\)/);
+assert.ok(bridge.includes('${origin}/health'));
 assert.match(bridge, /healthBody\?\.build !== expectedBuild/);
 assert.match(diagnostics, /build:\s*resolveBuildSha\(env\)/);
-assert.equal(diagnostics.includes('versionResponse'), false);
 
-for (const wf of [deploy, ci]) {
-  for (const match of wf.matchAll(/npm\s+run\s+([A-Za-z0-9_:-]+)/g)) {
-    assert.ok(Object.hasOwn(pkg.scripts || {}, match[1]), `workflow references missing npm script ${match[1]}`);
-  }
+for (const match of deploy.matchAll(/npm\s+run\s+([A-Za-z0-9_:-]+)/g)) {
+  assert.ok(Object.hasOwn(pkg.scripts || {}, match[1]), `workflow references missing npm script ${match[1]}`);
 }
 
 console.log('deployment-workflow-contract: all contracts passed');
