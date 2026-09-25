@@ -54,6 +54,7 @@ Keep each new migration focused and forward-compatible. Do not rely on a Worker 
 | `0010_cache_observation.sql` | Adds protocol-neutral upstream effective-input and explicit cache-observation counters; historical cache-observation coverage is intentionally not reconstructed |
 | `0011_subscription_tokens.sql` | Adds Tier 2 subscription OAuth credential storage (`subscription_tokens`, AES-GCM encrypted) and single-use PKCE flow states (`oauth_flow_states`) |
 | `0012_subscription_account_cas.sql` | Adds the subscription `account_id` identity column and the `refresh_version` compare-and-swap guard for refresh-token rotation |
+| `0013_subscription_discovered_models.sql` | Adds the `discovered_models` diagnostics column for adapter-owned model discovery at onboarding |
 
 The SQL files themselves are the schema-change source of truth; this table is only an index.
 

@@ -23,9 +23,12 @@ export type StoredSubscriptionToken = {
   provider: string,
   accessToken: string,
   refreshToken: string | null,
-  /** Provider account identity (e.g., OpenAI ChatGPT account id). Not a
-   *  secret; used as a request header by subscription upstreams. */
+/** Provider account identity (e.g., OpenAI ChatGPT account id). Not a
+ *  secret; used as a request header by subscription upstreams. */
   accountId: string | null,
+  /** Upstream model ids the subscription adapter discovered for this
+   *  credential (operator diagnostics; routing stays node.models). */
+  discoveredModels: readonly string[] | null,
   /** Monotonic compare-and-swap guard for refresh-token rotation. */
   refreshVersion: number,
   expiresAt: number,
@@ -152,6 +155,7 @@ export async function storeSubscriptionToken(
     accessToken: string,
     refreshToken: string | null,
     accountId?: string | null,
+    discoveredModels?: readonly string[] | null,
     expiresAt: number,
   },
 ): Promise<boolean> {
@@ -162,12 +166,14 @@ export async function storeSubscriptionToken(
   if (!accessEnc) return false;
   const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
   const accountId = input.accountId?.trim() || null;
+  const discoveredJson = input.discoveredModels && input.discoveredModels.length > 0
+    ? JSON.stringify(input.discoveredModels) : null;
   const now = Date.now();
   try {
     await db.prepare(
       `INSERT INTO subscription_tokens
-         (node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, updated_at, account_id, refresh_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 0)
+         (node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, updated_at, account_id, refresh_version, discovered_models)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 0, ?)
        ON CONFLICT(node_id) DO UPDATE SET
          provider = excluded.provider,
          access_token_enc = excluded.access_token_enc,
@@ -177,12 +183,13 @@ export async function storeSubscriptionToken(
          status = 'active',
          updated_at = excluded.updated_at,
          account_id = COALESCE(excluded.account_id, subscription_tokens.account_id),
-         refresh_version = 0`,
+         refresh_version = 0,
+         discovered_models = COALESCE(excluded.discovered_models, subscription_tokens.discovered_models)`,
     ).bind(
       input.nodeId, input.provider,
       accessEnc.ciphertextB64, refreshEnc?.ciphertextB64 ?? null,
       accessEnc.ivB64, refreshEnc?.ivB64 ?? null,
-      input.expiresAt, now, accountId,
+      input.expiresAt, now, accountId, discoveredJson,
     ).run();
     return true;
   } catch {
@@ -247,7 +254,7 @@ export async function loadSubscriptionToken(
   if (!hasTokenKey(env)) return null;
   try {
     const row = await db.prepare(
-      'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, account_id, refresh_version FROM subscription_tokens WHERE node_id = ?',
+      'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, account_id, refresh_version, discovered_models FROM subscription_tokens WHERE node_id = ?',
     ).bind(nodeId).first();
     if (!row || typeof row !== 'object') return null;
     const record = row as Record<string, unknown>;
@@ -268,14 +275,26 @@ export async function loadSubscriptionToken(
         ivB64: record.refresh_iv,
       });
     }
+    let discoveredModels: readonly string[] | null = null;
+    if (typeof record.discovered_models === 'string' && record.discovered_models.trim()) {
+      try {
+        const parsed = JSON.parse(record.discovered_models);
+        if (Array.isArray(parsed) && parsed.every((id) => typeof id === 'string')) {
+          discoveredModels = Object.freeze(parsed);
+        }
+      } catch {
+        discoveredModels = null;
+      }
+    }
     return {
       nodeId,
       provider: record.provider,
       accessToken,
       refreshToken,
       accountId: typeof record.account_id === 'string' && record.account_id ? record.account_id : null,
+      discoveredModels,
       refreshVersion: typeof record.refresh_version === 'number' ? record.refresh_version : 0,
-      expiresAt: record.expires_at,
+      expiresAt: record.expires_at as number,
       status: typeof record.status === 'string' ? record.status : 'active',
     };
   } catch {
