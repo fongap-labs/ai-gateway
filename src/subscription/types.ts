@@ -60,9 +60,15 @@ export type SubscriptionAdapter = {
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null,
   /** Interpret an upstream failure for quota-window semantics. Returns a
    *  cooldown hint in milliseconds when the provider's entitlement window
-   * (resets_at / window-reset markers) implies waiting longer than
+   *  (resets_at / window-reset markers) implies waiting longer than
    *  Retry-After alone, or null to leave the generic classification
    *  untouched. Hints are advisory: the caller caps them and still applies
    *  its own recovery model (cooldown expiry -> probe -> restore). */
   quotaResetHint?(failure: SubscriptionFailureView, now: number): number | null,
+  /** Discover the upstream model ids this subscription credential can
+   *  actually reach, best-effort. Returns null when discovery is not
+   *  supported for the provider. Discovered ids are diagnostics for the
+   *  operator (what the entitlement currently grants); static node.models
+   *  routing configuration remains the routing authority. */
+  discoverModels?(credential: ResolvedSubscriptionCredential, env: Record<string, unknown>): Promise<readonly string[] | null>,
 };

@@ -16,6 +16,7 @@
 // of the mainstream shape and is not implemented here.
 
 import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
+import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
 import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
 
 export const CLAUDE_OAUTH_REQUIRED_BETAS: readonly string[] = Object.freeze([
@@ -66,5 +67,37 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
     const fromBody = hintFromResetBody(failure.body, CLAUDE_RESET_BODY_FIELDS);
     const resetAt = hintFromResetHeaders(failure.headers, CLAUDE_RESET_HEADERS, now) ?? fromBody;
     return capHint(resetAt, relative, now);
+  },
+
+  async discoverModels(credential: ResolvedSubscriptionCredential, _env: Record<string, unknown>): Promise<readonly string[] | null> {
+    if (!credential.ok) return null;
+    // The Anthropic model catalog with the same OAuth client shape a
+    // shaped dispatch would send. Best-effort diagnostics: the node's
+    // static models mapping stays the routing authority.
+    let response: Response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+        headers: {
+          Authorization: `Bearer ${credential.token}`,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': CLAUDE_OAUTH_REQUIRED_BETAS.join(','),
+          'x-app': 'cli',
+          'user-agent': CLAUDE_CLI_USER_AGENT,
+        },
+      });
+    } catch {
+      return null;
+    }
+    if (!response.ok) return null;
+    try {
+      const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+      if (!Array.isArray(payload.data)) return null;
+      const ids = payload.data
+        .map((entry) => typeof entry?.id === 'string' ? entry.id : null)
+        .filter((id): id is string => !!id);
+      return Object.freeze(ids.sort());
+    } catch {
+      return null;
+    }
   },
 };

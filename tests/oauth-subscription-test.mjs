@@ -95,8 +95,8 @@ class MockOAuthD1 {
             return {};
           }
           if (/INSERT INTO subscription_tokens/.test(query)) {
-            // values: nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId
-            const [nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId] = values;
+            // values: nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId, discoveredJson
+            const [nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId, discoveredJson] = values;
             const existing = self.tokens.get(nodeId);
             self.tokens.set(nodeId, {
               node_id: nodeId, provider,
@@ -107,6 +107,7 @@ class MockOAuthD1 {
               expires_at: expiresAt, status: 'active', updated_at: updatedAt,
               account_id: accountId ?? existing?.account_id ?? null,
               refresh_version: 0,
+              discovered_models: discoveredJson ?? existing?.discovered_models ?? null,
             });
             return { meta: { changes: 1 } };
           }
@@ -1264,6 +1265,78 @@ await test('plain API-key nodes never consume subscription quota hints', async (
   const state = getNodeState('key-node');
   assert.ok(state.cooldownUntil <= Date.now() + 60_000,
     'API-key nodes keep the default cooldown regardless of quota markers');
+});
+
+// ---- Model discovery at onboarding (adapter-owned diagnostics) ---------------
+
+await test('codex onboarding discovers upstream models and surfaces the count', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'codex-disc', provider: 'openai', auth: 'oauth', base_url: 'https://codex-disc.example.com/v1', models: {} }],
+    db,
+  });
+  delete env.AIG_OAUTH_PROVIDERS;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    const headers = new Headers(init?.headers);
+    if (url.hostname === 'auth.openai.com') {
+      return new Response(JSON.stringify({ access_token: 'disc-tok', refresh_token: 'disc-ref', expires_in: 3600 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.hostname === 'api.openai.com' && url.pathname === '/v1/models') {
+      assert.equal(headers.get('authorization'), 'Bearer disc-tok', 'discovery carries the fresh credential');
+      assert.equal(headers.get('originator'), 'codex-tui', 'discovery uses the adapter client shape');
+      return new Response(JSON.stringify({ data: [{ id: 'gpt-5.1-codex' }, { id: 'gpt-5.1-codex-max' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-disc', {
+    headers: { authorization: `Bearer ${ACCESS_KEY}` },
+  }), env, {});
+  const state = new URL(start.headers.get('location')).searchParams.get('state');
+  const callback = await worker.fetch(new Request(
+    `https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`,
+  ), env, {});
+  assert.equal(callback.status, 200);
+  const body = await callback.text();
+  assert.ok(body.includes('2 upstream model'), 'success page surfaces the discovered count');
+  const stored = await loadSubscriptionToken(env, 'codex-disc');
+  assert.deepEqual([...(stored.discoveredModels || [])], ['gpt-5.1-codex', 'gpt-5.1-codex-max'], 'discovered ids persisted');
+});
+
+await test('onboarding succeeds even when model discovery fails', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'claude-disc', provider: 'anthropic', auth: 'oauth', base_url: 'https://claude-disc.example.com', models: {} }],
+    db,
+  });
+  withMockFetch(async (input) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    if (url.hostname === 'auth.mock.example.com' && url.pathname === '/token') {
+      return new Response(JSON.stringify({ access_token: 'disc-tok', refresh_token: 'disc-ref', expires_in: 3600 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.hostname === 'api.anthropic.com' && url.pathname === '/v1/models') {
+      return new Response('{"error":"forbidden"}', { status: 403, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected: ${url}`);
+  });
+  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=anthropic&node=claude-disc', {
+    headers: { authorization: `Bearer ${ACCESS_KEY}` },
+  }), env, {});
+  const state = new URL(start.headers.get('location')).searchParams.get('state');
+  const callback = await worker.fetch(new Request(
+    `https://gateway.example.com/oauth/callback/anthropic?code=c&state=${encodeURIComponent(state)}`,
+  ), env, {});
+  assert.equal(callback.status, 200, 'discovery failure never gates onboarding');
+  const body = await callback.text();
+  assert.ok(!body.includes('upstream model'), 'no discovery note on failure');
+  const stored = await loadSubscriptionToken(env, 'claude-disc');
+  assert.equal(stored.discoveredModels, null, 'no models stored on failed discovery');
 });
 
 console.log(`\nAll OAuth tests: ${passed} passed, ${failed} failed.`);

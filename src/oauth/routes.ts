@@ -14,6 +14,7 @@
 
 import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from './provider-configs.ts';
 import type { OAuthProviderConfig } from './provider-configs.ts';
+import { getSubscriptionAdapter } from '../subscription/index.ts';
 import { saveFlowState, loadFlowState, deleteFlowState, storeSubscriptionToken, purgeExpiredFlowStates, OAUTH_FLOW_TTL_MS } from './token-store.ts';
 import { hasTokenKey } from './crypto.ts';
 import { authorize } from '../request/auth.ts';
@@ -129,7 +130,39 @@ async function completeTokenExchange(env: GatewayEnv, providerConfig: OAuthProvi
     return htmlResponse(503, 'Token storage failed', 'Check AIG_TOKEN_ENCRYPTION_KEY and D1, then retry.');
   }
   logger.info(`oauth subscription token stored node=${nodeId} provider=${providerName}`);
-  return htmlResponse(200, 'Subscription linked', `Node ${escapeHtml(nodeId)} is now authorized.`);
+  // Best-effort model discovery through the provider adapter: what the
+  // entitlement can currently reach, shown to the operator as a diagnostic.
+  // Discovery never gates onboarding; the static node.models mapping stays
+  // the routing authority.
+  const adapter = getSubscriptionAdapter(providerName);
+  let discoveredNote = '';
+  let discoveredModels: readonly string[] | null = null;
+  if (adapter?.discoverModels) {
+    const credential = { ok: true as const, token: exchanged.payload.access_token, accountId };
+    try {
+      const models = await adapter.discoverModels(credential, env);
+      if (models && models.length > 0) {
+        discoveredModels = models;
+        discoveredNote = ` The subscription currently reaches ${models.length} upstream model(s).`;
+        logger.info(`oauth model discovery node=${nodeId} provider=${providerName} count=${models.length}`);
+      }
+    } catch {
+      // Discovery is diagnostics-only; failures are silent to the operator.
+    }
+  }
+  if (discoveredModels) {
+    // Best-effort persist of the discovered ids next to the credential so
+    // the operator can inspect them later. Failure here never affects
+    // onboarding; the page already reports the discovery result.
+    await storeSubscriptionToken(env, {
+      nodeId, provider: providerName,
+      accessToken: exchanged.payload.access_token, refreshToken,
+      accountId,
+      discoveredModels,
+      expiresAt: Date.now() + expiresInSec * 1000,
+    }).catch(() => {});
+  }
+  return htmlResponse(200, 'Subscription linked', `Node ${escapeHtml(nodeId)} is now authorized.${escapeHtml(discoveredNote)}`);
 }
 
 // ---- GET /oauth/start -------------------------------------------------------

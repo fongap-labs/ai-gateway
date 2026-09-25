@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: subscription model discovery and node abstraction — isSubscriptionNode becomes the single binding between "subscription entitlement" and its credential form (dispatch never checks node.auth directly); codex and claude adapters gain a discoverModels pass that runs best-effort at onboarding completion, surfaces the reachable upstream model count on the success page, and persists the ids as operator diagnostics (the static node models mapping stays the routing authority). Migration 0013 adds the discovered_models column.
+
 - feat: provider adapters own subscription quota-window hints — codex and claude adapters interpret entitlement reset markers (window-reset epoch headers, resets_in_seconds bodies, anthropic ratelimit reset headers) as cooldown hints that can only extend the 429 rate-limit cooldown (capped at 6h); recovery stays the existing cooldown-expiry, single half-open probe, auto-restore circuit. API-key nodes never consume subscription hints.
 
 - refactor: introduce the subscription adapter layer (src/subscription) — provider-specific subscription request shaping (Codex originator/account/instructions, Claude OAuth betas/client shape, Google fail-closed refusal) moves out of dispatch.ts into per-provider adapters behind a minimal prepare() contract; the adapter registry becomes the single dispatchability authority and the redundant `dispatch_ready` provider flag is removed. Scheduler, reliability, tier boundaries, and the OAuth credential lifecycle are unchanged.
