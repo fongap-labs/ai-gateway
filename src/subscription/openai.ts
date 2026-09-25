@@ -15,6 +15,7 @@
 //     instructions pass through verbatim.
 
 import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
+import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
 import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
 
 const CODEX_ORIGINATOR = 'codex-tui';
@@ -54,5 +55,35 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
       ?? hintFromResetBody(failure.body, CODEX_RESET_BODY_FIELDS);
     const relative = hintFromSecondsHeaders(failure.headers, CODEX_RESET_HEADERS);
     return capHint(resetAt, relative, now);
+  },
+
+  async discoverModels(credential: ResolvedSubscriptionCredential, _env: Record<string, unknown>): Promise<readonly string[] | null> {
+    if (!credential.ok) return null;
+    // The subscription's api.openai.com model catalog with the same identity
+    // headers a shaped dispatch would send. Best-effort diagnostics: the
+    // node's static models mapping stays the routing authority.
+    let response: Response;
+    try {
+      response = await fetch('https://api.openai.com/v1/models', {
+        headers: {
+          Authorization: `Bearer ${credential.token}`,
+          ...(credential.accountId ? { 'chatgpt-account-id': credential.accountId } : {}),
+          Originator: CODEX_ORIGINATOR,
+        },
+      });
+    } catch {
+      return null;
+    }
+    if (!response.ok) return null;
+    try {
+      const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+      if (!Array.isArray(payload.data)) return null;
+      const ids = payload.data
+        .map((entry) => typeof entry?.id === 'string' ? entry.id : null)
+        .filter((id): id is string => !!id);
+      return Object.freeze(ids.sort());
+    } catch {
+      return null;
+    }
   },
 };

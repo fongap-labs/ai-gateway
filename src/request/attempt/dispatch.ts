@@ -19,7 +19,7 @@ import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/in
 import { streamUsageSupported } from '../../config/provider-quirks.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
-import { getSubscriptionAdapter } from '../../subscription/index.ts';
+import { getSubscriptionAdapter, isSubscriptionNode } from '../../subscription/index.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -128,10 +128,12 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // adapter, which owns the subscription-specific request shape (headers,
   // body normalization). Adapter or resolution failure is a pre-dispatch
   // auth end: no upstream contact, no physical attempt accounting, and the
-  // node rotates for this request.
+  // node rotates for this request. isSubscriptionNode is the single binding
+  // between "subscription entitlement" and the credential form that proves
+  // it; the request path never checks node.auth directly.
   let credential = node.credential;
   let subscriptionExtraHeaders: Readonly<Record<string, string>> | undefined;
-  if (node.auth === 'oauth') {
+  if (isSubscriptionNode(node)) {
     const resolved = await resolveSubscriptionCredential(env, node);
     if (!resolved.ok) {
       logger.info(`oauth credential resolution failed node=${node.id} reason=${resolved.reason}`);
@@ -169,7 +171,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   }
 
   const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,
-    node.auth === 'oauth' ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined);
+    isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined);
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
   if (c.hedgeAbort) {
@@ -259,7 +261,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     // The hint can only EXTEND the rate-limit cooldown, never shorten it,
     // and stays capped inside the adapter — recovery remains the normal
     // cooldown-expiry -> probe -> restore flow.
-    if (node.auth === 'oauth' && classification.kind === 'rate_limit') {
+    if (isSubscriptionNode(node) && classification.kind === 'rate_limit') {
       const quotaAdapter = getSubscriptionAdapter(node.provider);
       const hint = quotaAdapter?.quotaResetHint
         ? quotaAdapter.quotaResetHint({ status: upstream.status, headers: upstream.headers, body: errorText }, Date.now())
