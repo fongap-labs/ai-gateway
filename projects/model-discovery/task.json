@@ -1,0 +1,4 @@
+{
+  "schema_version": "1",
+  "entrypoint": "projects/model-discovery/run.sh"
+}
