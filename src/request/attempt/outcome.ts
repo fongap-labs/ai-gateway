@@ -13,6 +13,7 @@ import {
 } from '../../reliability/node-state.ts';
 import {
   releaseTier1Slot,
+  settleTier1Quota,
   applyTier1Outcome, classifyTier1Failure,
 } from '../../reliability/tier1-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../reliability/tier1-heat.ts';
@@ -69,6 +70,11 @@ export function recordOutcome(state: LoopState, node: RuntimeNode, classificatio
   let tier1RateLimitCooldownMs: number | null = null;
 
   if (node.tier === 'tier-1') {
+    // A failed dispatch still consumed a request slot upstream; confirm the
+    // lease (no delivered token usage) so the reservation is not restored. The
+    // 429 path below additionally writes a fresh quota report that may exhaust
+    // the window; non-rate-limit failures keep the reactive cooldown model.
+    settleTier1Quota(node.id, c.tier1ReleaseToken, 0);
     releaseTier1Slot(node.id, c.tier1ReleaseToken);
     if (classification.action === 'neutral') {
       bumpNodeCounters(node.id, { requests: 1 });

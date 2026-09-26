@@ -23,6 +23,7 @@ Routing uses signals the gateway can actually observe:
 - live in-flight work is a **soft** ranking signal by default, never a guessed hard ceiling;
 - an explicit positive `max_in_flight` may hard-limit Tier 1 local admission for that policy; unset, `0`, or `null` leaves admission uncapped;
 - real 429 responses create key-local adaptive cooldown and recovery state;
+- provider-reported quota windows (OpenAI/Anthropic rate-limit headers, subscription window-reset hints) feed an isolate-local quota state that demotes near-limit accounts in the score and gates admission when the window is exhausted;
 - provider-model 429 evidence adds bounded soft heat when several independent keys hit the same shared capacity limit;
 - passive TTFT, soft affinity, exploration, circuit/recovery state, and recent transient failures influence ranking and recovery;
 - optional hedge work is suppressed before primary traffic when live pressure is already high.
@@ -30,6 +31,21 @@ Routing uses signals the gateway can actually observe:
 Gateway access groups authorize logical models but do not add a Tier 1 score factor. `max_in_flight` is deliberately not described as Provider-global capacity: multiple Cloudflare isolates can serve the same account independently. It is a local safety override, not a replacement for adaptive 429/cooldown learning.
 
 `GATEWAY_KEY_RPM` is separate. It protects client gateway access keys; it is not Provider/Node capacity configuration.
+
+## Quota lease
+
+Provider-reported quota is a prediction, never truth, and it never replaces the reactive mechanisms. The lifecycle extends the existing claim/release slot token:
+
+```text
+claim (acquire+reserve) -> execute -> settle(actual usage) -> release
+```
+
+- **Unknown quota is a no-op pass-through.** Providers that report no remaining/limit headers produce no quota signal; admission is unchanged and the reactive adaptive-429 + cooldown path governs. A hard limit is never fabricated.
+- **Reservation counter.** When a provider reports an absolute remaining-request count, each claim reserves one and admission is denied at zero, so concurrent requests cannot all pass against the tail of a window. A release before settlement (client abort, pre-dispatch failure, hedge loss before commitment) restores the reservation; a settled lease confirms consumption and subtracts reported token usage from the remaining-token window. Duplicate settle/release are idempotent. A missed settle can only over-restore (the account looks healthier and falls back to the reactive path) — the failure direction never leaks a reservation.
+- **Classification.** A reported window tail at or below 10% of the reported limit (or an absolute tail of ≤1 without a limit) marks the account `near_limit`, which demotes its Tier 1 score before a 429 ever arrives. Zero remaining with a known reset instant marks `exhausted_until`, which gates eligibility and surfaces the window wait for Retry-After; expiry auto-restores the account to unknown quota until the next report.
+- **Subscription windows** keep their existing advisory semantics: entitlement reset markers extend the rate-limit cooldown exactly as before, and additionally mark the window exhausted until the reset instant so the eligibility gate and reservation counter reflect the boundary.
+- **Hedges** are real upstream dispatches: each twin claims and reserves its own slot, and a losing twin releases its reservation back.
+- Quota state is isolate-local best-effort like all Tier 1 reliability state; `recordTier1QuotaReport` is the production writer and reconciliation subtracts reservations already outstanding in the isolate from a fresh provider report.
 
 ## 429 handling
 

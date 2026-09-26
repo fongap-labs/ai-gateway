@@ -15,6 +15,7 @@ import {
 } from '../../reliability/node-state.ts';
 import {
   releaseTier1Slot,
+  settleTier1Quota,
   recordTier1Ttft, recordTier1Success, applyTier1Outcome, classifyTier1Failure,
   getTier1Account,
 } from '../../reliability/tier1-state.ts';
@@ -106,6 +107,11 @@ export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyM
     recordTier1Success(node.id, logicalModel);
     if (getTier1Account(node.id).consecutiveRateLimits === 0) clearAdaptive429State(node.provider, node.id);
     recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), node.id);
+    // Confirm the quota lease with actual delivered usage before release; a
+    // settled lease is not restored, so the request reservation is consumed.
+    const observed = observedAttemptUsage.get(c as object);
+    const consumed = normalizeTokenUsage(observed)?.total ?? 0;
+    settleTier1Quota(node.id, c.tier1ReleaseToken, consumed);
     releaseTier1Slot(node.id, c.tier1ReleaseToken);
     bumpNodeCounters(node.id, { requests: 1, successes: 1 });
     if (c.tier1UpdateAffinity && c.tier1Session) writeTier1Affinity(c.env, c.ctx, c.tier1Session, node.id);
