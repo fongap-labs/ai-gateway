@@ -14,6 +14,20 @@ Tier 1 state is isolate-local and deliberately scoped:
 
 An isolate restart clears this adaptive state. The gateway does not claim provider-wide state consistency.
 
+## Runtime state interface
+
+The Tier 1 adaptive runtime (`reliability/tier1-state.ts`) and the Tier 2/3 node state (`reliability/node-state.ts`) keep separate implementations and learning signals by design; they are not unified into one backend. Upper layers that need to read state consume the single `RuntimeStateStore` contract in `src/types/runtime-state.ts` through projections in `src/reliability/runtime-state-store.ts`:
+
+```text
+runtimeStateStoreFor(node) -> { endpoint, account, model }
+```
+
+- `EndpointState`: availability, in-flight, cooldown, circuit, health, TTFT/latency EWMA, last used.
+- `AccountState`: disabled, cooldown, quota window, in-flight.
+- `ModelState`: supported, cooldown, failure state, TTFT EWMA, sample count.
+
+Projections are honest: a field a backend does not track is `null`, never a fabricated value (the Tier 1 runtime has no numeric health score or endpoint-level circuit; Tier 2/3 nodes have no per-account quota). Claims, releases, outcome recording, and quota settlement stay owned by the backend modules and the dispatch funnels — the contract is read-only. Redis, Durable Objects, and cross-isolate coordination remain out of scope; the coordination boundary is unchanged.
+
 ## Capacity signals
 
 Provider capacity is learned from observed runtime evidence. The node schema has no `limits`, node RPM, or guessed per-node concurrency fields. The removed `limits` field is a hard schema boundary: any node that still contains it is invalid configuration and is rejected rather than interpreted. Tier 1 also has no hard concurrency ceiling by default; policy `max_in_flight` is an optional isolate-local operator guard for a known per-account contract.
