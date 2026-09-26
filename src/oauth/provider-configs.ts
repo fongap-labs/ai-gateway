@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// OAuth provider configuration (Tier 2 subscription entitlements).
+// OAuth provider configuration machinery (Tier 2 subscription
+// entitlements).
 //
-// Built-in defaults: the three mainstream international subscription
-// providers (Anthropic Claude, OpenAI Codex, Google Gemini) ship with
-// public OAuth constants extracted from their respective open-source CLIs.
-// These values are public knowledge - not secrets - and are embedded so
-// the operator can onboard subscriptions without manual configuration.
+// Built-in defaults are declared by the provider adapters themselves
+// (src/providers/) - public OAuth constants extracted from the providers'
+// open-source CLIs, embedded so the operator can onboard subscriptions
+// without manual configuration. This module owns the parsing, merging
+// and caching around them; it never hardcodes provider defaults.
 //
 // Override: AIG_OAUTH_PROVIDERS (JSON Variable) may override any built-in
 // provider or add new ones. User entries replace defaults at the provider
-// level (not field-by-field). Unset AIG_OAUTH_PROVIDERS leaves the defaults
-// in effect.
+// level (not field-by-field). Unset AIG_OAUTH_PROVIDERS leaves the
+// provider-declared defaults in effect.
 //
 // Provider entry shape:
 //   {
@@ -28,51 +29,12 @@
 //                                       //   calls made with the resolved token
 //   }
 
-export type OAuthUpstreamHeaders = Readonly<Record<string, string>>;
+import { builtinOAuthProviderConfigs } from '../providers/registry.ts';
+import type { OAuthUpstreamHeaders, OAuthProviderConfig } from '../providers/types.ts';
 
-export type OAuthProviderConfig = {
-  authorizeUrl: string,
-  tokenUrl: string,
-  clientId: string,
-  scope: string,
-  clientSecret?: string,
-  /** When set, the authorize redirect goes to this URL (not the gateway
-   *  callback) and the operator must paste the code at /oauth/paste.
-   *  This is required for providers whose OAuth client does not allow
-   *  arbitrary redirect URIs (e.g., Google). */
-  manualRedirectUrl?: string,
-  upstreamHeaders: OAuthUpstreamHeaders,
-};
+export type { OAuthUpstreamHeaders, OAuthProviderConfig } from '../providers/types.ts';
 
 export type OAuthProvidersConfig = Record<string, OAuthProviderConfig>;
-
-// ---- Built-in defaults (public values from open-source CLI source code) ----
-
-const DEFAULT_PROVIDERS: OAuthProvidersConfig = Object.freeze({
-  anthropic: Object.freeze({
-    authorizeUrl: 'https://claude.ai/oauth/authorize',
-    tokenUrl: 'https://platform.claude.com/v1/oauth/token',
-    clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-    scope: 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
-    upstreamHeaders: Object.freeze({}),
-  }),
-  openai: Object.freeze({
-    authorizeUrl: 'https://auth.openai.com/oauth/authorize',
-    tokenUrl: 'https://auth.openai.com/oauth/token',
-    clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
-    scope: 'openid email profile offline_access',
-    upstreamHeaders: Object.freeze({}),
-  }),
-  google: Object.freeze({
-    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    clientId: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
-    clientSecret: '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',
-    scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs',
-    manualRedirectUrl: 'https://codeassist.google.com/authcode',
-    upstreamHeaders: Object.freeze({}),
-  }),
-});
 
 // ---- Parsing and merge ------------------------------------------------------
 
@@ -149,9 +111,10 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
   });
 }
 
-// Load + merge: built-in defaults are always present; AIG_OAUTH_PROVIDERS
-// entries override per-provider (wholesale replacement, not field merge).
-// Never returns null - defaults are always available.
+// Load + merge: provider-declared defaults are always present;
+// AIG_OAUTH_PROVIDERS entries override per-provider (wholesale
+// replacement, not field merge). Never returns null - defaults are always
+// available.
 export function loadOAuthProviders(
   env: Record<string, unknown>,
   diagnosticsOut?: string[],
@@ -162,7 +125,7 @@ export function loadOAuthProviders(
   cachedRaw = raw;
 
   if (!raw) {
-    cachedParsed = DEFAULT_PROVIDERS;
+    cachedParsed = Object.freeze(builtinOAuthProviderConfigs());
     return cachedParsed;
   }
 
@@ -172,18 +135,17 @@ export function loadOAuthProviders(
     parsedUnknown = JSON.parse(raw);
   } catch {
     diagnosticsOut?.push('AIG_OAUTH_PROVIDERS: value is not valid JSON; using built-in defaults only');
-    cachedParsed = DEFAULT_PROVIDERS;
+    cachedParsed = Object.freeze(builtinOAuthProviderConfigs());
     return cachedParsed;
   }
   if (!isRecord(parsedUnknown)) {
     diagnosticsOut?.push('AIG_OAUTH_PROVIDERS: value must be a JSON object keyed by provider name; using built-in defaults only');
-    cachedParsed = DEFAULT_PROVIDERS;
+    cachedParsed = Object.freeze(builtinOAuthProviderConfigs());
     return cachedParsed;
   }
 
-  // Start with defaults; user entries replace per-provider.
-  const config: Record<string, OAuthProviderConfig> = {};
-  for (const [name, entry] of Object.entries(DEFAULT_PROVIDERS)) config[name] = entry;
+  // Start with provider-declared defaults; user entries replace per-provider.
+  const config: Record<string, OAuthProviderConfig> = builtinOAuthProviderConfigs();
 
   for (const [provider, entry] of Object.entries(parsedUnknown)) {
     if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(provider)) {

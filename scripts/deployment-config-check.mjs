@@ -27,7 +27,7 @@ const tooling = [
   'scripts/deploy.sh',
 ];
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
-assert.ok(fs.existsSync(path.join(root, 'src/config/provider-profile.ts')), 'Provider wire profile must be single-sourced');
+assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider adapter registry must be single-sourced');
 
 for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
   const source = read(file);

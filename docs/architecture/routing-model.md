@@ -1,6 +1,6 @@
 # Routing model
 
-Routing is constrained by **protocol + surface + model + tier**. Native requests enter only runtime nodes whose Provider Wire Profile supports the active protocol and surface; converted fallback requests enter the target protocol pool only after conversion succeeds.
+Routing is constrained by **protocol + surface + model + tier**. Native requests enter only runtime nodes whose provider adapter supports the active protocol and surface; converted fallback requests enter the target protocol pool only after conversion succeeds.
 
 Tier order is a product invariant:
 
@@ -12,9 +12,9 @@ Tier 1 is free/effectively free capacity and the primary daily layer. Tier 2 is 
 
 OpenAI Chat Completions ↔ Anthropic Messages fallback is evaluated only after the native route is exhausted. OpenAI Responses remains Native Only for protocol conversion.
 
-## Model registry, Provider Profile, and nodes
+## Model registry, Provider Registry, and nodes
 
-The Model Registry owns logical-model policy and declared capabilities. Provider Wire Profiles in `src/config/provider-profile.ts` own protocol and routable surfaces. Account-level Node Config owns provider name, base URL, logical→upstream model mapping, optional static priority, and credential binding; runtime normalization combines those facts into a routable `RuntimeNode`.
+The Model Registry owns logical-model policy and declared capabilities. The provider adapter registry in `src/providers/registry.ts` owns protocol and routable surfaces (plus stream-usage quirks, OAuth onboarding defaults, and subscription dispatchability). Account-level Node Config owns provider name, base URL, logical→upstream model mapping, optional static priority, and credential binding; runtime normalization combines those facts into a routable `RuntimeNode`.
 
 Node `limits`, `protocol`, and `surfaces` are not part of the account schema. Provider capacity comes from observed runtime signals rather than operator-supplied RPM/concurrency guesses.
 

@@ -75,7 +75,10 @@ Model Registry     logical model policy and declared capabilities
 Node config         provider name, base URL, logical→upstream model mapping,
                     optional Tier 2/3 priority, credential binding,
                     optional Tier 2-only `auth:"oauth"` subscription marker
-Provider Profile    provider → protocol + routable surfaces
+Provider Registry   single provider → adapter mapping: wire contract
+                    (protocol + routable surfaces), stream-usage quirk,
+                    built-in OAuth onboarding defaults, and subscription
+                    request semantics (composed from src/subscription)
 Request             native/protocol/model-family fallback orchestration and shared budgets
 Scheduler           which eligible node should receive the next attempt
 Reliability         whether a node/account/model is currently usable and how failures change state
@@ -83,17 +86,18 @@ Transport           how to call the selected upstream endpoint
 Protocol            client request validation and protocol-specific errors
 Conversion          supported Chat ↔ Messages semantic bridge
 Stream              first-event guards, SSE lifecycle, commit boundary
-OAuth               Tier 2 subscription credentials: provider registry (AIG_OAUTH_PROVIDERS),
-                    PKCE onboarding routes, AES-GCM token store, dispatch-time resolution
-Subscription        provider-specific subscription request shaping: adapter registry,
-                    codex/claude/google adapters (headers, body normalization,
-                    dispatch refusal for unverified entitlement backends)
+OAuth               Tier 2 subscription credentials: AIG_OAUTH_PROVIDERS parsing/merge
+                    (over provider-declared defaults), PKCE onboarding routes,
+                    AES-GCM token store, dispatch-time resolution
+Subscription        provider-specific subscription request semantics: the codex/claude/
+                    google adapters, composed into provider adapters through the
+                    provider registry; the node-level subscription binding
 Observability       logs, metrics, D1/token usage, diagnostics
 Runtime             runtime availability and public read-only projections
 Dashboard           presentation only
 ```
 
-These boundaries are intentional. Transport does not select nodes. Scheduler and Reliability do not parse provider wire events. Model-family fallback does not replace node scheduling or reliability state; it only decides which compatible logical model is evaluated next after the current pool is exhausted. Provider profiles are the single owner of protocol/surface structure; account records cannot override them. OAuth owns subscription credential storage and resolution; the scheduler never reads the token store, and a resolution failure surfaces as a pre-dispatch auth rotation.
+These boundaries are intentional. Transport does not select nodes. Scheduler and Reliability do not parse provider wire events. Model-family fallback does not replace node scheduling or reliability state; it only decides which compatible logical model is evaluated next after the current pool is exhausted. The provider registry is the single owner of protocol/surface structure and provider-specific semantics; account records cannot override them. OAuth owns subscription credential storage and resolution; the scheduler never reads the token store, and a resolution failure surfaces as a pre-dispatch auth rotation.
 
 ## Current invariants
 
@@ -119,7 +123,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - Tier 2 subscription (`auth:"oauth"`) credentials are resolved at dispatch time from the OAuth token store: isolate cache first, D1 only on cache miss or near expiry, refresh inside a 5-minute margin; resolution failures are pre-dispatch auth rotations with an isolate-local negative cache so a broken subscription does not hammer the provider's token endpoint.
 - Refresh-token rotation safety: one in-flight resolution per node per isolate (singleflight), and refresh persists land only through a compare-and-swap on the persisted `refresh_version`; a losing writer reloads the winner's credential, so exactly one refresh token remains the persisted authority. Durable Objects are not introduced for this.
 - Provider account identity (e.g., the OpenAI `account_id`) is persisted in plaintext beside the credential and applied as the `chatgpt-account-id` header for OpenAI-protocol subscription dispatches only; it never pollutes the RuntimeNode schema.
-- Providers without a verified subscription backend (the built-in `google` default, whose adapter refuses) keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable. The subscription adapter registry (`src/subscription/`) is the single dispatchability authority: an `auth:"oauth"` node whose provider has no adapter, or whose adapter refuses to shape the request, rotates pre-dispatch.
+- Providers without a verified subscription backend (the built-in `google` default, whose adapter refuses) keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable. The provider registry (`src/providers/`) is the single dispatchability authority: an `auth:"oauth"` node whose provider has no subscription adapter, or whose adapter refuses to shape the request, rotates pre-dispatch.
 - Subscription quota windows are hints, never truth: provider adapters interpret entitlement reset markers (`quotaResetHint`: window-reset epoch headers, resets_in_seconds bodies) and may only EXTEND a 429 rate-limit cooldown (capped); recovery remains the shared cooldown-expiry -> single half-open probe -> auto-restore circuit that all nodes already use. No subscription-specific reliability state machine exists.
 - Subscription access/refresh tokens are AES-GCM encrypted with the `AIG_TOKEN_ENCRYPTION_KEY` Worker secret; a missing key disables all subscription onboarding and resolution (fail-closed), and tokens are never stored in D1 as plaintext.
 - OAuth onboarding (`/oauth/start`, `/oauth/callback/<provider>`, `/oauth/paste`) uses PKCE S256 with a single-use D1 flow state (10-minute TTL); `/oauth/start` requires a gateway access key and a matching Tier 2 node, and every callback/paste consumes its state row regardless of outcome.
@@ -136,7 +140,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 
 - Runtime variable names/defaults: `src/config/runtime-vars.ts`.
 - Node parsing and credential binding: `src/config/nodes.ts` and related config modules.
-- Provider protocol/surface mapping: `src/config/provider-profile.ts`.
+- Provider protocol/surface mapping, stream-usage quirk, OAuth onboarding defaults, and subscription dispatchability: `src/providers/registry.ts` (composed from per-provider adapters in `src/providers/` and subscription adapters in `src/subscription/`).
 - Logical model policy/capabilities: `src/config/registry.ts`.
 - Logical-model fallback policy: `src/request/model-fallback.ts` and its contract tests.
 - Protocol fallback matrix: protocol fallback config/conversion modules and their contract tests.

@@ -50,6 +50,7 @@ function targetModule(file, specifier) {
 
 const rules = {
   config: new Set(['scheduler', 'reliability', 'request', 'transport', 'conversion', 'stream', 'dashboard', 'runtime', 'observability', 'ratelimit']),
+  providers: new Set(['request', 'scheduler', 'reliability', 'transport', 'conversion', 'stream', 'dashboard', 'runtime', 'observability', 'ratelimit', 'config', 'oauth']),
   scheduler: new Set(['request', 'transport', 'protocol', 'conversion', 'stream', 'dashboard', 'runtime', 'observability', 'ratelimit']),
   reliability: new Set(['scheduler', 'request', 'transport', 'protocol', 'conversion', 'stream', 'dashboard', 'runtime', 'observability', 'ratelimit']),
   transport: new Set(['scheduler', 'reliability', 'request', 'conversion', 'dashboard', 'runtime', 'observability', 'ratelimit']),
@@ -154,6 +155,29 @@ assert.match(processingContract, /export const UPSTREAM_PROCESSING_ERROR/);
 assert.match(processingContract, /export class UpstreamProcessingError/);
 assert.equal(fs.existsSync(path.join(srcRoot, 'transport', 'processing-error.ts')), false,
   'retired transport-owned processing-error module must stay removed');
+
+// Provider knowledge has one registry owner. The retired provider switch
+// (provider-profile.ts) and the retired quirks module (provider-quirks.ts)
+// must not return; provider-specific wire, OAuth defaults, subscription
+// semantics and quirks are declared by adapters in src/providers/.
+assert.equal(fs.existsSync(path.join(srcRoot, 'config', 'provider-profile.ts')), false,
+  'retired provider wire-profile switch must stay removed; the provider registry owns provider -> wire');
+assert.equal(fs.existsSync(path.join(srcRoot, 'config', 'provider-quirks.ts')), false,
+  'retired provider quirks module must stay removed; adapters declare their own quirks');
+const providerRegistry = fs.readFileSync(path.join(srcRoot, 'providers', 'registry.ts'), 'utf8');
+assert.match(providerRegistry, /export function getProviderAdapter/,
+  'provider adapter resolution has one registry owner');
+assert.match(providerRegistry, /genericOpenAIProviderAdapter/,
+  'unknown providers resolve to the generic OpenAI-compatible adapter');
+const subscriptionIndex = fs.readFileSync(path.join(srcRoot, 'subscription', 'index.ts'), 'utf8');
+assert.doesNotMatch(subscriptionIndex, /getSubscriptionAdapter|const ADAPTERS/,
+  'subscription index must not regain a second provider adapter registry');
+for (const core of ['scheduler', 'reliability', 'transport']) {
+  for (const file of walk(path.join(srcRoot, core))) {
+    assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /providers\/registry\.ts/,
+      `${core} must not depend on the provider registry (provider knowledge stays behind config/dispatch boundaries): ${path.relative(root, file)}`);
+  }
+}
 
 const audit = fs.readFileSync(path.join(root, 'docs/architecture/module-boundary-audit.md'), 'utf8');
 assert.match(audit, /Baseline: `8e375078cbde553d91d71e1ed4784d790db2b390`/);
