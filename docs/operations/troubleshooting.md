@@ -26,7 +26,7 @@ required: id, provider, base_url, models
 optional: priority
 ```
 
-`protocol`, `surfaces`, `limits`, credentials, and unknown fields are rejected. Protocol and routable surfaces come from `src/config/provider-profile.ts`.
+`protocol`, `surfaces`, `limits`, credentials, and unknown fields are rejected. Protocol and routable surfaces come from the provider adapter registry (`src/providers/registry.ts`).
 
 ### Missing node credential
 
@@ -147,13 +147,13 @@ A model-shaped upstream 404 uses a short upstream-model-specific cooldown; it sh
 
 ### Claude Code / Anthropic Messages fallback problem
 
-A native Anthropic route requires a node whose `provider` resolves to the Anthropic Provider Wire Profile. If native candidates are exhausted and fallback is enabled, the request may convert to OpenAI Chat.
+A native Anthropic route requires a node whose `provider` resolves to the Anthropic provider adapter. If native candidates are exhausted and fallback is enabled, the request may convert to OpenAI Chat.
 
 The conversion bridge is intentionally not full Anthropic semantic emulation. Features such as thinking history/control, context-management controls, provider-native tools, and some tool hints may be degraded or rejected. Debug conversion diagnostics expose fixed categories without request content.
 
 ### OpenAI Responses problem
 
-OpenAI Responses is Native Only. Under the current Provider Wire Profiles, native `/v1/responses` routing is available only to nodes using `provider: "openai"`.
+OpenAI Responses is Native Only. Under the current provider adapters, native `/v1/responses` routing is available only to nodes using `provider: "openai"`.
 
 Confirm:
 
@@ -162,7 +162,7 @@ Confirm:
 - the logical model mapping resolves to a model supported by `/v1/responses`;
 - credentials are bound to that node in the same tier.
 
-Do not add per-node `protocol` or `surfaces` fields; those are rejected by the current Node schema. If another Provider needs native Responses support, its Provider Wire Profile must be changed explicitly.
+Do not add per-node `protocol` or `surfaces` fields; those are rejected by the current Node schema. If another Provider needs native Responses support, its provider adapter must be changed explicitly.
 
 ### Structured output fallback
 

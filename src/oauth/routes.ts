@@ -13,8 +13,8 @@
 //     arbitrary redirect URIs (e.g., Google Gemini CLI).
 
 import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from './provider-configs.ts';
-import type { OAuthProviderConfig } from './provider-configs.ts';
-import { getSubscriptionAdapter } from '../subscription/index.ts';
+import { getProviderAdapter } from '../providers/registry.ts';
+import type { OAuthProviderConfig } from '../providers/types.ts';
 import { saveFlowState, loadFlowState, deleteFlowState, storeSubscriptionToken, purgeExpiredFlowStates, OAUTH_FLOW_TTL_MS } from './token-store.ts';
 import { hasTokenKey } from './crypto.ts';
 import { authorize } from '../request/auth.ts';
@@ -134,7 +134,7 @@ async function completeTokenExchange(env: GatewayEnv, providerConfig: OAuthProvi
   // entitlement can currently reach, shown to the operator as a diagnostic.
   // Discovery never gates onboarding; the static node.models mapping stays
   // the routing authority.
-  const adapter = getSubscriptionAdapter(providerName);
+  const adapter = getProviderAdapter(providerName).subscription;
   let discoveredNote = '';
   let discoveredModels: readonly string[] | null = null;
   if (adapter?.discoverModels) {

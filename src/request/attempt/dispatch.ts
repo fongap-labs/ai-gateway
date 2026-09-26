@@ -16,10 +16,10 @@ import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, clas
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
 import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/index.ts';
-import { streamUsageSupported } from '../../config/provider-quirks.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
-import { getSubscriptionAdapter, isSubscriptionNode } from '../../subscription/index.ts';
+import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
+import { isSubscriptionNode } from '../../subscription/index.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -118,7 +118,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // only exists on the OpenAI chat_completions wire format - native Responses
   // and Anthropic bodies are never touched. Non-stream requests already carry
   // usage in the body and are never touched here.
-  if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageSupported(node, env)) {
+  if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageEnabled(node, env)) {
     outboundObject = withUsageStreamOptions(outboundObject);
   }
 
@@ -140,7 +140,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
     }
     credential = resolved.token;
-    const adapter = getSubscriptionAdapter(node.provider);
+    const adapter = getProviderAdapter(node.provider).subscription;
     const providerConfig = getOAuthProvider(env, node.provider);
     if (!adapter) {
       logger.info(`oauth credential resolved but no subscription adapter exists node=${node.id} provider=${node.provider}`);
@@ -262,7 +262,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     // and stays capped inside the adapter — recovery remains the normal
     // cooldown-expiry -> probe -> restore flow.
     if (isSubscriptionNode(node) && classification.kind === 'rate_limit') {
-      const quotaAdapter = getSubscriptionAdapter(node.provider);
+      const quotaAdapter = getProviderAdapter(node.provider).subscription;
       const hint = quotaAdapter?.quotaResetHint
         ? quotaAdapter.quotaResetHint({ status: upstream.status, headers: upstream.headers, body: errorText }, Date.now())
         : null;
