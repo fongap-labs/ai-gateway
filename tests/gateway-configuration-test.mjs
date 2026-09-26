@@ -129,12 +129,13 @@ test('registry carries declared capabilities and conservative defaults', () => {
     extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'fast', capabilities: { vision: true }, reasoning_efforts: ['high'] } }) },
   });
   const reg = loadModelRegistry(env);
-  assert.equal(reg['code-pro'].capabilities.vision, true);
-  assert.deepEqual(reg['code-pro'].reasoning_efforts, ['high']);
+  assert.equal(reg['code-pro'].catalog.capabilities.vision, true);
+  assert.deepEqual(reg['code-pro'].catalog.reasoning_efforts, ['high']);
+  assert.equal(reg['code-pro'].policy.policy, 'fast');
   const def = modelRegistryEntry(env, 'unknown-model');
-  assert.equal(def.capabilities.tools, false);
-  assert.equal(def.capabilities.reasoning, false);
-  assert.equal(def.capabilities.vision, false);
+  assert.equal(def.catalog.capabilities.tools, false);
+  assert.equal(def.catalog.capabilities.reasoning, false);
+  assert.equal(def.catalog.capabilities.vision, false);
 });
 
 test('wildcard and explicit model mappings remain distinct', () => {
@@ -162,9 +163,9 @@ test('AIG_MODELS_CONFIG accepts current modalities/ocr/ui fields', () => {
   }) } });
   assert.deepEqual(getModelsConfigDiagnostics(env), []);
   const reg = loadModelRegistry(env);
-  assert.deepEqual(reg.Omni.modalities, { input: ['text', 'image', 'audio'], output: ['text', 'audio'] });
-  assert.equal(reg.OCR.capabilities.ocr, true);
-  assert.equal(reg.OCR.ui_visible, false);
+  assert.deepEqual(reg.Omni.catalog.modalities, { input: ['text', 'image', 'audio'], output: ['text', 'audio'] });
+  assert.equal(reg.OCR.catalog.capabilities.ocr, true);
+  assert.equal(reg.OCR.policy.ui_visible, false);
 });
 
 test('AIG_MODELS_CONFIG rejects obvious capability contradictions without provider inference', () => {

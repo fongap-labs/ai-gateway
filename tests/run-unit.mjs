@@ -45,6 +45,7 @@ const UNIT_TESTS = [
   'tests/provider-discovery-test.mjs',
   'tests/provider-discovery-ssrf-guard-test.mjs',
   'tests/provider-adapter-registry-test.mjs',
+  'tests/model-catalog-policy-test.mjs',
   'tests/model-discovery-live-test.mjs',
   'tests/model-status-test.mjs',
   'tests/dashboard-model-filter-test.mjs',

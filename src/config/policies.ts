@@ -9,6 +9,7 @@
 import { readEnv } from './env.ts';
 import { getLimits } from './timeouts.ts';
 import type { PolicyConfig } from '../types/policy.ts';
+import type { ModelEntry } from './models.ts';
 
 const MIN_ATTEMPTS = 1;
 const MAX_ATTEMPTS = 8;
@@ -263,8 +264,8 @@ function parseMaxInFlight(value: unknown, policyName: string, errors: string[]):
   return value;
 }
 
-export function getPolicy(modelName: string, modelsConfig: Record<string, { policy?: string }>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
-  const explicitPolicy = modelsConfig[modelName]?.policy;
+export function getPolicy(modelName: string, modelsConfig: Record<string, ModelEntry>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
+  const explicitPolicy = modelsConfig[modelName]?.policy?.policy;
   const normalized = modelName.trim().toLowerCase();
   const tier = normalized.split('-').at(-1);
   let inferredPolicy = 'default';

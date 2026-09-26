@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Model Registry — single source of truth for logical-model policy and
-// capabilities. Runtime Nodes own only logical -> upstream mappings.
+// Model Registry — single source of truth for logical-model catalog facts
+// and runtime policy. Catalog facts (capabilities, reasoning efforts,
+// modalities) and runtime policy (failover policy binding, visibility, UI
+// grouping) are distinct concepts: the registry resolves defaults per side
+// and never mixes them into one flat record. Runtime Nodes own only
+// logical -> upstream mappings.
 
 import { loadModelsConfig } from './models.ts';
+import type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
+
+export type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
 
 const DEFAULT_CAPABILITIES = Object.freeze({ tools: false, reasoning: false, vision: false, stream: true, ocr: false });
 const DEFAULT_REASONING_EFFORTS: readonly string[] = Object.freeze([]);
@@ -14,19 +21,49 @@ const DEFAULT_DISPLAY_ORDER = 100;
 const DEFAULT_GROUP = 'general';
 const DEFAULT_UI_VISIBLE = true;
 
-export type RegistryEntry = {
-  policy: string,
-  visibility: string,
+/** Resolved catalog facts: declared values with registry defaults applied. */
+export type ResolvedModelCatalog = {
   capabilities: Record<string, boolean>,
   reasoning_efforts: string[],
   modalities?: { input: string[], output: string[] },
+};
+
+/** Resolved runtime policy: declared values with registry defaults applied. */
+export type ResolvedModelPolicy = {
+  policy: string,
+  visibility: string,
   display_order: number,
   group: string,
   ui_visible: boolean,
 };
 
+export type RegistryEntry = {
+  catalog: ResolvedModelCatalog,
+  policy: ResolvedModelPolicy,
+};
+
 let cachedEnv: Record<string, unknown> | undefined;
 let cachedRegistry: Record<string, RegistryEntry> | undefined;
+
+function resolveCatalog(facts: ModelCatalogFacts): ResolvedModelCatalog {
+  return {
+    capabilities: { ...DEFAULT_CAPABILITIES, ...(facts.capabilities || {}) },
+    reasoning_efforts: Array.isArray(facts.reasoning_efforts) && facts.reasoning_efforts.length
+      ? facts.reasoning_efforts
+      : [...DEFAULT_REASONING_EFFORTS],
+    ...(facts.modalities ? { modalities: facts.modalities } : {}),
+  };
+}
+
+function resolvePolicy(entryPolicy: ModelRuntimePolicy): ResolvedModelPolicy {
+  return {
+    policy: entryPolicy.policy || DEFAULT_POLICY,
+    visibility: entryPolicy.visibility || DEFAULT_VISIBILITY,
+    display_order: entryPolicy.display_order !== undefined ? entryPolicy.display_order : DEFAULT_DISPLAY_ORDER,
+    group: entryPolicy.group !== undefined ? entryPolicy.group : DEFAULT_GROUP,
+    ui_visible: entryPolicy.ui_visible !== undefined ? entryPolicy.ui_visible : DEFAULT_UI_VISIBLE,
+  };
+}
 
 export function loadModelRegistry(env: Record<string, unknown>): Record<string, RegistryEntry> {
   if (cachedEnv === env && cachedRegistry) return cachedRegistry;
@@ -35,16 +72,8 @@ export function loadModelRegistry(env: Record<string, unknown>): Record<string, 
   const registry: Record<string, RegistryEntry> = {};
   for (const [name, cfg] of Object.entries(models)) {
     registry[name] = {
-      policy: cfg.policy || DEFAULT_POLICY,
-      visibility: cfg.visibility || DEFAULT_VISIBILITY,
-      capabilities: { ...DEFAULT_CAPABILITIES, ...(cfg.capabilities || {}) },
-      reasoning_efforts: Array.isArray(cfg.reasoning_efforts) && cfg.reasoning_efforts.length
-        ? cfg.reasoning_efforts
-        : [...DEFAULT_REASONING_EFFORTS],
-      ...(cfg.modalities ? { modalities: cfg.modalities } : {}),
-      display_order: cfg.display_order !== undefined ? cfg.display_order : DEFAULT_DISPLAY_ORDER,
-      group: cfg.group !== undefined ? cfg.group : DEFAULT_GROUP,
-      ui_visible: cfg.ui_visible !== undefined ? cfg.ui_visible : DEFAULT_UI_VISIBLE,
+      catalog: resolveCatalog(cfg.catalog),
+      policy: resolvePolicy(cfg.policy),
     };
   }
   cachedRegistry = registry;
@@ -54,13 +83,17 @@ export function loadModelRegistry(env: Record<string, unknown>): Record<string, 
 export function modelRegistryEntry(env: Record<string, unknown>, model: string): RegistryEntry {
   const registry = loadModelRegistry(env);
   return registry[model] || {
-    policy: DEFAULT_POLICY,
-    visibility: DEFAULT_VISIBILITY,
-    capabilities: { ...DEFAULT_CAPABILITIES },
-    reasoning_efforts: [...DEFAULT_REASONING_EFFORTS],
-    display_order: DEFAULT_DISPLAY_ORDER,
-    group: DEFAULT_GROUP,
-    ui_visible: DEFAULT_UI_VISIBLE,
+    catalog: {
+      capabilities: { ...DEFAULT_CAPABILITIES },
+      reasoning_efforts: [...DEFAULT_REASONING_EFFORTS],
+    },
+    policy: {
+      policy: DEFAULT_POLICY,
+      visibility: DEFAULT_VISIBILITY,
+      display_order: DEFAULT_DISPLAY_ORDER,
+      group: DEFAULT_GROUP,
+      ui_visible: DEFAULT_UI_VISIBLE,
+    },
   };
 }
 
