@@ -1,95 +1,120 @@
 # Deployment
 
-Production deployment is driven by GitHub Actions. GitHub repository Variables hold non-sensitive configuration; Secrets hold credentials. Cloudflare is the execution target, not the canonical configuration editor.
+Production deployment uses the shared Action Worker execution plane. This repository owns the product code, deploy manifest, validation, and Cloudflare deployment entrypoint. Action Worker owns source admission, CI evidence, main-write provenance, runner resolution, GitHub Environment binding, secret scoping, and deploy orchestration.
 
 ## Production path
 
 ```text
 Pull Request
     ↓
-validate-merge + Worker dry-run
+Action Worker PR Governance
+    ↓
+validate-merge
     ↓
 squash merge to main
     ↓
-main CI
-  ├─ validate-merge
-  └─ validate-deploy
-    ↓ both succeed on a push-triggered CI run
-Deploy workflow gate
+ai-gateway .github/workflows/ci.yml
+    ↓ thin dispatch only
+Action Worker Central CI
     ↓
-preflight configuration
+CI Evidence + Main Write Guard
     ↓
-runtime configuration validation
+.github/deploy.json
     ↓
-D1 migrations (when configured)
+Action Worker Source Script Deploy
+    ↓ environment: production
+scripts/deploy.sh
     ↓
-atomic Worker code + secret deployment
+preflight + deploy validation
     ↓
-remote verification by commit SHA
+Cloudflare Worker deployment
     ↓
-success / automatic Worker rollback on post-deploy failure
+health verification by exact source SHA
+    ↓
+success / Worker rollback on failure
 ```
 
-The production gate is stricter than the PR merge gate. A PR can merge after the required merge check; production deployment waits for the full `main` CI result.
+The source repository does not own a separate production deploy workflow. The deployment contract is declared in `.github/deploy.json`:
 
-## Automatic deployment eligibility
-
-`scripts/deploy-gate-decision.mjs` owns the deployment gate. Automatic deployment is allowed only when:
-
-- the completed CI run belongs to this repository rather than a fork;
-- that CI run was triggered by a `push`;
-- its conclusion is `success`;
-- the triggering commit contains a deployable change.
-
-Scheduled CI and manually triggered CI are test-only and do not automatically deploy.
-
-A commit that changes only Markdown files and/or `docs/**` is intentionally skipped by the deployment gate.
-
-## Manual Deploy workflow
-
-`workflow_dispatch` is allowed, but it is not a validation bypass. The manual path runs:
-
-```bash
-npm run validate:deploy
-npm run check:deploy
+```json
+{
+  "schema_version": "1",
+  "adapter": "source-script",
+  "automatic": true,
+  "ignore_docs_only": true,
+  "runner_profile": "production-deploy",
+  "environment": "production",
+  "entrypoint": "scripts/deploy.sh"
+}
 ```
 
-before deployment.
+The manifest expresses deployment intent. It does not grant runner access, credentials, or production authority.
 
-## Local/operator lifecycle
+## Automatic deployment
 
-- `scripts/install.sh` / `scripts/install.ps1` — first-time local bootstrap and initial direct deployment.
-- `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` — update operator configuration and deploy it.
-- `npm run deploy` — supported direct local code-deploy entry point for an already configured checkout.
-- `npm run cf:login`, `npm run cf:whoami`, `npm run tail` — Cloudflare operator commands.
+After Central CI succeeds for the current default-branch HEAD, Action Worker resolves the source-owned deploy manifest. Automatic deployment proceeds only when:
 
-All direct Cloudflare CLI calls route through `scripts/cloudflare-wrangler.mjs`. Do not add parallel deploy/update aliases.
+- the source SHA is the current default-branch HEAD;
+- the repository has the central `deploy` capability;
+- trusted Action Worker `CI Evidence` is successful;
+- Main Write Guard proves the source came through the governed merge path;
+- the manifest has `automatic: true`;
+- the selected runner profile resolves to the privileged trust domain;
+- the change is not documentation-only when `ignore_docs_only: true`.
 
-The tracked `wrangler.jsonc` is the repository baseline. Local Worker name, bindings, and operator configuration belong in gitignored `wrangler.user.jsonc`; installer/reconfigure tooling must not rewrite the tracked baseline.
+Pull-request CI does not trigger production deployment.
 
-## Required configuration
+## Manual central deployment
 
-Core GitHub Variables include:
+Action Worker's `Source Script Deploy` workflow can be started manually with:
 
-- optional `AIG_IS_DEPLOY_ENABLED=false` emergency kill switch; when unset, production deployment is enabled
-- PR governance targets `${GITHUB_REPOSITORY_OWNER}/action-worker`; no repository variable is required
+```text
+source_repository = fongap-labs/ai-gateway
+source_sha        = <exact 40-character current main SHA>
+```
 
-The Deploy workflow derives repository identity from GitHub's native `github.repository` / `GITHUB_REPOSITORY` context. No `AIG_DEPLOY_REPOSITORY` variable is used.
-- `CLOUDFLARE_ACCOUNT_ID`
-- `AIG_PUBLIC_URL` — canonical public gateway origin; deployment also passes it to the Worker so dashboard client examples match production configuration
-- at least one `AIG_TIER{1,2,3}_NODES_XX` shard
-- `AIG_AFFINITY_KV_ID` when Tier 1 affinity is used
-- optional `AIG_USAGE_D1_ID`
-- corresponding `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` values for configured access groups
-- optional `AIG_MODELS_CONFIG`, `AIG_POLICIES_CONFIG`, and runtime variables
+Manual execution is not a validation bypass. The same source, CI Evidence, Main Write Guard, deploy manifest, runner, Environment, and secret-scope checks apply.
 
-Core GitHub Secrets include:
+## Production Environment
 
-- `CLOUDFLARE_API_TOKEN`
-- at least one `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`
-- tier-scoped `AIG_TIER{1,2,3}_CREDENTIALS_01..10` containing `{ "node-id": "credential" }`
+The deploy manifest binds the execution job to the GitHub Environment named `production`. Non-sensitive runtime configuration belongs in Variables; credentials belong in Secrets.
 
-The deployment preflight fails closed on missing required production inputs.
+Action Worker exports the resolved Variables and exposes only source-declared deploy Secrets. `.github/deploy.secrets.allowed` defines the maximum application-secret surface. Central control credentials are removed before `scripts/deploy.sh` executes.
+
+Core production Variables include:
+
+- optional `AIG_IS_DEPLOY_ENABLED=false` emergency kill switch;
+- `CLOUDFLARE_ACCOUNT_ID`;
+- `AIG_PUBLIC_URL`;
+- at least one `AIG_TIER{1,2,3}_NODES_XX` shard;
+- `AIG_AFFINITY_KV_ID` when Tier 1 affinity is used;
+- optional `AIG_USAGE_D1_ID`;
+- corresponding `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`;
+- optional `AIG_MODELS_CONFIG`, `AIG_POLICIES_CONFIG`, and other runtime Variables.
+
+Core production Secrets include:
+
+- `CLOUDFLARE_API_TOKEN`;
+- configured `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`;
+- tier-scoped `AIG_TIER{1,2,3}_CREDENTIALS_01..10`;
+- `AIG_TOKEN_ENCRYPTION_KEY` when encrypted subscription credentials are used.
+
+The application preflight fails closed when required production inputs are missing.
+
+## Source-owned deploy entrypoint
+
+`scripts/deploy.sh` receives the exact admitted source SHA as `DEPLOY_SOURCE_SHA`. It:
+
+1. honors the emergency deploy kill switch;
+2. requires a full immutable source SHA;
+3. installs the locked Node dependencies;
+4. runs `npm run validate:deploy` and `npm run check:deploy`;
+5. prepares the Cloudflare deployment configuration and secret payload;
+6. deploys through the pinned Wrangler wrapper;
+7. verifies the live build against the exact source SHA;
+8. rolls back the Worker deployment if post-deploy verification fails.
+
+Cloudflare remains the execution target, not the canonical configuration editor.
 
 ## Node credential binding
 
@@ -97,9 +122,9 @@ Config and Secret shards are independent partitions. Runtime binding is by **Tie
 
 To add or rotate an upstream key:
 
-1. keep the node in the appropriate `TIER*_NODES_XX` Variable;
-2. add/update its credential under the same node id in any Secret shard for the same tier;
-3. let the next production deployment rebuild runtime configuration.
+1. keep the node in the appropriate `AIG_TIER*_NODES_XX` Variable;
+2. add or update its credential under the same node id in any Secret shard for that tier;
+3. let the next governed deployment rebuild runtime configuration.
 
 Do not place credentials in node JSON.
 
@@ -113,42 +138,29 @@ AIG_ACCESS_KEY_ULTRA     + AIG_ACCESS_MODELS_ULTRA
 AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 ```
 
-A configured key with an empty/missing model allowlist is fail-closed and grants zero model access.
-
-## D1 migration ordering
-
-When token-usage D1 is configured, ordered migrations run **before** Worker deployment. A migration failure stops deployment.
-
-D1 migration is not transactionally rolled back with Worker code. Migration design must therefore be operationally safe for the deployment sequence. Do not solve migration safety by keeping retired application contracts, aliases, or dual runtime paths alive.
-
-## Atomic Worker deployment
-
-The production workflow deploys Worker code and the prepared Secret/variable payload in the same Wrangler operation so the resulting deployment sees the intended configuration set.
-
-For direct local operations, `scripts/cloudflare-wrangler.mjs` owns the pinned Wrangler CLI and local binding/migration behavior. When `wrangler.user.jsonc` exists, the wrapper uses it by default unless an explicit config is supplied.
+A configured key with an empty or missing model allowlist is fail-closed and grants zero model access.
 
 ## Verification and rollback
 
-The CI/Deploy path injects the deployed Git commit SHA as `GITHUB_SHA`. Authenticated `/health` exposes it as `build`.
+The deployed Git commit SHA is passed into the Worker build. Authenticated `/health` exposes that build identity.
 
-Post-deploy verification requires `/health.build` to equal the exact commit SHA selected by the Deploy workflow, then verifies `/v1/models` and local count-tokens behavior. This proves which commit is live without any project release number in runtime source.
+Post-deploy verification requires the live build to match the exact admitted source SHA and then validates the required gateway surfaces. A failed health check triggers Worker rollback.
 
-If post-deploy verification fails, the workflow attempts to roll back the Worker deployment and verifies the rollback. An already-applied D1 migration is not undone automatically.
+D1 migrations are not transactionally undone by Worker rollback. Migration changes must therefore remain safe across deployment and rollback boundaries.
 
-A failed rollback or failed rollback verification requires operator intervention rather than repeated blind deployment.
+## Local/operator lifecycle
 
-Project release numbering is not part of deployment automation. If a named release is desired, the operator creates a Git tag or GitHub Release manually after selecting the intended commit.
+Local direct deployment remains an operator path and is separate from the governed GitHub production path:
+
+- `scripts/install.sh` / `scripts/install.ps1` — first-time bootstrap;
+- `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` — update operator configuration;
+- `npm run deploy` — direct deployment from an already configured checkout;
+- `npm run cf:login`, `npm run cf:whoami`, `npm run tail` — Cloudflare operator commands.
+
+All direct Cloudflare CLI calls route through `scripts/cloudflare-wrangler.mjs`. The tracked `wrangler.jsonc` remains the repository baseline; local overrides belong in gitignored `wrangler.user.jsonc`.
 
 ## Repository protection
 
-The intended repository settings are documented in [github-repository-settings.md](github-repository-settings.md). `validate-merge` is the PR-time required check; Deploy is a post-merge production workflow and should not be configured as a PR required check.
+`validate-merge` is the PR-time required merge authority. Production deployment is post-merge execution and is not a PR required check.
 
-## Local/operator checks
-
-```bash
-npm ci
-npm run validate:deploy
-npm run check:deploy
-```
-
-For configuration semantics, see [Configuration](configuration.md). For tooling entry points, see [`scripts/README.md`](../../scripts/README.md).
+See [github-repository-settings.md](github-repository-settings.md) for repository settings and [Configuration](configuration.md) for runtime configuration semantics.
