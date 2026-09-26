@@ -1,9 +1,9 @@
 {
   "schema_version": "1",
-  "adapter": "cloudflare-worker",
+  "adapter": "source-script",
   "automatic": true,
   "ignore_docs_only": true,
   "runner_profile": "production-deploy",
   "environment": "production",
-  "entrypoint": ""
+  "entrypoint": "scripts/deploy.sh"
 }

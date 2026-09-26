@@ -24,6 +24,7 @@ const tooling = [
   'scripts/reconfigure.sh', 'scripts/reconfigure.ps1',
   'scripts/node-config-shards.mjs', 'scripts/plan-node-configuration.mjs',
   'scripts/cloudflare-wrangler.mjs', 'scripts/github-deployment-config.mjs',
+  'scripts/deploy.sh',
 ];
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
 assert.ok(fs.existsSync(path.join(root, 'src/config/provider-profile.ts')), 'Provider wire profile must be single-sourced');
@@ -75,7 +76,7 @@ for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry
 }
 
 for (const removed of [
-  'scripts/deploy.sh', 'scripts/deploy.ps1',
+  'scripts/deploy.ps1',
   'scripts/update.sh', 'scripts/update.ps1',
   'scripts/setup-and-deploy.sh', 'scripts/setup-and-deploy.ps1',
 ]) {
@@ -83,26 +84,31 @@ for (const removed of [
 }
 
 const workflowDir = path.join(root, '.github', 'workflows');
-const permanentWorkflows = ['ci.yml', 'deploy.yml', 'dispatch-pr-governance.yml'];
+const permanentWorkflows = ['ci.yml', 'dispatch-pr-governance.yml'];
 assert.deepEqual(
   fs.readdirSync(workflowDir).filter((name) => /\.ya?ml$/i.test(name)).sort(),
   permanentWorkflows,
-  'only permanent workflows may live in .github/workflows',
+  'only thin repository workflows may live in .github/workflows',
 );
 
-const workflow = read('.github/workflows/deploy.yml');
-assert.match(workflow, /workflow_dispatch:/);
-assert.match(workflow, /Dispatch Central Deploy/);
-assert.match(workflow, /AW_DISPATCH_TOKEN/);
-assert.match(workflow, /run-ai-gateway-deploy/);
-assert.match(workflow, /source_repository/);
-assert.match(workflow, /source_sha/);
-assert.doesNotMatch(workflow, /CLOUDFLARE_API_TOKEN/);
-assert.doesNotMatch(workflow, /wrangler@/);
-assert.doesNotMatch(workflow, /AIG_TIER[123]_CREDENTIALS_/);
-assert.doesNotMatch(workflow, /AIG_TIER[123]_NODES_/);
-assert.doesNotMatch(workflow, /AIG_ACCESS_KEY_/);
-assert.doesNotMatch(workflow, /AIG_IS_DEPLOY_ENABLED/);
+const deployManifest = JSON.parse(read('.github/deploy.json'));
+assert.deepEqual(deployManifest, {
+  schema_version: '1',
+  adapter: 'source-script',
+  automatic: true,
+  ignore_docs_only: true,
+  runner_profile: 'production-deploy',
+  environment: 'production',
+  entrypoint: 'scripts/deploy.sh',
+});
+assert.ok(fs.existsSync(path.join(root, '.github', 'deploy.secrets.allowed')));
+
+const deployScript = read('scripts/deploy.sh');
+assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
+assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
+assert.match(deployScript, /github-deployment-config\.mjs health-check/);
+assert.match(deployScript, /DEPLOY_SOURCE_SHA/);
+assert.doesNotMatch(deployScript, /wrangler@\d+\.\d+\.\d+/);
 
 for (const removedExample of [
   'config/tier2-nodes.example.json',

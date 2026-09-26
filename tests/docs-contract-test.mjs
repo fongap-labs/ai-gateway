@@ -175,16 +175,16 @@ for (const file of DOCS) {
   ok(`${file} has no retired contract surface`);
 }
 
-const deployYml = read('.github/workflows/deploy.yml');
+const deployManifest = JSON.parse(read('.github/deploy.json'));
+const deployScript = read('scripts/deploy.sh');
 const { RUNTIME_VAR_NAMES, RUNTIME_TUNABLES } = await import('../src/config/runtime-vars.ts');
-assert.match(deployYml, /run-ai-gateway-deploy/);
-assert.match(deployYml, /AW_DISPATCH_TOKEN/);
-assert.match(deployYml, /source_repository/);
-assert.match(deployYml, /source_sha/);
-for (const name of RUNTIME_VAR_NAMES) {
-  assert.equal(deployYml.includes(`${name}:`), false, `business deploy bridge must not inject ${name}`);
-}
-ok(`deploy.yml keeps all ${RUNTIME_VAR_NAMES.length} runtime variables in the central deploy owner`);
+assert.equal(deployManifest.adapter, 'source-script');
+assert.equal(deployManifest.entrypoint, 'scripts/deploy.sh');
+assert.equal(deployManifest.automatic, true);
+assert.match(deployScript, /github-deployment-config\.mjs prepare --from-env/);
+assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
+assert.doesNotMatch(deployScript, /AW_DISPATCH_TOKEN|AW_CONTROL_TOKEN|AW_ADMIN_TOKEN/);
+ok(`source-owned deploy script consumes all ${RUNTIME_VAR_NAMES.length} runtime variables through the canonical config builder`);
 
 const devVars = read('.dev.vars.example');
 assert.match(devVars, /Defaults live in src\/config\/runtime-vars\.ts/i,

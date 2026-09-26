@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "push": false,
+  "schedules": [
+    {
+      "cron": "15 4 * * *",
+      "projects": [
+        "model-discovery"
+      ]
+    }
+  ]
+}
