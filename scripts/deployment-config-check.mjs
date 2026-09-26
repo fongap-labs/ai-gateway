@@ -111,6 +111,36 @@ for (const forbidden of ['AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKE
   assert.equal(deploySecretScope.includes(forbidden), false, `deploy secret scope must not expose ${forbidden}`);
 }
 
+const taskSource = JSON.parse(read('.github/task-source.json'));
+assert.equal(taskSource.schema_version, '1');
+assert.equal(taskSource.push, false);
+assert.deepEqual(taskSource.schedules, [{
+  cron: '15 4 * * *',
+  projects: ['model-discovery'],
+}]);
+
+const modelDiscoveryTask = JSON.parse(read('projects/model-discovery/task.json'));
+assert.deepEqual(modelDiscoveryTask, {
+  schema_version: '1',
+  entrypoint: 'projects/model-discovery/run.sh',
+});
+
+const modelDiscoverySecretScope = read('projects/model-discovery/.secrets.allowed')
+  .split(/\r?\n/)
+  .map((line) => line.replace(/#.*/, '').trim())
+  .filter(Boolean);
+assert.ok(modelDiscoverySecretScope.length > 0);
+assert.ok(modelDiscoverySecretScope.every((name) => /^AIG_TIER[123]_CREDENTIALS_\d{2}$/.test(name)));
+for (const forbidden of ['AIG_ACCESS_KEY_AGENT', 'AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKEN']) {
+  assert.equal(modelDiscoverySecretScope.includes(forbidden), false, `model discovery secret scope must not expose ${forbidden}`);
+}
+assert.equal(fs.existsSync(path.join(root, '.github', 'workflows', 'model-discovery.yml')), false);
+
+const modelDiscoveryScript = read('projects/model-discovery/run.sh');
+assert.match(modelDiscoveryScript, /AW_TASK_STATE_DIR/);
+assert.match(modelDiscoveryScript, /provider-discovery\.mjs live/);
+assert.doesNotMatch(modelDiscoveryScript, /AW_CONTROL_TOKEN|AW_ADMIN_TOKEN|AIG_ACCESS_KEY_AGENT/);
+
 const deployScript = read('scripts/deploy.sh');
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
