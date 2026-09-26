@@ -28,11 +28,7 @@ npm run check:deploy
 node scripts/github-deployment-config.mjs preflight
 node scripts/github-deployment-config.mjs prepare --from-env   --wrangler "$RUNNER_TEMP/wrangler.github.json"   --secrets "$RUNNER_TEMP/gateway-secrets.json"   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
-if [[ -n "${AIG_USAGE_D1_ID:-}" ]]; then
-  npx --yes wrangler@4.114.0 d1 migrations apply ai-gateway-stats     --remote     -c "$RUNNER_TEMP/wrangler.github.json"
-fi
-
-npx --yes wrangler@4.114.0 deploy   --secrets-file "$RUNNER_TEMP/gateway-secrets.json"   -c "$RUNNER_TEMP/wrangler.github.json"
+node scripts/cloudflare-wrangler.mjs deploy   --secrets-file "$RUNNER_TEMP/gateway-secrets.json"   -c "$RUNNER_TEMP/wrangler.github.json"
 
 health_ok=false
 for attempt in 1 2 3; do
@@ -48,7 +44,7 @@ done
 
 if [[ "$health_ok" != "true" ]]; then
   echo "Post-deploy health check failed; rolling back previous Worker version." >&2
-  npx --yes wrangler@4.114.0 rollback -c "$RUNNER_TEMP/wrangler.github.json"
+  node scripts/cloudflare-wrangler.mjs rollback -c "$RUNNER_TEMP/wrangler.github.json"
   node scripts/github-deployment-config.mjs health-check --from-env || true
   exit 1
 fi
