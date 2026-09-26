@@ -101,7 +101,15 @@ assert.deepEqual(deployManifest, {
   environment: 'production',
   entrypoint: 'scripts/deploy.sh',
 });
-assert.ok(fs.existsSync(path.join(root, '.github', 'deploy.secrets.allowed')));
+const deploySecretScope = read('.github/deploy.secrets.allowed')
+  .split(/\r?\n/)
+  .map((line) => line.replace(/#.*/, '').trim())
+  .filter(Boolean);
+assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
+assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
+for (const forbidden of ['AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKEN']) {
+  assert.equal(deploySecretScope.includes(forbidden), false, `deploy secret scope must not expose ${forbidden}`);
+}
 
 const deployScript = read('scripts/deploy.sh');
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
