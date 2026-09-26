@@ -13,6 +13,7 @@ import {
 } from '../../reliability/node-state.ts';
 import {
   releaseTier1Slot,
+  settleTier1Quota,
   applyTier1Outcome, classifyTier1Failure,
 } from '../../reliability/tier1-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../reliability/tier1-heat.ts';
@@ -25,28 +26,28 @@ import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import type { LoopState, AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 
-export function rotateWithNeutralEnd(state: LoopState, node: RuntimeNode, reason: FailureKind, c: Partial<AttemptContext> = {}, preDispatch: boolean = false): AttemptOutcome {
+export function rotateWithNeutralEnd(state: LoopState, node: RuntimeNode, reason: FailureKind, c: Partial<AttemptContext> = {}, isPreDispatch: boolean = false): AttemptOutcome {
   state.attempted.add(node.id);
-  if (!preDispatch) {
+  if (!isPreDispatch) {
     state.dispatches++;
     if (!c.hedgedAttempt) state.logicalAttempts++;
   }
   if (node.tier === 'tier-1') {
     releaseTier1Slot(node.id, c.tier1ReleaseToken);
-    if (!preDispatch) bumpNodeCounters(node.id, { requests: 1 });
+    if (!isPreDispatch) bumpNodeCounters(node.id, { requests: 1 });
   } else {
     recordNeutralEnd(node.id);
   }
   noteFailure(state, reason);
   state.logger.info(
-    `dispatch request=${c.requestId ?? state.requestId} logical_attempt=${preDispatch ? state.logicalAttempts + 1 : state.logicalAttempts}/${state.maxAttempts}`
+    `dispatch request=${c.requestId ?? state.requestId} logical_attempt=${isPreDispatch ? state.logicalAttempts + 1 : state.logicalAttempts}/${state.maxAttempts}`
     + ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}`
     + ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? ''} tier=${node.tier ?? ''}`
     + ` model=${state.requestedModel}->${upstreamModelOf(node, state.requestedModel)}`
     + ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=${reason} status=0 counted=false`,
   );
-  state.attempts.push({ attempt: state.logicalAttempts + (preDispatch ? 1 : 0), dispatch: state.dispatches, node_id: node.id, status: 0, kind: reason, hedged: !!(c.hedgedAttempt || c.hedgedWithTwin) });
-  return preDispatch ? { rotate: true, budgetCharged: false, kind: reason } : { rotate: true, kind: reason };
+  state.attempts.push({ attempt: state.logicalAttempts + (isPreDispatch ? 1 : 0), dispatch: state.dispatches, node_id: node.id, status: 0, kind: reason, hedged: !!(c.hedgedAttempt || c.hedgedWithTwin) });
+  return isPreDispatch ? { rotate: true, budgetCharged: false, kind: reason } : { rotate: true, kind: reason };
 }
 
 export function noteFailure(state: LoopState, kind: FailureKind): void {
@@ -69,6 +70,11 @@ export function recordOutcome(state: LoopState, node: RuntimeNode, classificatio
   let tier1RateLimitCooldownMs: number | null = null;
 
   if (node.tier === 'tier-1') {
+    // A failed dispatch still consumed a request slot upstream; confirm the
+    // lease (no delivered token usage) so the reservation is not restored. The
+    // 429 path below additionally writes a fresh quota report that may exhaust
+    // the window; non-rate-limit failures keep the reactive cooldown model.
+    settleTier1Quota(node.id, c.tier1ReleaseToken, 0);
     releaseTier1Slot(node.id, c.tier1ReleaseToken);
     if (classification.action === 'neutral') {
       bumpNodeCounters(node.id, { requests: 1 });

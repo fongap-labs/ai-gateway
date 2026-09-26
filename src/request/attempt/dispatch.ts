@@ -20,6 +20,8 @@ import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
 import { isSubscriptionNode } from '../../subscription/index.ts';
+import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
+import { extractQuotaSignal } from '../../reliability/quota-signal.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -251,6 +253,15 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   const latencyMs = Date.now() - startMs;
   c.headersMs = latencyMs;
 
+  // Provider-reported quota windows arrive on response headers for both success
+  // and error responses. Feed them into the Tier 1 quota state so the dormant
+  // near_limit scoring and exhausted_until gate activate before the next 429,
+  // and the reservation counter tracks the real window tail. Unknown quota
+  // (no markers) produces no signal and changes nothing.
+  if (node.tier === 'tier-1') {
+    recordTier1QuotaReport(node.id, extractQuotaSignal(upstreamProtocol, upstream.headers, Date.now()));
+  }
+
   // ---- Non-OK response ----
   if (!upstream.ok) {
     detach();
@@ -268,6 +279,12 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
         : null;
       if (hint !== null && hint > classification.cooldownMs) {
         classification = { ...classification, cooldownMs: hint };
+      }
+      // A subscription window-reset hint also marks the quota window exhausted
+      // until the reset instant, so the eligibility gate and reservation counter
+      // reflect the entitlement boundary — not just the cooldown.
+      if (node.tier === 'tier-1' && hint !== null && hint > 0) {
+        recordTier1QuotaReport(node.id, { remainingRequests: 0, resetAtMs: Date.now() + hint, source: 'subscription-window' });
       }
     }
     // Some compatible providers include usage even on an HTTP error. Preserve
