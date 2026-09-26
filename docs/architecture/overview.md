@@ -120,7 +120,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - A model-shaped 404 isolates the failing node/model mapping; an authorized compatible sibling may still be evaluated within the same request budget.
 - Native retry, protocol fallback, and model-family fallback share the same logical-attempt and wall-clock failover budget.
 - A hedge twin remains in the primary request's protocol and surface.
-- Tier 1 uses Eligibility → soft Affinity → P2C with passive TTFT and bounded heat protection; access-key groups do not alter its score.
+- Tier 1 uses Eligibility → soft Affinity → P2C with passive TTFT and bounded heat protection; access-key groups do not alter its score. Provider-reported quota windows add a proactive layer on top: a reported near-limit tail demotes the score, and an exhausted window gates admission through a reservation counter (unknown quota stays a no-op pass-through, so the adaptive 429/cooldown path governs providers that report nothing).
 - Tier 2/3 remain separate from Tier 1 adaptive state.
 - Tier 2 subscription (`auth:"oauth"`) credentials are resolved at dispatch time from the OAuth token store: isolate cache first, D1 only on cache miss or near expiry, refresh inside a 5-minute margin; resolution failures are pre-dispatch auth rotations with an isolate-local negative cache so a broken subscription does not hammer the provider's token endpoint.
 - Refresh-token rotation safety: one in-flight resolution per node per isolate (singleflight), and refresh persists land only through a compare-and-swap on the persisted `refresh_version`; a losing writer reloads the winner's credential, so exactly one refresh token remains the persisted authority. Durable Objects are not introduced for this.

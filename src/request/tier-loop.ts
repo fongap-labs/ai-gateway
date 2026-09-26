@@ -42,7 +42,7 @@ export type TierPickResult = {
   node?: RuntimeNode,
   raceLost?: boolean,
   raceLostNodeId?: string,
-  tier1ReleaseToken?: { accountId: string, released: boolean } | null,
+  tier1ReleaseToken?: { accountId: string, released: boolean, settled: boolean, quotaReserved: number } | null,
   tier1EscapedFromAffinity?: boolean,
   tier1UpdateAffinity?: boolean,
   tier1AffinityHit?: boolean,
@@ -172,10 +172,10 @@ export function countRemainingDispatchableAttempts(
 ): number {
   const now = Date.now();
   let total = 0;
-  let currentReached = false;
+  let hasReachedCurrentTier = false;
   for (const tierNumber of TIER_ORDER) {
-    if (tierNumber === currentTier) currentReached = true;
-    if (!currentReached) continue;
+    if (tierNumber === currentTier) hasReachedCurrentTier = true;
+    if (!hasReachedCurrentTier) continue;
     const capRemaining = Math.max(0,
       (tierCaps[tierNumber] ?? 0) - (tierNumber === currentTier ? usedInTier : 0));
     if (capRemaining === 0) continue;

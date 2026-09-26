@@ -76,6 +76,19 @@ export type Tier1AccountRuntime = {
   rateLimitRecoveryUntil: number,
   quotaState: Tier1QuotaState,
   quotaResetAt: number,
+  // Provider-reported quota, isolate-local. `null` = unknown: the gateway never
+  // fabricates a hard limit and keeps its reactive adaptive-429 + cooldown
+  // behavior. When a provider reports remaining requests/tokens, these drive a
+  // reservation counter so concurrent admission cannot all see the same tail of
+  // a window (the "20 concurrent requests see remaining=10" guard).
+  quotaRemainingRequests: number | null,
+  quotaRemainingTokens: number | null,
+  quotaSource: string | null,
+  // Per-account outstanding reservations not yet settled with actual usage.
+  // Restored on release-before-settle (abort/pre-execution failure); confirmed
+  // consumed on settle. Synchronous claim->makeToken keeps this race-free in
+  // the single-threaded isolate.
+  quotaReservedInFlight: number,
   // model_missing is about the provider-facing model id, not the gateway's
   // logical alias. Keep that short cooldown separate from logical-model
   // performance/circuit state so remapping Code-Max does not inherit stale 404s.
@@ -83,7 +96,7 @@ export type Tier1AccountRuntime = {
   models: Map<string, Tier1ModelRuntime>,
 };
 
-export type Tier1ReleaseToken = { accountId: string, released: boolean };
+export type Tier1ReleaseToken = { accountId: string, released: boolean, settled: boolean, quotaReserved: number };
 
 /** Failure-kind classification input consumed from the reliability layer.
  * `kind` is an open string: stream-layer kinds (e.g. 'stream_interrupted')
@@ -142,6 +155,10 @@ function newAccountRuntime(accountId: string): Tier1AccountRuntime {
     rateLimitRecoveryUntil: 0,
     quotaState: 'normal',
     quotaResetAt: 0,
+    quotaRemainingRequests: null,
+    quotaRemainingTokens: null,
+    quotaSource: null,
+    quotaReservedInFlight: 0,
     upstreamModelCooldowns: new Map(),
     models: new Map(),
   };
@@ -194,15 +211,40 @@ function recoveryGateMs(): number {
   return TIER1_429_PROBE_GATE_MS;
 }
 
+// A provider-reported window that has rolled over is stale: the old remaining
+// tail is meaningless and must not keep the account blocked or admitted at a
+// fabricated count. Expiry returns the account to unknown quota until the next
+// report re-establishes the window; recovery then follows the normal reactive
+// path (429 -> cooldown -> probe -> restore).
+function normalizeQuotaWindow(account: Tier1AccountRuntime, now: number): void {
+  if (account.quotaResetAt > 0 && account.quotaResetAt <= now) {
+    account.quotaResetAt = 0;
+    account.quotaState = 'normal';
+    account.quotaRemainingRequests = null;
+    account.quotaRemainingTokens = null;
+  }
+}
+
 export function claimTier1Slot(node: RuntimeNode, now: number = Date.now(), modelId: string | null = null, maxInFlight: number | null = null): boolean {
   const account = getTier1Account(node.id);
+  normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
   const model = modelId ? account.models.get(modelId) : null;
   if (modelId && upstreamModelCooldownRemainingMs(account, node, modelId, now) > 0) return false;
   if ((model?.rateLimitRecoveryUntil ?? 0) > now) return false;
   if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return false;
   if (maxInFlight !== null && account.inFlight >= maxInFlight) return false;
+  // Quota admission. Only applies when the provider has reported an absolute
+  // remaining-request count; unknown quota (null) is a no-op pass-through so the
+  // gateway never fabricates a hard limit and keeps its reactive 429 path. The
+  // reservation is restored on release-before-settle and confirmed consumed on
+  // settle, so concurrent admission cannot all pass against the tail of a window.
+  if (account.quotaRemainingRequests !== null && account.quotaRemainingRequests <= 0) return false;
   account.inFlight++;
+  if (account.quotaRemainingRequests !== null) {
+    account.quotaRemainingRequests--;
+    account.quotaReservedInFlight++;
+  }
   if (account.rateLimitRecoveryPending) {
     account.rateLimitRecoveryPending = false;
     account.rateLimitRecoveryUntil = now + recoveryGateMs();
@@ -215,15 +257,47 @@ export function claimTier1Slot(node: RuntimeNode, now: number = Date.now(), mode
 }
 
 export function makeTier1ReleaseToken(accountId: string): Tier1ReleaseToken {
-  return { accountId, released: false };
+  const account = accounts.get(accountId);
+  // Stamp the reservation this claim acquired so release/settle can restore or
+  // confirm it per-token. Synchronous claim->makeToken keeps this race-free in
+  // the single-threaded isolate; a token always carries its own reservation.
+  const reserved = account && account.quotaRemainingRequests !== null ? 1 : 0;
+  return { accountId, released: false, settled: false, quotaReserved: reserved };
 }
 
 export function releaseTier1Slot(accountId: string, token: Tier1ReleaseToken | null | undefined): boolean {
   if (!token || token.accountId !== accountId || token.released) return false;
   token.released = true;
   const account = accounts.get(accountId);
-  if (account) account.inFlight = Math.max(0, account.inFlight - 1);
+  if (account) {
+    account.inFlight = Math.max(0, account.inFlight - 1);
+    // Restore the unconfirmed request reservation unless the lease was settled
+    // with actual usage. Abort / pre-execution failure / hedge loss before
+    // settlement give the reservation back; a settled lease has already
+    // confirmed consumption. Over-restore (a missed settle) only makes a node
+    // look healthier and falls back to the reactive 429 path — never a leak.
+    if (!token.settled && token.quotaReserved > 0 && account.quotaRemainingRequests !== null && account.quotaReservedInFlight > 0) {
+      account.quotaRemainingRequests++;
+      account.quotaReservedInFlight--;
+    }
+  }
   return true;
+}
+
+/** Confirm actual quota consumption for a lease. Idempotent. The request
+ *  reservation is consumed (not restored on release); token-usage is subtracted
+ *  from the remaining-token window when the provider reports one. */
+export function settleTier1Quota(accountId: string, token: Tier1ReleaseToken | null | undefined, consumedTokens: number = 0): void {
+  if (!token || token.accountId !== accountId || token.settled) return;
+  token.settled = true;
+  const account = accounts.get(accountId);
+  if (!account) return;
+  if (token.quotaReserved > 0 && account.quotaReservedInFlight > 0) {
+    account.quotaReservedInFlight--;
+  }
+  if (account.quotaRemainingTokens !== null && Number.isFinite(consumedTokens) && consumedTokens > 0) {
+    account.quotaRemainingTokens = Math.max(0, account.quotaRemainingTokens - Math.trunc(consumedTokens));
+  }
 }
 
 function modelBlocked(model: Tier1ModelRuntime | null | undefined, now: number): boolean {
@@ -237,12 +311,17 @@ export function isTier1Eligible(node: RuntimeNode, req: RoutableRequest, now: nu
   if (!servesModel(node, req.model, knownModels)) return false;
   const account = accounts.get(node.id);
   if (!account) return true;
+  normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
   if (upstreamModelCooldownRemainingMs(account, node, req.model, now) > 0) return false;
   const model = account.models.get(req.model);
   if (modelBlocked(model, now) || (model?.rateLimitRecoveryUntil ?? 0) > now) return false;
   if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return false;
   if (account.quotaState === 'exhausted_until' && account.quotaResetAt > now) return false;
+  // A provider-reported window tail at zero also gates eligibility: the pool
+  // must not even sample a node whose known quota is spent. Unknown quota
+  // (null) keeps the previous behavior untouched.
+  if (account.quotaRemainingRequests !== null && account.quotaRemainingRequests <= 0) return false;
   if (maxInFlight !== null && maxInFlight !== undefined && maxInFlight > 0 && account.inFlight >= maxInFlight) return false;
   return true;
 }
@@ -486,6 +565,12 @@ export function tier1BlockingWaitMs(node: RuntimeNode, modelId: string, now: num
   if (!account || account.accountDisabled) return Infinity;
   if (account.accountCooldownUntil > now) return account.accountCooldownUntil - now;
   if (account.rateLimitRecoveryUntil > now) return account.rateLimitRecoveryUntil - now;
+  // A provider-reported quota window keeps the account ineligible until its
+  // reset instant; surface that wait so client Retry-After reflects the real
+  // boundary instead of a generic cooldown.
+  if (account.quotaState === 'exhausted_until' && account.quotaResetAt > now) {
+    return account.quotaResetAt - now;
+  }
   const upstreamModelWait = upstreamModelCooldownRemainingMs(account, node, modelId, now);
   if (upstreamModelWait > 0) return upstreamModelWait;
   const model = account.models.get(modelId);
@@ -524,6 +609,55 @@ export function recordTier1QuotaSignal(accountId: string, signal: { remainingRat
   } else {
     account.quotaState = 'normal';
     account.quotaResetAt = 0;
+  }
+  return true;
+}
+
+/** Record a provider-reported quota window. This is the production writer that
+ *  activates the dormant near_limit scoring and exhausted_until eligibility
+ *  gate. Absolute remaining (requests/tokens) drives the reservation counter;
+ *  the ratio (remaining/limit, when the provider reports a ceiling) drives the
+ *  near_limit classification. A `null` signal (provider reports no quota) is
+ *  ignored — unknown quota stays a no-op pass-through. */
+export function recordTier1QuotaReport(
+  accountId: string,
+  signal: { remainingRequests?: number, remainingTokens?: number, limitRequests?: number, limitTokens?: number, resetAtMs?: number, source?: string } | null,
+  now: number = Date.now(),
+): boolean {
+  if (!signal) return false;
+  const account = getTier1Account(accountId);
+  if (typeof signal.remainingRequests === 'number' && Number.isFinite(signal.remainingRequests) && signal.remainingRequests >= 0) {
+    // The provider's report is the window tail; reservations already acquired in
+    // this isolate are subtracted so new admission sees only what is genuinely
+    // left. Reservations are honored even if a fresher (lower) report would
+    // drop below them — the floor is zero, not negative.
+    const reported = Math.trunc(signal.remainingRequests);
+    account.quotaRemainingRequests = Math.max(0, reported - account.quotaReservedInFlight);
+  }
+  if (typeof signal.remainingTokens === 'number' && Number.isFinite(signal.remainingTokens) && signal.remainingTokens >= 0) {
+    account.quotaRemainingTokens = Math.max(0, Math.trunc(signal.remainingTokens));
+  }
+  if (typeof signal.resetAtMs === 'number' && Number.isFinite(signal.resetAtMs) && signal.resetAtMs > now) {
+    account.quotaResetAt = signal.resetAtMs;
+  } else if (signal.remainingRequests === 0 || signal.remainingTokens === 0) {
+    account.quotaResetAt = 0;
+  }
+  if (typeof signal.source === 'string' && signal.source) account.quotaSource = signal.source;
+
+  const remaining = signal.remainingRequests ?? signal.remainingTokens;
+  const limit = signal.limitRequests ?? signal.limitTokens;
+  if (remaining === undefined) return true;
+  const ratio = typeof limit === 'number' && limit > 0 ? remaining / limit : null;
+  // Classification semantics match the ratio writer exactly: zero remaining
+  // with a known reset is exhausted; a zero-or-tiny tail is near_limit even
+  // without a reset marker; otherwise normal.
+  if (remaining === 0 && account.quotaResetAt > now) {
+    account.quotaState = 'exhausted_until';
+  } else if (remaining === 0 || (ratio !== null ? ratio <= 0.1 : remaining <= 1)) {
+    account.quotaState = 'near_limit';
+  } else {
+    account.quotaState = 'normal';
+    if (account.quotaResetAt <= now) account.quotaResetAt = 0;
   }
   return true;
 }
