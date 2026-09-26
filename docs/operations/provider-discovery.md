@@ -22,7 +22,7 @@ The critical rule is one-way flow: Discovery may report that runtime configurati
 
 ## Wire contract
 
-Discovery reads the same account-level Node Config used by runtime: `id`, `provider`, `base_url`, `models`, and optional node `priority`. Protocol and routable surfaces are not account fields. They come from `src/config/provider-profile.ts`, which is the single Provider Wire Profile used by both runtime and Discovery.
+Discovery reads the same account-level Node Config used by runtime: `id`, `provider`, `base_url`, `models`, and optional node `priority`. Protocol and routable surfaces are not account fields. They come from `src/providers/registry.ts`, the single provider wire contract used by both runtime and Discovery.
 
 Current wire profiles are:
 

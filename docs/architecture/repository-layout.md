@@ -4,8 +4,10 @@ The repository has one durable owner for each class of work: Worker runtime, tes
 
 ```text
 src/                         Cloudflare Worker runtime
-├── config/                  environment parsing, nodes, Model Registry, policies,
-│                            Provider Profiles and provider quirks
+├── config/                  environment parsing, nodes, Model Registry, policies
+├── providers/               single provider adapter registry: wire contract,
+│                            stream-usage quirk, OAuth onboarding defaults,
+│                            and subscription dispatchability per provider
 ├── scheduler/               Tier 1 P2C/affinity and Tier 2/3 candidate selection
 ├── reliability/             failure classification, cooldowns, quota/heat/state
 ├── transport/               upstream paths, headers, native transport behavior
@@ -14,6 +16,9 @@ src/                         Cloudflare Worker runtime
 ├── stream/                  first-event guards, SSE parsing, stream lifecycle
 ├── request/                 request orchestration, tier loop, fallback, attempt boundary
 │   └── attempt/             dispatch, hedge, success, outcome, attempt observability
+├── oauth/                   OAuth onboarding/credential resolution for Tier 2 subscriptions
+├── subscription/            subscription request-semantics adapters (codex/claude/google),
+│                            composed into provider adapters and bound to nodes
 ├── observability/           logs, metrics, D1/token usage, safe diagnostics
 ├── runtime/                 runtime availability and read-only public model status
 └── dashboard/               public/operator presentation
@@ -80,7 +85,7 @@ Production deployment remains owned by GitHub Actions rather than any local scri
 ## Runtime boundaries
 
 - `config` builds trusted internal configuration from external environment data.
-- `src/config/provider-profile.ts` is the single owner of provider → protocol/surface mapping; account-level Node JSON does not carry those fields.
+- `src/providers/registry.ts` is the single owner of the provider → protocol/surface mapping, stream-usage quirk, built-in OAuth onboarding defaults, and subscription dispatchability; account-level Node JSON does not carry those fields.
 - `scheduler` chooses an eligible node; it does not call providers directly.
 - `reliability` records availability/failure state; it does not convert protocols.
 - `request` orchestrates domain modules; it should not duplicate their logic.

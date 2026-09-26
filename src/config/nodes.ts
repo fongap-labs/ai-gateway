@@ -25,7 +25,7 @@ import { loadModelsConfig, getModelsConfigDiagnostics } from './models.ts';
 import { loadPoliciesConfig, getPoliciesConfigDiagnostics } from './policies.ts';
 import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
 import { loadModelRegistry } from './registry.ts';
-import { providerWireProfile } from './provider-profile.ts';
+import { providerWire } from '../providers/registry.ts';
 import type { RegistryEntry } from './registry.ts';
 import type { RuntimeNode, NodeTier } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
@@ -322,7 +322,7 @@ function buildRuntimeNode(
   if (models === null) return null;
   const priority = parsePriority(rec.priority, id, diagnostics);
   if (priority === null) return null;
-  const { protocol, surfaces } = providerWireProfile(provider);
+  const { protocol, surfaces } = providerWire(provider);
 
   return {
     id,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import assert from 'node:assert/strict';
-import { providerWireProfile } from '../src/config/provider-profile.ts';
+import { providerWire } from '../src/providers/registry.ts';
 import {
   collectDiscoveryNodes,
   scanDiscoveryNode,
@@ -48,7 +48,7 @@ const env = {
 const nodes = collectDiscoveryNodes(env);
 assert.equal(nodes.length, 3);
 for (const node of nodes) {
-  const profile = providerWireProfile(node.provider);
+  const profile = providerWire(node.provider);
   assert.equal(node.protocol, profile.protocol);
   assert.deepEqual(node.configuredSurfaces, [...profile.surfaces]);
 }

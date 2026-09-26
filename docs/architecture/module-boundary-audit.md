@@ -24,6 +24,7 @@ The remaining repeated code called out below is intentional and should not be ab
 | Module | Duplication | Boundary | Decision |
 | --- | --- | --- | --- |
 | `config` | Low/moderate parse/cache scaffolding | Good | Keep validators independent; no generic parser framework. |
+| `providers` | Low | Good | One adapter per provider family; the registry is the single provider → wire/OAuth/subscription/quirk authority. |
 | `scheduler` | Low | Good | Own ranking policy; do not move reliability state here. |
 | `reliability` | Low/moderate | Good | State, heat, classification and shared cooldown arithmetic have explicit owners. |
 | `request` | Moderate | Good after success split | Keep `success.ts` thin; protocol-specific branches stay visible. |
@@ -72,6 +73,10 @@ The dispatch predicate and protocol-specific behavior remain explicit. Embedded-
 
 Generic node reliability and Tier 1 previously duplicated the same ±10% arithmetic. `src/reliability/cooldown-jitter.ts` now owns that pure calculation; both state machines decide independently when jitter applies.
 
+### Provider adapter consolidation
+
+Provider knowledge previously spread across `src/config/provider-profile.ts` (wire switch), `src/config/provider-quirks.ts` (stream usage), `src/oauth/provider-configs.ts` (OAuth defaults), and `src/subscription/index.ts` (adapter table) is now declared once per provider in `src/providers/` and resolved through `src/providers/registry.ts`. The subscription adapter implementations stay in `src/subscription/` and are composed into provider adapters; the OAuth parse/merge machinery stays in `src/oauth/provider-configs.ts` and consumes adapter-declared defaults. The retired switch and quirks modules are removed rather than retained as shims.
+
 Important semantics remain unchanged:
 
 - only automatically computed cooldowns/backoffs use jitter;
@@ -111,6 +116,7 @@ OpenAI and Anthropic assemblers share reader/scanner mechanics but have differen
 - both reliability state machines consume the shared cooldown-jitter primitive;
 - success dispatch/stream/object responsibilities stay split;
 - reliability consumes the neutral upstream-processing contract and does not depend on transport for failure vocabulary;
+- provider knowledge resolves through one registry (`src/providers/registry.ts`); the retired provider-profile/provider-quirks modules stay removed, subscription stays composition-only, and scheduler/reliability/transport never import the provider registry;
 - persistent observability stays independent from routing execution;
 - dashboard presentation cannot depend back on scheduler/reliability/transport execution state.
 

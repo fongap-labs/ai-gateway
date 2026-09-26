@@ -1,27 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Subscription adapter registry. Maps provider names to the adapter that
-// owns their subscription request semantics. The registry is the single
-// place dispatch looks at; provider specifics never leak back out.
+// Subscription entry point. Provider-specific subscription request
+// semantics live in the per-provider adapters under src/subscription/ and
+// are composed into ProviderAdapters through src/providers/registry.ts -
+// the provider registry is the single dispatchability authority. This
+// module keeps only the node-level binding between "this node serves a
+// subscription entitlement" and the credential form that proves it.
 
-import { codexSubscriptionAdapter } from './openai.ts';
-import { claudeSubscriptionAdapter } from './anthropic.ts';
-import { googleSubscriptionAdapter } from './google.ts';
-import type { SubscriptionAdapter } from './types.ts';
 import type { RuntimeNode } from '../types/node.ts';
 
 export type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView } from './types.ts';
-
-const ADAPTERS: Readonly<Record<string, SubscriptionAdapter>> = Object.freeze({
-  openai: codexSubscriptionAdapter,
-  anthropic: claudeSubscriptionAdapter,
-  google: googleSubscriptionAdapter,
-});
-
-export function getSubscriptionAdapter(provider: string): SubscriptionAdapter | null {
-  return ADAPTERS[provider] ?? null;
-}
 
 // The single binding point between "this node serves a subscription
 // entitlement" and the credential form that proves it. Today subscription
@@ -32,16 +21,10 @@ export function getSubscriptionAdapter(provider: string): SubscriptionAdapter | 
 // again in the request path.
 //
 // This predicate describes INTENT, not servability: an auth:"oauth" node
-// for a provider with no adapter still enters the subscription path and
-// fails closed pre-dispatch via the adapter registry. Keeping unservable
-// subscription nodes on that path is what guarantees they never send a
-// half-shaped request upstream.
+// for a provider with no subscription adapter still enters the
+// subscription path and fails closed pre-dispatch via the provider
+// registry. Keeping unservable subscription nodes on that path is what
+// guarantees they never send a half-shaped request upstream.
 export function isSubscriptionNode(node: RuntimeNode): boolean {
   return node.auth === 'oauth';
-}
-
-// Reset adapter state (used by tests; adapters are currently stateless but
-// the hook keeps future stateful adapters testable).
-export function __resetSubscriptionAdaptersForTests(): void {
-  void 0;
 }

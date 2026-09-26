@@ -1,6 +1,6 @@
 # Protocol model
 
-ai-gateway supports two protocol families: OpenAI and Anthropic. Account-level Node Config does **not** declare protocol or routable surfaces. Runtime derives them from the Provider Wire Profile in `src/config/provider-profile.ts`, then schedules on the normalized runtime `protocol + surface + model` tuple.
+ai-gateway supports two protocol families: OpenAI and Anthropic. Account-level Node Config does **not** declare protocol or routable surfaces. Runtime derives them from the provider adapter through `src/providers/registry.ts`, then schedules on the normalized runtime `protocol + surface + model` tuple.
 
 The current provider profiles are:
 

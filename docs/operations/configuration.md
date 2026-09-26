@@ -99,7 +99,7 @@ Rules:
 
 ## Provider wire profiles
 
-Protocol and API surfaces are Provider capabilities and are defined once in `src/config/provider-profile.ts`:
+Protocol and API surfaces are Provider capabilities and are defined once in the provider adapter registry (`src/providers/registry.ts`):
 
 - `provider: "anthropic"` → Anthropic protocol, `messages` surface.
 - `provider: "openai"` → OpenAI protocol, `chat_completions` and `responses` surfaces.
@@ -107,7 +107,7 @@ Protocol and API surfaces are Provider capabilities and are defined once in `src
 
 Runtime normalization adds those protocol/surface facts to `RuntimeNode`; account-level Node JSON does not override them.
 
-If a Provider needs a different wire contract, change its Provider Profile. Do not repeat structural protocol/surface fields across every account.
+If a Provider needs a different wire contract, change its provider adapter in `src/providers/`. Do not repeat structural protocol/surface fields across every account.
 
 OpenAI Responses remains Native Only. Chat/Messages protocol fallback remains bidirectional where conversion is safe:
 
@@ -189,11 +189,11 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
   one; Claude/Codex are public PKCE clients and do not). Setting
   `manual_redirect_url` selects the manual code-paste flow — omit it (or set
   your own gateway callback via the default) for the automatic redirect flow.
-  Dispatch eligibility is owned by the subscription adapter registry
-  (`src/subscription/`), not by configuration: providers whose adapter is
-  missing or refuses (the built-in `google` default, because no verified
-  Gemini subscription backend exists behind the OpenAI-compatible profile)
-  keep OAuth onboarding working while failing runtime dispatch closed.
+  Dispatch eligibility is owned by the provider adapter registry
+  (`src/providers/`), not by configuration: providers whose subscription
+  adapter is missing or refuses (the built-in `google` default, because no
+  verified Gemini subscription backend exists behind the OpenAI-compatible
+  wire) keep OAuth onboarding working while failing runtime dispatch closed.
 
 - `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
   Generate with: `openssl rand -base64 32`. Without it, subscription

@@ -24,7 +24,7 @@ function reset() {
 }
 
 // These fixtures exercise /v1/responses, so the account declares provider
-// "openai" and receives its Responses capability from provider-profile.ts.
+// "openai" and receives its Responses capability from the provider registry.
 function configNode(id, tier, models, priority = 10) {
   return {
     id,

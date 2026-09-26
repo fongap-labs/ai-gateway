@@ -8,7 +8,7 @@
 //   AIG_TIER{1,2,3}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
 //
 // Node config is account-level only. Protocol and surfaces are Provider wire
-// capabilities owned by src/config/provider-profile.ts, not repeated here.
+// capabilities owned by src/providers/registry.ts, not repeated here.
 
 import fs from 'node:fs';
 

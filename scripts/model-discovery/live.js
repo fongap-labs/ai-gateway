@@ -9,7 +9,7 @@
 // snapshots. It NEVER mutates Runtime Node config, Model Registry, Variables or
 // Secrets.
 
-import { providerWireProfile } from '../../src/config/provider-profile.ts';
+import { providerWire } from '../../src/providers/registry.ts';
 import {
   DISCOVERY_LIMITS,
   enforceMaxModelCount,
@@ -144,7 +144,7 @@ export function collectDiscoveryNodes(env) {
       const credential = credentials.get(id);
       if (!id || !provider || !baseUrl || !credential) continue;
       if (secretTiers.get(id) !== tier) continue;
-      const profile = providerWireProfile(provider);
+      const profile = providerWire(provider);
       nodes.push({
         id,
         tier,

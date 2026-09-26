@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- refactor: unify provider knowledge behind the provider adapter registry (src/providers) — each provider declares its wire contract, stream-usage quirk, built-in OAuth onboarding defaults, and subscription semantics in one module; the registry is the single provider → wire/subscription/OAuth authority and unknown providers resolve to the generic OpenAI-compatible adapter, so adding a plain OpenAI-compatible provider stays configuration-only. The retired provider-profile switch, provider-quirks module, and subscription adapter table are removed; the subscription adapter implementations and the AIG_OAUTH_PROVIDERS parse/merge machinery are unchanged and now compose through the registry. Routing, scheduling, reliability, and transport behavior are unchanged.
+
 - feat: subscription model discovery and node abstraction — isSubscriptionNode becomes the single binding between "subscription entitlement" and its credential form (dispatch never checks node.auth directly); codex and claude adapters gain a discoverModels pass that runs best-effort at onboarding completion, surfaces the reachable upstream model count on the success page, and persists the ids as operator diagnostics (the static node models mapping stays the routing authority). Migration 0013 adds the discovered_models column.
 
 - feat: provider adapters own subscription quota-window hints — codex and claude adapters interpret entitlement reset markers (window-reset epoch headers, resets_in_seconds bodies, anthropic ratelimit reset headers) as cooldown hints that can only extend the 429 rate-limit cooldown (capped at 6h); recovery stays the existing cooldown-expiry, single half-open probe, auto-restore circuit. API-key nodes never consume subscription hints.
