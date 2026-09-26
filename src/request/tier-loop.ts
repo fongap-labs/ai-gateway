@@ -172,10 +172,10 @@ export function countRemainingDispatchableAttempts(
 ): number {
   const now = Date.now();
   let total = 0;
-  let currentReached = false;
+  let hasReachedCurrentTier = false;
   for (const tierNumber of TIER_ORDER) {
-    if (tierNumber === currentTier) currentReached = true;
-    if (!currentReached) continue;
+    if (tierNumber === currentTier) hasReachedCurrentTier = true;
+    if (!hasReachedCurrentTier) continue;
     const capRemaining = Math.max(0,
       (tierCaps[tierNumber] ?? 0) - (tierNumber === currentTier ? usedInTier : 0));
     if (capRemaining === 0) continue;
