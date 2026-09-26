@@ -9,7 +9,6 @@
 [English](README.md) · [**简体中文**](README.zh-CN.md)
 
 [![CI](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
-[![Deploy](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml/badge.svg?branch=main&event=workflow_run)](https://github.com/fongap-labs/ai-gateway/actions/workflows/deploy.yml)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License)
 
