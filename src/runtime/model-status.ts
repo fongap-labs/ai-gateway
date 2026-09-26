@@ -136,8 +136,8 @@ export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Rec
     try {
       registry = loadModelRegistry(env);
       for (const [name, entry] of Object.entries(registry)) {
-        visibility[name] = entry.visibility || 'public';
-        uiVisible[name] = entry.ui_visible !== false;
+        visibility[name] = entry.policy.visibility || 'public';
+        uiVisible[name] = entry.policy.ui_visible !== false;
       }
     } catch { /* registry not loadable: everything is public + ui visible */ }
   }
@@ -170,8 +170,8 @@ export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Rec
     models.push({
       id: name,
       status,
-      display_order: entry?.display_order !== undefined ? entry?.display_order : 100,
-      group: entry?.group !== undefined ? entry?.group : deriveGroup(name),
+      display_order: entry?.policy.display_order !== undefined ? entry?.policy.display_order : 100,
+      group: entry?.policy.group !== undefined ? entry?.policy.group : deriveGroup(name),
     });
   }
   models.sort((a, b) => {

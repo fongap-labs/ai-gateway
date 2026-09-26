@@ -14,7 +14,7 @@ OpenAI Chat Completions ↔ Anthropic Messages fallback is evaluated only after 
 
 ## Model registry, Provider Registry, and nodes
 
-The Model Registry owns logical-model policy and declared capabilities. The provider adapter registry in `src/providers/registry.ts` owns protocol and routable surfaces (plus stream-usage quirks, OAuth onboarding defaults, and subscription dispatchability). Account-level Node Config owns provider name, base URL, logical→upstream model mapping, optional static priority, and credential binding; runtime normalization combines those facts into a routable `RuntimeNode`.
+The Model Registry owns logical-model knowledge as two distinct concepts: catalog facts (capabilities, reasoning efforts, modalities) and runtime policy (failover policy binding, visibility, UI grouping); the flat `AIG_MODELS_CONFIG` operator schema is unchanged. The provider adapter registry in `src/providers/registry.ts` owns protocol and routable surfaces (plus stream-usage quirks, OAuth onboarding defaults, and subscription dispatchability). Account-level Node Config owns provider name, base URL, logical→upstream model mapping, optional static priority, and credential binding; runtime normalization combines those facts into a routable `RuntimeNode`.
 
 Node `limits`, `protocol`, and `surfaces` are not part of the account schema. Provider capacity comes from observed runtime signals rather than operator-supplied RPM/concurrency guesses.
 
