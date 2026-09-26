@@ -82,7 +82,7 @@ function buildModelsList(nodes: RuntimeNode[], env: Record<string, unknown>, aut
   const allowedSet = new Set(filterModelsByKey(filterShape, logicalNames));
   const data = [...models.values()]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .filter((e) => e.apiBackends.size > 0 && e.reg.visibility !== 'internal' && allowedSet.has(e.id))
+    .filter((e) => e.apiBackends.size > 0 && e.reg.policy.visibility !== 'internal' && allowedSet.has(e.id))
     .map((e) => {
       const backends = [...e.apiBackends];
       return {
@@ -93,14 +93,14 @@ function buildModelsList(nodes: RuntimeNode[], env: Record<string, unknown>, aut
         apiBackend: backends.length === 1 ? backends[0] : 'mixed',
         api_backends: backends,
         protocols: [...e.surfaces].sort(),
-        supports_tools: e.reg.capabilities.tools,
-        supports_reasoning: e.reg.capabilities.reasoning,
-        supports_reasoning_effort: e.reg.capabilities.reasoning,
-        reasoning_efforts: [...e.reg.reasoning_efforts].sort(),
-        supports_vision: e.reg.capabilities.vision,
-        supports_ocr: e.reg.capabilities.ocr,
-        supports_stream: e.reg.capabilities.stream,
-        ui_visible: e.reg.ui_visible !== false,
+        supports_tools: e.reg.catalog.capabilities.tools,
+        supports_reasoning: e.reg.catalog.capabilities.reasoning,
+        supports_reasoning_effort: e.reg.catalog.capabilities.reasoning,
+        reasoning_efforts: [...e.reg.catalog.reasoning_efforts].sort(),
+        supports_vision: e.reg.catalog.capabilities.vision,
+        supports_ocr: e.reg.catalog.capabilities.ocr,
+        supports_stream: e.reg.catalog.capabilities.stream,
+        ui_visible: e.reg.policy.ui_visible !== false,
       };
     });
   return { object: 'list', data };

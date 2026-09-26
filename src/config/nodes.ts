@@ -73,7 +73,7 @@ function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
   const models = loadModelsConfig(env);
   const policies = loadPoliciesConfig(env);
   for (const [model, mcfg] of Object.entries(models)) {
-    const pname = mcfg?.policy || 'default';
+    const pname = mcfg?.policy?.policy || 'default';
     if (!policies[pname]) diags.push(`AIG_MODELS_CONFIG: model "${model}" references unknown policy "${pname}"`);
   }
   return diags;
@@ -90,7 +90,7 @@ function collectNodeModelDiagnostics(nodes: ReadonlyArray<RuntimeNode>, env: Rec
   if (!registry || Object.keys(registry).length === 0) return diags;
   const internalModels = new Set<string>();
   for (const [name, entry] of Object.entries(registry)) {
-    if (entry.visibility === 'internal') internalModels.add(name);
+    if (entry.policy.visibility === 'internal') internalModels.add(name);
   }
   if (internalModels.size === 0) return diags;
   for (const node of nodes) {

@@ -71,7 +71,9 @@ Logical-model fallback is a separate outer orchestration layer. The closed famil
 ## Module ownership
 
 ```text
-Model Registry     logical model policy and declared capabilities
+Model Registry     logical-model catalog facts (capabilities, reasoning efforts,
+                    modalities) and runtime policy (failover policy binding,
+                    visibility, UI grouping) - distinct concepts, one registry
 Node config         provider name, base URL, logical→upstream model mapping,
                     optional Tier 2/3 priority, credential binding,
                     optional Tier 2-only `auth:"oauth"` subscription marker
@@ -141,7 +143,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - Runtime variable names/defaults: `src/config/runtime-vars.ts`.
 - Node parsing and credential binding: `src/config/nodes.ts` and related config modules.
 - Provider protocol/surface mapping, stream-usage quirk, OAuth onboarding defaults, and subscription dispatchability: `src/providers/registry.ts` (composed from per-provider adapters in `src/providers/` and subscription adapters in `src/subscription/`).
-- Logical model policy/capabilities: `src/config/registry.ts`.
+- Logical model catalog facts and runtime policy: `src/config/registry.ts` (catalog facts: capabilities, reasoning efforts, modalities; runtime policy: failover policy binding, visibility, UI grouping — separated at the type level; the flat `AIG_MODELS_CONFIG` operator schema is unchanged).
 - Logical-model fallback policy: `src/request/model-fallback.ts` and its contract tests.
 - Protocol fallback matrix: protocol fallback config/conversion modules and their contract tests.
 - Failure taxonomy: `src/reliability/classify.ts`.

@@ -41,7 +41,7 @@ const explicitModels = loadModelsConfig({
   }),
 });
 assert.equal(getPolicy('Code-Pro', explicitModels, customPolicies), customPolicies.review);
-assert.equal(getPolicy('Audit-Ultra', { 'Audit-Ultra': { policy: 'fast' } }, builtins), builtins.fast);
+assert.equal(getPolicy('Audit-Ultra', { 'Audit-Ultra': { catalog: {}, policy: { policy: 'fast' } } }, builtins), builtins.fast);
 assert.equal(customPolicies.review.headersTimeoutMs, 90_000);
 assert.equal(customPolicies.review.failoverBudgetMs, 240_000);
 
