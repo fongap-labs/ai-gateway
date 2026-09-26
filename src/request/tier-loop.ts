@@ -8,8 +8,8 @@
 // a higher tier.
 
 import { TIER_ORDER } from './router.ts';
-import { pickCandidate, tierHasDispatchableNode, countDispatchableNodes } from '../scheduler/scheduler.ts';
-import { pickTier1Candidate } from '../scheduler/tier1-scheduler.ts';
+import { tierHasDispatchableNode, countDispatchableNodes } from '../scheduler/scheduler.ts';
+import { routingStrategyFor } from '../scheduler/routing-strategy.ts';
 import { tier1HasDispatchableNode, tier1CountDispatchableNodes } from '../reliability/tier1-state.ts';
 import type { Tier, TierMap, RoutableRequest } from '../types/scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -66,14 +66,11 @@ export function pickForTier(
   attempted: Set<string>,
   opts: PickForTierOpts = {},
 ): TierPickResult {
-  const { knownModels, raceLostIds, maxInFlight } = opts;
-  if (tierNumber !== 1) {
-    const r = pickCandidate(tierNodes, req, attempted, undefined, null, knownModels, raceLostIds ?? null);
-    if (!r) return null;
-    if (r.raceLost) return { raceLost: true, raceLostNodeId: r.raceLostNodeId };
-    return { node: r.node };
-  }
-  const r = pickTier1Candidate(tierNodes, req, attempted, { ...opts, knownModels, maxInFlight });
+  // The tier loop resolves the ranking algorithm through one routing-strategy
+  // dispatcher; it never branches on the algorithm by tier. Each strategy
+  // delegates to its underlying picker unchanged (Tier 1 P2C+TTFT+affinity,
+  // Tier 2/3 health/latency selection).
+  const r = routingStrategyFor(tierNumber).pick(tierNodes, req, attempted, opts);
   if (!r) return null;
   if (r.raceLost) return { raceLost: true, raceLostNodeId: r.raceLostNodeId };
   return {

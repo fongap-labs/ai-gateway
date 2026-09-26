@@ -169,6 +169,14 @@ assert.match(providerRegistry, /export function getProviderAdapter/,
   'provider adapter resolution has one registry owner');
 assert.match(providerRegistry, /genericOpenAIProviderAdapter/,
   'unknown providers resolve to the generic OpenAI-compatible adapter');
+const routingStrategy = fs.readFileSync(path.join(srcRoot, 'scheduler', 'routing-strategy.ts'), 'utf8');
+assert.match(routingStrategy, /export function routingStrategyFor/,
+  'tier -> routing strategy resolution has one registry owner');
+const tierLoopSource = fs.readFileSync(path.join(srcRoot, 'request', 'tier-loop.ts'), 'utf8');
+assert.match(tierLoopSource, /routingStrategyFor\(/,
+  'the tier loop resolves selection through the routing-strategy contract');
+assert.doesNotMatch(tierLoopSource, /pickTier1Candidate|pickCandidate/,
+  'the tier loop must not regain direct picker branching by tier');
 const subscriptionIndex = fs.readFileSync(path.join(srcRoot, 'subscription', 'index.ts'), 'utf8');
 assert.doesNotMatch(subscriptionIndex, /getSubscriptionAdapter|const ADAPTERS/,
   'subscription index must not regain a second provider adapter registry');
