@@ -95,7 +95,8 @@ Subscription        provider-specific subscription request semantics: the codex/
                     google adapters, composed into provider adapters through the
                     provider registry; the node-level subscription binding
 Observability       logs, metrics, D1/token usage, diagnostics
-Runtime             runtime availability and public read-only projections
+Runtime             runtime availability, public read-only model status, and the unified
+                    RuntimeStateStore read contract over both state backends
 Dashboard           presentation only
 ```
 
@@ -131,6 +132,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - OAuth onboarding (`/oauth/start`, `/oauth/callback/<provider>`, `/oauth/paste`) uses PKCE S256 with a single-use D1 flow state (10-minute TTL); `/oauth/start` requires a gateway access key and a matching Tier 2 node, and every callback/paste consumes its state row regardless of outcome.
 - Built-in OAuth defaults for the three mainstream subscription providers (anthropic, openai, google) embed public constants from their open-source CLIs; `AIG_OAUTH_PROVIDERS` entries replace defaults per-provider (wholesale). Providers with a `manual_redirect_url` (Google) use the manual code-paste flow because their OAuth client does not allow arbitrary gateway redirect URIs.
 - Short-lived scheduler/reliability state is isolate-local best-effort and disappears with the isolate.
+- Runtime state reads (availability, account/model state, quota) resolve through one `RuntimeStateStore` contract (`src/types/runtime-state.ts`) projected over both the Tier 1 adaptive runtime and the Tier 2/3 node state; the two backends keep separate implementations and learning signals.
 - D1 Token totals track real physical upstream-reported usage, while public `次请求` uses successfully delivered request counts.
 - D1 token usage and public model status are observability, not routing authority.
 - `TIER1_AFFINITY` KV stores only hashed session affinity and does not make routing globally sticky.
