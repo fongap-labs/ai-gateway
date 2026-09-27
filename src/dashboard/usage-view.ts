@@ -236,7 +236,7 @@ export async function usageSection(env: Record<string, unknown>, now: number = D
   if (!summary) errors.push('TOKEN_STATS_DB binding missing');
   if (isSummaryError(summary) && !summary.error) errors.push('summary unavailable');
   if (isDailyError(daily) && !daily.error) errors.push('daily unavailable');
-  if (errors.length && env && env.LOG_LEVEL !== 'none') {
+  if (errors.length && env && env.AIG_LOG_LEVEL !== 'none') {
     try { console.warn(`[dashboard D1 degraded] ${errors.join('; ')}`); } catch {}
   }
 
