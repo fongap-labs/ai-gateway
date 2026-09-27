@@ -8,7 +8,7 @@ import type { GatewayEnv, GatewayLogger } from '../types/runtime.ts';
 export type { GatewayLogger };
 
 export function getLogger(env: GatewayEnv): GatewayLogger {
-  const levelKey = String(env?.LOG_LEVEL || 'info').toLowerCase();
+  const levelKey = String(env?.AIG_LOG_LEVEL || 'info').toLowerCase();
   const level = LEVELS[levelKey] ?? 2;
   return {
     error: (...args: unknown[]) => { if (level >= 1) console.error(...args); },
