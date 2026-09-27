@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: align runtime CORS and log-level reads with the documented AIG_CORS_ORIGIN and AIG_LOG_LEVEL variables so operator configuration works as documented.
+
 - refactor: standardize the routing strategy contract — the request tier loop resolves node selection through one RoutingStrategy dispatcher (routingStrategyFor) instead of branching on the algorithm by tier; Tier 1 maps to p2c_ttft (P2C + passive TTFT + affinity + heat + quota gate, unchanged) and Tier 2/3 to priority_lru (current health/latency selection, unchanged). Future strategies (cost/quality/learned) are the extension point but are deliberately not implemented without a concrete need.
 
 - refactor: unify runtime state reads behind a RuntimeStateStore contract — the Tier 1 adaptive runtime and the Tier 2/3 node state keep separate implementations; a new neutral read contract (EndpointState / AccountState / ModelState) projects both backends so upper layers resolve state through runtimeStateStoreFor(node) instead of importing backend internals. Projections are honest (a field a backend does not track is null, never fabricated); claims, releases, outcome recording, and quota settlement stay in the backend modules and dispatch funnels. Isolate-local best-effort; no Redis, Durable Objects, or cross-isolate coordination.
