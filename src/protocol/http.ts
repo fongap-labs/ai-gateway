@@ -12,8 +12,8 @@ const SECURITY_HEADERS = {
 };
 
 export function corsHeaders(request: Request, env: Record<string, unknown>): Record<string, string> {
-  const allowedOrigin = readEnv(env, 'ALLOWED_ORIGIN');
-  // Default: CORS disabled. Browser access requires explicit ALLOWED_ORIGIN.
+  const allowedOrigin = readEnv(env, 'AIG_CORS_ORIGIN');
+  // Default: CORS disabled. Browser access requires explicit AIG_CORS_ORIGIN.
   if (!allowedOrigin) return { ...SECURITY_HEADERS };
   const origin = normalizeAllowedOrigin(allowedOrigin);
   if (origin === null) return { ...SECURITY_HEADERS };
