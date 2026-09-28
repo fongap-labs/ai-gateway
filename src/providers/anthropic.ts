@@ -28,5 +28,6 @@ export const anthropicProviderAdapter: ProviderAdapter = Object.freeze({
   wire: ANTHROPIC_NATIVE_WIRE,
   streamUsage: false,
   oauth: ANTHROPIC_OAUTH_DEFAULTS,
+  subscriptionEndpoint: 'https://api.anthropic.com',
   subscription: claudeSubscriptionAdapter,
 });

@@ -10,6 +10,8 @@ The current provider profiles are:
 
 There is no per-node `protocol` or `surfaces` override. If a Provider needs a different wire contract, change the Provider Profile rather than duplicating transport structure across account records.
 
+Subscription backends may speak a proprietary wire (e.g. Google Code Assist's `v1internal` `generateContent`). A subscription adapter that declares `wire` owns the conversion to/from its node's native protocol inside `src/subscription/` and the dispatch layer; the gateway's two native protocol families and the general transport/conversion layers stay unchanged. The proprietary wire never leaks into non-subscription traffic.
+
 ## Native surfaces
 
 | Client path | Protocol | Native upstream path |

@@ -32,9 +32,9 @@ Do not add speculative global coordination, guessed provider limits, or complex 
 
 ### Tier 2 — membership/subscription entitlement capacity
 
-Tier 2 is reserved for future adapters that expose AI capacity obtained through user membership or subscription entitlements.
+Tier 2 is for adapters that expose AI capacity obtained through operator-owned membership or subscription entitlements (Claude Pro/Max, ChatGPT/Codex, Google One AI Premium). All three mainstream providers ship built-in subscription adapters with first-party OAuth onboarding defaults.
 
-Do not turn Tier 2 into another generic API-key pool. Keep it dormant and simple until a concrete subscription-entitlement adapter exists.
+Do not turn Tier 2 into another generic API-key pool. It stays free of Tier 1 adaptive machinery unless measured production evidence shows a need.
 
 ### Tier 3 — paid API capacity
 

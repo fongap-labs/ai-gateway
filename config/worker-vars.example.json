@@ -10,6 +10,14 @@
       }
     }
   ],
+  "AIG_TIER2_NODES_01": [
+    {
+      "id": "gemini",
+      "provider": "google",
+      "auth": "oauth",
+      "models": { "Code-Max": "gemini-2.5-pro" }
+    }
+  ],
   "AIG_ACCESS_MODELS_PRO": "code-pro",
   "AIG_MODELS_CONFIG": {
     "code-pro": {

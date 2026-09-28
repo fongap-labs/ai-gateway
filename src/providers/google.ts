@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Google provider adapter. The wire contract is OpenAI-compatible Chat
-// Completions (the public Generative Language API shape). OAuth
-// onboarding uses the Gemini CLI's public constants and the manual
-// code-paste flow (its OAuth client does not allow arbitrary gateway
-// redirect URIs). No verified Gemini/Code Assist subscription backend
-// exists behind this wire, so the composed subscription adapter refuses
-// to shape requests and dispatch fails closed.
+// Google provider adapter. The wire contract (client-facing) is
+// OpenAI-compatible Chat Completions; OAuth onboarding uses the Gemini
+// CLI's public constants and the manual code-paste flow (its OAuth client
+// does not allow arbitrary gateway redirect URIs). The subscription
+// entitlement is served by the Cloud Code Assist backend
+// (cloudcode-pa.googleapis.com/v1internal), whose proprietary wire
+// (generateContent / streamGenerateContent) is owned by the composed
+// subscription adapter through src/subscription/google-wire.ts. The
+// proprietary wire never enters the gateway's general transport or
+// conversion layers; it is converted to/from the OpenAI Chat surface inside
+// the subscription adapter and the dispatch layer.
 
 import { googleSubscriptionAdapter } from '../subscription/google.ts';
 import type { Surface } from '../types/protocol.ts';
@@ -33,5 +37,6 @@ export const googleProviderAdapter: ProviderAdapter = Object.freeze({
   wire: GOOGLE_WIRE,
   streamUsage: true,
   oauth: GOOGLE_OAUTH_DEFAULTS,
+  subscriptionEndpoint: 'https://cloudcode-pa.googleapis.com',
   subscription: googleSubscriptionAdapter,
 });

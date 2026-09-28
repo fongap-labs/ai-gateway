@@ -41,6 +41,39 @@ export type SubscriptionPreparedRequest = {
   /** Replacement body when the adapter rewrites it; null keeps the
    *  dispatch body untouched. */
   body: Record<string, unknown> | null,
+  /** When set, replaces the dispatch target URL wholesale (used verbatim,
+   *  with its own query string). Subscription backends with a proprietary
+   *  wire path that is not expressible through resolveUpstreamPath(protocol,
+   *  surface) (e.g. Google Code Assist's v1internal:generateContent and
+   *  v1internal:streamGenerateContent?alt=sse) return it here; backends that
+   *  reuse the node's native protocol path leave it null. */
+  upstreamUrl: string | null,
+};
+
+/** A proprietary subscription wire: a subscription backend that speaks its
+ *  own request/response shape instead of the node's native protocol. When a
+ *  SubscriptionAdapter declares `wire`, the dispatch layer converts the OK
+ *  upstream response into the node's native protocol shape BEFORE the success
+ *  layer sees it, so every existing success/stream/object handler keeps one
+ *  consistent contract. Streaming bodies are converted lazily (the converter
+ *  must not emit before real output, so the first-event guard can still
+ *  rotate); non-streaming objects are converted eagerly in the dispatch
+ *  layer. Conversion is fail-closed: an object that carries no meaningful
+ *  output rotates as an empty response. */
+export type SubscriptionWire = {
+  /** Convert a streaming proprietary upstream body into the node's native
+   *  protocol SSE bytes. Must pipe upstream chunks through in real time,
+   *  translate event types as they arrive, and emit the native terminal
+   *  marker (e.g. OpenAI `data: [DONE]`) exactly once when the upstream
+   *  stream ends. Must NOT buffer the full response before emitting. */
+  streamToNative(
+    body: ReadableStream<Uint8Array> | null | undefined,
+    options: { messageId: string, model: string },
+  ): ReadableStream<Uint8Array>,
+  /** Convert one parsed proprietary response object into the node's native
+   *  protocol object. Returns null when the response carries no meaningful
+   *  output (an empty-response rotation in the dispatch layer). */
+  objectToNative(data: unknown): Record<string, unknown> | null,
 };
 
 /** Read-only view of a failed subscription response an adapter may
@@ -71,4 +104,10 @@ export type SubscriptionAdapter = {
    *  operator (what the entitlement currently grants); static node.models
    *  routing configuration remains the routing authority. */
   discoverModels?(credential: ResolvedSubscriptionCredential, env: Record<string, unknown>): Promise<readonly string[] | null>,
+  /** Declare a proprietary subscription wire. When present, the dispatch
+   *  layer converts OK upstream responses into the node's native protocol
+   *  shape through these converters before the success layer consumes them.
+   *  Absent for backends that reuse the node's native protocol wire
+   *  (Claude/Codex). */
+  wire?: SubscriptionWire,
 };

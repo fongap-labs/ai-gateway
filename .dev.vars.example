@@ -17,16 +17,19 @@ AIG_ACCESS_MODELS_AIR="general-air"
 
 # ============ Tier roles ============
 # Tier 1: free/effectively-free capacity; primary daily traffic and reliability focus.
-# Tier 2: reserved for future membership/subscription entitlement adapters.
+# Tier 2: membership/subscription entitlement capacity (Claude/Codex/Gemini subscriptions).
 # Tier 3: paid API capacity; protected final fallback.
 #
-# Do not use Tier 2 as another generic API-key pool. Leave it unconfigured until
-# a concrete membership/subscription adapter exists.
+# Do not use Tier 2 as another generic API-key pool. It is reserved for
+# operator-owned subscription-entitlement nodes onboarded through PKCE OAuth.
 
 # ============ Node config: current schema ============
 # Required per node: id, provider, base_url, models.
 # Optional: priority (non-negative integer number, default 100; ignored by Tier 1 P2C).
-# Protocol and routable surfaces come from src/config/provider-profile.ts and are
+# For Tier 2 auth:"oauth" subscription nodes, base_url is optional when the
+# provider adapter owns the endpoint (anthropic/openai/google): onboarding needs
+# only {id, provider, auth:"oauth", models}.
+# Protocol and routable surfaces come from the provider adapter registry and are
 # not node fields. Credentials, limits, protocol/surfaces overrides, model arrays,
 # unknown fields, and old aliases are rejected.
 AIG_TIER1_NODES_01='[
@@ -39,11 +42,23 @@ AIG_TIER1_NODES_01='[
 # paid-API fallback capacity. Example intentionally omitted to avoid encouraging
 # accidental paid fallback in a default household/small-team setup.
 
+# ============ Tier 2 subscription nodes (optional) ============
+# auth:"oauth" nodes resolve their credential from the OAuth token store, not
+# from AIG_TIER2_CREDENTIALS. base_url is optional (the provider adapter owns
+# the endpoint). Onboard at /oauth/start?provider=...&node=...&key=<access-key>.
+# AIG_TIER2_NODES_01='[
+#   {"id":"gemini","provider":"google","auth":"oauth","models":{"Code-Max":"gemini-2.5-pro"}},
+#   {"id":"claude","provider":"anthropic","auth":"oauth","models":{"Code-Max":"claude-sonnet-4-5"}},
+#   {"id":"codex","provider":"openai","auth":"oauth","models":{"Code-Max":"gpt-5.1-codex"}}
+# ]'
+# Available Gemini upstream models: gemini-2.5-pro, gemini-2.5-flash
+
 # ============ Credentials live ONLY in tier-scoped secrets ============
 # Runtime binds by Tier + node id. Config/Secret shard numbers are independent.
 # AIG_TIER1_CREDENTIALS_01='{"nvidia-01":"nvapi-xxx","nvidia-02":"nvapi-yyy","glm-01":"zzz.id"}'
 # More shards: AIG_TIER1_CREDENTIALS_02 ... AIG_TIER1_CREDENTIALS_10
-# Tier 2 credentials remain unset until a subscription-entitlement adapter exists.
+# Tier 2 auth:"oauth" nodes use the OAuth token store (no static credential here).
+# AIG_TIER2_CREDENTIALS_01='{}'
 # Tier 3 credentials are configured only together with intentional paid-API nodes.
 
 # ============ Optional model / request policy ============

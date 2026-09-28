@@ -18,6 +18,7 @@ This repository inherits Fongap Labs shared governance from [fongap-labs/action-
 - `docs/architecture/routing-model.md`
 - `docs/architecture/reliability-model.md`
 - `docs/architecture/protocol-model.md`
+- `docs/architecture/subscription-model.md`
 - `docs/governance/quality-policy.md`
 - `docs/governance/dependency-policy.md`
 
