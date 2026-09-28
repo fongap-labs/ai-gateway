@@ -486,7 +486,7 @@ function emitFinishAndDone(state: StreamState, controller: ReadableStreamDefault
 }
 
 /** Build an OpenAI Chat Completions SSE stream from a Code Assist SSE stream.
- *  Real-time conversion â€?no buffering of the full response. The upstream
+ *  Real-time conversion â€” no buffering of the full response. The upstream
  *  stream has no terminal event, so the converter finalizes (finish chunk +
  *  usage + `[DONE]`) when the upstream body ends cleanly. */
 export function createOpenAIChatStreamFromCodeAssist(
