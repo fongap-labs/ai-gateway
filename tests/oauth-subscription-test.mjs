@@ -12,15 +12,13 @@
 
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
+import { __resetTokenKeyCacheForTests, decryptSecret, encryptSecret, hasTokenKey } from '../src/oauth/crypto.ts';
+import { __resetOAuthProvidersCacheForTests, loadOAuthProviders } from '../src/oauth/provider-configs.ts';
+import { __resetSubscriptionCacheForTests } from '../src/oauth/resolve.ts';
+import { loadSubscriptionToken, storeSubscriptionToken } from '../src/oauth/token-store.ts';
 import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
-import { __resetSubscriptionCacheForTests } from '../src/oauth/resolve.ts';
-import { __resetOAuthProvidersCacheForTests } from '../src/oauth/provider-configs.ts';
-import { __resetTokenKeyCacheForTests } from '../src/oauth/crypto.ts';
-import { loadOAuthProviders } from '../src/oauth/provider-configs.ts';
-import { encryptSecret, decryptSecret, hasTokenKey } from '../src/oauth/crypto.ts';
-import { storeSubscriptionToken, loadSubscriptionToken } from '../src/oauth/token-store.ts';
 
 const ACCESS_KEY = 'test-access-key';
 const RAW_KEY_BYTES = new Uint8Array(32).fill(7);
@@ -44,7 +42,7 @@ async function test(name, fn) {
   } catch (e) {
     failed++;
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -79,7 +77,11 @@ class MockOAuthD1 {
           if (/INSERT INTO oauth_flow_states/.test(query)) {
             const [state, provider, nodeId, verifier, createdAt] = values;
             self.flows.set(state, {
-              state, provider, node_id: nodeId, code_verifier: verifier, created_at: createdAt,
+              state,
+              provider,
+              node_id: nodeId,
+              code_verifier: verifier,
+              created_at: createdAt,
             });
             return {};
           }
@@ -99,12 +101,15 @@ class MockOAuthD1 {
             const [nodeId, provider, accessEnc, refreshEnc, tokenIv, refreshIv, expiresAt, updatedAt, accountId, discoveredJson] = values;
             const existing = self.tokens.get(nodeId);
             self.tokens.set(nodeId, {
-              node_id: nodeId, provider,
+              node_id: nodeId,
+              provider,
               access_token_enc: accessEnc,
               refresh_token_enc: refreshEnc ?? existing?.refresh_token_enc ?? null,
               token_iv: tokenIv,
               refresh_iv: refreshIv ?? existing?.refresh_iv ?? null,
-              expires_at: expiresAt, status: 'active', updated_at: updatedAt,
+              expires_at: expiresAt,
+              status: 'active',
+              updated_at: updatedAt,
               account_id: accountId ?? existing?.account_id ?? null,
               refresh_version: 0,
               discovered_models: discoveredJson ?? existing?.discovered_models ?? null,
@@ -127,7 +132,9 @@ class MockOAuthD1 {
               token_iv: tokenIv,
               refresh_token_enc: refreshEnc ?? row.refresh_token_enc,
               refresh_iv: refreshIv ?? row.refresh_iv,
-              expires_at: expiresAt, status: 'active', updated_at: updatedAt,
+              expires_at: expiresAt,
+              status: 'active',
+              updated_at: updatedAt,
               refresh_version: row.refresh_version + 1,
             });
             return { meta: { changes: 1 } };
@@ -190,17 +197,25 @@ function makeEnv({ tier1, tier2, db, extraEnv } = {}) {
 }
 
 const tier2OauthNode = (id, provider = 'mock', extra = {}) => ({
-  id, provider, auth: 'oauth',
-  base_url: `https://${id}.example.com/v1`, models: { 'Code-Max': 'up-model' }, ...extra,
+  id,
+  provider,
+  auth: 'oauth',
+  base_url: `https://${id}.example.com/v1`,
+  models: { 'Code-Max': 'up-model' },
+  ...extra,
 });
 
 // ---- Config validation tests ----------------------------------------------
 
 await test('Tier 2 auth:"oauth" node is accepted without a static credential', async () => {
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')] });
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const body = await res.json();
   assert.equal(body.status, 'ready');
   assert.ok(!body.diagnostics.some((d) => String(d).includes('sub1')), JSON.stringify(body.diagnostics));
@@ -211,11 +226,18 @@ await test('Tier 1 auth:"oauth" node is rejected', async () => {
     tier1: [{ id: 'sub1', provider: 'mock', auth: 'oauth', base_url: 'https://sub1.example.com/v1', models: { 'Code-Max': 'up' } }],
     extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ sub1: 'k' }) },
   });
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const body = await res.json();
-  assert.ok(body.diagnostics.some((d) => String(d).includes('not allowed on tier-1')), JSON.stringify(body.diagnostics));
+  assert.ok(
+    body.diagnostics.some((d) => String(d).includes('not allowed on tier-1')),
+    JSON.stringify(body.diagnostics),
+  );
 });
 
 await test('Tier 3 auth:"oauth" node is rejected', async () => {
@@ -224,22 +246,36 @@ await test('Tier 3 auth:"oauth" node is rejected', async () => {
     AIG_TIER3_NODES_01: JSON.stringify([{ id: 'sub3', provider: 'mock', auth: 'oauth', base_url: 'https://sub3.example.com/v1', models: {} }]),
     AIG_TIER3_CREDENTIALS_01: JSON.stringify({ sub3: 'k' }),
   };
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const body = await res.json();
-  assert.ok(body.diagnostics.some((d) => String(d).includes('not allowed on tier-3')), JSON.stringify(body.diagnostics));
+  assert.ok(
+    body.diagnostics.some((d) => String(d).includes('not allowed on tier-3')),
+    JSON.stringify(body.diagnostics),
+  );
 });
 
 await test('unknown auth mode is rejected', async () => {
   const env = makeEnv({
     tier2: [{ id: 'subx', provider: 'mock', auth: 'api-key', base_url: 'https://subx.example.com/v1', models: {} }],
   });
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const body = await res.json();
-  assert.ok(body.diagnostics.some((d) => String(d).includes('unknown auth mode')), JSON.stringify(body.diagnostics));
+  assert.ok(
+    body.diagnostics.some((d) => String(d).includes('unknown auth mode')),
+    JSON.stringify(body.diagnostics),
+  );
 });
 
 await test('auth:"oauth" node with a static credential is rejected (dual credential source)', async () => {
@@ -247,11 +283,18 @@ await test('auth:"oauth" node with a static credential is rejected (dual credent
     tier2: [tier2OauthNode('sub1')],
     extraEnv: { AIG_TIER2_CREDENTIALS_01: JSON.stringify({ sub1: 'static-key' }) },
   });
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const body = await res.json();
-  assert.ok(body.diagnostics.some((d) => String(d).includes('must not have a static credential')), JSON.stringify(body.diagnostics));
+  assert.ok(
+    body.diagnostics.some((d) => String(d).includes('must not have a static credential')),
+    JSON.stringify(body.diagnostics),
+  );
 });
 
 // ---- Provider config parsing ----------------------------------------------
@@ -335,8 +378,10 @@ await test('subscription token persists and reloads through D1', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ db });
   const stored = await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock',
-    accessToken: 'tok-1', refreshToken: 'ref-1',
+    nodeId: 'sub1',
+    provider: 'mock',
+    accessToken: 'tok-1',
+    refreshToken: 'ref-1',
     expiresAt: Date.now() + 3600_000,
   });
   assert.equal(stored, true);
@@ -350,7 +395,10 @@ await test('subscription token persists and reloads through D1', async () => {
 await test('token store refuses to persist without D1 binding', async () => {
   const env = makeEnv({});
   const stored = await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock', accessToken: 'tok-1', refreshToken: null,
+    nodeId: 'sub1',
+    provider: 'mock',
+    accessToken: 'tok-1',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   assert.equal(stored, false);
@@ -361,7 +409,10 @@ await test('token ciphertext in D1 is not the plaintext token', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock', accessToken: 'secret-token-value', refreshToken: null,
+    nodeId: 'sub1',
+    provider: 'mock',
+    accessToken: 'secret-token-value',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   const row = db.tokens.get('sub1');
@@ -386,9 +437,13 @@ await test('/oauth/start without a gateway key returns 401', async () => {
 await test('/oauth/start with a valid key returns a PKCE redirect', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 302);
   const location = new URL(res.headers.get('location'));
   assert.equal(location.origin + location.pathname, 'https://auth.mock.example.com/authorize');
@@ -400,29 +455,57 @@ await test('/oauth/start with a valid key returns a PKCE redirect', async () => 
   assert.ok(db.flows.has(state), 'flow state persisted in D1');
 });
 
-await test('/oauth/start accepts ?key= query param for browser onboarding', async () => {
+await test('/oauth/start without a gateway key renders the paste page', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  // No Authorization header: a browser address bar cannot set one. The ?key=
-  // query parameter is the onboarding fallback credential source.
-  const res = await worker.fetch(new Request(`https://gateway.example.com/oauth/start?provider=mock&node=sub1&key=${encodeURIComponent(ACCESS_KEY)}`), env, {});
-  assert.equal(res.status, 302, 'query-param key authorizes the onboarding start');
+  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1'), env, {});
+  assert.equal(res.status, 401);
+  const html = await res.text();
+  assert.match(html, /method="POST"/, 'paste page posts the key in the body');
+  assert.match(html, /name="key"/);
+  assert.ok(!html.includes(ACCESS_KEY), 'no credential echoed');
+});
+
+await test('/oauth/start accepts the gateway key through the POST form body', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
+  const post = (key) =>
+    worker.fetch(
+      new Request('https://gateway.example.com/oauth/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ provider: 'mock', node: 'sub1', key }).toString(),
+      }),
+      env,
+      {},
+    );
+  // No Authorization header: the paste-page form body is the credential.
+  const res = await post(ACCESS_KEY);
+  assert.equal(res.status, 302, 'form key authorizes the onboarding start');
   const state = new URL(res.headers.get('location')).searchParams.get('state');
   assert.ok(state && db.flows.has(state), 'flow state persisted');
-  // A wrong ?key= is still rejected.
-  const bad = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1&key=wrong-key'), env, {});
-  assert.equal(bad.status, 401, 'wrong query-param key rejected');
-  // Without any key (header or query) it stays 401.
-  const none = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1'), env, {});
-  assert.equal(none.status, 401, 'missing key stays 401');
+  // A wrong form key is still rejected.
+  assert.equal((await post('wrong-key')).status, 401, 'wrong form key rejected');
+  // ?key= in the URL is no longer a credential source (log/history leakage).
+  const query = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/start?provider=mock&node=sub1&key=${encodeURIComponent(ACCESS_KEY)}`),
+    env,
+    {},
+  );
+  assert.equal(query.status, 401, 'query-param key rejected');
+  assert.ok(!(await query.text()).includes(ACCESS_KEY), 'query key never echoed back');
 });
 
 await test('/oauth/start with an unknown node returns 404', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=missing', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=mock&node=missing', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 404);
 });
 
@@ -433,9 +516,13 @@ await test('/oauth/start with a non-oauth node returns 400', async () => {
     db,
     extraEnv: { AIG_TIER2_CREDENTIALS_01: JSON.stringify({ 'static-node': 'k' }) },
   });
-  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=static-node', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=mock&node=static-node', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 400);
 });
 
@@ -443,9 +530,13 @@ await test('/oauth/start without an encryption key returns 503 (fail-closed)', a
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
   delete env.AIG_TOKEN_ENCRYPTION_KEY;
-  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 503);
 });
 
@@ -461,22 +552,33 @@ await test('full callback flow stores the token and consumes the state', async (
       assert.equal(params.get('client_id'), 'mock-client-id');
       assert.ok(params.get('code_verifier'));
       assert.equal(params.get('redirect_uri'), 'https://gateway.example.com/oauth/callback/mock');
-      return new Response(JSON.stringify({
-        access_token: 'exchanged-access-token', refresh_token: 'exchanged-refresh-token', expires_in: 3600,
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          access_token: 'exchanged-access-token',
+          refresh_token: 'exchanged-refresh-token',
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
 
-  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const start = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const location = new URL(start.headers.get('location'));
   const state = location.searchParams.get('state');
 
-  const callback = await worker.fetch(new Request(
-    `https://gateway.example.com/oauth/callback/mock?code=auth-code-123&state=${encodeURIComponent(state)}`,
-  ), env, {});
+  const callback = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/callback/mock?code=auth-code-123&state=${encodeURIComponent(state)}`),
+    env,
+    {},
+  );
   assert.equal(callback.status, 200);
   const row = db.tokens.get('sub1');
   assert.ok(row, 'token persisted');
@@ -484,9 +586,11 @@ await test('full callback flow stores the token and consumes the state', async (
   assert.ok(row.expires_at > Date.now());
 
   // Single-use: replaying the same state must fail and must not re-exchange.
-  const replay = await worker.fetch(new Request(
-    `https://gateway.example.com/oauth/callback/mock?code=auth-code-123&state=${encodeURIComponent(state)}`,
-  ), env, {});
+  const replay = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/callback/mock?code=auth-code-123&state=${encodeURIComponent(state)}`),
+    env,
+    {},
+  );
   assert.equal(replay.status, 400);
   assert.equal(db.flows.size, 0, 'flow state consumed');
 });
@@ -494,13 +598,14 @@ await test('full callback flow stores the token and consumes the state', async (
 await test('callback with a provider mismatch is rejected', async () => {
   const db = new MockOAuthD1();
   db.flows.set('state-123', {
-    state: 'state-123', provider: 'mock', node_id: 'sub1',
-    code_verifier: 'verifier', created_at: Date.now(),
+    state: 'state-123',
+    provider: 'mock',
+    node_id: 'sub1',
+    code_verifier: 'verifier',
+    created_at: Date.now(),
   });
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  const res = await worker.fetch(new Request(
-    'https://gateway.example.com/oauth/callback/anthropic?code=c&state=state-123',
-  ), env, {});
+  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/callback/anthropic?code=c&state=state-123'), env, {});
   assert.equal(res.status, 400);
   assert.equal(db.flows.size, 0, 'state consumed even on mismatch');
 });
@@ -508,38 +613,41 @@ await test('callback with a provider mismatch is rejected', async () => {
 await test('callback with an unknown state is rejected', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  const res = await worker.fetch(new Request(
-    'https://gateway.example.com/oauth/callback/mock?code=c&state=does-not-exist',
-  ), env, {});
+  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/callback/mock?code=c&state=does-not-exist'), env, {});
   assert.equal(res.status, 400);
 });
 
 await test('callback with an expired flow state is rejected', async () => {
   const db = new MockOAuthD1();
   db.flows.set('state-old', {
-    state: 'state-old', provider: 'mock', node_id: 'sub1',
-    code_verifier: 'verifier', created_at: Date.now() - 11 * 60 * 1000,
+    state: 'state-old',
+    provider: 'mock',
+    node_id: 'sub1',
+    code_verifier: 'verifier',
+    created_at: Date.now() - 11 * 60 * 1000,
   });
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
-  const res = await worker.fetch(new Request(
-    'https://gateway.example.com/oauth/callback/mock?code=c&state=state-old',
-  ), env, {});
+  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/callback/mock?code=c&state=state-old'), env, {});
   assert.equal(res.status, 400);
 });
 
 // ---- Dispatch-time resolution -----------------------------------------------
 
-const chatRequest = () => new Request('https://gateway.example.com/v1/chat/completions', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
-  body: JSON.stringify({ model: 'Code-Max', messages: [{ role: 'user', content: 'hi' }] }),
-});
+const chatRequest = () =>
+  new Request('https://gateway.example.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}` },
+    body: JSON.stringify({ model: 'Code-Max', messages: [{ role: 'user', content: 'hi' }] }),
+  });
 
 await test('Tier 2 oauth node dispatches with the resolved Bearer token', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1', 'openai')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'openai', accessToken: 'resolved-token', refreshToken: null,
+    nodeId: 'sub1',
+    provider: 'openai',
+    accessToken: 'resolved-token',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
 
@@ -550,10 +658,13 @@ await test('Tier 2 oauth node dispatches with the resolved Bearer token', async 
     if (url.hostname === 'sub1.example.com') {
       seenAuth = init?.headers?.get('authorization');
       seenBeta = init?.headers?.get('x-subscription-beta');
-      return new Response(JSON.stringify({
-        choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
@@ -582,30 +693,43 @@ await test('Tier 2 anthropic oauth node sends Bearer, not x-api-key', async () =
   // Use the built-in default anthropic provider (no AIG_OAUTH_PROVIDERS override)
   // to also verify defaults are in effect.
   const anthropicOauthNode = {
-    id: 'claude-sub', provider: 'anthropic', auth: 'oauth',
-    base_url: 'https://claude-sub.example.com', models: { 'Code-Max': 'up-model' },
+    id: 'claude-sub',
+    provider: 'anthropic',
+    auth: 'oauth',
+    base_url: 'https://claude-sub.example.com',
+    models: { 'Code-Max': 'up-model' },
   };
   const env = makeEnv({ tier2: [anthropicOauthNode], db });
   delete env.AIG_OAUTH_PROVIDERS; // use built-in defaults only
   await storeSubscriptionToken(env, {
-    nodeId: 'claude-sub', provider: 'anthropic', accessToken: 'anthropic-oauth-token', refreshToken: null,
+    nodeId: 'claude-sub',
+    provider: 'anthropic',
+    accessToken: 'anthropic-oauth-token',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
 
   let authHeader = null;
   let apiKeyHeader = null;
-  let betaHeader = null;
+  let _betaHeader = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'claude-sub.example.com') {
       authHeader = init?.headers?.get('authorization');
       apiKeyHeader = init?.headers?.get('x-api-key');
-      betaHeader = init?.headers?.get('anthropic-beta');
-      return new Response(JSON.stringify({
-        type: 'message', role: 'assistant', model: 'up-model',
-        content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      _betaHeader = init?.headers?.get('anthropic-beta');
+      return new Response(
+        JSON.stringify({
+          type: 'message',
+          role: 'assistant',
+          model: 'up-model',
+          content: [{ type: 'text', text: 'hello' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
@@ -625,7 +749,10 @@ await test('expired token with no refresh token fails closed and rotates', async
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'mock', accessToken: 'old-token', refreshToken: null,
+    nodeId: 'sub1',
+    provider: 'mock',
+    accessToken: 'old-token',
+    refreshToken: null,
     expiresAt: Date.now() - 1000,
   });
   let upstreamContacted = false;
@@ -643,7 +770,10 @@ await test('refresh flow rotates the access token through the provider endpoint'
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('sub1', 'openai')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sub1', provider: 'openai', accessToken: 'stale-token', refreshToken: 'refresh-1',
+    nodeId: 'sub1',
+    provider: 'openai',
+    accessToken: 'stale-token',
+    refreshToken: 'refresh-1',
     expiresAt: Date.now() - 1000,
   });
 
@@ -655,16 +785,24 @@ await test('refresh flow rotates the access token through the provider endpoint'
       assert.equal(params.get('grant_type'), 'refresh_token');
       assert.equal(params.get('refresh_token'), 'refresh-1');
       refreshSeen = true;
-      return new Response(JSON.stringify({
-        access_token: 'fresh-token', refresh_token: 'refresh-2', expires_in: 3600,
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          access_token: 'fresh-token',
+          refresh_token: 'refresh-2',
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     if (url.hostname === 'sub1.example.com') {
       assert.equal(init?.headers?.get('authorization'), 'Bearer fresh-token');
-      return new Response(JSON.stringify({
-        choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
@@ -712,13 +850,25 @@ await test('AIG_OAUTH_PROVIDERS overrides default per-provider (wholesale)', asy
 await test('google manual paste: /oauth/start uses manual_redirect_url', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
+    tier2: [
+      {
+        id: 'gemini-sub',
+        provider: 'google',
+        auth: 'oauth',
+        base_url: 'https://gen-lang.example.com/v1beta/openai',
+        models: { 'Code-Max': 'gemini-pro' },
+      },
+    ],
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS;
-  const res = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const body = await res.text();
   assert.ok(body.includes('codeassist.google.com'), 'uses Google manual redirect (in authorize URL)');
@@ -729,7 +879,15 @@ await test('google manual paste: /oauth/start uses manual_redirect_url', async (
 await test('google manual paste: POST /oauth/paste exchanges with client_secret', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
+    tier2: [
+      {
+        id: 'gemini-sub',
+        provider: 'google',
+        auth: 'oauth',
+        base_url: 'https://gen-lang.example.com/v1beta/openai',
+        models: { 'Code-Max': 'gemini-pro' },
+      },
+    ],
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS;
@@ -738,21 +896,33 @@ await test('google manual paste: POST /oauth/paste exchanges with client_secret'
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'oauth2.googleapis.com') {
       exchangeBody = String(init?.body || '');
-      return new Response(JSON.stringify({ access_token: 'g-token', refresh_token: 'g-refresh', expires_in: 3600 }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ access_token: 'g-token', refresh_token: 'g-refresh', expires_in: 3600 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     throw new Error(`unexpected fetch: ${url}`);
   });
-  const startRes = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const startRes = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const startBody = await startRes.text();
   const stateMatch = startBody.match(/state=([a-zA-Z0-9_-]+)/);
   assert.ok(stateMatch, 'state found');
   const state = stateMatch[1];
-  const pasteRes = await worker.fetch(new Request('https://gateway.example.com/oauth/paste', {
-    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ state, code: 'pasted-code' }).toString(),
-  }), env, {});
+  const pasteRes = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/paste', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ state, code: 'pasted-code' }).toString(),
+    }),
+    env,
+    {},
+  );
   assert.equal(pasteRes.status, 200);
   assert.ok(db.tokens.get('gemini-sub'), 'token stored');
   assert.equal(db.flows.size, 0, 'flow state consumed');
@@ -766,9 +936,13 @@ await test('google manual paste: GET /oauth/paste shows form', async () => {
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS;
-  await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=google&node=gemini-sub', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const state = [...db.flows.keys()][0];
   assert.ok(state);
   const pasteRes = await worker.fetch(new Request(`https://gateway.example.com/oauth/paste?state=${encodeURIComponent(state)}`), env, {});
@@ -795,21 +969,37 @@ await test('anthropic override with client_secret includes it in the refresh gra
       scope: 'oauth override',
     },
   });
-  await storeSubscriptionToken(env, { nodeId: 'an-secret', provider: 'anthropic', accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() - 1000 });
+  await storeSubscriptionToken(env, {
+    nodeId: 'an-secret',
+    provider: 'anthropic',
+    accessToken: 'old',
+    refreshToken: 'r1',
+    expiresAt: Date.now() - 1000,
+  });
   let refreshBody = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'auth.mock.example.com' && url.pathname === '/token') {
       refreshBody = String(init?.body || '');
-      return new Response(JSON.stringify({ access_token: 'fresh', expires_in: 3600 }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ access_token: 'fresh', expires_in: 3600 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     if (url.hostname === 'an-secret.example.com') {
       assert.equal(init?.headers?.get('authorization'), 'Bearer fresh');
-      return new Response(JSON.stringify({
-        type: 'message', role: 'assistant', model: 'up-model',
-        content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          type: 'message',
+          role: 'assistant',
+          model: 'up-model',
+          content: [{ type: 'text', text: 'hello' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
@@ -826,8 +1016,7 @@ await test('anthropic override with client_secret includes it in the refresh gra
 
 // ---- P3: Google Gemini (Code Assist) subscription dispatch ------------------
 
-const geminiSse = (chunks) =>
-  chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('');
+const geminiSse = (chunks) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('');
 
 const geminiNonStreamOk = (text, usage) => ({
   candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
@@ -838,21 +1027,38 @@ const geminiNonStreamOk = (text, usage) => ({
 await test('google streaming dispatch converts Code Assist SSE to OpenAI chat chunks', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } }],
+    tier2: [
+      { id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } },
+    ],
     db,
   });
-  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
-  let seenUrl = null; let seenAuth = null; let seenUa = null; let seenBody = null;
+  await storeSubscriptionToken(env, {
+    nodeId: 'gemini-sub',
+    provider: 'google',
+    accessToken: 'g-tok',
+    refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let seenUrl = null;
+  let seenAuth = null;
+  let seenUa = null;
+  let seenBody = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     seenUrl = url.pathname + url.search;
     seenAuth = init?.headers?.get('authorization');
     seenUa = init?.headers?.get('user-agent');
     seenBody = JSON.parse(String(init?.body || '{}'));
-    return new Response(geminiSse([
-      { candidates: [{ content: { parts: [{ text: 'Hel' }], role: 'model' }, index: 0 }] },
-      { candidates: [{ content: { parts: [{ text: 'lo' }], role: 'model' }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 } },
-    ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    return new Response(
+      geminiSse([
+        { candidates: [{ content: { parts: [{ text: 'Hel' }], role: 'model' }, index: 0 }] },
+        {
+          candidates: [{ content: { parts: [{ text: 'lo' }], role: 'model' }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 },
+        },
+      ]),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   });
   const streamReq = new Request('https://gateway.example.com/v1/chat/completions', {
     method: 'POST',
@@ -864,14 +1070,18 @@ await test('google streaming dispatch converts Code Assist SSE to OpenAI chat ch
   assert.ok(seenUrl.includes('/v1internal:streamGenerateContent'), 'streaming endpoint path');
   assert.ok(seenUrl.includes('alt=sse'), 'sse query preserved');
   assert.equal(seenAuth, 'Bearer g-tok', 'resolved Bearer token');
-  assert.ok(seenUa && seenUa.startsWith('GeminiCLI/'), 'first-party Gemini CLI user agent');
+  assert.ok(seenUa?.startsWith('GeminiCLI/'), 'first-party Gemini CLI user agent');
   assert.equal(seenBody.model, 'gemini-2.5-pro', 'envelope carries the upstream model');
   assert.ok(Array.isArray(seenBody.request?.contents), 'Code Assist envelope shape');
   // The client receives a converted OpenAI chat SSE stream.
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let sseText = '';
-  for (;;) { const { done, value } = await reader.read(); if (done) break; sseText += decoder.decode(value, { stream: true }); }
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseText += decoder.decode(value, { stream: true });
+  }
   assert.ok(sseText.includes('"delta":{"content":"Hel"'), 'first text delta converted');
   assert.ok(sseText.includes('"delta":{"content":"lo"'), 'second text delta converted');
   assert.ok(sseText.includes('"finish_reason":"stop"'), 'finish chunk converted');
@@ -887,8 +1097,15 @@ await test('google non-streaming dispatch converts Code Assist object to chat co
     tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', models: { 'Code-Max': 'gemini-2.5-pro' } }],
     db,
   });
-  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
-  let seenUrl = null; let seenBody = null;
+  await storeSubscriptionToken(env, {
+    nodeId: 'gemini-sub',
+    provider: 'google',
+    accessToken: 'g-tok',
+    refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
+  let seenUrl = null;
+  let seenBody = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     seenUrl = url.origin + url.pathname;
@@ -911,32 +1128,52 @@ await test('google non-streaming dispatch converts Code Assist object to chat co
 await test('google subscription 429 with gRPC retryDelay extends the cooldown', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } }],
+    tier2: [
+      { id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } },
+    ],
     db,
   });
-  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
+  await storeSubscriptionToken(env, {
+    nodeId: 'gemini-sub',
+    provider: 'google',
+    accessToken: 'g-tok',
+    refreshToken: null,
+    expiresAt: Date.now() + 3600_000,
+  });
   withMockFetch(async () => {
-    return new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' }] } }), {
-      status: 429, headers: { 'content-type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        error: { code: 429, status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' }] },
+      }),
+      {
+        status: 429,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.ok([429, 502].includes(res.status), `request ends rate-limited or exhausted (got ${res.status})`);
   const state = getNodeState('gemini-sub');
-  assert.ok(state.cooldownUntil > Date.now() + 3000_000,
-    `retryDelay hint extends cooldown beyond 50min (until ${state.cooldownUntil})`);
+  assert.ok(state.cooldownUntil > Date.now() + 3000_000, `retryDelay hint extends cooldown beyond 50min (until ${state.cooldownUntil})`);
 });
 
 // ---- P1: refresh singleflight, CAS rotation, account identity ---------------
 
-const { resolveSubscriptionCredential, REFRESH_MARGIN_MS: MARGIN } = await import('../src/oauth/resolve.ts');
+const { resolveSubscriptionCredential } = await import('../src/oauth/resolve.ts');
 const { persistRefreshedToken } = await import('../src/oauth/token-store.ts');
 
 function tier2OAuthRuntimeNode(id, provider = 'mock') {
   return {
-    id, tier: 'tier-2', provider, protocol: 'openai', surfaces: ['chat_completions'],
-    baseUrl: `https://${id}.example.com/v1`, credential: '', priority: 100,
-    models: { 'Code-Max': 'up-model' }, auth: 'oauth',
+    id,
+    tier: 'tier-2',
+    provider,
+    protocol: 'openai',
+    surfaces: ['chat_completions'],
+    baseUrl: `https://${id}.example.com/v1`,
+    credential: '',
+    priority: 100,
+    models: { 'Code-Max': 'up-model' },
+    auth: 'oauth',
   };
 }
 
@@ -944,7 +1181,10 @@ await test('singleflight: 100 concurrent resolves issue exactly one refresh', as
   const db = new MockOAuthD1();
   const env = makeEnv({ db });
   await storeSubscriptionToken(env, {
-    nodeId: 'sf-1', provider: 'mock', accessToken: 'stale', refreshToken: 'rt-1',
+    nodeId: 'sf-1',
+    provider: 'mock',
+    accessToken: 'stale',
+    refreshToken: 'rt-1',
     expiresAt: Date.now() - 1000,
   });
   let refreshCalls = 0;
@@ -954,7 +1194,8 @@ await test('singleflight: 100 concurrent resolves issue exactly one refresh', as
       refreshCalls++;
       await new Promise((r) => setTimeout(r, 30));
       return new Response(JSON.stringify({ access_token: 'fresh-sf', refresh_token: 'rt-2', expires_in: 3600 }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       });
     }
     throw new Error(`unexpected: ${url}`);
@@ -972,19 +1213,29 @@ await test('CAS: a stale refresh writer loses and never clobbers the rotated tok
   const db = new MockOAuthD1();
   const env = makeEnv({ db });
   await storeSubscriptionToken(env, {
-    nodeId: 'cas-1', provider: 'mock', accessToken: 'old', refreshToken: 'rt-1',
+    nodeId: 'cas-1',
+    provider: 'mock',
+    accessToken: 'old',
+    refreshToken: 'rt-1',
     expiresAt: Date.now() - 1000,
   });
-  withMockFetch(async () => new Response(JSON.stringify({ access_token: 'winner', refresh_token: 'rt-2', expires_in: 3600 }), {
-    status: 200, headers: { 'content-type': 'application/json' },
-  }));
+  withMockFetch(
+    async () =>
+      new Response(JSON.stringify({ access_token: 'winner', refresh_token: 'rt-2', expires_in: 3600 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  );
   const node = tier2OAuthRuntimeNode('cas-1');
   const resolved = await resolveSubscriptionCredential(env, node);
   assert.ok(resolved.ok && resolved.token === 'winner');
   // A stale writer that loaded version 0 AFTER the winner persisted version 1.
   const stalePersist = await persistRefreshedToken(env, {
-    nodeId: 'cas-1', accessToken: 'loser', refreshToken: 'rt-stale',
-    expiresAt: Date.now() + 3600_000, expectedVersion: 0,
+    nodeId: 'cas-1',
+    accessToken: 'loser',
+    refreshToken: 'rt-stale',
+    expiresAt: Date.now() + 3600_000,
+    expectedVersion: 0,
   });
   assert.equal(stalePersist, false, 'stale CAS write rejected');
   const stored = await loadSubscriptionToken(env, 'cas-1');
@@ -996,37 +1247,53 @@ await test('CAS: a stale refresh writer loses and never clobbers the rotated tok
 await test('account_id from token exchange is persisted and sent as chatgpt-account-id for openai nodes', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'codex-sub', provider: 'openai', auth: 'oauth', base_url: 'https://codex-sub.example.com/v1', models: { 'Code-Max': 'gpt-codex' } }],
+    tier2: [
+      { id: 'codex-sub', provider: 'openai', auth: 'oauth', base_url: 'https://codex-sub.example.com/v1', models: { 'Code-Max': 'gpt-codex' } },
+    ],
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS; // built-in openai default (auth.openai.com, automatic)
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'auth.openai.com') {
-      return new Response(JSON.stringify({
-        access_token: 'codex-access', refresh_token: 'codex-refresh',
-        expires_in: 3600, account_id: 'acct-12345',
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          access_token: 'codex-access',
+          refresh_token: 'codex-refresh',
+          expires_in: 3600,
+          account_id: 'acct-12345',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     if (url.hostname === 'codex-sub.example.com') {
       const acct = init?.headers?.get('chatgpt-account-id');
       assert.equal(acct, 'acct-12345', 'chatgpt-account-id header applied');
-      return new Response(JSON.stringify({
-        choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          choices: [{ index: 0, message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
 
-  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-sub', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const start = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-sub', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(start.status, 302, 'openai default is an automatic redirect flow');
   const state = new URL(start.headers.get('location')).searchParams.get('state');
-  const callback = await worker.fetch(new Request(
-    `https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`,
-  ), env, {});
+  const callback = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`),
+    env,
+    {},
+  );
   assert.equal(callback.status, 200);
   const stored = await loadSubscriptionToken(env, 'codex-sub');
   assert.equal(stored.accountId, 'acct-12345', 'account_id persisted in plaintext');
@@ -1042,19 +1309,30 @@ await test('non-openai oauth nodes never send chatgpt-account-id', async () => {
     db,
   });
   await storeSubscriptionToken(env, {
-    nodeId: 'an-sub', provider: 'anthropic', accessToken: 'tok', refreshToken: null,
-    accountId: 'acct-should-not-send', expiresAt: Date.now() + 3600_000,
+    nodeId: 'an-sub',
+    provider: 'anthropic',
+    accessToken: 'tok',
+    refreshToken: null,
+    accountId: 'acct-should-not-send',
+    expiresAt: Date.now() + 3600_000,
   });
   let sawAccountHeader = false;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'an-sub.example.com') {
       sawAccountHeader = !!init?.headers?.get('chatgpt-account-id');
-      return new Response(JSON.stringify({
-        type: 'message', role: 'assistant', model: 'up-model',
-        content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          type: 'message',
+          role: 'assistant',
+          model: 'up-model',
+          content: [{ type: 'text', text: 'hello' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
@@ -1072,7 +1350,10 @@ await test('oauth node with an unknown provider fails closed (no subscription ad
   const db = new MockOAuthD1();
   const env = makeEnv({ tier2: [tier2OauthNode('mystery-sub')], db });
   await storeSubscriptionToken(env, {
-    nodeId: 'mystery-sub', provider: 'mock', accessToken: 'tok', refreshToken: null,
+    nodeId: 'mystery-sub',
+    provider: 'mock',
+    accessToken: 'tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   let upstreamContacted = false;
@@ -1095,8 +1376,12 @@ await test('codex oauth dispatch sends Originator and normalizes empty instructi
   });
   delete env.AIG_OAUTH_PROVIDERS;
   await storeSubscriptionToken(env, {
-    nodeId: 'codex-sub', provider: 'openai', accessToken: 'codex-tok', refreshToken: null,
-    accountId: 'acct-xyz', expiresAt: Date.now() + 3600_000,
+    nodeId: 'codex-sub',
+    provider: 'openai',
+    accessToken: 'codex-tok',
+    refreshToken: null,
+    accountId: 'acct-xyz',
+    expiresAt: Date.now() + 3600_000,
   });
   let seenOriginator = null;
   let seenBody = null;
@@ -1105,11 +1390,18 @@ await test('codex oauth dispatch sends Originator and normalizes empty instructi
     if (url.hostname === 'codex-up.example.com') {
       seenOriginator = init?.headers?.get('originator');
       seenBody = JSON.parse(String(init?.body || '{}'));
-      return new Response(JSON.stringify({
-        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
-        model: 'gpt-codex', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          id: 'resp_1',
+          object: 'response',
+          created_at: 1,
+          status: 'completed',
+          model: 'gpt-codex',
+          output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
@@ -1133,7 +1425,10 @@ await test('codex oauth responses with client instructions are preserved', async
   });
   delete env.AIG_OAUTH_PROVIDERS;
   await storeSubscriptionToken(env, {
-    nodeId: 'codex-sub', provider: 'openai', accessToken: 'codex-tok', refreshToken: null,
+    nodeId: 'codex-sub',
+    provider: 'openai',
+    accessToken: 'codex-tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   let seenBody = null;
@@ -1141,11 +1436,18 @@ await test('codex oauth responses with client instructions are preserved', async
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'codex-up.example.com') {
       seenBody = JSON.parse(String(init?.body || '{}'));
-      return new Response(JSON.stringify({
-        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
-        model: 'gpt-codex', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          id: 'resp_1',
+          object: 'response',
+          created_at: 1,
+          status: 'completed',
+          model: 'gpt-codex',
+          output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
@@ -1164,17 +1466,25 @@ await test('plain API-key responses nodes are not codex-normalized', async () =>
     tier1: [{ id: 'plain-resp', provider: 'openai', base_url: 'https://plain-up.example.com', models: { 'Code-Max': 'gpt-x' } }],
     extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'plain-resp': 'sk-plain' }) },
   });
-  let seenBody = null; let seenOriginator = null;
+  let seenBody = null;
+  let seenOriginator = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'plain-up.example.com') {
       seenBody = JSON.parse(String(init?.body || '{}'));
       seenOriginator = init?.headers?.get('originator');
-      return new Response(JSON.stringify({
-        id: 'resp_1', object: 'response', created_at: 1, status: 'completed',
-        model: 'gpt-x', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          id: 'resp_1',
+          object: 'response',
+          created_at: 1,
+          status: 'completed',
+          model: 'gpt-x',
+          output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error(`unexpected: ${url}`);
   });
@@ -1199,24 +1509,45 @@ function anthropicMessagesRequest(extraHeaders = {}) {
   });
 }
 
-const anthropicUpstreamOk = () => new Response(JSON.stringify({
-  type: 'message', role: 'assistant', model: 'up-model',
-  content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null,
-  usage: { input_tokens: 1, output_tokens: 1 },
-}), { status: 200, headers: { 'content-type': 'application/json' } });
+const anthropicUpstreamOk = () =>
+  new Response(
+    JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      model: 'up-model',
+      content: [{ type: 'text', text: 'hello' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
 
 await test('claude oauth dispatch without client beta gets required oauth beta flags', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'claude-sub', provider: 'anthropic', auth: 'oauth', base_url: 'https://claude-up.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
+    tier2: [
+      {
+        id: 'claude-sub',
+        provider: 'anthropic',
+        auth: 'oauth',
+        base_url: 'https://claude-up.example.com',
+        models: { 'Code-Max': 'claude-sonnet-4-5' },
+      },
+    ],
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS;
   await storeSubscriptionToken(env, {
-    nodeId: 'claude-sub', provider: 'anthropic', accessToken: 'claude-tok', refreshToken: null,
+    nodeId: 'claude-sub',
+    provider: 'anthropic',
+    accessToken: 'claude-tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
-  let seenBeta = null; let seenXApp = null; let seenUa = null;
+  let seenBeta = null;
+  let seenXApp = null;
+  let seenUa = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'claude-up.example.com') {
@@ -1238,12 +1569,23 @@ await test('claude oauth dispatch without client beta gets required oauth beta f
 await test('claude oauth dispatch merges client betas without duplicates', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'claude-sub', provider: 'anthropic', auth: 'oauth', base_url: 'https://claude-up.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
+    tier2: [
+      {
+        id: 'claude-sub',
+        provider: 'anthropic',
+        auth: 'oauth',
+        base_url: 'https://claude-up.example.com',
+        models: { 'Code-Max': 'claude-sonnet-4-5' },
+      },
+    ],
     db,
   });
   delete env.AIG_OAUTH_PROVIDERS;
   await storeSubscriptionToken(env, {
-    nodeId: 'claude-sub', provider: 'anthropic', accessToken: 'claude-tok', refreshToken: null,
+    nodeId: 'claude-sub',
+    provider: 'anthropic',
+    accessToken: 'claude-tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   let seenBeta = null;
@@ -1255,9 +1597,13 @@ await test('claude oauth dispatch merges client betas without duplicates', async
     }
     throw new Error(`unexpected: ${url}`);
   });
-  const res = await worker.fetch(anthropicMessagesRequest({
-    'anthropic-beta': 'token-counting-2024-11-01,oauth-2025-04-20',
-  }), env, {});
+  const res = await worker.fetch(
+    anthropicMessagesRequest({
+      'anthropic-beta': 'token-counting-2024-11-01,oauth-2025-04-20',
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const betas = seenBeta.split(',').map((s) => s.trim());
   assert.ok(betas.includes('token-counting-2024-11-01'), 'client beta preserved');
@@ -1271,7 +1617,8 @@ await test('plain API-key anthropic nodes get no forced oauth betas', async () =
     tier1: [{ id: 'claude-key', provider: 'anthropic', base_url: 'https://claude-key.example.com', models: { 'Code-Max': 'claude-sonnet-4-5' } }],
     extraEnv: { AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'claude-key': 'sk-ant-key' }) },
   });
-  let seenBeta = null; let seenXApp = null;
+  let seenBeta = null;
+  let seenXApp = null;
   withMockFetch(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'claude-key.example.com') {
@@ -1296,7 +1643,10 @@ await test('codex subscription 429 with window-reset header extends the cooldown
     db,
   });
   await storeSubscriptionToken(env, {
-    nodeId: 'codex-quota', provider: 'openai', accessToken: 'tok', refreshToken: null,
+    nodeId: 'codex-quota',
+    provider: 'openai',
+    accessToken: 'tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   const resetEpoch = Math.floor((Date.now() + 2 * 3600_000) / 1000); // 2h out
@@ -1313,8 +1663,7 @@ await test('codex subscription 429 with window-reset header extends the cooldown
   const res = await worker.fetch(chatRequest(), env, {});
   assert.ok([429, 502].includes(res.status), `request ends rate-limited or exhausted (got ${res.status})`);
   const state = getNodeState('codex-quota');
-  assert.ok(state.cooldownUntil > Date.now() + 3600_000,
-    `quota window hint extends cooldown beyond 1h (until ${state.cooldownUntil})`);
+  assert.ok(state.cooldownUntil > Date.now() + 3600_000, `quota window hint extends cooldown beyond 1h (until ${state.cooldownUntil})`);
 });
 
 await test('codex subscription 429 without reset markers keeps the default rate-limit cooldown', async () => {
@@ -1324,22 +1673,25 @@ await test('codex subscription 429 without reset markers keeps the default rate-
     db,
   });
   await storeSubscriptionToken(env, {
-    nodeId: 'codex-plain', provider: 'openai', accessToken: 'tok', refreshToken: null,
+    nodeId: 'codex-plain',
+    provider: 'openai',
+    accessToken: 'tok',
+    refreshToken: null,
     expiresAt: Date.now() + 3600_000,
   });
   withMockFetch(async (input) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'codex-plain.example.com') {
       return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
-        status: 429, headers: { 'content-type': 'application/json' },
+        status: 429,
+        headers: { 'content-type': 'application/json' },
       });
     }
     throw new Error(`unexpected: ${url}`);
   });
   await worker.fetch(chatRequest(), env, {});
   const state = getNodeState('codex-plain');
-  assert.ok(state.cooldownUntil <= Date.now() + 60_000,
-    'no hint -> short default cooldown (no quota extension)');
+  assert.ok(state.cooldownUntil <= Date.now() + 60_000, 'no hint -> short default cooldown (no quota extension)');
 });
 
 await test('plain API-key nodes never consume subscription quota hints', async () => {
@@ -1360,8 +1712,7 @@ await test('plain API-key nodes never consume subscription quota hints', async (
   });
   await worker.fetch(chatRequest(), env, {});
   const state = getNodeState('key-node');
-  assert.ok(state.cooldownUntil <= Date.now() + 60_000,
-    'API-key nodes keep the default cooldown regardless of quota markers');
+  assert.ok(state.cooldownUntil <= Date.now() + 60_000, 'API-key nodes keep the default cooldown regardless of quota markers');
 });
 
 // ---- Model discovery at onboarding (adapter-owned diagnostics) ---------------
@@ -1378,25 +1729,33 @@ await test('codex onboarding discovers upstream models and surfaces the count', 
     const headers = new Headers(init?.headers);
     if (url.hostname === 'auth.openai.com') {
       return new Response(JSON.stringify({ access_token: 'disc-tok', refresh_token: 'disc-ref', expires_in: 3600 }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       });
     }
     if (url.hostname === 'api.openai.com' && url.pathname === '/v1/models') {
       assert.equal(headers.get('authorization'), 'Bearer disc-tok', 'discovery carries the fresh credential');
       assert.equal(headers.get('originator'), 'codex-tui', 'discovery uses the adapter client shape');
       return new Response(JSON.stringify({ data: [{ id: 'gpt-5.1-codex' }, { id: 'gpt-5.1-codex-max' }] }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       });
     }
     throw new Error(`unexpected: ${url}`);
   });
-  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-disc', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const start = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=openai&node=codex-disc', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const state = new URL(start.headers.get('location')).searchParams.get('state');
-  const callback = await worker.fetch(new Request(
-    `https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`,
-  ), env, {});
+  const callback = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/callback/openai?code=c&state=${encodeURIComponent(state)}`),
+    env,
+    {},
+  );
   assert.equal(callback.status, 200);
   const body = await callback.text();
   assert.ok(body.includes('2 upstream model'), 'success page surfaces the discovered count');
@@ -1414,7 +1773,8 @@ await test('onboarding succeeds even when model discovery fails', async () => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'auth.mock.example.com' && url.pathname === '/token') {
       return new Response(JSON.stringify({ access_token: 'disc-tok', refresh_token: 'disc-ref', expires_in: 3600 }), {
-        status: 200, headers: { 'content-type': 'application/json' },
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       });
     }
     if (url.hostname === 'api.anthropic.com' && url.pathname === '/v1/models') {
@@ -1422,13 +1782,19 @@ await test('onboarding succeeds even when model discovery fails', async () => {
     }
     throw new Error(`unexpected: ${url}`);
   });
-  const start = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=anthropic&node=claude-disc', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const start = await worker.fetch(
+    new Request('https://gateway.example.com/oauth/start?provider=anthropic&node=claude-disc', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   const state = new URL(start.headers.get('location')).searchParams.get('state');
-  const callback = await worker.fetch(new Request(
-    `https://gateway.example.com/oauth/callback/anthropic?code=c&state=${encodeURIComponent(state)}`,
-  ), env, {});
+  const callback = await worker.fetch(
+    new Request(`https://gateway.example.com/oauth/callback/anthropic?code=c&state=${encodeURIComponent(state)}`),
+    env,
+    {},
+  );
   assert.equal(callback.status, 200, 'discovery failure never gates onboarding');
   const body = await callback.text();
   assert.ok(!body.includes('upstream model'), 'no discovery note on failure');

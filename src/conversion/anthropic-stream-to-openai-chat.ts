@@ -28,8 +28,8 @@
 // OpenAI Chat first-event guard, so it does not close the failover
 // boundary.
 
-import { convertSseStream } from './sse.ts';
 import { ConversionError } from './anthropic-to-openai.ts';
+import { convertSseStream } from './sse.ts';
 import { isRecord } from './validation.ts';
 
 export { ConversionError };
@@ -52,35 +52,35 @@ function mapStopReason(reason: unknown): string {
 }
 
 type ToolState = {
-  index: number,
-  id: string,
-  name: string,
-  arguments: string,
-  started: boolean,
+  index: number;
+  id: string;
+  name: string;
+  arguments: string;
+  started: boolean;
 };
 
 type State = {
-  messageId: string,
-  model: string,
+  messageId: string;
+  model: string;
   // role-only delta has been emitted; we send it once on the first content
   // event so the OpenAI Chat client sees a normal lifecycle.
-  roleEmitted: boolean,
+  roleEmitted: boolean;
   // whether any real output (text_delta / input_json_delta / thinking_delta)
   // has been emitted to the controller. The First Event Guard sits ABOVE
   // this converter and uses this boundary to decide whether a transparent
   // failover is still allowed: if no real output was emitted, the guard
   // can rotate to another node.
-  realOutputEmitted: boolean,
-  textBlockOpen: boolean,
-  textBlockIndex: number,
-  toolsByAnthropicIndex: Map<number, ToolState>,
-  finishReason: string | null,
+  realOutputEmitted: boolean;
+  textBlockOpen: boolean;
+  textBlockIndex: number;
+  toolsByAnthropicIndex: Map<number, ToolState>;
+  finishReason: string | null;
   // last seen input_tokens from message_start, so message_delta can carry
   // prompt_tokens even if the upstream omits it later.
-  inputTokens: number,
-  outputTokens: number,
-  totalTokens: number,
-  closed: boolean,
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  closed: boolean;
 };
 
 function createState(messageId: string, model: string, inputTokens: number): State {
@@ -158,18 +158,22 @@ function startToolBlock(
     object: 'chat.completion.chunk',
     created: Math.floor(Date.now() / 1000),
     model: state.model,
-    choices: [{
-      index: 0,
-      delta: {
-        tool_calls: [{
-          index: toolState.index,
-          id: toolId,
-          type: 'function',
-          function: { name: toolName, arguments: '' },
-        }],
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: toolState.index,
+              id: toolId,
+              type: 'function',
+              function: { name: toolName, arguments: '' },
+            },
+          ],
+        },
+        finish_reason: null,
       },
-      finish_reason: null,
-    }],
+    ],
   });
 }
 
@@ -189,16 +193,20 @@ function appendToolArguments(
     object: 'chat.completion.chunk',
     created: Math.floor(Date.now() / 1000),
     model: state.model,
-    choices: [{
-      index: 0,
-      delta: {
-        tool_calls: [{
-          index: tool.index,
-          function: { arguments: partialJson },
-        }],
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: tool.index,
+              function: { arguments: partialJson },
+            },
+          ],
+        },
+        finish_reason: null,
       },
-      finish_reason: null,
-    }],
+    ],
   });
 }
 
@@ -218,7 +226,7 @@ function emitFinishAndDone(state: State, controller: ReadableStreamDefaultContro
   // numbers.
   const prompt = state.inputTokens;
   const completion = state.outputTokens;
-  const total = state.totalTokens > 0 ? state.totalTokens : (prompt + completion);
+  const total = state.totalTokens > 0 ? state.totalTokens : prompt + completion;
   if (prompt > 0 || completion > 0) {
     emitChunk(controller, {
       id: state.messageId,
@@ -234,7 +242,11 @@ function emitFinishAndDone(state: State, controller: ReadableStreamDefaultContro
 
 function reportRawUsage(onUpstreamUsage: ((usage: unknown) => void) | undefined, usage: unknown): void {
   if (!onUpstreamUsage || !isRecord(usage)) return;
-  try { onUpstreamUsage(usage); } catch { /* observability must never break conversion */ }
+  try {
+    onUpstreamUsage(usage);
+  } catch {
+    /* observability must never break conversion */
+  }
 }
 
 function processAnthropicEvent(
@@ -390,22 +402,26 @@ function processAnthropicEvent(
 export function createOpenAIChatStreamFromAnthropic(
   anthropicResponseBody: ReadableStream<Uint8Array> | null | undefined,
   options: {
-    messageId?: string,
-    model?: string,
-    inputTokens?: number,
-    onUpstreamUsage?: (usage: unknown) => void,
+    messageId?: string;
+    model?: string;
+    inputTokens?: number;
+    onUpstreamUsage?: (usage: unknown) => void;
   } = {},
 ): ReadableStream<Uint8Array> {
   const { messageId, model, inputTokens, onUpstreamUsage } = options;
-  const state = createState(
-    messageId || `chatcmpl-${Date.now().toString(36)}`,
-    model || '',
-    Number(inputTokens ?? 0) || 0,
-  );
+  const state = createState(messageId || `chatcmpl-${Date.now().toString(36)}`, model || '', Number(inputTokens ?? 0) || 0);
 
-  return convertSseStream(anthropicResponseBody, (data, controller) => {
-    let event: unknown;
-    try { event = JSON.parse(data); } catch { throw new Error('Malformed upstream SSE JSON'); }
-    processAnthropicEvent(state, controller, event, onUpstreamUsage);
-  }, () => state.closed);
+  return convertSseStream(
+    anthropicResponseBody,
+    (data, controller) => {
+      let event: unknown;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        throw new Error('Malformed upstream SSE JSON');
+      }
+      processAnthropicEvent(state, controller, event, onUpstreamUsage);
+    },
+    () => state.closed,
+  );
 }

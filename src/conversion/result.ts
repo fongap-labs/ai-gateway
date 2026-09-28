@@ -15,44 +15,37 @@ export type ConversionDiagnosticAction = 'mapped' | 'dropped' | 'emulated' | 'de
 export type StructuredOutputStrategy = 'native' | 'tool' | 'prompt';
 
 export type ConversionDiagnostic = {
-  feature: string,
-  action: ConversionDiagnosticAction,
-  strategy?: StructuredOutputStrategy,
+  feature: string;
+  action: ConversionDiagnosticAction;
+  strategy?: StructuredOutputStrategy;
 };
 
 export type StructuredOutputCapabilities = {
   /** The target wire implementation is known to accept native JSON Schema. */
-  nativeJsonSchema?: boolean,
+  nativeJsonSchema?: boolean;
   /** The target wire implementation is known to accept function/tool forcing. */
-  syntheticToolOutput?: boolean,
+  syntheticToolOutput?: boolean;
   /** The caller can unwrap the reserved synthetic tool back into structured output. */
-  syntheticToolResultAdapter?: boolean,
+  syntheticToolResultAdapter?: boolean;
 };
 
 export type ConversionOptions = {
-  structuredOutput?: StructuredOutputCapabilities,
+  structuredOutput?: StructuredOutputCapabilities;
 };
 
 export type ConversionResult = {
-  body: Record<string, unknown>,
-  fidelity: ConversionFidelity,
-  diagnostics: readonly ConversionDiagnostic[],
-  structuredOutput?: { strategy: StructuredOutputStrategy },
+  body: Record<string, unknown>;
+  fidelity: ConversionFidelity;
+  diagnostics: readonly ConversionDiagnostic[];
+  structuredOutput?: { strategy: StructuredOutputStrategy };
 };
 
 export const SYNTHETIC_STRUCTURED_OUTPUT_TOOL = '__gateway_structured_output';
 
-const TOOL_HINT_FIELDS = [
-  'allowed_callers', 'defer_loading', 'strict', 'input_examples', 'eager_input_streaming',
-] as const;
+const TOOL_HINT_FIELDS = ['allowed_callers', 'defer_loading', 'strict', 'input_examples', 'eager_input_streaming'] as const;
 
-function addDiagnostic(
-  diagnostics: ConversionDiagnostic[],
-  diagnostic: ConversionDiagnostic,
-): void {
-  if (diagnostics.some((d) => d.feature === diagnostic.feature
-    && d.action === diagnostic.action
-    && d.strategy === diagnostic.strategy)) return;
+function addDiagnostic(diagnostics: ConversionDiagnostic[], diagnostic: ConversionDiagnostic): void {
+  if (diagnostics.some((d) => d.feature === diagnostic.feature && d.action === diagnostic.action && d.strategy === diagnostic.strategy)) return;
   diagnostics.push(diagnostic);
 }
 
@@ -69,9 +62,7 @@ function fidelityOf(diagnostics: readonly ConversionDiagnostic[]): ConversionFid
  * tool forcing without unwrapping would change the client-visible semantics.
  * Unknown targets always remain on the existing prompt fallback.
  */
-export function selectStructuredOutputStrategy(
-  capabilities: StructuredOutputCapabilities = {},
-): StructuredOutputStrategy {
+export function selectStructuredOutputStrategy(capabilities: StructuredOutputCapabilities = {}): StructuredOutputStrategy {
   if (capabilities.nativeJsonSchema === true) return 'native';
   if (capabilities.syntheticToolOutput === true && capabilities.syntheticToolResultAdapter === true) return 'tool';
   return 'prompt';
@@ -103,8 +94,8 @@ function stripAnthropicStructuredFormat(body: Record<string, unknown>): Record<s
 }
 
 function extractOpenAIChatStructuredSchema(body: Record<string, unknown>): {
-  schema: Record<string, unknown>,
-  strict: boolean | undefined,
+  schema: Record<string, unknown>;
+  strict: boolean | undefined;
 } | null {
   if (body.response_format === undefined || body.response_format === null) return null;
   if (!isRecord(body.response_format)) {
@@ -140,10 +131,7 @@ function stripOpenAIResponseFormat(body: Record<string, unknown>): Record<string
   return next;
 }
 
-function appendAnthropicSystemInstruction(
-  body: Record<string, unknown>,
-  instruction: string,
-): Record<string, unknown> {
+function appendAnthropicSystemInstruction(body: Record<string, unknown>, instruction: string): Record<string, unknown> {
   const next = { ...body };
   if (body.system === undefined || body.system === null || body.system === '') {
     next.system = instruction;
@@ -255,8 +243,7 @@ function openAIDiagnostics(body: Record<string, unknown>): ConversionDiagnostic[
       if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
         addDiagnostic(diagnostics, { feature: 'tool_calls', action: 'mapped' });
       }
-      if (Array.isArray(message.content)
-        && message.content.some((part) => isRecord(part) && part.type === 'image_url')) {
+      if (Array.isArray(message.content) && message.content.some((part) => isRecord(part) && part.type === 'image_url')) {
         addDiagnostic(diagnostics, { feature: 'image_url', action: 'mapped' });
       }
     }
@@ -277,10 +264,7 @@ function finalize(
   };
 }
 
-export function convertAnthropicToOpenAIResult(
-  body: Record<string, unknown>,
-  options: ConversionOptions = {},
-): ConversionResult {
+export function convertAnthropicToOpenAIResult(body: Record<string, unknown>, options: ConversionOptions = {}): ConversionResult {
   // The established converter remains the validation authority. The common
   // default path therefore has exactly the same wire behavior as v1.3.1.
   const promptBody = convertAnthropicToOpenAIRequest(body);
@@ -301,13 +285,17 @@ export function convertAnthropicToOpenAIResult(
   const base = convertAnthropicToOpenAIRequest(stripAnthropicStructuredFormat(body));
   if (strategy === 'native') {
     addDiagnostic(diagnostics, { feature: 'structured_output', action: 'mapped', strategy });
-    return finalize({
-      ...base,
-      response_format: {
-        type: 'json_schema',
-        json_schema: { name: 'structured_output', schema, strict: true },
+    return finalize(
+      {
+        ...base,
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'structured_output', schema, strict: true },
+        },
       },
-    }, diagnostics, { strategy });
+      diagnostics,
+      { strategy },
+    );
   }
 
   const syntheticTool = {
@@ -319,17 +307,18 @@ export function convertAnthropicToOpenAIResult(
     },
   };
   addDiagnostic(diagnostics, { feature: 'structured_output', action: 'emulated', strategy });
-  return finalize({
-    ...base,
-    tools: [...(Array.isArray(base.tools) ? base.tools : []), syntheticTool],
-    tool_choice: { type: 'function', function: { name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL } },
-  }, diagnostics, { strategy });
+  return finalize(
+    {
+      ...base,
+      tools: [...(Array.isArray(base.tools) ? base.tools : []), syntheticTool],
+      tool_choice: { type: 'function', function: { name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL } },
+    },
+    diagnostics,
+    { strategy },
+  );
 }
 
-export function convertOpenAIChatToAnthropicResult(
-  body: Record<string, unknown>,
-  options: ConversionOptions = {},
-): ConversionResult {
+export function convertOpenAIChatToAnthropicResult(body: Record<string, unknown>, options: ConversionOptions = {}): ConversionResult {
   const structured = extractOpenAIChatStructuredSchema(body);
   const base = convertOpenAIChatRequestToAnthropic(stripOpenAIResponseFormat(body));
   const diagnostics = openAIDiagnostics(body);
@@ -339,34 +328,38 @@ export function convertOpenAIChatToAnthropicResult(
   const strategy = resolveStructuredStrategy(requested, body, structured.strict);
   if (strategy === 'native') {
     addDiagnostic(diagnostics, { feature: 'structured_output', action: 'mapped', strategy });
-    return finalize({
-      ...base,
-      output_config: { format: { type: 'json_schema', schema: structured.schema } },
-    }, diagnostics, { strategy });
+    return finalize(
+      {
+        ...base,
+        output_config: { format: { type: 'json_schema', schema: structured.schema } },
+      },
+      diagnostics,
+      { strategy },
+    );
   }
 
   if (strategy === 'tool') {
     addDiagnostic(diagnostics, { feature: 'structured_output', action: 'emulated', strategy });
-    return finalize({
-      ...base,
-      tools: [
-        ...(Array.isArray(base.tools) ? base.tools : []),
-        {
-          name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL,
-          description: 'Return the final structured result.',
-          input_schema: structured.schema,
-        },
-      ],
-      tool_choice: { type: 'tool', name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL },
-    }, diagnostics, { strategy });
+    return finalize(
+      {
+        ...base,
+        tools: [
+          ...(Array.isArray(base.tools) ? base.tools : []),
+          {
+            name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL,
+            description: 'Return the final structured result.',
+            input_schema: structured.schema,
+          },
+        ],
+        tool_choice: { type: 'tool', name: SYNTHETIC_STRUCTURED_OUTPUT_TOOL },
+      },
+      diagnostics,
+      { strategy },
+    );
   }
 
   addDiagnostic(diagnostics, { feature: 'structured_output', action: 'emulated', strategy });
-  return finalize(
-    appendAnthropicSystemInstruction(base, structuredOutputInstruction(structured.schema)),
-    diagnostics,
-    { strategy },
-  );
+  return finalize(appendAnthropicSystemInstruction(base, structuredOutputInstruction(structured.schema)), diagnostics, { strategy });
 }
 
 // Re-exported fact used by diagnostics/tests; this does not change the existing

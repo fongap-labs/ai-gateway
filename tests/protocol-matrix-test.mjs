@@ -14,9 +14,19 @@ const calls = [];
 let handlers = {};
 async function test(name, fn) {
   try {
-    __resetAllStateForTests(); __resetTier1StateForTests(); __resetTier1AffinityForTests();
-    calls.length = 0; handlers = {}; await fn(); passed += 1; console.log(`ok - ${name}`);
-  } catch (error) { console.error(`FAIL: ${name}`); console.error(error?.stack || error); process.exitCode = 1; }
+    __resetAllStateForTests();
+    __resetTier1StateForTests();
+    __resetTier1AffinityForTests();
+    calls.length = 0;
+    handlers = {};
+    await fn();
+    passed += 1;
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    console.error(`FAIL: ${name}`);
+    console.error(error?.stack || error);
+    process.exitCode = 1;
+  }
 }
 
 globalThis.fetch = async (input, init) => {
@@ -37,81 +47,201 @@ const openaiNode = (id) => ({ id, provider: 'openai', base_url: `https://${id}.e
 const messagesNode = (id) => ({ id, provider: 'anthropic', base_url: `https://${id}.example.com`, models: { max: 'up-model' } });
 function env(nodes, extra = {}) {
   return {
-    AIG_ACCESS_KEY_AIR: ACCESS_KEY, AIG_ACCESS_MODELS_AIR: 'max',
+    AIG_ACCESS_KEY_AIR: ACCESS_KEY,
+    AIG_ACCESS_MODELS_AIR: 'max',
     AIG_TIER1_NODES_01: JSON.stringify(nodes),
     AIG_TIER1_CREDENTIALS_01: JSON.stringify(Object.fromEntries(nodes.map((n) => [n.id, `key-${n.id}`]))),
-    TIER1_SCHEDULER_SEED: 'protocol-matrix', AIG_MODELS_CONFIG: JSON.stringify({ max: { policy: 'default' } }), ...extra,
+    TIER1_SCHEDULER_SEED: 'protocol-matrix',
+    AIG_MODELS_CONFIG: JSON.stringify({ max: { policy: 'default' } }),
+    ...extra,
   };
 }
 
 const auth = { authorization: `Bearer ${ACCESS_KEY}`, 'content-type': 'application/json' };
-const chatRequest = (extra = {}) => new Request('https://gateway.example.com/v1/chat/completions', { method: 'POST', headers: auth, body: JSON.stringify({ model: 'max', messages: [{ role: 'user', content: 'hi' }], ...extra }) });
-const responsesRequest = (extra = {}) => new Request('https://gateway.example.com/v1/responses', { method: 'POST', headers: auth, body: JSON.stringify({ model: 'max', input: 'hi', ...extra }) });
-const messagesRequest = (extra = {}) => new Request('https://gateway.example.com/v1/messages', { method: 'POST', headers: { 'x-api-key': ACCESS_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'max', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }], ...extra }) });
+const chatRequest = (extra = {}) =>
+  new Request('https://gateway.example.com/v1/chat/completions', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ model: 'max', messages: [{ role: 'user', content: 'hi' }], ...extra }),
+  });
+const responsesRequest = (extra = {}) =>
+  new Request('https://gateway.example.com/v1/responses', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ model: 'max', input: 'hi', ...extra }),
+  });
+const messagesRequest = (extra = {}) =>
+  new Request('https://gateway.example.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': ACCESS_KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'max', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }], ...extra }),
+  });
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const chatOk = () => ({ id: 'chat-1', object: 'chat.completion', model: 'up-model', choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
-const messageOk = () => ({ id: 'msg-1', type: 'message', role: 'assistant', model: 'up-model', content: [{ type: 'text', text: 'hello' }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
-const responsesOk = () => ({ id: 'resp-1', object: 'response', status: 'completed', model: 'up-model', output: [{ id: 'm1', type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'hello', annotations: [] }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } });
+const chatOk = () => ({
+  id: 'chat-1',
+  object: 'chat.completion',
+  model: 'up-model',
+  choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
+  usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+});
+const messageOk = () => ({
+  id: 'msg-1',
+  type: 'message',
+  role: 'assistant',
+  model: 'up-model',
+  content: [{ type: 'text', text: 'hello' }],
+  stop_reason: 'end_turn',
+  stop_sequence: null,
+  usage: { input_tokens: 1, output_tokens: 1 },
+});
+const responsesOk = () => ({
+  id: 'resp-1',
+  object: 'response',
+  status: 'completed',
+  model: 'up-model',
+  output: [{ id: 'm1', type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'hello', annotations: [] }] }],
+  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+});
 
 await test('Chat uses OpenAI-compatible providers and never Anthropic when conversion is disabled', async () => {
-  handlers['chat.example.com'] = () => json(chatOk()); handlers['anth.example.com'] = () => json(messageOk());
+  handlers['chat.example.com'] = () => json(chatOk());
+  handlers['anth.example.com'] = () => json(messageOk());
   const res = await worker.fetch(chatRequest(), env([messagesNode('anth'), chatNode('chat')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.equal(res.status, 200); assert.deepEqual(calls.map((c) => c.host), ['chat.example.com']); assert.equal(calls[0].path, '/v1/chat/completions');
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    calls.map((c) => c.host),
+    ['chat.example.com'],
+  );
+  assert.equal(calls[0].path, '/v1/chat/completions');
 });
 
 await test('Chat failover stays inside the same native surface', async () => {
-  handlers['a.example.com'] = () => json({ error: 'down' }, 500); handlers['b.example.com'] = () => json(chatOk());
+  handlers['a.example.com'] = () => json({ error: 'down' }, 500);
+  handlers['b.example.com'] = () => json(chatOk());
   const res = await worker.fetch(chatRequest(), env([chatNode('a'), chatNode('b')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.equal(res.status, 200); assert.deepEqual(calls.map((c) => c.host), ['a.example.com', 'b.example.com']); assert.ok(calls.every((c) => c.path === '/v1/chat/completions'));
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    calls.map((c) => c.host),
+    ['a.example.com', 'b.example.com'],
+  );
+  assert.ok(calls.every((c) => c.path === '/v1/chat/completions'));
 });
 
 await test('Responses uses only the OpenAI provider profile', async () => {
-  handlers['chat.example.com'] = () => json(chatOk()); handlers['oa.example.com'] = () => json(responsesOk());
+  handlers['chat.example.com'] = () => json(chatOk());
+  handlers['oa.example.com'] = () => json(responsesOk());
   const res = await worker.fetch(responsesRequest(), env([chatNode('chat'), openaiNode('oa')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.equal(res.status, 200); assert.deepEqual(calls.map((c) => c.host), ['oa.example.com']); assert.equal(calls[0].path, '/v1/responses');
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    calls.map((c) => c.host),
+    ['oa.example.com'],
+  );
+  assert.equal(calls[0].path, '/v1/responses');
 });
 
 await test('Responses remains Native Only and never converts to Messages', async () => {
   handlers['anth.example.com'] = () => json(messageOk());
   const res = await worker.fetch(responsesRequest(), env([messagesNode('anth')]), {});
-  assert.notEqual(res.status, 200); assert.equal(calls.length, 0);
+  assert.notEqual(res.status, 200);
+  assert.equal(calls.length, 0);
 });
 
 await test('Messages uses only Anthropic provider when conversion is disabled', async () => {
-  handlers['chat.example.com'] = () => json(chatOk()); handlers['anth.example.com'] = () => json(messageOk());
+  handlers['chat.example.com'] = () => json(chatOk());
+  handlers['anth.example.com'] = () => json(messageOk());
   const res = await worker.fetch(messagesRequest(), env([chatNode('chat'), messagesNode('anth')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.equal(res.status, 200); assert.deepEqual(calls.map((c) => c.host), ['anth.example.com']); assert.equal(calls[0].path, '/v1/messages'); assert.equal(calls[0].headers.get('x-api-key'), 'key-anth');
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    calls.map((c) => c.host),
+    ['anth.example.com'],
+  );
+  assert.equal(calls[0].path, '/v1/messages');
+  assert.equal(calls[0].headers.get('x-api-key'), 'key-anth');
 });
 
 await test('Chat falls back to Messages only through configured conversion', async () => {
-  handlers['chat.example.com'] = () => json({ error: 'down' }, 500); handlers['anth.example.com'] = () => json(messageOk());
-  const res = await worker.fetch(chatRequest(), env([chatNode('chat'), messagesNode('anth')], { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'openai:chat_completions': ['anthropic:messages'], 'anthropic:messages': ['openai:chat_completions'] }) }), {});
-  assert.equal(res.status, 200); const body = await res.json(); assert.equal(body.choices[0].message.content, 'hello'); assert.deepEqual(calls.map((c) => c.path), ['/v1/chat/completions', '/v1/messages']);
+  handlers['chat.example.com'] = () => json({ error: 'down' }, 500);
+  handlers['anth.example.com'] = () => json(messageOk());
+  const res = await worker.fetch(
+    chatRequest(),
+    env([chatNode('chat'), messagesNode('anth')], {
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({
+        'openai:chat_completions': ['anthropic:messages'],
+        'anthropic:messages': ['openai:chat_completions'],
+      }),
+    }),
+    {},
+  );
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.choices[0].message.content, 'hello');
+  assert.deepEqual(
+    calls.map((c) => c.path),
+    ['/v1/chat/completions', '/v1/messages'],
+  );
 });
 
 await test('Messages falls back to Chat only through configured conversion', async () => {
-  handlers['anth.example.com'] = () => json({ error: 'down' }, 500); handlers['chat.example.com'] = () => json(chatOk());
-  const res = await worker.fetch(messagesRequest(), env([messagesNode('anth'), chatNode('chat')], { AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'], 'openai:chat_completions': ['anthropic:messages'] }) }), {});
-  assert.equal(res.status, 200); const body = await res.json(); assert.equal(body.type, 'message'); assert.equal(body.content[0].text, 'hello'); assert.deepEqual(calls.map((c) => c.path), ['/v1/messages', '/v1/chat/completions']);
+  handlers['anth.example.com'] = () => json({ error: 'down' }, 500);
+  handlers['chat.example.com'] = () => json(chatOk());
+  const res = await worker.fetch(
+    messagesRequest(),
+    env([messagesNode('anth'), chatNode('chat')], {
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({
+        'anthropic:messages': ['openai:chat_completions'],
+        'openai:chat_completions': ['anthropic:messages'],
+      }),
+    }),
+    {},
+  );
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.type, 'message');
+  assert.equal(body.content[0].text, 'hello');
+  assert.deepEqual(
+    calls.map((c) => c.path),
+    ['/v1/messages', '/v1/chat/completions'],
+  );
 });
 
 await test('disable turns off the built-in Chat/Messages fallback', async () => {
   handlers['anth.example.com'] = () => json(messageOk());
   const res = await worker.fetch(chatRequest(), env([messagesNode('anth')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.notEqual(res.status, 200); assert.equal(calls.length, 0);
+  assert.notEqual(res.status, 200);
+  assert.equal(calls.length, 0);
 });
 
 await test('hedge twin stays inside the same provider wire profile', async () => {
-  handlers['slow.example.com'] = (_url, init) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(json(chatOk())), 2_000);
-    init?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')); }, { once: true });
-  });
-  handlers['fast.example.com'] = () => json(chatOk()); handlers['anth.example.com'] = () => json(messageOk());
-  const res = await worker.fetch(chatRequest(), env([chatNode('slow'), chatNode('fast'), messagesNode('anth')], {
-    AIG_PROTOCOL_FALLBACKS: 'disable', AIG_HEDGE_DELAY_MS: '50', AIG_FAILOVER_BUDGET_MS: '5000',
-    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3, hedge: { enabled: true, delay_ms: 50, tiers: ['tier1'] } } }),
-  }), {});
-  assert.equal(res.status, 200); assert.deepEqual(calls.map((c) => c.host), ['slow.example.com', 'fast.example.com']); assert.ok(calls.every((c) => c.path === '/v1/chat/completions'));
+  handlers['slow.example.com'] = (_url, init) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(json(chatOk())), 2_000);
+      init?.signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        },
+        { once: true },
+      );
+    });
+  handlers['fast.example.com'] = () => json(chatOk());
+  handlers['anth.example.com'] = () => json(messageOk());
+  const res = await worker.fetch(
+    chatRequest(),
+    env([chatNode('slow'), chatNode('fast'), messagesNode('anth')], {
+      AIG_PROTOCOL_FALLBACKS: 'disable',
+      AIG_HEDGE_DELAY_MS: '50',
+      AIG_FAILOVER_BUDGET_MS: '5000',
+      AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 3, hedge: { enabled: true, delay_ms: 50, tiers: ['tier1'] } } }),
+    }),
+    {},
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    calls.map((c) => c.host),
+    ['slow.example.com', 'fast.example.com'],
+  );
+  assert.ok(calls.every((c) => c.path === '/v1/chat/completions'));
 });
 
 await test('protocol or surfaces in Node JSON are rejected before dispatch', async () => {
@@ -119,14 +249,18 @@ await test('protocol or surfaces in Node JSON are rejected before dispatch', asy
   for (const extra of [{ protocol: 'openai' }, { surfaces: ['chat_completions'] }]) {
     calls.length = 0;
     const res = await worker.fetch(chatRequest(), env([{ ...chatNode('broken'), ...extra }], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-    assert.notEqual(res.status, 200); assert.equal(calls.length, 0);
+    assert.notEqual(res.status, 200);
+    assert.equal(calls.length, 0);
   }
 });
 
 await test('requested model identity is preserved in native client response', async () => {
   handlers['chat.example.com'] = () => json(chatOk());
   const res = await worker.fetch(chatRequest(), env([chatNode('chat')], { AIG_PROTOCOL_FALLBACKS: 'disable' }), {});
-  assert.equal(res.status, 200); const body = await res.json(); assert.equal(body.model, 'max'); assert.equal(calls[0].body.model, 'up-model');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.model, 'max');
+  assert.equal(calls[0].body.model, 'up-model');
 });
 
 if (process.exitCode) process.exit(1);

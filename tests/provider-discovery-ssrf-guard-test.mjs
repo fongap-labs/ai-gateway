@@ -6,13 +6,13 @@
 
 import assert from 'node:assert/strict';
 import {
-  isDangerousHost,
-  isSafeDiscoveryUrl,
-  isSafeDiscoveryTarget,
-  redirectTargetIsSafe,
-  readBoundedResponseText,
-  enforceMaxModelCount,
   DISCOVERY_LIMITS,
+  enforceMaxModelCount,
+  isDangerousHost,
+  isSafeDiscoveryTarget,
+  isSafeDiscoveryUrl,
+  readBoundedResponseText,
+  redirectTargetIsSafe,
 } from '../scripts/provider-discovery/ssrf-guard.js';
 
 let passed = 0;
@@ -23,7 +23,7 @@ function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -34,7 +34,7 @@ async function testAsync(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -158,7 +158,9 @@ await testAsync('DNS resolution to metadata address is rejected', async () => {
 });
 
 await testAsync('DNS failure is fail-closed', async () => {
-  const lookup = async () => { throw new Error('NXDOMAIN'); };
+  const lookup = async () => {
+    throw new Error('NXDOMAIN');
+  };
   const r = await isSafeDiscoveryTarget('https://missing.example/v1', false, lookup);
   assert.ok(!r.safe);
   assert.match(r.reason, /DNS resolution failed/);
@@ -166,7 +168,10 @@ await testAsync('DNS failure is fail-closed', async () => {
 
 await testAsync('allowPrivate bypasses DNS private-address rejection', async () => {
   let called = false;
-  const lookup = async () => { called = true; return [{ address: '10.0.0.1', family: 4 }]; };
+  const lookup = async () => {
+    called = true;
+    return [{ address: '10.0.0.1', family: 4 }];
+  };
   const r = await isSafeDiscoveryTarget('https://private-provider.example/v1', true, lookup);
   assert.ok(r.safe);
   assert.equal(called, false);

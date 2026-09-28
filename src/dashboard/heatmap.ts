@@ -40,29 +40,29 @@ export type HeatmapMode = 'rolling-52-weeks' | 'calendar-year';
  * "is zero" / "is future" / "is out of range" boolean.
  */
 export type HeatmapDay = {
-  date: string,         // 'YYYY-MM-DD'
-  value: number | null, // business value (e.g. total tokens), null for future / out-of-range
-  weekIndex: number,    // 0..(columns-1)
-  weekdayIndex: number, // 0=Mon..6=Sun
-  inRange: boolean,     // belongs to the mode's date range
-  isFuture: boolean,     // inside the range but after `today`
+  date: string; // 'YYYY-MM-DD'
+  value: number | null; // business value (e.g. total tokens), null for future / out-of-range
+  weekIndex: number; // 0..(columns-1)
+  weekdayIndex: number; // 0=Mon..6=Sun
+  inRange: boolean; // belongs to the mode's date range
+  isFuture: boolean; // inside the range but after `today`
 };
 
 export type MonthLabel = {
-  year: number,
-  month: number,        // 0=Jan..11=Dec
-  weekIndex: number,    // the column the month's 1st day lives in
+  year: number;
+  month: number; // 0=Jan..11=Dec
+  weekIndex: number; // the column the month's 1st day lives in
 };
 
 export type HeatmapResult = {
-  weeks: HeatmapDay[][],
-  monthLabels: MonthLabel[],
-  rangeStart: string,   // 'YYYY-MM-DD'
-  rangeEnd: string,     // 'YYYY-MM-DD'
-  mode: HeatmapMode,
+  weeks: HeatmapDay[][];
+  monthLabels: MonthLabel[];
+  rangeStart: string; // 'YYYY-MM-DD'
+  rangeEnd: string; // 'YYYY-MM-DD'
+  mode: HeatmapMode;
 };
 
-export type HeatmapDataEntry = { total: number, requests: number };
+export type HeatmapDataEntry = { total: number; requests: number };
 
 const DAY_MS = 86_400_000;
 
@@ -95,7 +95,7 @@ function buildEmptyGrid(
   mode: HeatmapMode,
   todayIso: string,
   year: number | null | undefined,
-): { weeks: HeatmapDay[][], rangeStart: string, rangeEnd: string } {
+): { weeks: HeatmapDay[][]; rangeStart: string; rangeEnd: string } {
   if (mode === 'rolling-52-weeks') {
     const todayMs = new Date(`${todayIso}T00:00:00Z`).getTime();
     const dow = (new Date(todayIso).getUTCDay() + 6) % 7;
@@ -161,12 +161,12 @@ function buildEmptyGrid(
 
 /** Build a calendar heatmap grid. */
 export function buildCalendarHeatmap(opts: {
-  mode: HeatmapMode,
-  today: number | Date,
-  year?: number,
-  weekStartsOn?: 'monday',
-  data?: Map<string, HeatmapDataEntry> | null,
-  valueKey?: 'total' | 'requests',
+  mode: HeatmapMode;
+  today: number | Date;
+  year?: number;
+  weekStartsOn?: 'monday';
+  data?: Map<string, HeatmapDataEntry> | null;
+  valueKey?: 'total' | 'requests';
 }): HeatmapResult {
   const { mode, year, data = null, valueKey = 'total' } = opts || {};
   if (!mode) throw new Error('buildCalendarHeatmap: mode is required');
@@ -181,7 +181,7 @@ export function buildCalendarHeatmap(opts: {
   for (const week of weeks) {
     for (const cell of week) {
       if (!cell.inRange || cell.isFuture) continue;
-      const v = data && data.get(cell.date);
+      const v = data?.get(cell.date);
       cell.value = v && Number.isFinite(v[valueKey]) ? v[valueKey] : 0;
     }
   }
@@ -197,12 +197,7 @@ export function buildCalendarHeatmap(opts: {
   };
 }
 
-function computeMonthLabels(
-  weeks: HeatmapDay[][],
-  mode: HeatmapMode,
-  year: number | null | undefined,
-  todayIso: string,
-): MonthLabel[] {
+function computeMonthLabels(weeks: HeatmapDay[][], mode: HeatmapMode, year: number | null | undefined, todayIso: string): MonthLabel[] {
   const labels: MonthLabel[] = [];
   if (mode === 'calendar-year') {
     const y = year ?? Number(todayIso.slice(0, 4));

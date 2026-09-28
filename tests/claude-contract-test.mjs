@@ -30,7 +30,7 @@ async function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -43,9 +43,7 @@ function installMockFetch() {
     const url = new URL(typeof input === 'string' ? input : input.url);
     const handler = routeHandlers[url.hostname];
     if (!handler) throw new Error(`no mock upstream for ${url.hostname}`);
-    const req = init?.body !== undefined
-      ? new Request(url, { method: 'POST', headers: init.headers, body: init.body })
-      : null;
+    const req = init?.body !== undefined ? new Request(url, { method: 'POST', headers: init.headers, body: init.body }) : null;
     if (req) upstreamCalls.push({ host: url.hostname, url, body: JSON.parse(init.body), headers: init.headers });
     else upstreamCalls.push({ host: url.hostname, url, body: null, headers: init.headers });
     return handler(req ?? {}, url);
@@ -100,7 +98,10 @@ function sseBody(lines) {
   let i = 0;
   return new ReadableStream({
     pull(controller) {
-      if (i >= lines.length) { controller.close(); return; }
+      if (i >= lines.length) {
+        controller.close();
+        return;
+      }
       controller.enqueue(encoder.encode(lines[i++]));
     },
   });
@@ -110,21 +111,31 @@ function sseResponse(lines, headers = {}) {
 }
 const event = (name, data) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 
-const messageStart = () => event('message_start', {
-  type: 'message_start',
-  message: {
-    id: 'msg_up1', type: 'message', role: 'assistant', model: 'up-model',
-    content: [], stop_reason: null, stop_sequence: null,
-    usage: { input_tokens: 1, output_tokens: 0 },
-  },
-});
+const messageStart = () =>
+  event('message_start', {
+    type: 'message_start',
+    message: {
+      id: 'msg_up1',
+      type: 'message',
+      role: 'assistant',
+      model: 'up-model',
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 0 },
+    },
+  });
 const blockStart = (index, block) => event('content_block_start', { type: 'content_block_start', index, content_block: block });
 const textDelta = (index, text) => event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text } });
-const thinkingDelta = (index, text) => event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: text } });
-const inputJsonDelta = (index, json) => event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: json } });
-const signatureDelta = (index, signature) => event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature } });
+const thinkingDelta = (index, text) =>
+  event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: text } });
+const inputJsonDelta = (index, json) =>
+  event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: json } });
+const signatureDelta = (index, signature) =>
+  event('content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature } });
 const blockStop = (index) => event('content_block_stop', { type: 'content_block_stop', index });
-const messageDelta = (stopReason = 'end_turn', usage = { input_tokens: 1, output_tokens: 1 }) => event('message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage });
+const messageDelta = (stopReason = 'end_turn', usage = { input_tokens: 1, output_tokens: 1 }) =>
+  event('message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage });
 const messageStop = () => event('message_stop', { type: 'message_stop' });
 
 // A complete native text lifecycle.
@@ -184,7 +195,11 @@ await test('claude streaming passes the native event lifecycle through and hides
   resetMock();
   routeHandlers['cs.example.com'] = () => sseResponse(textLifecycle('hi there'));
   const env = makeEnv({ tier1: [node('cs')], secrets: { cs: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   const types = [...text.matchAll(/event: (.+)/g)].map((m) => m[1]);
@@ -203,10 +218,14 @@ await test('claude streaming forwards anthropic-version and anthropic-beta heade
   resetMock();
   routeHandlers['cv.example.com'] = () => sseResponse(textLifecycle('hi'));
   const env = makeEnv({ tier1: [node('cv')], secrets: { cv: 'k' } });
-  const res = await worker.fetch(messagesRequest(
-    { model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] },
-    { headers: { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' } },
-  ), env, {});
+  const res = await worker.fetch(
+    messagesRequest(
+      { model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] },
+      { headers: { 'anthropic-version': '2023-06-01', 'anthropic-beta': 'prompt-caching-2024-07-31' } },
+    ),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   await res.text();
   const headers = upstreamCalls[0].headers;
@@ -220,20 +239,26 @@ await test('claude a complete native lifecycle never opens a half stream', async
   // message_start -> thinking -> text -> message_delta -> message_stop: every
   // block closes, the lifecycle terminates with message_stop, and no error
   // event is injected by the gateway.
-  routeHandlers['cdt.example.com'] = () => sseResponse([
-    messageStart(),
-    blockStart(0, { type: 'thinking', thinking: '', signature: '' }),
-    thinkingDelta(0, 'think-'), thinkingDelta(0, 'ing'),
-    signatureDelta(0, 'sig'),
-    blockStop(0),
-    blockStart(1, { type: 'text', text: '' }),
-    textDelta(1, 'done'),
-    blockStop(1),
-    messageDelta(),
-    messageStop(),
-  ]);
+  routeHandlers['cdt.example.com'] = () =>
+    sseResponse([
+      messageStart(),
+      blockStart(0, { type: 'thinking', thinking: '', signature: '' }),
+      thinkingDelta(0, 'think-'),
+      thinkingDelta(0, 'ing'),
+      signatureDelta(0, 'sig'),
+      blockStop(0),
+      blockStart(1, { type: 'text', text: '' }),
+      textDelta(1, 'done'),
+      blockStop(1),
+      messageDelta(),
+      messageStop(),
+    ]);
   const env = makeEnv({ tier1: [node('cdt')], secrets: { cdt: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   const types = [...text.matchAll(/event: (.+)/g)].map((m) => m[1]);
@@ -249,19 +274,25 @@ await test('claude a complete native lifecycle never opens a half stream', async
 
 await test('claude thinking blocks pass through natively', async () => {
   resetMock();
-  routeHandlers['cth.example.com'] = () => sseResponse([
-    messageStart(),
-    blockStart(0, { type: 'thinking', thinking: '', signature: '' }),
-    thinkingDelta(0, 'think-'), thinkingDelta(0, 'ing'),
-    blockStop(0),
-    blockStart(1, { type: 'text', text: '' }),
-    textDelta(1, 'done'),
-    blockStop(1),
-    messageDelta(),
-    messageStop(),
-  ]);
+  routeHandlers['cth.example.com'] = () =>
+    sseResponse([
+      messageStart(),
+      blockStart(0, { type: 'thinking', thinking: '', signature: '' }),
+      thinkingDelta(0, 'think-'),
+      thinkingDelta(0, 'ing'),
+      blockStop(0),
+      blockStart(1, { type: 'text', text: '' }),
+      textDelta(1, 'done'),
+      blockStop(1),
+      messageDelta(),
+      messageStop(),
+    ]);
   const env = makeEnv({ tier1: [node('cth')], secrets: { cth: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   const text = await res.text();
   assert.match(text, /"type":"thinking_delta"/);
   assert.match(text, /"type":"text_delta"/);
@@ -275,10 +306,13 @@ await test('claude thinking blocks pass through natively', async () => {
 
 await test('claude tool_use passes through as a native tool_use content block', async () => {
   resetMock();
-  routeHandlers['ctu.example.com'] = () => jsonUpstream(okMessage({
-    stop_reason: 'tool_use',
-    content: [{ type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'SF' } }],
-  }));
+  routeHandlers['ctu.example.com'] = () =>
+    jsonUpstream(
+      okMessage({
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'SF' } }],
+      }),
+    );
   const env = makeEnv({ tier1: [node('ctu')], secrets: { ctu: 'k' } });
   const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'weather?' }] }), env, {});
   assert.equal(res.status, 200);
@@ -292,17 +326,22 @@ await test('claude tool_use passes through as a native tool_use content block', 
 
 await test('claude tool_use streaming assembles input_json_delta chunks', async () => {
   resetMock();
-  routeHandlers['ctus.example.com'] = () => sseResponse([
-    messageStart(),
-    blockStart(0, { type: 'tool_use', id: 'toolu_9', name: 'get_weather', input: {} }),
-    inputJsonDelta(0, '{"city":'),
-    inputJsonDelta(0, '"SF"}'),
-    blockStop(0),
-    messageDelta('tool_use'),
-    messageStop(),
-  ]);
+  routeHandlers['ctus.example.com'] = () =>
+    sseResponse([
+      messageStart(),
+      blockStart(0, { type: 'tool_use', id: 'toolu_9', name: 'get_weather', input: {} }),
+      inputJsonDelta(0, '{"city":'),
+      inputJsonDelta(0, '"SF"}'),
+      blockStop(0),
+      messageDelta('tool_use'),
+      messageStop(),
+    ]);
   const env = makeEnv({ tier1: [node('ctus')], secrets: { ctus: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'weather?' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'weather?' }] }),
+    env,
+    {},
+  );
   const text = await res.text();
   assert.match(text, /"type":"tool_use"/);
   assert.match(text, /"name":"get_weather"/);
@@ -318,7 +357,13 @@ await test('claude tool_use + tool_result history is forwarded verbatim (native 
     max_tokens: 64,
     messages: [
       { role: 'user', content: 'weather?' },
-      { role: 'assistant', content: [{ type: 'text', text: 'checking' }, { type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'SF' } }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'checking' },
+          { type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: { city: 'SF' } },
+        ],
+      },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'sunny' }] },
     ],
   };
@@ -366,21 +411,29 @@ await test('claude upstream 400 rotates to another provider-key slot', async () 
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.content[0].text, 'recovered');
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['ce400-a.example.com', 'ce400-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['ce400-a.example.com', 'ce400-b.example.com'],
+  );
 });
 
 await test('claude missing/invalid gateway key is a 401 authentication_error', async () => {
   resetMock();
-  const env = makeEnv({ tier1: [node('ce401')], secrets: { 'ce401': 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, { key: 'wrong' }), env, {});
+  const env = makeEnv({ tier1: [node('ce401')], secrets: { ce401: 'k' } });
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, { key: 'wrong' }),
+    env,
+    {},
+  );
   assert.equal(res.status, 401);
   assert.equal((await res.json()).error.type, 'authentication_error');
 });
 
 await test('claude upstream 429 after cooldown is an Anthropic rate_limit_error', async () => {
   resetMock();
-  routeHandlers['ce429.example.com'] = () => jsonUpstream({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }, 429, { 'retry-after': '30' });
-  const env = makeEnv({ tier1: [node('ce429')], secrets: { 'ce429': 'k' } });
+  routeHandlers['ce429.example.com'] = () =>
+    jsonUpstream({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }, 429, { 'retry-after': '30' });
+  const env = makeEnv({ tier1: [node('ce429')], secrets: { ce429: 'k' } });
   await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }), env, {});
   const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }), env, {});
   assert.equal(res.status, 429);
@@ -390,7 +443,7 @@ await test('claude upstream 429 after cooldown is an Anthropic rate_limit_error'
 await test('claude upstream 5xx rotates; final failure is an Anthropic api_error', async () => {
   resetMock();
   routeHandlers['ce5xx.example.com'] = () => jsonUpstream({ type: 'error', error: { type: 'api_error', message: 'boom' } }, 500);
-  const env = makeEnv({ tier1: [node('ce5xx')], secrets: { 'ce5xx': 'k' } });
+  const env = makeEnv({ tier1: [node('ce5xx')], secrets: { ce5xx: 'k' } });
   const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }), env, {});
   assert.equal(res.status, 502);
   const body = await res.json();
@@ -401,11 +454,15 @@ await test('claude upstream 5xx rotates; final failure is an Anthropic api_error
 await test('claude count_tokens is approximated locally without upstream calls', async () => {
   resetMock();
   const env = makeEnv({ tier1: [node('ctk')], secrets: { ctk: 'k' } });
-  const res = await worker.fetch(new Request('https://gateway.example.com/v1/messages/count_tokens', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': ACCESS_KEY },
-    body: JSON.stringify({ model: 'claude-x', messages: [{ role: 'user', content: 'hello world' }] }),
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/v1/messages/count_tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': ACCESS_KEY },
+      body: JSON.stringify({ model: 'claude-x', messages: [{ role: 'user', content: 'hello world' }] }),
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   assert.ok((await res.json()).input_tokens > 0);
   assert.equal(upstreamCalls.length, 0);
@@ -415,14 +472,24 @@ await test('claude stream interruption accounts a node failure and delivers part
   resetMock();
   const encoder = new TextEncoder();
   let step = 0;
-  routeHandlers['ceint.example.com'] = () => new Response(new ReadableStream({
-    pull(controller) {
-      if (step === 0) { controller.enqueue(encoder.encode(textDelta(0, 'partial'))); step = 1; }
-      else controller.error(new Error('upstream died mid-stream'));
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-  const env = makeEnv({ tier1: [node('ceint')], secrets: { 'ceint': 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  routeHandlers['ceint.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          if (step === 0) {
+            controller.enqueue(encoder.encode(textDelta(0, 'partial')));
+            step = 1;
+          } else controller.error(new Error('upstream died mid-stream'));
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  const env = makeEnv({ tier1: [node('ceint')], secrets: { ceint: 'k' } });
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.match(text, /partial/);
@@ -435,23 +502,37 @@ await test('claude stream interruption accounts a node failure and delivers part
 await test('claude: message_start-only first event then EOF must fail over to a healthy node', async () => {
   resetMock();
   const encoder = new TextEncoder();
-  routeHandlers['roa.example.com'] = () => new Response(new ReadableStream({
-    pull(controller) {
-      // lifecycle events only, then clean EOF (no real output, no message_stop).
-      controller.enqueue(encoder.encode(messageStart()));
-      controller.close();
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  routeHandlers['roa.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          // lifecycle events only, then clean EOF (no real output, no message_stop).
+          controller.enqueue(encoder.encode(messageStart()));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   routeHandlers['rob.example.com'] = () => sseResponse(textLifecycle('served by B'));
   recordTier1Ttft('roa', 'claude-x', 10);
   recordTier1Ttft('rob', 'claude-x', 1000);
   const env = makeEnv({ tier1: [node('roa'), node('rob')], secrets: { roa: 'k', rob: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200, 'must fail over to B and serve');
   const text = await res.text();
   assert.match(text, /served by B/, 'B must serve');
-  assert.ok(upstreamCalls.some((c) => c.host === 'roa.example.com'), 'A was contacted');
-  assert.ok(upstreamCalls.some((c) => c.host === 'rob.example.com'), 'B was reached via failover');
+  assert.ok(
+    upstreamCalls.some((c) => c.host === 'roa.example.com'),
+    'A was contacted',
+  );
+  assert.ok(
+    upstreamCalls.some((c) => c.host === 'rob.example.com'),
+    'B was reached via failover',
+  );
 });
 
 // Once real output (a text delta) has been committed, transparent failover is
@@ -459,18 +540,26 @@ await test('claude: message_start-only first event then EOF must fail over to a 
 await test('claude: text delta first event then EOF must NOT fail over to another node', async () => {
   resetMock();
   const encoder = new TextEncoder();
-  routeHandlers['toa.example.com'] = () => new Response(new ReadableStream({
-    pull(controller) {
-      // real text output, then clean EOF (committed — no failover allowed).
-      controller.enqueue(encoder.encode(textDelta(0, 'committed output')));
-      controller.close();
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  routeHandlers['toa.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          // real text output, then clean EOF (committed — no failover allowed).
+          controller.enqueue(encoder.encode(textDelta(0, 'committed output')));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   routeHandlers['tob.example.com'] = () => sseResponse(textLifecycle('should not serve'));
   recordTier1Ttft('toa', 'claude-x', 10);
   recordTier1Ttft('tob', 'claude-x', 1000);
   const env = makeEnv({ tier1: [node('toa'), node('tob')], secrets: { toa: 'k', tob: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.match(text, /committed output/, 'A served its committed output');
@@ -483,14 +572,22 @@ await test('claude: a stream ending without message_stop is a node failure, not 
   resetMock();
   const encoder = new TextEncoder();
   // Real text output, then clean EOF — committed, but no message_stop marker.
-  routeHandlers['nms.example.com'] = () => new Response(new ReadableStream({
-    pull(controller) {
-      controller.enqueue(encoder.encode(textDelta(0, 'partial')));
-      controller.close();
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  routeHandlers['nms.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          controller.enqueue(encoder.encode(textDelta(0, 'partial')));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   const env = makeEnv({ tier1: [node('nms')], secrets: { nms: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.ok(!text.includes('event: message_stop'), 'stream must be missing message_stop');
@@ -520,7 +617,11 @@ await test('claude stream client + JSON upstream synthesizes the SSE lifecycle',
   resetMock();
   routeHandlers['csyn.example.com'] = () => jsonUpstream(okMessage());
   const env = makeEnv({ tier1: [node('csyn')], secrets: { csyn: 'k' } });
-  const res = await worker.fetch(messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({ model: 'claude-x', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') || '', /text\/event-stream/);
   const text = await res.text();
@@ -546,7 +647,8 @@ const openaiNode = (id, extra = {}) => ({
 });
 
 const okOpenAICompletion = () => ({
-  id: 'chatcmpl-cc', model: 'up-model',
+  id: 'chatcmpl-cc',
+  model: 'up-model',
   choices: [{ index: 0, message: { role: 'assistant', content: 'hello' }, finish_reason: 'stop' }],
   usage: { prompt_tokens: 1, completion_tokens: 1 },
 });
@@ -554,14 +656,15 @@ const okOpenAICompletion = () => ({
 // Open the Anthropic native circuit so the request must cross to OpenAI.
 const alwaysFailingAnthropic = () => jsonUpstream({ error: { message: 'overloaded' } }, 529);
 
-const fallbackEnv = ({ tier1, secrets }) => makeEnv({
-  tier1,
-  secrets,
-  extraEnv: {
-    AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
-    AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
-  },
-});
+const fallbackEnv = ({ tier1, secrets }) =>
+  makeEnv({
+    tier1,
+    secrets,
+    extraEnv: {
+      AIG_PROTOCOL_FALLBACKS: JSON.stringify({ 'anthropic:messages': ['openai:chat_completions'] }),
+      AIG_SHOULD_EXPOSE_UPSTREAM: 'true',
+    },
+  });
 
 await test('claude fallback Case A: metadata is safely dropped on OpenAI fallback', async () => {
   resetMock();
@@ -572,12 +675,16 @@ await test('claude fallback Case A: metadata is safely dropped on OpenAI fallbac
     tier1: [node('ca'), openaiNode('coa')],
     secrets: { ca: 'k', coa: 'k' },
   });
-  const res = await worker.fetch(messagesRequest({
-    model: 'code-max',
-    max_tokens: 4096,
-    metadata: { user_id: 'test-user' },
-    messages: [{ role: 'user', content: 'hello' }],
-  }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({
+      model: 'code-max',
+      max_tokens: 4096,
+      metadata: { user_id: 'test-user' },
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200, 'metadata must not block the OpenAI fallback');
   const body = await res.json();
   assert.equal(body.type, 'message');
@@ -589,8 +696,7 @@ await test('claude fallback Case A: metadata is safely dropped on OpenAI fallbac
   assert.equal(openAiCall.body.max_tokens, 4096);
   assert.equal(openAiCall.body.messages[0].role, 'user');
   assert.equal(openAiCall.body.messages[0].content, 'hello');
-  assert.equal(openAiCall.body.metadata, undefined,
-    'metadata must be dropped on the OpenAI upstream body (intentional, safe drop)');
+  assert.equal(openAiCall.body.metadata, undefined, 'metadata must be dropped on the OpenAI upstream body (intentional, safe drop)');
 });
 
 await test('claude fallback Case B: cache_control is safely dropped on OpenAI fallback', async () => {
@@ -601,21 +707,21 @@ await test('claude fallback Case B: cache_control is safely dropped on OpenAI fa
     tier1: [node('cb'), openaiNode('cob')],
     secrets: { cb: 'k', cob: 'k' },
   });
-  const res = await worker.fetch(messagesRequest({
-    model: 'code-max',
-    max_tokens: 4096,
-    system: [
-      { type: 'text', text: 'You are Claude Code', cache_control: { type: 'ephemeral' } },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } },
-        ],
-      },
-    ],
-  }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({
+      model: 'code-max',
+      max_tokens: 4096,
+      system: [{ type: 'text', text: 'You are Claude Code', cache_control: { type: 'ephemeral' } }],
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }],
+        },
+      ],
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200, 'cache_control must not block the OpenAI fallback');
   const body = await res.json();
   assert.equal(body.content[0].text, 'hello');
@@ -629,50 +735,59 @@ await test('claude fallback Case B: cache_control is safely dropped on OpenAI fa
   // The user text block is converted to an OpenAI content part carrying the text.
   const userText = openAiCall.body.messages[1].content[0];
   assert.equal(userText.text, 'hello');
-  assert.equal(JSON.stringify(openAiCall.body).includes('cache_control'), false,
-    'no cache_control leaks to the OpenAI upstream body');
+  assert.equal(JSON.stringify(openAiCall.body).includes('cache_control'), false, 'no cache_control leaks to the OpenAI upstream body');
 });
 
 await test('claude fallback Case C: metadata + cache_control + tools completes an agent workflow', async () => {
   resetMock();
   routeHandlers['cc.example.com'] = () => alwaysFailingAnthropic();
-  routeHandlers['coc.example.com'] = () => jsonUpstream({
-    id: 'chatcmpl-cc', model: 'up-model',
-    choices: [{ index: 0, message: { role: 'assistant', content: 'using tool', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"SF"}' } }] }, finish_reason: 'tool_calls' }],
-    usage: { prompt_tokens: 2, completion_tokens: 2 },
-  });
+  routeHandlers['coc.example.com'] = () =>
+    jsonUpstream({
+      id: 'chatcmpl-cc',
+      model: 'up-model',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'using tool',
+            tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"SF"}' } }],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: { prompt_tokens: 2, completion_tokens: 2 },
+    });
   const env = fallbackEnv({
     tier1: [node('cc'), openaiNode('coc')],
     secrets: { cc: 'k', coc: 'k' },
   });
-  const res = await worker.fetch(messagesRequest({
-    model: 'code-max',
-    max_tokens: 4096,
-    metadata: { user_id: 'test-user' },
-    system: [
-      { type: 'text', text: 'You are Claude Code', cache_control: { type: 'ephemeral' } },
-    ],
-    tools: [
-      { name: 'get_weather', description: 'w', input_schema: { type: 'object', properties: { city: { type: 'string' } } } },
-    ],
-    tool_choice: { type: 'auto' },
-    messages: [
-      { role: 'user', content: 'what is the weather in SF?' },
-      {
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'let me check', cache_control: { type: 'ephemeral' } },
-          { type: 'tool_use', id: 'call_1', name: 'get_weather', input: { city: 'SF' } },
-        ],
-      },
-      {
-        role: 'user',
-        content: [
-          { type: 'tool_result', tool_use_id: 'call_1', content: 'sunny', cache_control: { type: 'ephemeral' } },
-        ],
-      },
-    ],
-  }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({
+      model: 'code-max',
+      max_tokens: 4096,
+      metadata: { user_id: 'test-user' },
+      system: [{ type: 'text', text: 'You are Claude Code', cache_control: { type: 'ephemeral' } }],
+      tools: [{ name: 'get_weather', description: 'w', input_schema: { type: 'object', properties: { city: { type: 'string' } } } }],
+      tool_choice: { type: 'auto' },
+      messages: [
+        { role: 'user', content: 'what is the weather in SF?' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'let me check', cache_control: { type: 'ephemeral' } },
+            { type: 'tool_use', id: 'call_1', name: 'get_weather', input: { city: 'SF' } },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'sunny', cache_control: { type: 'ephemeral' } }],
+        },
+      ],
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200, 'a full Claude Code agent workflow must complete the OpenAI fallback');
   const body = await res.json();
   assert.equal(body.type, 'message');
@@ -699,27 +814,33 @@ await test('claude fallback Case D: unconvertible semantic feature is skipped, n
   // handler answers with a gateway failure (429/502/503), NEVER a client 400.
   routeHandlers['cd.example.com'] = () => alwaysFailingAnthropic();
   let openAiCalls = 0;
-  routeHandlers['cod.example.com'] = () => { openAiCalls++; return jsonUpstream(okOpenAICompletion()); };
+  routeHandlers['cod.example.com'] = () => {
+    openAiCalls++;
+    return jsonUpstream(okOpenAICompletion());
+  };
   const env = fallbackEnv({
     tier1: [node('cd'), openaiNode('cod')],
     secrets: { cd: 'k', cod: 'k' },
   });
-  const res = await worker.fetch(messagesRequest({
-    model: 'code-max',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'thinking', thinking: 'let me reason' },
-          { type: 'text', text: 'hello' },
-        ],
-      },
-    ],
-  }), env, {});
+  const res = await worker.fetch(
+    messagesRequest({
+      model: 'code-max',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'thinking', thinking: 'let me reason' },
+            { type: 'text', text: 'hello' },
+          ],
+        },
+      ],
+    }),
+    env,
+    {},
+  );
   assert.ok(res.status !== 400, 'a legal Anthropic request must never get a client 400 from a conversion incompatibility');
-  assert.ok(res.status >= 429 && res.status < 600,
-    `expected a gateway-level failure status (429/5xx), got ${res.status}`);
+  assert.ok(res.status >= 429 && res.status < 600, `expected a gateway-level failure status (429/5xx), got ${res.status}`);
   assert.equal(openAiCalls, 0, 'the incompatible OpenAI fallback target must be skipped, not dispatched');
 });
 

@@ -31,12 +31,12 @@
 // visible/callable. Otherwise the key's allowlist is intersected with the
 // catalog.
 
-type AuthzShape = { authorized?: boolean, allowAll?: boolean, allowlist?: ReadonlySet<string> };
+type AuthzShape = { authorized?: boolean; allowAll?: boolean; allowlist?: ReadonlySet<string> };
 
 // Returns a sorted array of model names visible to the current key.
 export function filterVisibleModels(knownModels: ReadonlySet<string>, authz: AuthzShape): string[] {
   if (!knownModels || knownModels.size === 0) return [];
-  if (!authz || !authz.authorized) return [];
+  if (!authz?.authorized) return [];
   if (authz.allowAll) return [...knownModels].sort();
   if (!authz.allowlist || authz.allowlist.size === 0) return [];
   // Hoist: property narrowing does not survive into the filter closure.
@@ -47,10 +47,14 @@ export function filterVisibleModels(knownModels: ReadonlySet<string>, authz: Aut
 // Returns { allowed: boolean, status?: 401 | 403 | 404 }.
 // When allowed is false, `status` is 401/403/404 and the handler must return
 // that response without entering the scheduler.
-export function authorizeModel(requestedModel: string, knownModels: ReadonlySet<string>, authz: AuthzShape): { allowed: true } | { allowed: false, status: 401 | 403 | 404 } {
+export function authorizeModel(
+  requestedModel: string,
+  knownModels: ReadonlySet<string>,
+  authz: AuthzShape,
+): { allowed: true } | { allowed: false; status: 401 | 403 | 404 } {
   // No key -> handled by the auth layer (401). If we somehow get here
   // without auth, fail closed.
-  if (!authz || !authz.authorized) return { allowed: false, status: 401 };
+  if (!authz?.authorized) return { allowed: false, status: 401 };
   // An empty Known Model Catalog grants ZERO models. Even an allow-all key
   // cannot conjure a model that exists nowhere in the gateway — a wildcard
   // node + empty catalog serves nothing.
@@ -58,9 +62,7 @@ export function authorizeModel(requestedModel: string, knownModels: ReadonlySet<
   // Allow-all keys (legacy or AIG_ACCESS_MODELS_<GROUP>="*") are bounded
   // by the catalog: "*" means every KNOWN model, never any model string.
   if (authz.allowAll) {
-    return knownModels.has(requestedModel)
-      ? { allowed: true }
-      : { allowed: false, status: 404 };
+    return knownModels.has(requestedModel) ? { allowed: true } : { allowed: false, status: 404 };
   }
   // Per-key allowlist: the model must be in both the allowlist AND the
   // catalog. If it's in the allowlist but not the catalog, treat it as not

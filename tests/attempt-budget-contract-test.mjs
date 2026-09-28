@@ -10,12 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  attemptBudgetSliceMs,
-  attemptBudgetWindowMs,
-  attemptFirstEventTimeoutMs,
-  MIN_FAILOVER_RESERVE_MS,
-} from '../src/config/timeouts.ts';
+import { attemptBudgetSliceMs, attemptBudgetWindowMs, attemptFirstEventTimeoutMs, MIN_FAILOVER_RESERVE_MS } from '../src/config/timeouts.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -62,13 +57,18 @@ assert.equal(remaining, 5_000, 'the last candidate must retain its escape window
 // equal-share helper must not accidentally return to the live path during a
 // refactor. Hedge twins must continue inheriting the primary absolute deadline.
 const dispatchSource = readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8');
-assert.match(dispatchSource, /attemptBudgetWindowMs\(remainingBudgetMs,\s*remainingDispatchableAttempts\)/,
-  'dispatch must allocate reserve-aware attempt windows');
-assert.doesNotMatch(dispatchSource, /attemptBudgetSliceMs\(remainingBudgetMs,\s*remainingDispatchableAttempts\)/,
-  'dispatch must not regress to equal-share request slicing');
+assert.match(
+  dispatchSource,
+  /attemptBudgetWindowMs\(remainingBudgetMs,\s*remainingDispatchableAttempts\)/,
+  'dispatch must allocate reserve-aware attempt windows',
+);
+assert.doesNotMatch(
+  dispatchSource,
+  /attemptBudgetSliceMs\(remainingBudgetMs,\s*remainingDispatchableAttempts\)/,
+  'dispatch must not regress to equal-share request slicing',
+);
 
 const hedgeSource = readFileSync(join(root, 'src/request/attempt/hedge.ts'), 'utf8');
-assert.match(hedgeSource, /attemptDeadlineMs:\s*primaryArgs\.attemptDeadlineMs/,
-  'hedge twin must share the primary logical-attempt deadline');
+assert.match(hedgeSource, /attemptDeadlineMs:\s*primaryArgs\.attemptDeadlineMs/, 'hedge twin must share the primary logical-attempt deadline');
 
 console.log('attempt budget contract tests passed.');

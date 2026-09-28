@@ -7,16 +7,10 @@
 
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
-import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
-import {
-  __resetTier1StateForTests,
-  tier1AccountInFlight,
-  getTier1Account,
-  getTier1Model,
-  recordTier1Ttft,
-} from '../src/reliability/tier1-state.ts';
-import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
 import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
+import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
+import { __resetTier1StateForTests, getTier1Account, getTier1Model, recordTier1Ttft, tier1AccountInFlight } from '../src/reliability/tier1-state.ts';
+import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
 
 const ACCESS_KEY = 'test-access-key';
 let passed = 0;
@@ -66,9 +60,7 @@ function resetMock() {
 }
 
 function makeEnv({ tier1, tier2, tier3, secrets = {}, extraEnv = {} } = {}) {
-  const secretSubset = (nodes = []) => Object.fromEntries(
-    nodes.map((n) => [n.id, secrets[n.id]]).filter(([, value]) => value !== undefined),
-  );
+  const secretSubset = (nodes = []) => Object.fromEntries(nodes.map((n) => [n.id, secrets[n.id]]).filter(([, value]) => value !== undefined));
   const t1s = secretSubset(tier1);
   const t2s = secretSubset(tier2);
   const t3s = secretSubset(tier3);
@@ -132,7 +124,8 @@ function messagesRequest(body = {}, key = ACCESS_KEY) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'general-air', max_tokens: 64,
+      model: 'general-air',
+      max_tokens: 64,
       messages: [{ role: 'user', content: 'hi' }],
       ...body,
     }),
@@ -155,61 +148,94 @@ function jsonResponse(data, status = 200, headers = {}) {
 }
 
 const okChat = (content = 'hello', model = 'up-model') => ({
-  id: 'chatcmpl-test', object: 'chat.completion', model,
+  id: 'chatcmpl-test',
+  object: 'chat.completion',
+  model,
   choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
   usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
 });
 
 const okMessage = (text = 'hello', model = 'up-model') => ({
-  id: 'msg_test', type: 'message', role: 'assistant', model,
-  content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null,
+  id: 'msg_test',
+  type: 'message',
+  role: 'assistant',
+  model,
+  content: [{ type: 'text', text }],
+  stop_reason: 'end_turn',
+  stop_sequence: null,
   usage: { input_tokens: 1, output_tokens: 1 },
 });
 
 const okResponses = (text = 'hello', model = 'up-model') => ({
-  id: 'resp_test', object: 'response', status: 'completed', model,
-  output: [{
-    type: 'message', id: 'msg_test', role: 'assistant', status: 'completed',
-    content: [{ type: 'output_text', text, annotations: [] }],
-  }],
+  id: 'resp_test',
+  object: 'response',
+  status: 'completed',
+  model,
+  output: [
+    {
+      type: 'message',
+      id: 'msg_test',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text, annotations: [] }],
+    },
+  ],
   usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
 });
 
 const chatChunk = (delta, finishReason = null) => ({
-  id: 'chatcmpl-test', object: 'chat.completion.chunk', model: 'up-model',
+  id: 'chatcmpl-test',
+  object: 'chat.completion.chunk',
+  model: 'up-model',
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 });
 
 function sseResponse(events) {
   const encoder = new TextEncoder();
   let index = 0;
-  return new Response(new ReadableStream({
-    pull(controller) {
-      if (index >= events.length) { controller.close(); return; }
-      const value = events[index++];
-      const text = typeof value === 'string' ? value : JSON.stringify(value);
-      controller.enqueue(encoder.encode(`data: ${text}\n\n`));
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (index >= events.length) {
+          controller.close();
+          return;
+        }
+        const value = events[index++];
+        const text = typeof value === 'string' ? value : JSON.stringify(value);
+        controller.enqueue(encoder.encode(`data: ${text}\n\n`));
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  );
 }
 
 function rawSseResponse(parts) {
   const encoder = new TextEncoder();
   let index = 0;
-  return new Response(new ReadableStream({
-    pull(controller) {
-      if (index >= parts.length) { controller.close(); return; }
-      controller.enqueue(encoder.encode(parts[index++]));
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (index >= parts.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encoder.encode(parts[index++]));
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  );
 }
 
 function hangUntilAbort() {
-  return (_input, _url, init) => new Promise((_, reject) => {
-    const error = Object.assign(new Error('aborted'), { name: 'AbortError' });
-    if (init?.signal?.aborted) { reject(error); return; }
-    init?.signal?.addEventListener('abort', () => reject(error), { once: true });
-  });
+  return (_input, _url, init) =>
+    new Promise((_, reject) => {
+      const error = Object.assign(new Error('aborted'), { name: 'AbortError' });
+      if (init?.signal?.aborted) {
+        reject(error);
+        return;
+      }
+      init?.signal?.addEventListener('abort', () => reject(error), { once: true });
+    });
 }
 
 // ---- Strict configuration / auth ------------------------------------------
@@ -234,9 +260,13 @@ await test('removed limits field is a hard schema error and never reaches upstre
     tier1: [openaiNode('old', { limits: { concurrency: 1, rpm: 60 } })],
     secrets: { old: 'k' },
   });
-  const health = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const health = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(health.status, 503);
   const hb = await health.json();
   assert.equal(hb.status, 'invalid');
@@ -249,21 +279,25 @@ await test('removed limits field is a hard schema error and never reaches upstre
 await test('protocol/surfaces in Node JSON are hard schema errors and never reach upstream', async () => {
   routeHandlers['retired-wire-fields.example.com'] = () => jsonResponse(okChat('must-not-route'));
   const invalid = {
-    id: 'retired-wire-fields', provider: 'mock',
-    protocol: 'openai', surfaces: ['chat_completions'],
+    id: 'retired-wire-fields',
+    provider: 'mock',
+    protocol: 'openai',
+    surfaces: ['chat_completions'],
     base_url: 'https://retired-wire-fields.example.com/v1',
     models: { 'general-air': 'up-model' },
   };
   const env = makeEnv({ tier1: [invalid], secrets: { 'retired-wire-fields': 'k' } });
-  const health = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const health = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(health.status, 503);
   const body = await health.json();
   assert.equal(body.status, 'invalid');
-  assert.ok(body.diagnostics.some((d) =>
-    d.includes('unknown field "protocol"') || d.includes('unknown field "surfaces"')
-  ));
+  assert.ok(body.diagnostics.some((d) => d.includes('unknown field "protocol"') || d.includes('unknown field "surfaces"')));
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 404);
   assert.equal(upstreamCalls.length, 0);
@@ -297,12 +331,17 @@ await test('same-tier failover rotates from a transient failure to a healthy pee
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['same-a.example.com', 'same-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['same-a.example.com', 'same-b.example.com'],
+  );
 });
 
 await test('live in-flight load is soft: the sole healthy Tier 1 node accepts a second request', async () => {
   let releaseFirst;
-  const gate = new Promise((resolve) => { releaseFirst = resolve; });
+  const gate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
   let calls = 0;
   routeHandlers['soft.example.com'] = async () => {
     calls++;
@@ -326,10 +365,16 @@ await test('live in-flight load is soft: the sole healthy Tier 1 node accepts a 
 
 await test('legacy QUOTA_RATE_LIMITER binding is not provider admission policy', async () => {
   let limiterCalls = 0;
-  const binding = { limit: async () => { limiterCalls++; return { success: false }; } };
+  const binding = {
+    limit: async () => {
+      limiterCalls++;
+      return { success: false };
+    },
+  };
   routeHandlers['quota.example.com'] = () => jsonResponse(okChat());
   const env = makeEnv({
-    tier1: [openaiNode('quota')], secrets: { quota: 'k' },
+    tier1: [openaiNode('quota')],
+    secrets: { quota: 'k' },
     extraEnv: { QUOTA_RATE_LIMITER: binding },
   });
   const res = await worker.fetch(chatRequest(), env, {});
@@ -343,17 +388,24 @@ await test('Tier 1 -> Tier 2 -> Tier 3 fallback preserves strict tier order', as
   routeHandlers['t2.example.com'] = () => jsonResponse({}, 503);
   routeHandlers['t3.example.com'] = () => jsonResponse(okChat('tier3-ok'));
   const env = makeEnv({
-    tier1: [openaiNode('t1')], tier2: [openaiNode('t2')], tier3: [openaiNode('t3')],
+    tier1: [openaiNode('t1')],
+    tier2: [openaiNode('t2')],
+    tier3: [openaiNode('t3')],
     secrets: { t1: '1', t2: '2', t3: '3' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['t1.example.com', 't2.example.com', 't3.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['t1.example.com', 't2.example.com', 't3.example.com'],
+  );
 });
 
 await test('busy Tier 2 remains last-resort capacity when it is the only healthy fallback', async () => {
   let releaseParked;
-  const gate = new Promise((resolve) => { releaseParked = resolve; });
+  const gate = new Promise((resolve) => {
+    releaseParked = resolve;
+  });
   let t2Calls = 0;
   routeHandlers['busy-t2.example.com'] = async () => {
     t2Calls++;
@@ -391,12 +443,16 @@ await test('429 cools one key and rotates to another same-tier key before lower 
   recordTier1Ttft('rl-a', 'general-air', 50);
   recordTier1Ttft('rl-b', 'general-air', 2_000);
   const env = makeEnv({
-    tier1: [openaiNode('rl-a'), openaiNode('rl-b')], tier2: [openaiNode('rl-t2')],
+    tier1: [openaiNode('rl-a'), openaiNode('rl-b')],
+    tier2: [openaiNode('rl-t2')],
     secrets: { 'rl-a': 'a', 'rl-b': 'b', 'rl-t2': '2' },
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['rl-a.example.com', 'rl-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['rl-a.example.com', 'rl-b.example.com'],
+  );
   assert.ok(getTier1Account('rl-a').accountCooldownUntil > Date.now());
 });
 
@@ -443,13 +499,18 @@ await test('client-class 400 rotates to another provider-key slot', async () => 
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
   assert.equal((await res.json()).choices[0].message.content, 'healthy');
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['bad-a.example.com', 'bad-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['bad-a.example.com', 'bad-b.example.com'],
+  );
 });
 
 await test('HTTP 200 with non-JSON garbage rotates and penalizes the bad node', async () => {
-  routeHandlers['html-a.example.com'] = () => new Response('<html>proxy error</html>', {
-    status: 200, headers: { 'content-type': 'text/html' },
-  });
+  routeHandlers['html-a.example.com'] = () =>
+    new Response('<html>proxy error</html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
   routeHandlers['html-b.example.com'] = () => jsonResponse(okChat('healthy'));
   recordTier1Ttft('html-a', 'general-air', 50);
   recordTier1Ttft('html-b', 'general-air', 2_000);
@@ -459,7 +520,10 @@ await test('HTTP 200 with non-JSON garbage rotates and penalizes the bad node', 
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['html-a.example.com', 'html-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['html-a.example.com', 'html-b.example.com'],
+  );
   assert.equal(getNodeState('html-a').totalFailures, 1);
 });
 
@@ -474,18 +538,17 @@ await test('HTTP 200 JSON error envelope also rotates to healthy capacity', asyn
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['jsonerr-a.example.com', 'jsonerr-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['jsonerr-a.example.com', 'jsonerr-b.example.com'],
+  );
 });
 
 // ---- Streaming commit boundary -------------------------------------------
 
 await test('stream lifecycle/role-only output is not a commit; empty node can still fail over', async () => {
-  routeHandlers['role-a.example.com'] = () => sseResponse([
-    chatChunk({ role: 'assistant' }),
-  ]);
-  routeHandlers['role-b.example.com'] = () => sseResponse([
-    chatChunk({ content: 'real output' }), chatChunk({}, 'stop'), '[DONE]',
-  ]);
+  routeHandlers['role-a.example.com'] = () => sseResponse([chatChunk({ role: 'assistant' })]);
+  routeHandlers['role-b.example.com'] = () => sseResponse([chatChunk({ content: 'real output' }), chatChunk({}, 'stop'), '[DONE]']);
   recordTier1Ttft('role-a', 'general-air', 50);
   recordTier1Ttft('role-b', 'general-air', 2_000);
   const env = makeEnv({
@@ -496,24 +559,29 @@ await test('stream lifecycle/role-only output is not a commit; empty node can st
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.match(text, /real output/);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['role-a.example.com', 'role-b.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['role-a.example.com', 'role-b.example.com'],
+  );
 });
 
 await test('after meaningful stream output commits, transparent replay is forbidden', async () => {
   const encoder = new TextEncoder();
   let step = 0;
-  routeHandlers['commit-a.example.com'] = () => new Response(new ReadableStream({
-    pull(controller) {
-      if (step++ === 0) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chatChunk({ content: 'committed' }))}\n\n`));
-      } else {
-        controller.error(new Error('upstream died after commit'));
-      }
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-  routeHandlers['commit-b.example.com'] = () => sseResponse([
-    chatChunk({ content: 'must-not-replay' }), chatChunk({}, 'stop'), '[DONE]',
-  ]);
+  routeHandlers['commit-a.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          if (step++ === 0) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chatChunk({ content: 'committed' }))}\n\n`));
+          } else {
+            controller.error(new Error('upstream died after commit'));
+          }
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  routeHandlers['commit-b.example.com'] = () => sseResponse([chatChunk({ content: 'must-not-replay' }), chatChunk({}, 'stop'), '[DONE]']);
   recordTier1Ttft('commit-a', 'general-air', 50);
   recordTier1Ttft('commit-b', 'general-air', 2_000);
   const env = makeEnv({
@@ -524,17 +592,30 @@ await test('after meaningful stream output commits, transparent replay is forbid
   assert.equal(res.status, 200);
   const reader = res.body.getReader();
   for (;;) {
-    try { if ((await reader.read()).done) break; } catch { break; }
+    try {
+      if ((await reader.read()).done) break;
+    } catch {
+      break;
+    }
   }
-  assert.equal(upstreamCalls.some((c) => c.host === 'commit-b.example.com'), false);
+  assert.equal(
+    upstreamCalls.some((c) => c.host === 'commit-b.example.com'),
+    false,
+  );
 });
 
 await test('Tier 1 streaming slot stays claimed until stream completion and releases once', async () => {
   const encoder = new TextEncoder();
   let controller;
-  routeHandlers['life.example.com'] = () => new Response(new ReadableStream({
-    start(c) { controller = c; },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  routeHandlers['life.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          controller = c;
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   const env = makeEnv({ tier1: [openaiNode('life')], secrets: { life: 'k' } });
   const pending = worker.fetch(chatRequest({ stream: true }), env, {});
   for (let i = 0; i < 100 && !controller; i++) await new Promise((r) => setTimeout(r, 5));
@@ -546,7 +627,9 @@ await test('Tier 1 streaming slot stays claimed until stream completion and rele
   assert.equal(tier1AccountInFlight('life'), 1);
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(chatChunk({}, 'stop'))}\n\ndata: [DONE]\n\n`));
   controller.close();
-  while (!(await reader.read()).done) { /* drain */ }
+  while (!(await reader.read()).done) {
+    /* drain */
+  }
   assert.equal(tier1AccountInFlight('life'), 0);
 });
 
@@ -567,14 +650,15 @@ await test('Anthropic Messages native non-stream request stays native', async ()
 });
 
 await test('Anthropic streaming preserves native lifecycle and model identity', async () => {
-  routeHandlers['anstream.example.com'] = () => rawSseResponse([
-    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', model: 'up-model', content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } })}\n\n`,
-    `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n\n`,
-    `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello stream' } })}\n\n`,
-    `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`,
-    `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 1, output_tokens: 2 } })}\n\n`,
-    `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`,
-  ]);
+  routeHandlers['anstream.example.com'] = () =>
+    rawSseResponse([
+      `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', model: 'up-model', content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello stream' } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 1, output_tokens: 2 } })}\n\n`,
+      `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`,
+    ]);
   const env = makeEnv({ tier1: [anthropicNode('anstream')], secrets: { anstream: 'ak' } });
   const res = await worker.fetch(messagesRequest({ stream: true }), env, {});
   assert.equal(res.status, 200);
@@ -636,7 +720,10 @@ await test('hedge races a slow Tier 1 primary with a same-surface twin', async (
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 200);
   assert.equal((await res.json()).choices[0].message.content, 'hedge-winner');
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['hedge-slow.example.com', 'hedge-fast.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['hedge-slow.example.com', 'hedge-fast.example.com'],
+  );
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(getNodeState('hedge-slow').totalFailures, 0, 'hedge loser stays neutral');
 });
@@ -650,25 +737,29 @@ await test('failover wall-clock budget stops before dispatching a fresh node', a
   recordTier1Ttft('budget-a', 'budget-test', 50);
   recordTier1Ttft('budget-b', 'budget-test', 2_000);
   const env = makeEnv({
-    tier1: [
-      openaiNode('budget-a', { models: { 'budget-test': 'up-model' } }),
-      openaiNode('budget-b', { models: { 'budget-test': 'up-model' } }),
-    ],
+    tier1: [openaiNode('budget-a', { models: { 'budget-test': 'up-model' } }), openaiNode('budget-b', { models: { 'budget-test': 'up-model' } })],
     secrets: { 'budget-a': 'a', 'budget-b': 'b' },
     extraEnv: { AIG_FAILOVER_BUDGET_MS: '1200' },
   });
   const res = await worker.fetch(chatRequest({ model: 'budget-test' }), env, {});
   assert.equal(res.status, 504);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['budget-a.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['budget-a.example.com'],
+  );
 });
 
 // ---- Operational boundaries ----------------------------------------------
 await test('upstream header allowlist drops client cookies/forwarding headers', async () => {
   routeHandlers['headers.example.com'] = () => jsonResponse(okChat());
   const env = makeEnv({ tier1: [openaiNode('headers')], secrets: { headers: 'provider-secret' } });
-  const res = await worker.fetch(chatRequest({}, ACCESS_KEY, {
-    headers: { cookie: 'session=secret', 'x-forwarded-for': '1.2.3.4' },
-  }), env, {});
+  const res = await worker.fetch(
+    chatRequest({}, ACCESS_KEY, {
+      headers: { cookie: 'session=secret', 'x-forwarded-for': '1.2.3.4' },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   assert.equal(upstreamCalls[0].headers.get('cookie'), null);
   assert.equal(upstreamCalls[0].headers.get('x-forwarded-for'), null);
@@ -677,9 +768,15 @@ await test('upstream header allowlist drops client cookies/forwarding headers', 
 
 await test('D1 write failure is observational and never breaks a successful AI response', async () => {
   routeHandlers['d1.example.com'] = () => jsonResponse(okChat());
-  const failingD1 = { prepare() { throw new Error('D1 unavailable'); } };
+  const failingD1 = {
+    prepare() {
+      throw new Error('D1 unavailable');
+    },
+  };
   const env = makeEnv({
-    tier1: [openaiNode('d1')], secrets: { d1: 'k' }, extraEnv: { TOKEN_STATS_DB: failingD1 },
+    tier1: [openaiNode('d1')],
+    secrets: { d1: 'k' },
+    extraEnv: { TOKEN_STATS_DB: failingD1 },
   });
   const res = await worker.fetch(chatRequest(), env, { waitUntil() {} });
   assert.equal(res.status, 200);
@@ -688,9 +785,13 @@ await test('D1 write failure is observational and never breaks a successful AI r
 await test('/health is 200 for ready strict config and exposes no credentials', async () => {
   const secret = 'never-expose-this-provider-secret';
   const env = makeEnv({ tier1: [openaiNode('health')], secrets: { health: secret } });
-  const res = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const text = await res.text();
   assert.ok(!text.includes(secret));
@@ -699,15 +800,16 @@ await test('/health is 200 for ready strict config and exposes no credentials', 
 
 await test('/v1/models derives public models from actual strict node mappings', async () => {
   const env = makeEnv({
-    tier1: [
-      openaiNode('models-oa', { models: { 'general-air': 'oa-up' } }),
-      anthropicNode('models-an', { models: { 'general-air': 'an-up' } }),
-    ],
+    tier1: [openaiNode('models-oa', { models: { 'general-air': 'oa-up' } }), anthropicNode('models-an', { models: { 'general-air': 'an-up' } })],
     secrets: { 'models-oa': 'a', 'models-an': 'b' },
   });
-  const res = await worker.fetch(new Request('https://gateway.example.com/v1/models', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const res = await worker.fetch(
+    new Request('https://gateway.example.com/v1/models', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(res.status, 200);
   const body = await res.json();
   const model = body.data.find((m) => m.id === 'general-air');
@@ -718,19 +820,29 @@ await test('/v1/models derives public models from actual strict node mappings', 
 await test('/health.build reports deployment commit and /version stays removed', async () => {
   const build = 'a1b2c3d4e5f6';
   const env = makeEnv({
-    tier1: [openaiNode('identity')], secrets: { identity: 'k' }, extraEnv: { AIG_BUILD_SHA: build },
+    tier1: [openaiNode('identity')],
+    secrets: { identity: 'k' },
+    extraEnv: { AIG_BUILD_SHA: build },
   });
-  const health = await worker.fetch(new Request('https://gateway.example.com/health', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const health = await worker.fetch(
+    new Request('https://gateway.example.com/health', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(health.status, 200);
   const body = await health.json();
   assert.equal(body.build, build);
   assert.equal(JSON.stringify(body).includes('identity.example.com'), false);
 
-  const version = await worker.fetch(new Request('https://gateway.example.com/version', {
-    headers: { authorization: `Bearer ${ACCESS_KEY}` },
-  }), env, {});
+  const version = await worker.fetch(
+    new Request('https://gateway.example.com/version', {
+      headers: { authorization: `Bearer ${ACCESS_KEY}` },
+    }),
+    env,
+    {},
+  );
   assert.equal(version.status, 404);
   assert.equal(upstreamCalls.length, 0);
 });

@@ -10,11 +10,11 @@
 
 import assert from 'node:assert/strict';
 import {
-  openAIChatToCodeAssistEnvelope,
   codeAssistObjectToOpenAIChat,
   createOpenAIChatStreamFromCodeAssist,
-  GEMINI_CODE_ASSIST_ENDPOINT,
   GEMINI_CLI_USER_AGENT,
+  GEMINI_CODE_ASSIST_ENDPOINT,
+  openAIChatToCodeAssistEnvelope,
 } from '../src/subscription/google-wire.ts';
 
 let passed = 0;
@@ -22,8 +22,16 @@ let failed = 0;
 function test(name, fn) {
   return Promise.resolve()
     .then(() => fn())
-    .then(() => { passed++; console.log(`ok - ${name}`); })
-    .catch((e) => { failed++; console.error(`FAIL: ${name}`); console.error(e?.stack || e); process.exitCode = 1; });
+    .then(() => {
+      passed++;
+      console.log(`ok - ${name}`);
+    })
+    .catch((e) => {
+      failed++;
+      console.error(`FAIL: ${name}`);
+      console.error(e?.stack || e);
+      process.exitCode = 1;
+    });
 }
 
 function envelope(body) {
@@ -59,7 +67,8 @@ await test('basic chat builds contents + model + no system', () => {
 
 await test('system + developer messages collect into systemInstruction', () => {
   const r = envelope({
-    model: 'm', messages: [
+    model: 'm',
+    messages: [
       { role: 'system', content: 'be brief' },
       { role: 'user', content: 'hello' },
       { role: 'developer', content: [{ type: 'text', text: 'extra' }] },
@@ -70,9 +79,14 @@ await test('system + developer messages collect into systemInstruction', () => {
 
 await test('assistant tool_calls map to functionCall parts and register id->name', () => {
   const r = envelope({
-    model: 'm', messages: [
+    model: 'm',
+    messages: [
       { role: 'user', content: 'weather?' },
-      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"sf"}' } }] },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"sf"}' } }],
+      },
       { role: 'tool', tool_call_id: 'call_1', content: '{"temp": 60}' },
     ],
   });
@@ -86,7 +100,8 @@ await test('assistant tool_calls map to functionCall parts and register id->name
 
 await test('tool response with non-JSON content is wrapped as {output}', () => {
   const r = envelope({
-    model: 'm', messages: [
+    model: 'm',
+    messages: [
       { role: 'user', content: 'x' },
       { role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'fn', arguments: '{}' } }] },
       { role: 'tool', tool_call_id: 'c1', content: 'plain text result' },
@@ -108,12 +123,21 @@ await test('tools + tool_choice map to functionDeclarations and toolConfig', () 
 
 await test('generation config maps OpenAI fields to Gemini names', () => {
   const r = envelope({
-    model: 'm', messages: [{ role: 'user', content: 'hi' }],
-    max_tokens: 128, temperature: 0.7, top_p: 0.9, stop: ['x', 'y'], seed: 42,
+    model: 'm',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 128,
+    temperature: 0.7,
+    top_p: 0.9,
+    stop: ['x', 'y'],
+    seed: 42,
     response_format: { type: 'json_object' },
   });
   assert.deepEqual(r.envelope.request.generationConfig, {
-    maxOutputTokens: 128, temperature: 0.7, topP: 0.9, stopSequences: ['x', 'y'], seed: 42,
+    maxOutputTokens: 128,
+    temperature: 0.7,
+    topP: 0.9,
+    stopSequences: ['x', 'y'],
+    seed: 42,
     responseMimeType: 'application/json',
   });
 });
@@ -125,7 +149,16 @@ await test('stream flag selects streaming endpoint semantics', () => {
 
 await test('image data-url part becomes inlineData', () => {
   const r = envelope({
-    model: 'm', messages: [{ role: 'user', content: [{ type: 'text', text: 'what is this' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0K' } }] }],
+    model: 'm',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0K' } },
+        ],
+      },
+    ],
   });
   assert.deepEqual(r.envelope.request.contents[0].parts[1], { inlineData: { mimeType: 'image/png', data: 'iVBORw0K' } });
 });
@@ -143,18 +176,27 @@ await test('refusal: tool message without preceding tool_call id -> null', () =>
 });
 
 await test('refusal: malformed tool_call arguments -> null', () => {
-  assert.equal(envelope({
-    model: 'm', messages: [
-      { role: 'user', content: 'x' },
-      { role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'fn', arguments: '{bad json' } }] },
-    ],
-  }), null);
+  assert.equal(
+    envelope({
+      model: 'm',
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'fn', arguments: '{bad json' } }] },
+      ],
+    }),
+    null,
+  );
 });
 
 await test('refusal: non-function tool type -> null', () => {
-  assert.equal(envelope({
-    model: 'm', messages: [{ role: 'user', content: 'x' }], tools: [{ type: 'web_search', web_search: {} }],
-  }), null);
+  assert.equal(
+    envelope({
+      model: 'm',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: [{ type: 'web_search', web_search: {} }],
+    }),
+    null,
+  );
 });
 
 // ---- Non-streaming object conversion ---------------------------------------
@@ -185,8 +227,16 @@ await test('object: function call maps to tool_calls', () => {
 });
 
 await test('object: MAX_TOKENS -> length, SAFETY -> content_filter', () => {
-  assert.equal(codeAssistObjectToOpenAIChat({ candidates: [{ content: { parts: [{ text: 'cut' }], role: 'model' }, finishReason: 'MAX_TOKENS' }] }).choices[0].finish_reason, 'length');
-  assert.equal(codeAssistObjectToOpenAIChat({ candidates: [{ content: { parts: [{ text: 'blocked' }], role: 'model' }, finishReason: 'SAFETY' }] }).choices[0].finish_reason, 'content_filter');
+  assert.equal(
+    codeAssistObjectToOpenAIChat({ candidates: [{ content: { parts: [{ text: 'cut' }], role: 'model' }, finishReason: 'MAX_TOKENS' }] }).choices[0]
+      .finish_reason,
+    'length',
+  );
+  assert.equal(
+    codeAssistObjectToOpenAIChat({ candidates: [{ content: { parts: [{ text: 'blocked' }], role: 'model' }, finishReason: 'SAFETY' }] }).choices[0]
+      .finish_reason,
+    'content_filter',
+  );
 });
 
 await test('object: no candidates / no meaningful output -> null', () => {
@@ -198,26 +248,51 @@ await test('object: no candidates / no meaningful output -> null', () => {
 // ---- Streaming conversion ---------------------------------------------------
 
 await test('stream: text deltas + finish + usage + [DONE]', async () => {
-  const input = new Response(sse(
-    { candidates: [{ content: { parts: [{ text: 'Hel' }], role: 'model' }, index: 0 }] },
-    { candidates: [{ content: { parts: [{ text: 'lo' }], role: 'model' }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 } },
-  )).body;
+  const input = new Response(
+    sse(
+      { candidates: [{ content: { parts: [{ text: 'Hel' }], role: 'model' }, index: 0 }] },
+      {
+        candidates: [{ content: { parts: [{ text: 'lo' }], role: 'model' }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 },
+      },
+    ),
+  ).body;
   const out = await readStream(createOpenAIChatStreamFromCodeAssist(input, { messageId: 'm', model: 'gemini-2.5-pro' }));
-  const chunks = out.split('\n\n').filter(Boolean).map((c) => c.replace(/^data: /, ''));
+  const chunks = out
+    .split('\n\n')
+    .filter(Boolean)
+    .map((c) => c.replace(/^data: /, ''));
   assert.ok(chunks[0].includes('"delta":{"role":"assistant"}'), 'role header first');
-  assert.ok(chunks.some((c) => c.includes('"delta":{"content":"Hel"}')), 'first text delta');
-  assert.ok(chunks.some((c) => c.includes('"delta":{"content":"lo"}')), 'second text delta');
-  assert.ok(chunks.some((c) => c.includes('"finish_reason":"stop"')), 'finish chunk');
-  assert.ok(chunks.some((c) => c.includes('"usage"') && c.includes('"total_tokens":3')), 'usage chunk');
+  assert.ok(
+    chunks.some((c) => c.includes('"delta":{"content":"Hel"}')),
+    'first text delta',
+  );
+  assert.ok(
+    chunks.some((c) => c.includes('"delta":{"content":"lo"}')),
+    'second text delta',
+  );
+  assert.ok(
+    chunks.some((c) => c.includes('"finish_reason":"stop"')),
+    'finish chunk',
+  );
+  assert.ok(
+    chunks.some((c) => c.includes('"usage"') && c.includes('"total_tokens":3')),
+    'usage chunk',
+  );
   assert.equal(chunks[chunks.length - 1], '[DONE]', '[DONE] terminal');
 });
 
 await test('stream: function call delta carries id/name/arguments', async () => {
-  const input = new Response(sse(
-    { candidates: [{ content: { parts: [{ functionCall: { name: 'get_weather', args: { city: 'sf' } } }], role: 'model' }, finishReason: 'STOP' }] },
-  )).body;
+  const input = new Response(
+    sse({
+      candidates: [{ content: { parts: [{ functionCall: { name: 'get_weather', args: { city: 'sf' } } }], role: 'model' }, finishReason: 'STOP' }],
+    }),
+  ).body;
   const out = await readStream(createOpenAIChatStreamFromCodeAssist(input, { messageId: 'm', model: 'm' }));
-  const toolChunk = out.split('\n\n').map((c) => c.replace(/^data: /, '')).find((c) => c.includes('tool_calls'));
+  const toolChunk = out
+    .split('\n\n')
+    .map((c) => c.replace(/^data: /, ''))
+    .find((c) => c.includes('tool_calls'));
   assert.ok(toolChunk, 'tool_call delta present');
   const parsed = JSON.parse(toolChunk);
   assert.equal(parsed.choices[0].delta.tool_calls[0].function.name, 'get_weather');

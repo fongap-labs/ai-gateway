@@ -52,8 +52,7 @@ assert.equal(
 );
 
 const tokenStoreFacadePath = path.join(root, 'src/observability/token-usage-store.ts');
-assert.equal(fs.existsSync(tokenStoreFacadePath), true,
-  'token-usage-store.ts must remain the stable import facade for the persistent store');
+assert.equal(fs.existsSync(tokenStoreFacadePath), true, 'token-usage-store.ts must remain the stable import facade for the persistent store');
 const tokenStoreFacade = fs.readFileSync(tokenStoreFacadePath, 'utf8');
 assert.match(tokenStoreFacade, /Stable public import surface for the persistent token-usage store/);
 assert.match(tokenStoreFacade, /export \* from '\.\/token-usage-store\/index\.ts';/);
@@ -105,7 +104,8 @@ assert.equal(testRefs(all).length, 0, 'test:all must not duplicate suites alread
 assert.match(pkg.scripts?.['validate:merge'] || '', /npm run test:gate/, 'validate:merge must run the complete deterministic correctness gate');
 assert.match(pkg.scripts?.['validate:deploy'] || '', /npm run test:all/, 'validate:deploy must run test:all');
 
-const temporaryTestWorkflows = fs.readdirSync(workflowsDir)
+const temporaryTestWorkflows = fs
+  .readdirSync(workflowsDir)
   .filter((name) => /^(?:patch|fix)-.*test.*\.ya?ml$/i.test(name))
   .sort();
 assert.deepEqual(temporaryTestWorkflows, [], 'one-shot patch/fix test workflows must not remain on main');

@@ -9,20 +9,14 @@
 // breaking to the next tier. Also verifies bounded termination.
 
 import assert from 'node:assert/strict';
-import {
-  acquireSlot, peekAvailability, recordSuccess, recordFailure, recordNeutralEnd,
-  getNodeState,
-} from '../src/reliability/node-state.ts';
+import { acquireSlot } from '../src/reliability/node-state.ts';
+import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
+import { pickForTier } from '../src/request/tier-loop.ts';
 import { pickCandidate } from '../src/scheduler/scheduler.ts';
 import { pickTier1Candidate } from '../src/scheduler/tier1-scheduler.ts';
-import { pickForTier } from '../src/request/tier-loop.ts';
-import {
-  __resetTier1StateForTests,
-  isTier1Eligible, claimTier1Slot, releaseTier1Slot,
-  TIER1_FAILURE_STATES,
-} from '../src/reliability/tier1-state.ts';
 
-let passed = 0, failed = 0;
+let passed = 0,
+  failed = 0;
 async function test(name, fn) {
   try {
     __resetTier1StateForTests();
@@ -132,16 +126,18 @@ await test('Case 3: no eligible candidates in tier -> null (tier loop moves on)'
 });
 
 await test('Case 3b: tier with wrong protocol -> null', () => {
-  const nodes = [{
-    id: 'anthropic-only',
-    tier: 'tier-2',
-    provider: 'mock',
-    protocol: 'anthropic',
-    surfaces: ['messages'],
-    baseUrl: 'https://example.com',
-    credential: 'secret',
-    models: { m1: 'up-x' },
-  }];
+  const nodes = [
+    {
+      id: 'anthropic-only',
+      tier: 'tier-2',
+      provider: 'mock',
+      protocol: 'anthropic',
+      surfaces: ['messages'],
+      baseUrl: 'https://example.com',
+      credential: 'secret',
+      models: { m1: 'up-x' },
+    },
+  ];
   const pick = pickCandidate(nodes, REQ, new Set(), 1000, null, null, null);
   assert.equal(pick, null, 'protocol mismatch -> null');
 });

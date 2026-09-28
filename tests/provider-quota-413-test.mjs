@@ -9,8 +9,15 @@ import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts
 let passed = 0;
 let failed = 0;
 async function test(name, fn) {
-  try { await fn(); passed++; console.log(`ok - ${name}`); }
-  catch (error) { failed++; console.error(`FAIL - ${name}`); console.error(error?.stack || error); }
+  try {
+    await fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    failed++;
+    console.error(`FAIL - ${name}`);
+    console.error(error?.stack || error);
+  }
 }
 
 const env = { AIG_RATE_LIMIT_COOLDOWN_MS: '60000' };
@@ -32,7 +39,13 @@ await test('quota-shaped 413 honors Retry-After', () => {
 });
 
 await test('ordinary payload-size 413 remains a client stop', () => {
-  const result = classifyUpstreamStatus(413, new Headers(), env, Date.now(), '{"error":{"message":"Request body exceeds the maximum payload size of 4 MB"}}');
+  const result = classifyUpstreamStatus(
+    413,
+    new Headers(),
+    env,
+    Date.now(),
+    '{"error":{"message":"Request body exceeds the maximum payload size of 4 MB"}}',
+  );
   assert.equal(result.kind, KIND.CLIENT);
   assert.equal(result.action, 'stop');
 });
@@ -49,13 +62,16 @@ await test('real request continues after Tier 1 quota-413', async () => {
     calls.push(url.hostname);
     if (url.hostname === 'groq-quota.example.com') {
       return new Response(JSON.stringify({ error: { message: 'input tokens per minute (ITPM): Limit 7000, Requested 7398' } }), {
-        status: 413, headers: { 'content-type': 'application/json' },
+        status: 413,
+        headers: { 'content-type': 'application/json' },
       });
     }
     if (url.hostname === 'fallback.example.com') {
       const requestBody = init?.body ? JSON.parse(init.body) : {};
       return Response.json({
-        id: 'chatcmpl-quota-fallback', object: 'chat.completion', model: requestBody.model,
+        id: 'chatcmpl-quota-fallback',
+        object: 'chat.completion',
+        model: requestBody.model,
         choices: [{ index: 0, message: { role: 'assistant', content: 'fallback ok' }, finish_reason: 'stop' }],
         usage: { prompt_tokens: 7398, completion_tokens: 2, total_tokens: 7400 },
       });
@@ -71,28 +87,44 @@ await test('real request continues after Tier 1 quota-413', async () => {
       AIG_HEDGE_DELAY_MS: '0',
       AIG_REQUEST_HEDGE_MAX: '0',
       AIG_RATE_LIMIT_COOLDOWN_MS: '60000',
-      AIG_TIER1_NODES_01: JSON.stringify([{
-        id: 'groq-quota', provider: 'groq',
-        base_url: 'https://groq-quota.example.com/v1', priority: 10, models: { 'Quota-Test': 'qwen/qwen3.8-27b' },
-      }]),
+      AIG_TIER1_NODES_01: JSON.stringify([
+        {
+          id: 'groq-quota',
+          provider: 'groq',
+          base_url: 'https://groq-quota.example.com/v1',
+          priority: 10,
+          models: { 'Quota-Test': 'qwen/qwen3.8-27b' },
+        },
+      ]),
       AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'groq-quota': 'groq-key' }),
-      AIG_TIER2_NODES_01: JSON.stringify([{
-        id: 'fallback-node', provider: 'fallback-provider',
-        base_url: 'https://fallback.example.com/v1', priority: 10, models: { 'Quota-Test': 'fallback-model' },
-      }]),
+      AIG_TIER2_NODES_01: JSON.stringify([
+        {
+          id: 'fallback-node',
+          provider: 'fallback-provider',
+          base_url: 'https://fallback.example.com/v1',
+          priority: 10,
+          models: { 'Quota-Test': 'fallback-model' },
+        },
+      ]),
       AIG_TIER2_CREDENTIALS_01: JSON.stringify({ 'fallback-node': 'fallback-key' }),
       AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2 } }),
     };
-    const response = await worker.fetch(new Request('https://gateway.example.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${accessKey}` },
-      body: JSON.stringify({ model: 'Quota-Test', messages: [{ role: 'user', content: 'large context' }] }),
-    }), integrationEnv, {});
+    const response = await worker.fetch(
+      new Request('https://gateway.example.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${accessKey}` },
+        body: JSON.stringify({ model: 'Quota-Test', messages: [{ role: 'user', content: 'large context' }] }),
+      }),
+      integrationEnv,
+      {},
+    );
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body?.choices?.[0]?.message?.content, 'fallback ok');
     assert.deepEqual(calls, ['groq-quota.example.com', 'fallback.example.com']);
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 console.log(`\nprovider-quota-413-test: ${passed} passed, ${failed} failed.`);

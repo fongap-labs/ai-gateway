@@ -13,17 +13,37 @@
 
 export function createMockD1({ failWrites = false, failReads = false } = {}) {
   const emptyUsage = () => ({
-    input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0,
-    requests: 0, reports: 0, missing: 0,
-    upstreamInput: 0, upstreamOutput: 0, upstreamCacheCreation: 0, upstreamCacheRead: 0,
-    upstreamEffectiveInput: 0, upstreamObservedRead: 0,
-    upstreamObservedInput: 0, upstreamReadReports: 0,
-    upstreamTotal: 0, upstreamAttempts: 0, upstreamReports: 0, upstreamMissing: 0,
+    input: 0,
+    output: 0,
+    cacheCreation: 0,
+    cacheRead: 0,
+    total: 0,
+    requests: 0,
+    reports: 0,
+    missing: 0,
+    upstreamInput: 0,
+    upstreamOutput: 0,
+    upstreamCacheCreation: 0,
+    upstreamCacheRead: 0,
+    upstreamEffectiveInput: 0,
+    upstreamObservedRead: 0,
+    upstreamObservedInput: 0,
+    upstreamReadReports: 0,
+    upstreamTotal: 0,
+    upstreamAttempts: 0,
+    upstreamReports: 0,
+    upstreamMissing: 0,
   });
   const emptyModel = () => ({
     ...emptyUsage(),
     successful_ttft_count: 0,
-    ttft_b0: 0, ttft_b1: 0, ttft_b2: 0, ttft_b3: 0, ttft_b4: 0, ttft_b5: 0, ttft_b6: 0,
+    ttft_b0: 0,
+    ttft_b1: 0,
+    ttft_b2: 0,
+    ttft_b3: 0,
+    ttft_b4: 0,
+    ttft_b5: 0,
+    ttft_b6: 0,
   });
 
   const rows = new Map();
@@ -41,7 +61,10 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
     if (idx < 0) return null;
     return { hour: key.slice(0, idx), model: key.slice(idx + 1) };
   };
-  const norm = (m) => String(m || '').trim().toLowerCase();
+  const norm = (m) =>
+    String(m || '')
+      .trim()
+      .toLowerCase();
   const addDelivered = (cur, values) => {
     const [input, output, cacheCreation, cacheRead, total, requests, reports, missing] = values;
     cur.input += input || 0;
@@ -55,8 +78,18 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
   };
   const addUpstream = (cur, values) => {
     const [
-      input, output, cacheCreation, cacheRead, total, attempts, reports, missing,
-      effectiveInput, observedCacheRead, observedCacheInput, cacheReadReports,
+      input,
+      output,
+      cacheCreation,
+      cacheRead,
+      total,
+      attempts,
+      reports,
+      missing,
+      effectiveInput,
+      observedCacheRead,
+      observedCacheInput,
+      cacheReadReports,
     ] = values;
     cur.upstreamInput += input || 0;
     cur.upstreamOutput += output || 0;
@@ -95,8 +128,7 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
   });
 
   function prepare(sql) {
-    const groupByModelExpr = /GROUP\s+BY\s+LOWER\s*\(\s*TRIM\s*\(\s*model\s*\)\s*\)/i.test(sql)
-      || /GROUP\s+BY\s+model/i.test(sql);
+    const groupByModelExpr = /GROUP\s+BY\s+LOWER\s*\(\s*TRIM\s*\(\s*model\s*\)\s*\)/i.test(sql) || /GROUP\s+BY\s+model/i.test(sql);
     const usesUpstream = /upstream_(?:total_tokens|attempts|usage_reports|usage_missing|input_tokens|output_tokens)/i.test(sql);
     const stmt = {
       _params: [],
@@ -113,7 +145,10 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           let changes = 0;
           for (const key of [...modelRows.keys()]) {
             const parsed = parseModelKey(key);
-            if (parsed && parsed.hour < cutoffHour) { modelRows.delete(key); changes++; }
+            if (parsed && parsed.hour < cutoffHour) {
+              modelRows.delete(key);
+              changes++;
+            }
           }
           return { success: true, meta: { changes } };
         }
@@ -121,7 +156,10 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           const cutoffHour = this._params[0];
           let changes = 0;
           for (const hour of [...rows.keys()]) {
-            if (hour < cutoffHour) { rows.delete(hour); changes++; }
+            if (hour < cutoffHour) {
+              rows.delete(hour);
+              changes++;
+            }
           }
           return { success: true, meta: { changes } };
         }
@@ -129,7 +167,10 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           const cutoffDay = this._params[0];
           let changes = 0;
           for (const day of [...dailyRows.keys()]) {
-            if (day < cutoffDay) { dailyRows.delete(day); changes++; }
+            if (day < cutoffDay) {
+              dailyRows.delete(day);
+              changes++;
+            }
           }
           return { success: true, meta: { changes } };
         }
@@ -137,7 +178,10 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           const cutoffWeek = this._params[0];
           let changes = 0;
           for (const week of [...weeklyRows.keys()]) {
-            if (week < cutoffWeek) { weeklyRows.delete(week); changes++; }
+            if (week < cutoffWeek) {
+              weeklyRows.delete(week);
+              changes++;
+            }
           }
           return { success: true, meta: { changes } };
         }
@@ -207,8 +251,13 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
             addDelivered(cur, this._params.slice(2, 10));
             const [successTtftCount, b0, b1, b2, b3, b4, b5, b6] = this._params.slice(10, 18);
             cur.successful_ttft_count += successTtftCount || 0;
-            cur.ttft_b0 += b0 || 0; cur.ttft_b1 += b1 || 0; cur.ttft_b2 += b2 || 0;
-            cur.ttft_b3 += b3 || 0; cur.ttft_b4 += b4 || 0; cur.ttft_b5 += b5 || 0; cur.ttft_b6 += b6 || 0;
+            cur.ttft_b0 += b0 || 0;
+            cur.ttft_b1 += b1 || 0;
+            cur.ttft_b2 += b2 || 0;
+            cur.ttft_b3 += b3 || 0;
+            cur.ttft_b4 += b4 || 0;
+            cur.ttft_b5 += b5 || 0;
+            cur.ttft_b6 += b6 || 0;
             if (this._params.length >= 30) addUpstream(cur, this._params.slice(18, 30));
             else if (this._params.length >= 26) addUpstream(cur, this._params.slice(18, 26));
           } else if (usesUpstream) {
@@ -279,9 +328,7 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
               missing: cur.missing + (r.missing || 0),
             });
           }
-          const results = [...byModel.entries()]
-            .sort((a, b) => b[1].requests - a[1].requests)
-            .map(([model, r]) => ({ model, ...r }));
+          const results = [...byModel.entries()].sort((a, b) => b[1].requests - a[1].requests).map(([model, r]) => ({ model, ...r }));
           return { results };
         }
 
@@ -292,11 +339,25 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           const isLegacyUpstreamShape = usesUpstream && /h24_input_raw/i.test(sql);
           const d7Start = isObservedShape ? this._params[10] : isLegacyUpstreamShape ? this._params[8] : this._params[4];
           if (usesUpstream) {
-            let today_total = 0, today_attempts = 0, h24_total = 0, h24_attempts = 0, d7_total = 0, d7_attempts = 0;
-            let h24_input = 0, h24_input_raw = 0, h24_cache_creation = 0, h24_cache_read = 0, h24_output = 0;
-            let h24_cache_observed_read = 0, h24_cache_observed_input = 0, h24_cache_read_reports = 0;
+            let today_total = 0,
+              today_attempts = 0,
+              h24_total = 0,
+              h24_attempts = 0,
+              d7_total = 0,
+              d7_attempts = 0;
+            let h24_input = 0,
+              h24_input_raw = 0,
+              h24_cache_creation = 0,
+              h24_cache_read = 0,
+              h24_output = 0;
+            let h24_cache_observed_read = 0,
+              h24_cache_observed_input = 0,
+              h24_cache_read_reports = 0;
             for (const [hour, r] of rows) {
-              if (hour >= todayStart) { today_total += r.upstreamTotal; today_attempts += r.upstreamAttempts; }
+              if (hour >= todayStart) {
+                today_total += r.upstreamTotal;
+                today_attempts += r.upstreamAttempts;
+              }
               if (hour >= h24Start) {
                 h24_total += r.upstreamTotal;
                 h24_attempts += r.upstreamAttempts;
@@ -309,30 +370,70 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
                 h24_cache_read_reports += r.upstreamReadReports;
                 h24_output += r.upstreamOutput;
               }
-              if (hour >= d7Start) { d7_total += r.upstreamTotal; d7_attempts += r.upstreamAttempts; }
+              if (hour >= d7Start) {
+                d7_total += r.upstreamTotal;
+                d7_attempts += r.upstreamAttempts;
+              }
             }
             return {
-              today_total, today_attempts, h24_total, h24_attempts,
-              h24_input, h24_input_raw, h24_cache_creation, h24_cache_read,
-              h24_cache_observed_read, h24_cache_observed_input, h24_cache_read_reports,
-              h24_output, d7_total, d7_attempts,
+              today_total,
+              today_attempts,
+              h24_total,
+              h24_attempts,
+              h24_input,
+              h24_input_raw,
+              h24_cache_creation,
+              h24_cache_read,
+              h24_cache_observed_read,
+              h24_cache_observed_input,
+              h24_cache_read_reports,
+              h24_output,
+              d7_total,
+              d7_attempts,
             };
           }
-          let today_total = 0, today_requests = 0, h24_total = 0, h24_requests = 0, d7_total = 0, d7_requests = 0;
+          let today_total = 0,
+            today_requests = 0,
+            h24_total = 0,
+            h24_requests = 0,
+            d7_total = 0,
+            d7_requests = 0;
           for (const [hour, r] of rows) {
-            if (hour >= todayStart) { today_total += r.total; today_requests += r.requests; }
-            if (hour >= h24Start) { h24_total += r.total; h24_requests += r.requests; }
-            if (hour >= d7Start) { d7_total += r.total; d7_requests += r.requests; }
+            if (hour >= todayStart) {
+              today_total += r.total;
+              today_requests += r.requests;
+            }
+            if (hour >= h24Start) {
+              h24_total += r.total;
+              h24_requests += r.requests;
+            }
+            if (hour >= d7Start) {
+              d7_total += r.total;
+              d7_requests += r.requests;
+            }
           }
           return { today_total, today_requests, h24_total, h24_requests, d7_total, d7_requests };
         }
 
-        if (/SUM\((?:upstream_)?total_tokens\)|SUM\((?:upstream_)?attempts\)|SUM\(requests\)|SUM\((?:upstream_)?usage_reports\)|SUM\((?:upstream_)?usage_missing\)/i.test(sql)
-            && !/CASE\s+WHEN/i.test(sql)) {
+        if (
+          /SUM\((?:upstream_)?total_tokens\)|SUM\((?:upstream_)?attempts\)|SUM\(requests\)|SUM\((?:upstream_)?usage_reports\)|SUM\((?:upstream_)?usage_missing\)/i.test(
+            sql,
+          ) &&
+          !/CASE\s+WHEN/i.test(sql)
+        ) {
           if (usesUpstream) {
-            let t = 0, a = 0, rp = 0, rm = 0;
-            let input_raw = 0, cache_creation = 0, cache_read = 0, output = 0;
-            let effective_input = 0, cache_observed_read = 0, cache_observed_input = 0, cache_read_reports = 0;
+            let t = 0,
+              a = 0,
+              rp = 0,
+              rm = 0;
+            let input_raw = 0,
+              cache_creation = 0,
+              cache_read = 0,
+              output = 0;
+            let effective_input = 0,
+              cache_observed_read = 0,
+              cache_observed_input = 0,
+              cache_read_reports = 0;
             for (const r of rows.values()) {
               t += r.upstreamTotal;
               a += r.upstreamAttempts;
@@ -348,12 +449,30 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
               cache_read_reports += r.upstreamReadReports;
             }
             return {
-              t, a, rp, rm, input_raw, cache_creation, cache_read, output,
-              effective_input, cache_observed_read, cache_observed_input, cache_read_reports,
+              t,
+              a,
+              rp,
+              rm,
+              input_raw,
+              cache_creation,
+              cache_read,
+              output,
+              effective_input,
+              cache_observed_read,
+              cache_observed_input,
+              cache_read_reports,
             };
           }
-          let t = 0, r = 0, rp = 0, rm = 0;
-          for (const v of rows.values()) { t += v.total; r += v.requests; rp += v.reports; rm += v.missing; }
+          let t = 0,
+            r = 0,
+            rp = 0,
+            rm = 0;
+          for (const v of rows.values()) {
+            t += v.total;
+            r += v.requests;
+            rp += v.reports;
+            rm += v.missing;
+          }
           return { t, r, rp, rm };
         }
         return null;
@@ -384,9 +503,13 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
             const cur = byModel.get(model) || { total_ttft: 0, b0: 0, b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0 };
             byModel.set(model, {
               total_ttft: cur.total_ttft + (r.successful_ttft_count || 0),
-              b0: cur.b0 + (r.ttft_b0 || 0), b1: cur.b1 + (r.ttft_b1 || 0),
-              b2: cur.b2 + (r.ttft_b2 || 0), b3: cur.b3 + (r.ttft_b3 || 0),
-              b4: cur.b4 + (r.ttft_b4 || 0), b5: cur.b5 + (r.ttft_b5 || 0), b6: cur.b6 + (r.ttft_b6 || 0),
+              b0: cur.b0 + (r.ttft_b0 || 0),
+              b1: cur.b1 + (r.ttft_b1 || 0),
+              b2: cur.b2 + (r.ttft_b2 || 0),
+              b3: cur.b3 + (r.ttft_b3 || 0),
+              b4: cur.b4 + (r.ttft_b4 || 0),
+              b5: cur.b5 + (r.ttft_b5 || 0),
+              b6: cur.b6 + (r.ttft_b6 || 0),
             });
           }
           return { results: [...byModel.entries()].map(([model, r]) => ({ model, ...r })) };
@@ -406,9 +529,7 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
               missing: cur.missing + (r.missing || 0),
             });
           }
-          const results = [...byModel.entries()]
-            .sort((a, b) => b[1].requests - a[1].requests)
-            .map(([model, r]) => ({ model, ...r }));
+          const results = [...byModel.entries()].sort((a, b) => b[1].requests - a[1].requests).map(([model, r]) => ({ model, ...r }));
           return { results };
         }
 
@@ -431,9 +552,7 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
           }
           const results = [...byModel.entries()]
             .sort((a, b) => b[1].total - a[1].total)
-            .map(([model, r]) => usesUpstream
-              ? ({ model, total: r.total, attempts: r.attempts })
-              : ({ model, total: r.total, requests: r.requests }));
+            .map(([model, r]) => (usesUpstream ? { model, total: r.total, attempts: r.attempts } : { model, total: r.total, requests: r.requests }));
           return { results };
         }
 
@@ -451,9 +570,7 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
         // Raw hourly scan used by hourly->daily materialization.
         if (/FROM\s+token_usage_hourly/i.test(sql) && !/GROUP\s+BY\s+hour/i.test(sql)) {
           return {
-            results: [...rows.entries()]
-              .sort(([a], [b]) => (a < b ? -1 : 1))
-              .map(([hour, r]) => ({ hour, ...toSqlRow(r) })),
+            results: [...rows.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([hour, r]) => ({ hour, ...toSqlRow(r) })),
           };
         }
 
@@ -483,11 +600,11 @@ export function createMockD1({ failWrites = false, failReads = false } = {}) {
 
   return {
     prepare,
-    async batch(statements) { return Promise.all(statements.map((s) => s.run())); },
+    async batch(statements) {
+      return Promise.all(statements.map((s) => s.run()));
+    },
     seedModelRow(hour, model, fields = {}) {
-      const hourKey = typeof hour === 'number'
-        ? new Date(Math.floor(hour / 3_600_000) * 3_600_000).toISOString()
-        : hour;
+      const hourKey = typeof hour === 'number' ? new Date(Math.floor(hour / 3_600_000) * 3_600_000).toISOString() : hour;
       modelRows.set(modelKey(hourKey, model), { ...emptyModel(), ...fields });
     },
     _rows: rows,

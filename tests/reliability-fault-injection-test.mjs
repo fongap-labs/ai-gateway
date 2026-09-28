@@ -17,9 +17,18 @@
 // These are pure-Node fault-injection tests — no real D1, no real KV.
 
 import assert from 'node:assert/strict';
-import { recordTtft, markProbeFailure, getNodeState, acquireSlot, recordFailure, recordNeutralEnd, recordSuccess, __resetAllStateForTests, getCooldownRemainingMs } from '../src/reliability/node-state.ts';
-import { readTier1Affinity, writeTier1Affinity, __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
 import { persistTokenUsage } from '../src/observability/token-usage-store.ts';
+import {
+  __resetAllStateForTests,
+  acquireSlot,
+  getNodeState,
+  markProbeFailure,
+  recordFailure,
+  recordNeutralEnd,
+  recordSuccess,
+  recordTtft,
+} from '../src/reliability/node-state.ts';
+import { __resetTier1AffinityForTests, readTier1Affinity, writeTier1Affinity } from '../src/scheduler/tier1-affinity.ts';
 
 const now = 1_700_000_000_000;
 
@@ -145,7 +154,9 @@ await test('readTier1Affinity on a throwing KV returns null (no crash, no false 
   __resetTier1AffinityForTests();
   const env = {
     TIER1_AFFINITY_KV: {
-      async get() { throw new Error('kv-explode'); },
+      async get() {
+        throw new Error('kv-explode');
+      },
     },
   };
   const out = await readTier1Affinity(env, 'session-throws');
@@ -156,7 +167,9 @@ await test('writeTier1Affinity on a throwing KV is silently swallowed (does not 
   __resetTier1AffinityForTests();
   const env = {
     TIER1_AFFINITY_KV: {
-      async put() { throw new Error('kv-write-explode'); },
+      async put() {
+        throw new Error('kv-write-explode');
+      },
     },
   };
   // A successful call must not throw; the gateway path is the
@@ -175,7 +188,9 @@ await test('readTier1Affinity when KV get returns malformed data returns null', 
   __resetTier1AffinityForTests();
   const env = {
     TIER1_AFFINITY_KV: {
-      async get() { return { some: 'garbage' }; }, // no `accountId` field
+      async get() {
+        return { some: 'garbage' };
+      }, // no `accountId` field
     },
   };
   const out = await readTier1Affinity(env, 'session-malformed');
@@ -192,8 +207,13 @@ await test('persistTokenUsage rejects with the underlying D1 error (caller decid
     TOKEN_STATS_DB: {
       prepare() {
         return {
-          bind() { return this; },
-          async run() { writeCount += 1; throw new Error('d1-explode'); },
+          bind() {
+            return this;
+          },
+          async run() {
+            writeCount += 1;
+            throw new Error('d1-explode');
+          },
         };
       },
     },
@@ -220,7 +240,9 @@ await test('a successful persistTokenUsage that is followed by a D1 reject in th
   // waitUntil. A failure in the D1 layer must never feed back into
   // the in-memory count.
   let memoryCalls = 0;
-  const fakeInMemoryAgg = () => { memoryCalls += 1; };
+  const fakeInMemoryAgg = () => {
+    memoryCalls += 1;
+  };
   fakeInMemoryAgg(); // success path
   fakeInMemoryAgg(); // would-be retry (should not exist)
   assert.equal(memoryCalls, 2, 'in-memory aggregator runs once per attempt; persistence is a side-channel');

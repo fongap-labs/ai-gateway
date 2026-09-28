@@ -8,51 +8,40 @@
 // tests. Tier 1 scheduling treats live in-flight work as a soft signal only.
 
 import assert from 'node:assert/strict';
+import { __resetAdaptive429StateForTests, nextAdaptive429CooldownMs, snapshotAdaptive429State } from '../src/reliability/adaptive-429.ts';
+import { tier1CanAcceptHedge, tier1ConcurrencyPressure, tier1SelectionHeatFactor } from '../src/reliability/tier1-heat.ts';
 import {
   __resetTier1StateForTests,
-  isTier1Eligible,
-  releaseTier1Slot,
-  getTier1Account,
-  getTier1Model,
-  recordTier1Ttft,
-  recordTier1Success,
   applyTier1Outcome,
   classifyTier1Failure,
-  snapshotTier1Runtime,
+  getTier1Account,
+  getTier1Model,
+  isTier1Eligible,
   recordTier1QuotaSignal,
-  tier1BlockingWaitMs,
+  recordTier1Success,
+  recordTier1Ttft,
+  releaseTier1Slot,
+  snapshotTier1Runtime,
   TIER1_FAILURE_STATES,
+  tier1BlockingWaitMs,
 } from '../src/reliability/tier1-state.ts';
-import { calculateTier1Score } from '../src/scheduler/tier1-scoring.ts';
 import {
-  pickTier1Candidate,
-  tier1DeadlineTooSmall,
-} from '../src/scheduler/tier1-scheduler.ts';
-import {
-  tier1AffinityFactor,
+  __resetTier1AffinityForTests,
   readTier1Affinity,
-  writeTier1Affinity,
   resolveTier1SessionId,
   shouldEvaluateAffinity,
-  __resetTier1AffinityForTests,
+  tier1AffinityFactor,
+  writeTier1Affinity,
 } from '../src/scheduler/tier1-affinity.ts';
+import { pickTier1Candidate, tier1DeadlineTooSmall } from '../src/scheduler/tier1-scheduler.ts';
+import { calculateTier1Score } from '../src/scheduler/tier1-scoring.ts';
 import {
-  tier1ConcurrencyPressure,
-  tier1SelectionHeatFactor,
-  tier1CanAcceptHedge,
-} from '../src/reliability/tier1-heat.ts';
-import {
-  nextAdaptive429CooldownMs,
-  snapshotAdaptive429State,
-  __resetAdaptive429StateForTests,
-} from '../src/reliability/adaptive-429.ts';
-import {
-  isOpenAIChatRealOutput,
-  isResponsesRealOutput,
+  isAnthropicMessageMeaningful,
   isAnthropicNativeRealOutput,
   isOpenAIChatCompletionMeaningful,
+  isOpenAIChatRealOutput,
   isOpenAIResponsesObjectMeaningful,
-  isAnthropicMessageMeaningful,
+  isResponsesRealOutput,
 } from '../src/transport/index.ts';
 
 let passed = 0;
@@ -318,7 +307,7 @@ await test('model_missing cools only the provider-facing mapping', () => {
 });
 
 await test('transient failures use hysteresis before entering cooldown', () => {
-  const a = node('a');
+  const _a = node('a');
   const failure = classifyTier1Failure({ kind: 'first_event_timeout' });
   applyTier1Outcome('a', 'm1', failure, 1_000);
   assert.equal(getTier1Model('a', 'm1').failureState, TIER1_FAILURE_STATES.NORMAL);
@@ -411,6 +400,8 @@ await test('snapshot reports current state without retired capacity fields', () 
   assert.equal('concurrency' in snapshot, false);
 });
 
-console.log(`\
-[scheduler-stability] ${passed}/${passed + failed} passed` + (failed ? `, ${failed} FAILED` : ''));
+console.log(
+  `\
+[scheduler-stability] ${passed}/${passed + failed} passed${failed ? `, ${failed} FAILED` : ''}`,
+);
 if (failed) process.exit(1);

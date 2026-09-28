@@ -43,11 +43,11 @@
 // Public-safety: this module NEVER reads credentials, node ids, providers or
 // tiers into its outputs. The return value is a list of { id, status } only.
 
-import { loadModelRegistry, servesModel, collectKnownModels } from '../config/registry.ts';
-import { getRuntimeAvailability } from './availability.ts';
-import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import type { RegistryEntry } from '../config/registry.ts';
+import { collectKnownModels, loadModelRegistry, servesModel } from '../config/registry.ts';
+import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import type { RuntimeNode } from '../types/node.ts';
+import { getRuntimeAvailability } from './availability.ts';
 
 // Recent-evidence window. The D1 per-model table stores UTC hourly buckets
 // with a 7-day retention (cleanupModelStats prunes older rows). A 24-hour
@@ -64,17 +64,17 @@ import type { RuntimeNode } from '../types/node.ts';
 // query that parameterizes it (token-usage-store/queries.ts); re-exported
 // here because Model Status semantics own the public surface.
 export {
-  MODEL_STATUS_RECENT_WINDOW_MS,
   MODEL_STATUS_HISTORICAL_WINDOW_MS,
+  MODEL_STATUS_RECENT_WINDOW_MS,
 } from '../observability/token-usage-store.ts';
 
 export type PublicModelStatusState = 'available' | 'fluctuating' | 'no_recent' | 'no_record' | 'down';
 
 export type PublicModelStatusEntry = {
-  id: string,
-  status: PublicModelStatusState,
-  display_order: number,
-  group: string,
+  id: string;
+  status: PublicModelStatusState;
+  display_order: number;
+  group: string;
 };
 
 // Pure function: compute the public five-state status for every logical
@@ -116,7 +116,10 @@ function deriveGroup(name: string): string {
 }
 
 const MODEL_NAME_PRIORITY: Record<string, number> = {
-  air: 10, pro: 20, max: 30, ultra: 40,
+  air: 10,
+  pro: 20,
+  max: 30,
+  ultra: 40,
 };
 const GROUP_PRIORITY: Record<string, number> = { general: 0, code: 1, omni: 2, ocr: 3 };
 function modelNamePriority(name: string): number {
@@ -124,13 +127,19 @@ function modelNamePriority(name: string): number {
   return MODEL_NAME_PRIORITY[lower] ?? 90;
 }
 
-export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Record<string, unknown> | null | undefined, evidence: ReadonlySet<string> = new Set(), now: number = Date.now(), historicalEvidence: ReadonlySet<string> = new Set()): { observed_at: string, models: PublicModelStatusEntry[] } {
+export function getPublicModelStatus(
+  nodes: ReadonlyArray<RuntimeNode>,
+  env: Record<string, unknown> | null | undefined,
+  evidence: ReadonlySet<string> = new Set(),
+  now: number = Date.now(),
+  historicalEvidence: ReadonlySet<string> = new Set(),
+): { observed_at: string; models: PublicModelStatusEntry[] } {
   const names = new Set<string>();
   for (const node of nodes || []) {
     for (const key of Object.keys(node.models || {})) names.add(key);
   }
-  let visibility: Record<string, string> = {};
-  let uiVisible: Record<string, boolean> = {};
+  const visibility: Record<string, string> = {};
+  const uiVisible: Record<string, boolean> = {};
   let registry: Record<string, RegistryEntry> = {};
   if (env) {
     try {
@@ -139,7 +148,9 @@ export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Rec
         visibility[name] = entry.policy.visibility || 'public';
         uiVisible[name] = entry.policy.ui_visible !== false;
       }
-    } catch { /* registry not loadable: everything is public + ui visible */ }
+    } catch {
+      /* registry not loadable: everything is public + ui visible */
+    }
   }
   // Canonicalize evidence ONCE on entry: D1 statistics keys are
   // trim + lowercase, while the public model ids below keep their official
@@ -197,7 +208,13 @@ export function getPublicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Rec
 //   5. Some unobserved + 24h hit              -> available (service available)
 //   6. No available, not all-down, 7d hit     -> no_recent (no recent record)
 //   7. No available, not all-down, no 7d hit  -> no_record (no record)
-function modelStatus(name: string, serving: RuntimeNode[], recentEvidence: ReadonlySet<string>, historicalEvidence: ReadonlySet<string>, now: number): PublicModelStatusState {
+function modelStatus(
+  name: string,
+  serving: RuntimeNode[],
+  recentEvidence: ReadonlySet<string>,
+  historicalEvidence: ReadonlySet<string>,
+  now: number,
+): PublicModelStatusState {
   if (!serving.length) return 'down';
 
   const states = serving.map((n) => getRuntimeAvailability(n, name, now));

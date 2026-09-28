@@ -33,20 +33,28 @@ const toolingReadme = read('scripts/README.md');
 const product = read('docs/governance/product-policy.md');
 
 assert.equal(router.includes("'/version'"), false, 'runtime must not expose /version');
-assert.equal(diagnostics.includes("../config/version"), false, 'runtime must not import a source version module');
+assert.equal(diagnostics.includes('../config/version'), false, 'runtime must not import a source version module');
 assert.match(diagnostics, /build:\s*resolveBuildSha\(env\)/, '/health must expose commit build identity');
+// biome-ignore lint/suspicious/noTemplateCurlyInString: verifies the literal ${origin} text appears in the deployment script source
 assert.equal(deploy.includes('`${origin}/version`'), false, 'deployment verifier must not use /version');
+// biome-ignore lint/suspicious/noTemplateCurlyInString: verifies the literal ${origin} text appears in the deployment script source
 assert.ok(deploy.includes('`${origin}/health`'), 'deployment verifier must use /health');
 assert.match(deploy, /healthBody\?\.build !== expectedBuild/, 'deployment verification must compare commit SHA');
-for (const [name, source] of [['POSIX installer', installSh], ['PowerShell installer', installPs1]]) {
+for (const [name, source] of [
+  ['POSIX installer', installSh],
+  ['PowerShell installer', installPs1],
+]) {
   assert.equal(source.includes('/version'), false, `${name} must not probe retired /version`);
   assert.equal(source.includes('scripts/version-check.mjs'), false, `${name} must not call the deleted version-check script`);
   assert.ok(source.includes('/health'), `${name} must verify /health`);
   assert.ok(source.includes('/v1/models'), `${name} must verify /v1/models`);
   assert.ok(source.includes('engines.node'), `${name} must read the Node requirement from package.json`);
 }
-assert.doesNotMatch(toolingReadme, /version:sync|Version synchronization|version-check\.mjs/i,
-  'tooling docs must not restore retired project-version automation');
+assert.doesNotMatch(
+  toolingReadme,
+  /version:sync|Version synchronization|version-check\.mjs/i,
+  'tooling docs must not restore retired project-version automation',
+);
 assert.match(product, /Project release numbering is human-owned only/i);
 assert.match(product, /human creates the Git tag or GitHub Release manually/i);
 

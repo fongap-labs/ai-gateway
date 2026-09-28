@@ -10,7 +10,7 @@
 
 import type { RuntimeNode } from '../types/node.ts';
 
-export type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView } from './types.ts';
+export type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionFailureView, SubscriptionPreparedRequest } from './types.ts';
 
 // The single binding point between "this node serves a subscription
 // entitlement" and the credential form that proves it. Today subscription

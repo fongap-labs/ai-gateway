@@ -20,7 +20,7 @@ function mapFinishReason(reason: unknown): string {
   }
 }
 
-export function convertOpenAIUsageToAnthropic(usage: unknown): { input_tokens: number, output_tokens: number } | null {
+export function convertOpenAIUsageToAnthropic(usage: unknown): { input_tokens: number; output_tokens: number } | null {
   if (!usage || typeof usage !== 'object') return null;
   const u = usage as Record<string, unknown>;
   const input = Number(u.prompt_tokens ?? 0) || 0;
@@ -47,11 +47,12 @@ export function convertOpenAIToAnthropicResponse(data: unknown): Record<string, 
   // the text/tool output, mirroring the Anthropic message content ordering
   // the streaming converter produces. The chain is preserved instead of lost
   // to an undefined field.
-  const reasoning = typeof message.reasoning_content === 'string' && message.reasoning_content
-    ? message.reasoning_content
-    : typeof message.reasoning === 'string' && message.reasoning
-      ? message.reasoning
-      : null;
+  const reasoning =
+    typeof message.reasoning_content === 'string' && message.reasoning_content
+      ? message.reasoning_content
+      : typeof message.reasoning === 'string' && message.reasoning
+        ? message.reasoning
+        : null;
   if (reasoning) {
     content.push({ type: 'thinking', thinking: reasoning });
   }

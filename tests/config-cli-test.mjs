@@ -1,18 +1,29 @@
 // SPDX-License-Identifier: MIT
+
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const cli = path.join(root, 'scripts', 'config-cli.mjs');
 const cfg = (p) => path.join(root, 'config', p);
-function writeJSON(file, obj) { fs.writeFileSync(file, JSON.stringify(obj, null, 2)); return file; }
-function tmp(name) { return fs.mkdtempSync(path.join(os.tmpdir(), `cfg-cli-${name}-`)); }
-function run(args) { const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' }); return { status: result.status, stdout: result.stdout, stderr: result.stderr }; }
-function check(cond, msg) { if (!cond) throw new Error(`assertion failed: ${msg}`); }
+function writeJSON(file, obj) {
+  fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+  return file;
+}
+function tmp(name) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `cfg-cli-${name}-`));
+}
+function run(args) {
+  const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+function check(cond, msg) {
+  if (!cond) throw new Error(`assertion failed: ${msg}`);
+}
 function explicitNode(id, base = `https://${id}.example.com/v1`, model = 'u') {
   return { id, provider: 'mock', base_url: base, models: { m: model } };
 }
@@ -32,7 +43,10 @@ function tier1ExampleSecrets() {
 }
 {
   const dir = tmp('dup');
-  const tier1 = writeJSON(path.join(dir, 'tier1.json'), [explicitNode('dup', 'https://a.example.com/v1'), explicitNode('dup', 'https://b.example.com/v1')]);
+  const tier1 = writeJSON(path.join(dir, 'tier1.json'), [
+    explicitNode('dup', 'https://a.example.com/v1'),
+    explicitNode('dup', 'https://b.example.com/v1'),
+  ]);
   const secrets = writeJSON(path.join(dir, 'secrets.json'), { dup: 'k' });
   const r = run(['check', '--tier1', tier1, '--secrets', secrets]);
   check(r.status !== 0, 'duplicate node id must fail');
@@ -40,7 +54,8 @@ function tier1ExampleSecrets() {
 }
 {
   const dir = tmp('strict');
-  const broken = explicitNode('broken'); delete broken.provider;
+  const broken = explicitNode('broken');
+  delete broken.provider;
   const tier1 = writeJSON(path.join(dir, 'tier1.json'), [broken]);
   const secrets = writeJSON(path.join(dir, 'secrets.json'), { broken: 'k' });
   const r = run(['check', '--tier1', tier1, '--secrets', secrets]);
@@ -66,7 +81,8 @@ function tier1ExampleSecrets() {
 }
 {
   const dir = tmp('bad');
-  const tier1 = path.join(dir, 'tier1.json'); fs.writeFileSync(tier1, '{not json');
+  const tier1 = path.join(dir, 'tier1.json');
+  fs.writeFileSync(tier1, '{not json');
   const secrets = writeJSON(path.join(dir, 'secrets.json'), {});
   const r = run(['check', '--tier1', tier1, '--secrets', secrets]);
   check(r.status !== 0, 'malformed JSON must fail');
@@ -89,7 +105,10 @@ function tier1ExampleSecrets() {
   const newSec = writeJSON(path.join(dir, 'new-secrets.json'), { a: 'k1', c: 'k3' });
   const r = run(['diff', '--old-tier1', oldTier, '--new-tier1', newTier, '--old-secrets', oldSec, '--new-secrets', newSec]);
   check(r.status === 0, 'diff exits 0');
-  check(r.stdout.includes('+ c'), 'added node detected'); check(r.stdout.includes('- b'), 'removed node detected'); check(r.stdout.includes('~ a'), 'changed node detected');
-  check(/Secrets:/.test(r.stdout), 'secrets section present'); check(!/k1|k2|k3/.test(r.stdout), 'never prints secret values');
+  check(r.stdout.includes('+ c'), 'added node detected');
+  check(r.stdout.includes('- b'), 'removed node detected');
+  check(r.stdout.includes('~ a'), 'changed node detected');
+  check(/Secrets:/.test(r.stdout), 'secrets section present');
+  check(!/k1|k2|k3/.test(r.stdout), 'never prints secret values');
 }
 console.log('config-cli tests passed.');

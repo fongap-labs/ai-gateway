@@ -3,8 +3,8 @@
 
 import assert from 'node:assert/strict';
 import {
-  ADAPTIVE_429_COOLDOWN_STEPS_MS,
   __resetAdaptive429StateForTests,
+  ADAPTIVE_429_COOLDOWN_STEPS_MS,
   clearAdaptive429State,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,

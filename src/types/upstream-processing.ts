@@ -15,7 +15,7 @@ export const UPSTREAM_PROCESSING_ERROR = Object.freeze({
   TERMINAL: 'terminal',
 } as const);
 
-export type UpstreamProcessingErrorCode = typeof UPSTREAM_PROCESSING_ERROR[keyof typeof UPSTREAM_PROCESSING_ERROR];
+export type UpstreamProcessingErrorCode = (typeof UPSTREAM_PROCESSING_ERROR)[keyof typeof UPSTREAM_PROCESSING_ERROR];
 
 export class UpstreamProcessingError extends Error {
   readonly code: UpstreamProcessingErrorCode;
@@ -27,11 +27,7 @@ export class UpstreamProcessingError extends Error {
   }
 }
 
-export function upstreamProcessingError(
-  code: UpstreamProcessingErrorCode,
-  message: string,
-  cause?: unknown,
-): UpstreamProcessingError {
+export function upstreamProcessingError(code: UpstreamProcessingErrorCode, message: string, cause?: unknown): UpstreamProcessingError {
   return new UpstreamProcessingError(code, message, cause === undefined ? undefined : { cause });
 }
 

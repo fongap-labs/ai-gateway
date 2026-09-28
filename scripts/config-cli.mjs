@@ -18,15 +18,11 @@
 // Secret values are NEVER printed. Credential state is reported as
 // "configured" or "missing" only.
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  parseJsonFile, assertNodesArray, assertSecretsObject, buildPlan,
-  MANAGED_VAR_PATTERN, MANAGED_SECRET_PATTERN, SHARD_MAX_BYTES,
-} from './node-config-shards.mjs';
+import { assertNodesArray, assertSecretsObject, buildPlan, parseJsonFile, SHARD_MAX_BYTES } from './node-config-shards.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const _root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -55,7 +51,7 @@ function parseArgs(argv, schema) {
   return out;
 }
 
-function readOptionalJson(filePath, label) {
+function _readOptionalJson(filePath, label) {
   if (!filePath) return null;
   try {
     return parseJsonFile(filePath);
@@ -115,25 +111,34 @@ function policiesFromConfig(policiesConfig) {
 }
 
 function shardByteSizes(plan) {
-  return Object.fromEntries(
-    Object.entries(plan.vars).map(([k, v]) => [k, Buffer.byteLength(v, 'utf8')])
-  );
+  return Object.fromEntries(Object.entries(plan.vars).map(([k, v]) => [k, Buffer.byteLength(v, 'utf8')]));
 }
 
 function runCheck(args) {
   const schema = {
-    tier1: { required: false }, tier2: { required: false }, tier3: { required: false },
+    tier1: { required: false },
+    tier2: { required: false },
+    tier3: { required: false },
     secrets: { required: true },
-    models: { required: false }, policies: { required: false },
+    models: { required: false },
+    policies: { required: false },
   };
   const a = parseArgs(args, schema);
   const tiers = loadTiers(a);
   if (Object.keys(tiers).length === 0) fail('at least one of --tier1/--tier2/--tier3 is required');
   for (const [n, nodes] of Object.entries(tiers)) {
-    try { assertNodesArray(nodes, `tier-${n}`); } catch (e) { fail(e.message); }
+    try {
+      assertNodesArray(nodes, `tier-${n}`);
+    } catch (e) {
+      fail(e.message);
+    }
   }
   const secrets = loadSecrets(a);
-  try { assertSecretsObject(secrets, 'secrets'); } catch (e) { fail(e.message); }
+  try {
+    assertSecretsObject(secrets, 'secrets');
+  } catch (e) {
+    fail(e.message);
+  }
 
   const modelsConfig = loadOptionalJSONMap(a.models);
   if (modelsConfig && typeof modelsConfig !== 'object') fail('--models must be a JSON object');
@@ -182,15 +187,25 @@ function runCheck(args) {
 
 function runShow(args) {
   const schema = {
-    tier1: { required: false }, tier2: { required: false }, tier3: { required: false },
+    tier1: { required: false },
+    tier2: { required: false },
+    tier3: { required: false },
     secrets: { required: true },
   };
   const a = parseArgs(args, schema);
   const tiers = loadTiers(a);
   const secrets = loadSecrets(a);
-  try { assertSecretsObject(secrets, 'secrets'); } catch (e) { fail(e.message); }
+  try {
+    assertSecretsObject(secrets, 'secrets');
+  } catch (e) {
+    fail(e.message);
+  }
   for (const [n, nodes] of Object.entries(tiers)) {
-    try { assertNodesArray(nodes, `tier-${n}`); } catch (e) { fail(e.message); }
+    try {
+      assertNodesArray(nodes, `tier-${n}`);
+    } catch (e) {
+      fail(e.message);
+    }
   }
   const map = nodeById(tiers);
   const sorted = [...map.values()].sort((a, b) => a.tier - b.tier || a.node.id.localeCompare(b.node.id));
@@ -209,7 +224,7 @@ function runShow(args) {
   }
 }
 
-function normalizeRuntimeKeys(obj) {
+function _normalizeRuntimeKeys(obj) {
   return obj ? new Set(Object.keys(obj)) : new Set();
 }
 
@@ -219,11 +234,18 @@ function deepEqual(a, b) {
 
 function runDiff(args) {
   const schema = {
-    'old-tier1': { required: false }, 'old-tier2': { required: false }, 'old-tier3': { required: false },
-    'new-tier1': { required: false }, 'new-tier2': { required: false }, 'new-tier3': { required: false },
-    'old-secrets': { required: false }, 'new-secrets': { required: false },
-    'old-models': { required: false }, 'new-models': { required: false },
-    'old-policies': { required: false }, 'new-policies': { required: false },
+    'old-tier1': { required: false },
+    'old-tier2': { required: false },
+    'old-tier3': { required: false },
+    'new-tier1': { required: false },
+    'new-tier2': { required: false },
+    'new-tier3': { required: false },
+    'old-secrets': { required: false },
+    'new-secrets': { required: false },
+    'old-models': { required: false },
+    'new-models': { required: false },
+    'old-policies': { required: false },
+    'new-policies': { required: false },
   };
   const a = parseArgs(args, schema);
   if (!a['old-tier1'] && !a['new-tier1']) fail('provide at least --old-tier1 / --new-tier1');
@@ -316,7 +338,7 @@ async function main() {
     else if (command === 'show') runShow(rest);
     else if (command === 'diff') runDiff(rest);
   } catch (e) {
-    if (e && e.message) console.error(`error: ${e.message}`);
+    if (e?.message) console.error(`error: ${e.message}`);
     else console.error(e);
     process.exit(1);
   }

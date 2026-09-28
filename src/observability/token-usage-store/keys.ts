@@ -92,7 +92,9 @@ export function ttftBucketIndex(ttftMs: number): number {
 // casing). Merges Code-Max / code-max / CODE-MAX into one stats
 // dimension.
 export function normalizeModelKey(model: unknown): string {
-  return String(model || '').trim().toLowerCase();
+  return String(model || '')
+    .trim()
+    .toLowerCase();
 }
 
 // Resolve the D1 binding (env.TOKEN_STATS_DB). Returns null when the

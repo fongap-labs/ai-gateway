@@ -3,9 +3,9 @@
 //
 // OpenAI Chat Completions SSE stream -> Anthropic Messages SSE stream converter.
 
+import { convertOpenAIUsageToAnthropic } from './openai-to-anthropic.ts';
 import { convertSseStream } from './sse.ts';
 import { isRecord } from './validation.ts';
-import { convertOpenAIUsageToAnthropic } from './openai-to-anthropic.ts';
 
 function mapFinishReason(reason: unknown): string {
   switch (reason) {
@@ -26,12 +26,12 @@ function createAnthropicMessageId(): string {
 }
 
 type ToolBlockState = {
-  index: number,
-  id: string,
-  name: string,
-  arguments: string,
-  opened: boolean,
-  closed: boolean,
+  index: number;
+  id: string;
+  name: string;
+  arguments: string;
+  opened: boolean;
+  closed: boolean;
 };
 
 // Reasoning alignment: upstreams such as DeepSeek-R1 stream their thinking
@@ -47,10 +47,10 @@ type ToolBlockState = {
 export function createAnthropicStreamFromOpenAI(
   openAiResponseBody: ReadableStream<Uint8Array> | null | undefined,
   options: {
-    messageId?: string,
-    model?: string,
-    inputTokens?: number,
-    onUpstreamUsage?: (usage: unknown) => void,
+    messageId?: string;
+    model?: string;
+    inputTokens?: number;
+    onUpstreamUsage?: (usage: unknown) => void;
   } = {},
 ): ReadableStream<Uint8Array> {
   const { messageId, model, inputTokens, onUpstreamUsage } = options;
@@ -58,22 +58,22 @@ export function createAnthropicStreamFromOpenAI(
   const encoder = new TextEncoder();
 
   const state: {
-    messageId: string,
-    model: string,
-    inputTokens: number,
-    messageStarted: boolean,
-    textBlockOpened: boolean,
-    textBlockClosed: boolean,
-    thinkingBlockOpened: boolean,
-    thinkingBlockClosed: boolean,
-    thinkingIndex?: number,
-    toolBlocks: Map<number, ToolBlockState>,
-    blockIndex: number,
-    usage: unknown,
-    upstreamUsage: unknown,
-    finishReason: unknown,
-    closed: boolean,
-    textIndex?: number,
+    messageId: string;
+    model: string;
+    inputTokens: number;
+    messageStarted: boolean;
+    textBlockOpened: boolean;
+    textBlockClosed: boolean;
+    thinkingBlockOpened: boolean;
+    thinkingBlockClosed: boolean;
+    thinkingIndex?: number;
+    toolBlocks: Map<number, ToolBlockState>;
+    blockIndex: number;
+    usage: unknown;
+    upstreamUsage: unknown;
+    finishReason: unknown;
+    closed: boolean;
+    textIndex?: number;
   } = {
     messageId: finalMessageId,
     model: model || '',
@@ -90,7 +90,6 @@ export function createAnthropicStreamFromOpenAI(
     finishReason: null,
     closed: false,
   };
-
 
   const emit = (controller: ReadableStreamDefaultController<Uint8Array>, event: string, data: unknown) => {
     if (state.closed) return;
@@ -168,7 +167,10 @@ export function createAnthropicStreamFromOpenAI(
     });
   };
 
-  const openToolBlock = (controller: ReadableStreamDefaultController<Uint8Array>, toolCall: { id?: string, index?: number, function?: { name?: string, arguments?: string } }): ToolBlockState => {
+  const openToolBlock = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    toolCall: { id?: string; index?: number; function?: { name?: string; arguments?: string } },
+  ): ToolBlockState => {
     const index = state.blockIndex++;
     const toolState: ToolBlockState = {
       index,
@@ -233,7 +235,11 @@ export function createAnthropicStreamFromOpenAI(
       if (onUpstreamUsage) {
         // Fire the callback with the RAW upstream usage (OpenAI format).
         // This is the TRUE upstream usage for observability.
-        try { onUpstreamUsage(chunk.usage); } catch { /* observability must never break the stream */ }
+        try {
+          onUpstreamUsage(chunk.usage);
+        } catch {
+          /* observability must never break the stream */
+        }
       }
     }
     const choices = Array.isArray(chunk.choices) ? chunk.choices : [];
@@ -247,11 +253,12 @@ export function createAnthropicStreamFromOpenAI(
       // increments and re-emit them as native Anthropic thinking blocks so an
       // Anthropic Messages client renders the chain instead of losing it to an
       // undefined field. The delta streams in real time (no buffering).
-      const reasoning = typeof delta.reasoning_content === 'string' && delta.reasoning_content
-        ? delta.reasoning_content
-        : typeof delta.reasoning === 'string' && delta.reasoning
-          ? delta.reasoning
-          : null;
+      const reasoning =
+        typeof delta.reasoning_content === 'string' && delta.reasoning_content
+          ? delta.reasoning_content
+          : typeof delta.reasoning === 'string' && delta.reasoning
+            ? delta.reasoning
+            : null;
       if (reasoning) {
         openThinkingBlock(controller);
         emit(controller, 'content_block_delta', {
@@ -314,15 +321,23 @@ export function createAnthropicStreamFromOpenAI(
     }
   };
 
-  return convertSseStream(openAiResponseBody, (data, controller) => {
-    if (data === '[DONE]') {
-      closeAllBlocks(controller);
-      emitMessageDelta(controller);
-      emitMessageStop(controller);
-      return;
-    }
-    let event: unknown;
-    try { event = JSON.parse(data); } catch { throw new Error('Malformed upstream SSE JSON'); }
-    processOpenAIChunk(controller, event);
-  }, () => state.closed);
+  return convertSseStream(
+    openAiResponseBody,
+    (data, controller) => {
+      if (data === '[DONE]') {
+        closeAllBlocks(controller);
+        emitMessageDelta(controller);
+        emitMessageStop(controller);
+        return;
+      }
+      let event: unknown;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        throw new Error('Malformed upstream SSE JSON');
+      }
+      processOpenAIChunk(controller, event);
+    },
+    () => state.closed,
+  );
 }

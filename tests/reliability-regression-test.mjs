@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import {
-  isOpenAIChatCompletionMeaningful,
-  isOpenAIResponsesObjectMeaningful,
-} from '../src/transport/openai.ts';
-import { isAnthropicMessageMeaningful } from '../src/transport/anthropic.ts';
-import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
-import { collectOpenAIStreamObject } from '../src/stream/assemble.ts';
-import { collectAnthropicMessageObject } from '../src/stream/anthropic-native.ts';
+import { fileURLToPath } from 'node:url';
 import { createOpenAIChatStreamFromAnthropic } from '../src/conversion/anthropic-stream-to-openai-chat.ts';
+import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
+import { collectAnthropicMessageObject } from '../src/stream/anthropic-native.ts';
+import { collectOpenAIStreamObject } from '../src/stream/assemble.ts';
+import { isAnthropicMessageMeaningful } from '../src/transport/anthropic.ts';
+import { isOpenAIChatCompletionMeaningful, isOpenAIResponsesObjectMeaningful } from '../src/transport/openai.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -20,41 +17,61 @@ let passed = 0;
 let failed = 0;
 
 async function test(name, fn) {
-  try { await fn(); passed++; console.log(`ok - ${name}`); }
-  catch (e) { failed++; console.error(`FAIL: ${name}`); console.error(e?.stack || e); }
+  try {
+    await fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (e) {
+    failed++;
+    console.error(`FAIL: ${name}`);
+    console.error(e?.stack || e);
+  }
 }
 
 function fakeSseResponse(chunks) {
-  return new Response(new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  }), { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
 }
 
 function fakeHangingSseResponse(chunks) {
   let i = 0;
-  return new Response(new ReadableStream({
-    pull(controller) {
-      if (i < chunks.length) { controller.enqueue(encoder.encode(chunks[i++])); return; }
-      return new Promise(() => {});
-    },
-  }), { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (i < chunks.length) {
+          controller.enqueue(encoder.encode(chunks[i++]));
+          return;
+        }
+        return new Promise(() => {});
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
 }
 
 await test('safeReadErrorBody respects absolute deadline', async () => {
   const { safeReadErrorBody } = await import('../src/protocol/http.ts');
-  const hanging = new Response(new ReadableStream({ pull() { return new Promise(() => {}); } }));
+  const hanging = new Response(
+    new ReadableStream({
+      pull() {
+        return new Promise(() => {});
+      },
+    }),
+  );
   const start = Date.now();
   assert.equal(await safeReadErrorBody(hanging, 4096, Date.now() + 100), '');
   assert.ok(Date.now() - start < 500);
 });
 
 await test('OpenAI stream completes on finish_reason without HTTP EOF', async () => {
-  const response = fakeHangingSseResponse([
-    'data: {"id":"c1","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\n',
-  ]);
+  const response = fakeHangingSseResponse(['data: {"id":"c1","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\n']);
   const start = Date.now();
   const result = await collectOpenAIStreamObject(response, null, Date.now() + 30_000);
   assert.equal(result.id, 'c1');
@@ -106,7 +123,11 @@ await test('Anthropic to OpenAI conversion renders thinking as reasoning_content
   const reader = createOpenAIChatStreamFromAnthropic(source, { messageId: 'm2', model: 'claude' }).getReader();
   const decoder = new TextDecoder();
   let out = '';
-  for (;;) { const { done, value } = await reader.read(); if (done) break; out += decoder.decode(value); }
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value);
+  }
   assert.ok(out.includes('visible'));
   assert.ok(out.includes('"reasoning_content":"hidden"'), 'thinking delta is converted to reasoning_content, not dropped');
   assert.ok(out.includes('[DONE]'));
@@ -144,7 +165,11 @@ await test('409 stops while 408 rotates', () => {
 
 await test('real upstream SSE is not wrapped again by client lifecycle tracking', async () => {
   const { trackClientResponse } = await import('../src/observability/gateway-stats.ts');
-  const body = new ReadableStream({ start(c) { c.close(); } });
+  const body = new ReadableStream({
+    start(c) {
+      c.close();
+    },
+  });
   const response = new Response(body, { headers: { 'content-type': 'text/event-stream' } });
   assert.equal(trackClientResponse(response).body, response.body);
 });
@@ -168,7 +193,7 @@ await test('key RPM snapshot keeps configured cap', async () => {
 
 await test('local diagnostic/model routes are exempt from key RPM', () => {
   const src = readFileSync(join(root, 'src', 'request', 'preflight.ts'), 'utf8');
-  const block = src.slice(src.indexOf("if (route !== 'health'"), src.indexOf("const diag ="));
+  const block = src.slice(src.indexOf("if (route !== 'health'"), src.indexOf('const diag ='));
   assert.ok(block.includes("route !== 'health'"));
   assert.ok(block.includes("route !== 'metrics'"));
   assert.ok(block.includes("route !== 'models'"));
@@ -185,11 +210,17 @@ await test('top-level errors remain route-aware', async () => {
 });
 
 await test('Tier 1 explicit maxInFlight is enforced', async () => {
-  const { isTier1Eligible, __resetTier1StateForTests, claimTier1Slot, releaseTier1Slot, makeTier1ReleaseToken } = await import('../src/reliability/tier1-state.ts');
+  const { isTier1Eligible, __resetTier1StateForTests, claimTier1Slot, releaseTier1Slot, makeTier1ReleaseToken } = await import(
+    '../src/reliability/tier1-state.ts'
+  );
   __resetTier1StateForTests();
   const node = {
-    id: 'cap-test', tier: 'tier-1', provider: 'test', protocol: 'openai',
-    surfaces: ['chat'], models: { m: 'up-m' },
+    id: 'cap-test',
+    tier: 'tier-1',
+    provider: 'test',
+    protocol: 'openai',
+    surfaces: ['chat'],
+    models: { m: 'up-m' },
   };
   const req = { protocol: 'openai', surface: 'chat', model: 'm' };
   for (let i = 0; i < 4; i++) assert.equal(claimTier1Slot(node, Date.now(), 'm', 4), true);
@@ -227,12 +258,7 @@ await test('delivered responses backfill missing TTFT before D1 persistence', ()
 });
 
 await test('Tier 1 auth cooldown follows the shared classification value', async () => {
-  const {
-    classifyTier1Failure,
-    applyTier1Outcome,
-    getTier1Account,
-    __resetTier1StateForTests,
-  } = await import('../src/reliability/tier1-state.ts');
+  const { classifyTier1Failure, applyTier1Outcome, getTier1Account, __resetTier1StateForTests } = await import('../src/reliability/tier1-state.ts');
   __resetTier1StateForTests();
   const now = 1_000;
   const outcome = classifyTier1Failure({ kind: 'auth', cooldownMs: 12_345 });

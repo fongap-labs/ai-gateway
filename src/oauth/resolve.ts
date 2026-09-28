@@ -23,12 +23,12 @@
 // dispatch layer rotates the attempt to another node. A subscription node
 // never receives traffic with a missing or stale credential.
 
-import { getOAuthProvider } from './provider-configs.ts';
-import { loadSubscriptionToken, persistRefreshedToken, markTokenStatus } from './token-store.ts';
-import type { StoredSubscriptionToken } from './token-store.ts';
 import type { RuntimeNode } from '../types/node.ts';
+import { getOAuthProvider } from './provider-configs.ts';
+import type { StoredSubscriptionToken } from './token-store.ts';
+import { loadSubscriptionToken, markTokenStatus, persistRefreshedToken } from './token-store.ts';
 
-type CacheEntry = { token: string, expiresAt: number, accountId: string | null };
+type CacheEntry = { token: string; expiresAt: number; accountId: string | null };
 const isolateCache = new Map<string, CacheEntry>();
 
 export type ResolveFailureReason = 'unconfigured_provider' | 'no_token' | 'refresh_failed' | 'store_unavailable';
@@ -37,7 +37,7 @@ export type ResolveFailureReason = 'unconfigured_provider' | 'no_token' | 'refre
 // requests do not hammer the provider's token endpoint when a subscription
 // credential is unusable (refresh rejected / token revoked).
 export const RESOLUTION_FAILURE_TTL_MS = 60 * 1000;
-const resolutionFailures = new Map<string, { until: number, reason: ResolveFailureReason }>();
+const resolutionFailures = new Map<string, { until: number; reason: ResolveFailureReason }>();
 
 // Refresh when the access token has less than this much life left, so an
 // in-flight request is unlikely to send a token that expires mid-stream.
@@ -49,11 +49,9 @@ const inFlightResolutions = new Map<string, Promise<ResolveResult>>();
 
 /** The resolved (ok) subscription credential handed to subscription
  *  adapters and the dispatch header path. */
-export type ResolvedSubscriptionCredential = { ok: true, token: string, accountId: string | null };
+export type ResolvedSubscriptionCredential = { ok: true; token: string; accountId: string | null };
 
-export type ResolveResult =
-  | ResolvedSubscriptionCredential
-  | { ok: false, reason: ResolveFailureReason };
+export type ResolveResult = ResolvedSubscriptionCredential | { ok: false; reason: ResolveFailureReason };
 
 // PKCE token refresh against the provider's token endpoint. Never logs token
 // material; failures carry only a reason string.
@@ -61,7 +59,7 @@ async function refreshAccessToken(
   env: Record<string, unknown>,
   provider: string,
   refreshToken: string,
-): Promise<{ ok: true, token: string, expiresInSec: number, refreshToken: string | null } | { ok: false }> {
+): Promise<{ ok: true; token: string; expiresInSec: number; refreshToken: string | null } | { ok: false }> {
   const providerConfig = getOAuthProvider(env, provider);
   if (!providerConfig) return { ok: false };
   const params: Record<string, string> = {
@@ -83,14 +81,18 @@ async function refreshAccessToken(
   if (!response.ok) return { ok: false };
   let payload: Record<string, unknown>;
   try {
-    payload = await response.json() as Record<string, unknown>;
+    payload = (await response.json()) as Record<string, unknown>;
   } catch {
     return { ok: false };
   }
   const token = typeof payload.access_token === 'string' ? payload.access_token : null;
   if (!token) return { ok: false };
-  const expiresInSec = typeof payload.expires_in === 'number' ? payload.expires_in
-    : (typeof payload.expires_in === 'string' && /^\d+$/.test(payload.expires_in) ? Number(payload.expires_in) : 3600);
+  const expiresInSec =
+    typeof payload.expires_in === 'number'
+      ? payload.expires_in
+      : typeof payload.expires_in === 'string' && /^\d+$/.test(payload.expires_in)
+        ? Number(payload.expires_in)
+        : 3600;
   const rotatedRefresh = typeof payload.refresh_token === 'string' ? payload.refresh_token : null;
   return { ok: true, token, expiresInSec, refreshToken: rotatedRefresh };
 }
@@ -100,10 +102,7 @@ function cacheToken(nodeId: string, token: string, expiresAt: number, accountId:
 }
 
 // Single resolution pass without the singleflight wrapper.
-async function resolveOnce(
-  env: Record<string, unknown>,
-  node: RuntimeNode,
-): Promise<ResolveResult> {
+async function resolveOnce(env: Record<string, unknown>, node: RuntimeNode): Promise<ResolveResult> {
   const now = Date.now();
   const cached = isolateCache.get(node.id);
   if (cached && cached.expiresAt > now + REFRESH_MARGIN_MS) {
@@ -170,10 +169,7 @@ async function resolveOnce(
 // negative cache answers immediately for recently failed nodes; the
 // singleflight map collapses concurrent resolutions of one node into one
 // refresh.
-export function resolveSubscriptionCredential(
-  env: Record<string, unknown>,
-  node: RuntimeNode,
-): Promise<ResolveResult> {
+export function resolveSubscriptionCredential(env: Record<string, unknown>, node: RuntimeNode): Promise<ResolveResult> {
   if (!node.auth || node.auth !== 'oauth') {
     return Promise.resolve({ ok: false, reason: 'unconfigured_provider' });
   }

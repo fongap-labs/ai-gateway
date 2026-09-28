@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import {
-  buildPlan, assertNodesArray, assertSecretsObject,
-  MANAGED_VAR_PATTERN, MANAGED_SECRET_PATTERN, MAX_SHARD_NUMBER,
+  assertNodesArray,
+  assertSecretsObject,
+  buildPlan,
+  MANAGED_SECRET_PATTERN,
+  MANAGED_VAR_PATTERN,
+  MAX_SHARD_NUMBER,
 } from '../scripts/node-config-shards.mjs';
 
 const node = (id, extra = {}) => ({
@@ -17,8 +21,15 @@ const node = (id, extra = {}) => ({
 
 let passed = 0;
 function test(name, fn) {
-  try { fn(); passed += 1; console.log(`ok - ${name}`); }
-  catch (error) { console.error(`FAIL: ${name}`); console.error(error?.stack || error); process.exitCode = 1; }
+  try {
+    fn();
+    passed += 1;
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    console.error(`FAIL: ${name}`);
+    console.error(error?.stack || error);
+    process.exitCode = 1;
+  }
 }
 
 test('valid plan shards current nodes and tier-scoped secrets', () => {
@@ -91,12 +102,16 @@ test('secret object is strict', () => {
 });
 
 test('oversized entry fails before producing invalid shards', () => {
-  assert.throws(() => buildPlan({ tiers: { 1: [node('big', { provider: 'x'.repeat(5000) })] }, secretsMap: { big: 'x' } }), /exceeds the .*-byte shard limit/);
+  assert.throws(
+    () => buildPlan({ tiers: { 1: [node('big', { provider: 'x'.repeat(5000) })] }, secretsMap: { big: 'x' } }),
+    /exceeds the .*-byte shard limit/,
+  );
 });
 
 test('stale managed shard lists are computed', () => {
   const plan = buildPlan({
-    tiers: { 1: [node('a')] }, secretsMap: { a: 'x' },
+    tiers: { 1: [node('a')] },
+    secretsMap: { a: 'x' },
     existingVarNames: ['AIG_TIER1_NODES_01', 'AIG_TIER1_NODES_02', 'AIG_TIER3_NODES_01'],
     existingSecretNames: ['AIG_TIER1_CREDENTIALS_01', 'AIG_TIER1_CREDENTIALS_02', 'UNMANAGED_GATEWAY_KEY'],
   });

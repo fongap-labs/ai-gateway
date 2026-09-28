@@ -22,12 +22,12 @@ export const gatewayStats = {
 // protocol stream is still counted exactly once. Invariant:
 // interrupted === missingCompletion + idleTimeout + readerError.
 export const streamStats: {
-  started: number,
-  completed: number,
-  interrupted: number,
-  missingCompletion: number,
-  idleTimeout: number,
-  readerError: number,
+  started: number;
+  completed: number;
+  interrupted: number;
+  missingCompletion: number;
+  idleTimeout: number;
+  readerError: number;
 } = {
   started: 0,
   completed: 0,
@@ -126,7 +126,11 @@ export function trackClientResponse(response: Response): Response {
     },
     async cancel(reason) {
       finalize('cancel');
-      try { await reader.cancel(reason); } catch { /* best-effort relay cleanup */ }
+      try {
+        await reader.cancel(reason);
+      } catch {
+        /* best-effort relay cleanup */
+      }
     },
   });
 

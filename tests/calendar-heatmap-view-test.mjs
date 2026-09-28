@@ -165,7 +165,10 @@ await test('renderer calendar-year 2026: 1月 at column 1 and 12月 present — 
   const { labels } = renderHeatmap(heatmap);
   assert.equal(labels.length, 12, 'all 12 month labels render — edges included');
   assert.match(labels[0], /grid-column:1">1月</, '1月 anchors to the padding column containing 2026-01-01');
-  assert.ok(labels.some((l) => l.includes('>12月<')), '12月 never dropped near the right edge');
+  assert.ok(
+    labels.some((l) => l.includes('>12月<')),
+    '12月 never dropped near the right edge',
+  );
 });
 
 await test('renderer: HTML escaping of tooltip payloads with special chars', () => {

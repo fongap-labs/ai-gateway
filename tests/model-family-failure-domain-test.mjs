@@ -4,11 +4,11 @@
 
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
-import { failedDomainNodeIds, modelFailureDomainKey, rememberFailedDomains } from '../src/request/model-fallback.ts';
+import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
+import { failedDomainNodeIds, modelFailureDomainKey, rememberFailedDomains } from '../src/request/model-fallback.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
-import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 
 const ACCESS_KEY = 'family-domain-test-key';
 let calls = [];
@@ -24,8 +24,15 @@ function reset() {
 // fields. When projected back into config JSON below, those fields are omitted.
 function node(id, models) {
   return {
-    id, tier: 'tier-1', provider: 'openai', protocol: 'openai', surfaces: ['responses'],
-    baseUrl: `https://${id}.example.com/v1`, credential: `secret-${id}`, priority: 10, models,
+    id,
+    tier: 'tier-1',
+    provider: 'openai',
+    protocol: 'openai',
+    surfaces: ['responses'],
+    baseUrl: `https://${id}.example.com/v1`,
+    credential: `secret-${id}`,
+    priority: 10,
+    models,
   };
 }
 
@@ -46,13 +53,18 @@ globalThis.fetch = async (input, init) => {
   const body = init?.body ? JSON.parse(init.body) : {};
   calls.push({ host: url.hostname, model: body.model });
   return new Response(JSON.stringify({ error: { message: 'temporary upstream failure' } }), {
-    status: 503, headers: { 'content-type': 'application/json' },
+    status: 503,
+    headers: { 'content-type': 'application/json' },
   });
 };
 
 function envFor(nodes) {
   const configs = nodes.map(({ id, provider, baseUrl, priority, models }) => ({
-    id, provider, base_url: baseUrl, priority, models,
+    id,
+    provider,
+    base_url: baseUrl,
+    priority,
+    models,
   }));
   return {
     AIG_ACCESS_KEY_ULTRA: ACCESS_KEY,
@@ -74,7 +86,9 @@ function request() {
 
 reset();
 const oneDomain = node('shared-account', {
-  'Code-Max': 'same-real-model', 'Code-Pro': 'same-real-model', 'Code-Ultra': 'same-real-model',
+  'Code-Max': 'same-real-model',
+  'Code-Pro': 'same-real-model',
+  'Code-Ultra': 'same-real-model',
 });
 const collapsed = await worker.fetch(request(), envFor([oneDomain]), {});
 assert.equal(collapsed.status, 503);
@@ -88,11 +102,16 @@ assert.equal(collapsed.headers.get('x-gateway-failure-kinds'), 'server:1');
 
 reset();
 const distinctModels = node('multi-model-account', {
-  'Code-Max': 'real-max', 'Code-Pro': 'real-pro', 'Code-Ultra': 'real-ultra',
+  'Code-Max': 'real-max',
+  'Code-Pro': 'real-pro',
+  'Code-Ultra': 'real-ultra',
 });
 const distinct = await worker.fetch(request(), envFor([distinctModels]), {});
 assert.equal(distinct.status, 503);
-assert.deepEqual(calls.map((c) => c.model), ['real-max', 'real-pro', 'real-ultra']);
+assert.deepEqual(
+  calls.map((c) => c.model),
+  ['real-max', 'real-pro', 'real-ultra'],
+);
 assert.equal(distinct.headers.get('x-gateway-attempts'), '3');
 assert.equal(distinct.headers.get('x-gateway-dispatches'), '3');
 assert.equal(distinct.headers.get('x-gateway-failure-kinds'), 'server:3');

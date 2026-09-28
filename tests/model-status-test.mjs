@@ -12,14 +12,10 @@
 // must fail open: never fabricate `available`, never mark every model `down`.
 
 import assert from 'node:assert/strict';
-import {
-  getPublicModelStatus,
-  MODEL_STATUS_RECENT_WINDOW_MS,
-  MODEL_STATUS_HISTORICAL_WINDOW_MS,
-} from '../src/runtime/model-status.ts';
 import { queryRecentModelEvidence } from '../src/observability/token-usage-store.ts';
-import { __resetTier1StateForTests, getTier1Model, recordTier1Ttft } from '../src/reliability/tier1-state.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
+import { __resetTier1StateForTests, getTier1Model, recordTier1Ttft } from '../src/reliability/tier1-state.ts';
+import { getPublicModelStatus, MODEL_STATUS_HISTORICAL_WINDOW_MS, MODEL_STATUS_RECENT_WINDOW_MS } from '../src/runtime/model-status.ts';
 import { createMockD1 } from './mock-d1-database.mjs';
 
 const HOUR = 3_600_000;
@@ -34,7 +30,7 @@ function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -48,17 +44,26 @@ async function testAsync(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
 
 const ENV = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({ air: { policy: 'fast' } }) };
-const node = (id, models) => ({ id, provider: 'mock', tier: 'tier-1', protocol: 'openai', surfaces: ['chat_completions'], base_url: `https://${id}.example.com/v1`, models, limits: { concurrency: 1 } });
+const node = (id, models) => ({
+  id,
+  provider: 'mock',
+  tier: 'tier-1',
+  protocol: 'openai',
+  surfaces: ['chat_completions'],
+  base_url: `https://${id}.example.com/v1`,
+  models,
+  limits: { concurrency: 1 },
+});
 const now = () => 1_700_000_000_000;
 
 function findModelStatus(result, id) {
-  const list = Array.isArray(result) ? result : (result?.models || []);
+  const list = Array.isArray(result) ? result : result?.models || [];
   const entry = list.find((m) => m.id === id);
   if (!entry) throw new Error(`no model ${id} in result`);
   return entry.status;
@@ -160,8 +165,8 @@ test('wildcard node serves any model another node declared', () => {
   // serves 'air' (because another node maps it), even though its own models
   // map is empty.
   const nodes = [
-    node('a', {}),                                // wildcard
-    node('b', { 'public-air': 'up-air' }),         // explicit
+    node('a', {}), // wildcard
+    node('b', { 'public-air': 'up-air' }), // explicit
   ];
   const list = getPublicModelStatus(nodes, ENV, new Set(['public-air']), now());
   // Node mappings are the primary source; 'public-air' is in node b's map.
@@ -175,7 +180,10 @@ test('output is sorted by logical model name', () => {
   // Source is node mappings (primary). Build a single node with three models.
   const nodes = [node('a', { zeta: 'up-zeta', alpha: 'up-alpha', mid: 'up-mid' })];
   const list = getPublicModelStatus(nodes, ENV, new Set(), now());
-  assert.deepEqual(list.models.map((m) => m.id), ['alpha', 'mid', 'zeta']);
+  assert.deepEqual(
+    list.models.map((m) => m.id),
+    ['alpha', 'mid', 'zeta'],
+  );
   assert.equal(list.observed_at, new Date(now()).toISOString(), 'envelope carries observed_at');
 });
 
@@ -263,8 +271,8 @@ await testAsync('queryRecentModelEvidence: D1 read failure -> empty Set, never t
 await testAsync('queryRecentModelEvidence: only rows in the window count', async () => {
   const d1 = createMockD1();
   const env = { TOKEN_STATS_DB: d1 };
-  const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR;          // 30 min ago: in window
-  const hOld = Math.floor((now() - 30 * HOUR) / HOUR) * HOUR;            // 30h ago: out of window
+  const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR; // 30 min ago: in window
+  const hOld = Math.floor((now() - 30 * HOUR) / HOUR) * HOUR; // 30h ago: out of window
   const { persistTokenUsage } = await import('../src/observability/token-usage-store.ts');
   await persistTokenUsage(env, { prompt_tokens: 10, completion_tokens: 5 }, h0, 'air');
   await persistTokenUsage(env, { prompt_tokens: 10, completion_tokens: 5 }, hOld, 'oldmodel');
@@ -284,8 +292,7 @@ await testAsync('queryRecentModelEvidence: requests=0 is NOT evidence', async ()
   const { persistTokenUsage } = await import('../src/observability/token-usage-store.ts');
   await persistTokenUsage(env, null, h0, 'broken-only');
   const out = await queryRecentModelEvidence(env, MODEL_STATUS_RECENT_WINDOW_MS, now());
-  assert.ok(out.has('broken-only'),
-    'a row with requests > 0 (even if missing-usage) still counts as recent activity');
+  assert.ok(out.has('broken-only'), 'a row with requests > 0 (even if missing-usage) still counts as recent activity');
 });
 
 // --- 16. Window constants: 24h recent + 7d historical ------------------------
@@ -309,18 +316,24 @@ test('isolate rebuild does not flip a previously-available model back to unobser
   __resetTier1StateForTests();
   __resetAllStateForTests();
   const bList = getPublicModelStatus(nodes, ENV, evidence, now());
-  assert.equal(findModelStatus(bList, 'air'), 'available',
-    'cold-start with persistent D1 evidence must remain available');
+  assert.equal(findModelStatus(bList, 'air'), 'available', 'cold-start with persistent D1 evidence must remain available');
 });
 
 // --- 18. Three-tier aggregation: a model served only by tier 3 still works --
 
 test('model served by tier 3 (legacy state) is read correctly', () => {
   // Pure-tier-3 node: no Tier 1 state at all.
-  const nodes = [{
-    id: 't3', provider: 'mock', protocol: 'openai', surfaces: ['chat_completions'],
-    base_url: 'https://t3.example.com/v1', tier: 'tier-3', models: { air: 'up-air' },
-  }];
+  const nodes = [
+    {
+      id: 't3',
+      provider: 'mock',
+      protocol: 'openai',
+      surfaces: ['chat_completions'],
+      base_url: 'https://t3.example.com/v1',
+      tier: 'tier-3',
+      models: { air: 'up-air' },
+    },
+  ];
   // No Tier 1 state -> runtime is 'unobserved' for this node
   const list = getPublicModelStatus(nodes, ENV, new Set(['air']), now());
   // D1 has evidence -> available (case D)
@@ -390,11 +403,10 @@ await testAsync('dashboard path issues queryRecentModelEvidence at most once per
   // coalesced by the existing dashboard cache, not re-issued.
   const readsBefore = d1._reads.length;
   const req = () => new Request('https://gateway.example.com/', { headers: { accept: 'text/html' } });
-  const [h1, h2] = await Promise.all([
-    (await dashboardResponse(req(), env)).text(),
-    (await dashboardResponse(req(), env)).text(),
-  ]);
-  assert.equal(h1, h2, 'cached');
+  const [h1, h2] = await Promise.all([(await dashboardResponse(req(), env)).text(), (await dashboardResponse(req(), env)).text()]);
+  // Each render mints its own CSP nonce, so strip it before comparing.
+  const stripNonce = (html) => html.replace(/nonce="[^"]*"/g, 'nonce=""');
+  assert.equal(stripNonce(h1), stripNonce(h2), 'cached');
   // Two concurrent pages should add at most ONE new read of the model table
   // (the cache coalesces). The recent-evidence and historical-evidence queries
   // are both GROUP BY model and distinct from the model-usage GROUP BY model
@@ -407,45 +419,69 @@ await testAsync('dashboard path issues queryRecentModelEvidence at most once per
 // --- 21. Config-driven model order and grouping ------------------------------
 
 test('config-driven model order: display_order controls sort order', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    alpha: { policy: 'default', display_order: 30, group: 'general' },
-    beta: { policy: 'default', display_order: 10, group: 'general' },
-    gamma: { policy: 'default', display_order: 20, group: 'general' },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      alpha: { policy: 'default', display_order: 30, group: 'general' },
+      beta: { policy: 'default', display_order: 10, group: 'general' },
+      gamma: { policy: 'default', display_order: 20, group: 'general' },
+    }),
+  };
   const nodes = [node('n1', { alpha: 'up', beta: 'up', gamma: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['alpha', 'beta', 'gamma']), now());
-  assert.deepEqual(list.models.map((m) => m.id), ['beta', 'gamma', 'alpha']);
+  assert.deepEqual(
+    list.models.map((m) => m.id),
+    ['beta', 'gamma', 'alpha'],
+  );
 });
 
 test('config-driven grouping: group field controls which block a model appears in', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    air: { policy: 'default', display_order: 10, group: 'general' },
-    pro: { policy: 'default', display_order: 20, group: 'general' },
-    codeair: { policy: 'default', display_order: 10, group: 'coding' },
-    codepro: { policy: 'default', display_order: 20, group: 'coding' },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      air: { policy: 'default', display_order: 10, group: 'general' },
+      pro: { policy: 'default', display_order: 20, group: 'general' },
+      codeair: { policy: 'default', display_order: 10, group: 'coding' },
+      codepro: { policy: 'default', display_order: 20, group: 'coding' },
+    }),
+  };
   const nodes = [node('n1', { air: 'up', pro: 'up', codeair: 'up', codepro: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['air', 'pro', 'codeair', 'codepro']), now());
   const generalModels = list.models.filter((m) => m.group === 'general');
   const codingModels = list.models.filter((m) => m.group === 'coding');
-  assert.deepEqual(generalModels.map((m) => m.id), ['air', 'pro']);
-  assert.deepEqual(codingModels.map((m) => m.id), ['codeair', 'codepro']);
+  assert.deepEqual(
+    generalModels.map((m) => m.id),
+    ['air', 'pro'],
+  );
+  assert.deepEqual(
+    codingModels.map((m) => m.id),
+    ['codeair', 'codepro'],
+  );
 });
 
 test('display_order missing uses default 100', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    zebra: { policy: 'default' },
-    alpha: { policy: 'default', display_order: 10 },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      zebra: { policy: 'default' },
+      alpha: { policy: 'default', display_order: 10 },
+    }),
+  };
   const nodes = [node('n1', { zebra: 'up', alpha: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['zebra', 'alpha']), now());
-  assert.deepEqual(list.models.map((m) => m.id), ['alpha', 'zebra']);
+  assert.deepEqual(
+    list.models.map((m) => m.id),
+    ['alpha', 'zebra'],
+  );
 });
 
 test('group missing defaults to general', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    solo: { policy: 'default', display_order: 5 },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      solo: { policy: 'default', display_order: 5 },
+    }),
+  };
   const nodes = [node('n1', { solo: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['solo']), now());
   assert.equal(list.models[0].group, 'general');
@@ -461,19 +497,28 @@ test('node-mapped model without AIG_MODELS_CONFIG gets default order=100 and gro
 // --- 22. v1.2.7 Model Governance: ui_visible and 10-model catalog ---------
 
 test('ui_visible=false hides model from public status', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    Air: { policy: 'default', group: 'general', ui_visible: true },
-    Omni: { policy: 'default', group: 'omni', ui_visible: false },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      Air: { policy: 'default', group: 'general', ui_visible: true },
+      Omni: { policy: 'default', group: 'omni', ui_visible: false },
+    }),
+  };
   const nodes = [node('n1', { Air: 'up', Omni: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['Air', 'Omni']), now());
-  assert.deepEqual(list.models.map((m) => m.id), ['Air']);
+  assert.deepEqual(
+    list.models.map((m) => m.id),
+    ['Air'],
+  );
 });
 
 test('ui_visible defaults to true when not specified', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    Air: { policy: 'default', group: 'general' },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      Air: { policy: 'default', group: 'general' },
+    }),
+  };
   const nodes = [node('n1', { Air: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['Air']), now());
   assert.equal(list.models.length, 1);
@@ -481,28 +526,41 @@ test('ui_visible defaults to true when not specified', () => {
 });
 
 test('Omni and OCR excluded from public status with ui_visible=false', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    Air: { policy: 'default', group: 'general', ui_visible: true, display_order: 10 },
-    Pro: { policy: 'default', group: 'general', ui_visible: true, display_order: 20 },
-    Max: { policy: 'default', group: 'general', ui_visible: true, display_order: 30 },
-    Ultra: { policy: 'default', group: 'general', ui_visible: true, display_order: 40 },
-    'Code-Air': { policy: 'default', group: 'code', ui_visible: true, display_order: 10 },
-    'Code-Pro': { policy: 'default', group: 'code', ui_visible: true, display_order: 20 },
-    'Code-Max': { policy: 'default', group: 'code', ui_visible: true, display_order: 30 },
-    'Code-Ultra': { policy: 'default', group: 'code', ui_visible: true, display_order: 40 },
-    Omni: { policy: 'default', group: 'omni', ui_visible: false, display_order: 10 },
-    OCR: { policy: 'default', group: 'ocr', ui_visible: false, display_order: 10 },
-  }) };
-  const nodes = [node('n1', {
-    Air: 'up', Pro: 'up', Max: 'up', Ultra: 'up',
-    'Code-Air': 'up', 'Code-Pro': 'up', 'Code-Max': 'up', 'Code-Ultra': 'up',
-    Omni: 'up', OCR: 'up',
-  })];
-  const list = getPublicModelStatus(nodes, env, new Set([
-    'Air', 'Pro', 'Max', 'Ultra',
-    'Code-Air', 'Code-Pro', 'Code-Max', 'Code-Ultra',
-    'Omni', 'OCR',
-  ]), now());
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      Air: { policy: 'default', group: 'general', ui_visible: true, display_order: 10 },
+      Pro: { policy: 'default', group: 'general', ui_visible: true, display_order: 20 },
+      Max: { policy: 'default', group: 'general', ui_visible: true, display_order: 30 },
+      Ultra: { policy: 'default', group: 'general', ui_visible: true, display_order: 40 },
+      'Code-Air': { policy: 'default', group: 'code', ui_visible: true, display_order: 10 },
+      'Code-Pro': { policy: 'default', group: 'code', ui_visible: true, display_order: 20 },
+      'Code-Max': { policy: 'default', group: 'code', ui_visible: true, display_order: 30 },
+      'Code-Ultra': { policy: 'default', group: 'code', ui_visible: true, display_order: 40 },
+      Omni: { policy: 'default', group: 'omni', ui_visible: false, display_order: 10 },
+      OCR: { policy: 'default', group: 'ocr', ui_visible: false, display_order: 10 },
+    }),
+  };
+  const nodes = [
+    node('n1', {
+      Air: 'up',
+      Pro: 'up',
+      Max: 'up',
+      Ultra: 'up',
+      'Code-Air': 'up',
+      'Code-Pro': 'up',
+      'Code-Max': 'up',
+      'Code-Ultra': 'up',
+      Omni: 'up',
+      OCR: 'up',
+    }),
+  ];
+  const list = getPublicModelStatus(
+    nodes,
+    env,
+    new Set(['Air', 'Pro', 'Max', 'Ultra', 'Code-Air', 'Code-Pro', 'Code-Max', 'Code-Ultra', 'Omni', 'OCR']),
+    now(),
+  );
   const ids = list.models.map((m) => m.id);
   assert.deepEqual(ids, ['Air', 'Pro', 'Max', 'Ultra', 'Code-Air', 'Code-Pro', 'Code-Max', 'Code-Ultra']);
   assert.ok(!ids.includes('Omni'), 'Omni must not appear in public status');
@@ -510,12 +568,15 @@ test('Omni and OCR excluded from public status with ui_visible=false', () => {
 });
 
 test('group values: general, code, omni, ocr from config', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    Air: { policy: 'default', group: 'general', ui_visible: true },
-    'Code-Air': { policy: 'default', group: 'code', ui_visible: true },
-    Omni: { policy: 'default', group: 'omni', ui_visible: false },
-    OCR: { policy: 'default', group: 'ocr', ui_visible: false },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      Air: { policy: 'default', group: 'general', ui_visible: true },
+      'Code-Air': { policy: 'default', group: 'code', ui_visible: true },
+      Omni: { policy: 'default', group: 'omni', ui_visible: false },
+      OCR: { policy: 'default', group: 'ocr', ui_visible: false },
+    }),
+  };
   const nodes = [node('n1', { Air: 'up', 'Code-Air': 'up', Omni: 'up', OCR: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['Air', 'Code-Air', 'Omni', 'OCR']), now());
   // Only Air and Code-Air are ui_visible=true
@@ -540,9 +601,12 @@ test('deriveGroup fallback: Code- prefix -> code, Omni -> omni, OCR -> ocr', () 
 });
 
 test('ui_visible=false with visibility=public still hidden from public status', () => {
-  const env = { AIG_ACCESS_KEY_AIR: 'k', AIG_MODELS_CONFIG: JSON.stringify({
-    Omni: { policy: 'default', visibility: 'public', ui_visible: false, group: 'omni' },
-  }) };
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'k',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      Omni: { policy: 'default', visibility: 'public', ui_visible: false, group: 'omni' },
+    }),
+  };
   const nodes = [node('n1', { Omni: 'up' })];
   const list = getPublicModelStatus(nodes, env, new Set(['Omni']), now());
   assert.equal(list.models.length, 0);
@@ -559,8 +623,7 @@ test('ui_visible=false with visibility=public still hidden from public status', 
 test('canonical evidence: logical Code-Max matches lowercase code-max evidence', () => {
   const nodes = [node('a', { 'Code-Max': 'up-cm' })];
   const list = getPublicModelStatus(nodes, ENV, new Set(['code-max']), now());
-  assert.equal(findModelStatus(list, 'Code-Max'), 'available',
-    'lowercase stats evidence must count as recent for the official ID');
+  assert.equal(findModelStatus(list, 'Code-Max'), 'available', 'lowercase stats evidence must count as recent for the official ID');
 });
 
 test('canonical evidence: every evidence case variant yields the same result', () => {
@@ -585,8 +648,11 @@ test('canonical evidence drives the fluctuating state too', () => {
 test('canonicalization does not alter the official model ID surface', () => {
   const nodes = [node('a', { 'Code-Max': 'up-cm' })];
   const list = getPublicModelStatus(nodes, ENV, new Set(['code-max']), now());
-  assert.deepEqual(list.models.map((m) => m.id), ['Code-Max'],
-    'public output keeps the official logical ID; only evidence matching is canonical');
+  assert.deepEqual(
+    list.models.map((m) => m.id),
+    ['Code-Max'],
+    'public output keeps the official logical ID; only evidence matching is canonical',
+  );
 });
 
 console.log(`\nmodel-status tests: ${passed} passed.`);

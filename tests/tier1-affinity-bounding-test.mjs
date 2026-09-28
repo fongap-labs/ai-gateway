@@ -14,12 +14,11 @@
 
 import assert from 'node:assert/strict';
 import {
-  resolveTier1SessionId,
-  readTier1Affinity,
-  writeTier1Affinity,
-  shouldEvaluateAffinity,
   __resetTier1AffinityForTests,
+  readTier1Affinity,
+  shouldEvaluateAffinity,
   snapshotTier1Affinity,
+  writeTier1Affinity,
 } from '../src/scheduler/tier1-affinity.ts';
 
 let passed = 0;
@@ -31,7 +30,7 @@ function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -43,7 +42,7 @@ async function testAsync(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -52,8 +51,12 @@ async function testAsync(name, fn) {
 function mockKv() {
   const store = new Map();
   return {
-    async get(key) { return store.get(key) ?? null; },
-    async put(key, value, opts) { store.set(key, value); },
+    async get(key) {
+      return store.get(key) ?? null;
+    },
+    async put(key, value, opts) {
+      store.set(key, value);
+    },
   };
 }
 
@@ -66,8 +69,7 @@ await testAsync('stress: local cache size stays bounded under 10000 unique sessi
     await readTier1Affinity(env, sid);
   }
   const snap = snapshotTier1Affinity(env);
-  assert.ok(snap.cache_size <= snap.cache_max_entries,
-    `cache_size ${snap.cache_size} must not exceed max ${snap.cache_max_entries}`);
+  assert.ok(snap.cache_size <= snap.cache_max_entries, `cache_size ${snap.cache_size} must not exceed max ${snap.cache_max_entries}`);
 });
 
 // --- 2. escapeCounters bounded under 10000+ unique session IDs ---
@@ -78,8 +80,10 @@ test('stress: escapeCounters size stays bounded under 10000 unique sessions', ()
     shouldEvaluateAffinity(sid);
   }
   const snap = snapshotTier1Affinity({});
-  assert.ok(snap.escape_counters_size <= snap.escape_max_entries,
-    `escape_counters_size ${snap.escape_counters_size} must not exceed max ${snap.escape_max_entries}`);
+  assert.ok(
+    snap.escape_counters_size <= snap.escape_max_entries,
+    `escape_counters_size ${snap.escape_counters_size} must not exceed max ${snap.escape_max_entries}`,
+  );
 });
 
 // --- 3. Both bounded simultaneously ---
@@ -149,8 +153,7 @@ test('privacy: raw session ID does not appear as escape counter key (hashed)', (
   // (we can verify indirectly: snapshot doesn't leak raw IDs)
   const snap = snapshotTier1Affinity({});
   const serialized = JSON.stringify(snap);
-  assert.ok(!serialized.includes('sensitive-session-id-12345'),
-    'raw session ID must not appear in affinity snapshot');
+  assert.ok(!serialized.includes('sensitive-session-id-12345'), 'raw session ID must not appear in affinity snapshot');
 });
 
 // --- 9. Expiry works ---
@@ -169,8 +172,7 @@ test('stress: expired cache entries are cleaned up', async () => {
     await readTier1Affinity(env, `session-fill-${i}-`.padEnd(8, 'x'));
   }
   const snap2 = snapshotTier1Affinity(env);
-  assert.ok(snap2.cache_size <= snap2.cache_max_entries,
-    `cache bounded after fill: ${snap2.cache_size}/${snap2.cache_max_entries}`);
+  assert.ok(snap2.cache_size <= snap2.cache_max_entries, `cache bounded after fill: ${snap2.cache_size}/${snap2.cache_max_entries}`);
 });
 
 console.log(`\ntier1-affinity bounding tests: ${passed} passed.`);

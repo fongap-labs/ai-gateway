@@ -8,10 +8,7 @@
 // generic Chat-only upstream.
 
 import assert from 'node:assert/strict';
-import {
-  convertAnthropicToOpenAIRequest,
-  ConversionError,
-} from '../src/conversion/anthropic-to-openai.ts';
+import { ConversionError, convertAnthropicToOpenAIRequest } from '../src/conversion/anthropic-to-openai.ts';
 
 const converted = convertAnthropicToOpenAIRequest({
   model: 'Code-Max',
@@ -101,34 +98,44 @@ assert.deepEqual(converted.messages, [
   {
     role: 'assistant',
     content: 'I will read the file. ',
-    tool_calls: [{
-      id: 'toolu_1',
-      type: 'function',
-      function: { name: 'Read', arguments: '{"path":"README.md"}' },
-    }],
+    tool_calls: [
+      {
+        id: 'toolu_1',
+        type: 'function',
+        function: { name: 'Read', arguments: '{"path":"README.md"}' },
+      },
+    ],
   },
   { role: 'tool', tool_call_id: 'toolu_1', content: 'file contents' },
 ]);
-assert.equal(converted.messages.slice(1).some((message) => message.role === 'system'), false,
-  'generic Chat fallback must never emit a mid-conversation system role');
-assert.deepEqual(converted.tools, [{
-  type: 'function',
-  function: {
-    name: 'Read',
-    description: 'Read a file',
-    parameters: {
-      type: 'object',
-      properties: { path: { type: 'string' } },
-      required: ['path'],
+assert.equal(
+  converted.messages.slice(1).some((message) => message.role === 'system'),
+  false,
+  'generic Chat fallback must never emit a mid-conversation system role',
+);
+assert.deepEqual(converted.tools, [
+  {
+    type: 'function',
+    function: {
+      name: 'Read',
+      description: 'Read a file',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
     },
   },
-}]);
+]);
 assert.equal(converted.tool_choice, 'auto');
 for (const key of ['thinking', 'context_management', 'output_config', 'cache_control']) {
   assert.equal(Object.hasOwn(converted, key), false, `${key} must not leak to generic OpenAI Chat`);
 }
-assert.equal(converted.tools.some((tool) => tool.function?.name === 'advisor'), false,
-  'Anthropic server-side advisor must not be exposed as a fake client function');
+assert.equal(
+  converted.tools.some((tool) => tool.function?.name === 'advisor'),
+  false,
+  'Anthropic server-side advisor must not be exposed as a fake client function',
+);
 
 const structuredSchema = {
   type: 'object',
@@ -152,39 +159,44 @@ assert.deepEqual(structured.messages[1], { role: 'user', content: 'hello' });
 assert.equal(Object.hasOwn(structured, 'output_config'), false);
 
 assert.throws(
-  () => convertAnthropicToOpenAIRequest({
-    model: 'Code-Max',
-    max_tokens: 1024,
-    output_config: {
-      format: { type: 'json_schema', schema: 'invalid' },
-    },
-    messages: [{ role: 'user', content: 'hello' }],
-  }),
+  () =>
+    convertAnthropicToOpenAIRequest({
+      model: 'Code-Max',
+      max_tokens: 1024,
+      output_config: {
+        format: { type: 'json_schema', schema: 'invalid' },
+      },
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
   (error) => error instanceof ConversionError && /invalid output_config\.format/.test(error.message),
   'invalid structured output schema must remain a conversion error',
 );
 
 assert.throws(
-  () => convertAnthropicToOpenAIRequest({
-    model: 'Code-Max',
-    max_tokens: 1024,
-    tools: [{ type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-5' }],
-    tool_choice: { type: 'tool', name: 'advisor' },
-    messages: [{ role: 'user', content: 'hello' }],
-  }),
+  () =>
+    convertAnthropicToOpenAIRequest({
+      model: 'Code-Max',
+      max_tokens: 1024,
+      tools: [{ type: 'advisor_20260301', name: 'advisor', model: 'claude-opus-5' }],
+      tool_choice: { type: 'tool', name: 'advisor' },
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
   (error) => error instanceof ConversionError && /tool_choice references Anthropic-only server tool advisor/.test(error.message),
   'forced advisor use cannot be silently degraded',
 );
 
 assert.throws(
-  () => convertAnthropicToOpenAIRequest({
-    model: 'Code-Max',
-    max_tokens: 1024,
-    messages: [{
-      role: 'assistant',
-      content: [{ type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: {} }],
-    }],
-  }),
+  () =>
+    convertAnthropicToOpenAIRequest({
+      model: 'Code-Max',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'server_tool_use', id: 'srvtoolu_2', name: 'web_search', input: {} }],
+        },
+      ],
+    }),
   (error) => error instanceof ConversionError && /server_tool_use/.test(error.message),
   'unhandled Anthropic server tools must still fail closed',
 );

@@ -26,9 +26,7 @@ export const TIER1_5XX_MAX_MS = 300_000;
 // Auth (401/403) cooldown is account-scoped and comes from the shared upstream
 // classifier. If a direct internal caller omits the duration, fall back to the
 // canonical runtime-variable default rather than maintaining a second literal.
-const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find(
-  (entry) => entry.name === 'AIG_AUTH_FAILURE_COOLDOWN_MS',
-)?.def ?? 0;
+const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.name === 'AIG_AUTH_FAILURE_COOLDOWN_MS')?.def ?? 0;
 // 429 cooldown duration is owned exclusively by adaptive-429.ts. This module
 // stores the supplied deadline and controls the post-cooldown recovery probe;
 // it must never invent a second rate-limit ladder.
@@ -41,82 +39,85 @@ const FAILURE_STATE = Object.freeze({
   DISABLED: 'disabled',
 } as const);
 
-export type Tier1FailureState = typeof FAILURE_STATE[keyof typeof FAILURE_STATE];
+export type Tier1FailureState = (typeof FAILURE_STATE)[keyof typeof FAILURE_STATE];
 
 export type Tier1ModelRuntime = {
-  supported: boolean,
-  disabled: boolean,
-  cooldownUntil: number,
-  cooldownReason: string | null,
-  failureState: Tier1FailureState,
-  consecutiveFailures: number,
-  consecutiveRateLimits: number,
-  consecutiveOutliers: number,
-  halfOpenSuccesses: number,
-  ttftEwma: number | null,
-  sampleCount: number,
-  lastObservedAt: number,
-  scopeAmbiguous429: boolean,
-  rateLimitRecoveryPending: boolean,
-  rateLimitRecoveryUntil: number,
+  supported: boolean;
+  disabled: boolean;
+  cooldownUntil: number;
+  cooldownReason: string | null;
+  failureState: Tier1FailureState;
+  consecutiveFailures: number;
+  consecutiveRateLimits: number;
+  consecutiveOutliers: number;
+  halfOpenSuccesses: number;
+  ttftEwma: number | null;
+  sampleCount: number;
+  lastObservedAt: number;
+  scopeAmbiguous429: boolean;
+  rateLimitRecoveryPending: boolean;
+  rateLimitRecoveryUntil: number;
 };
 
 export type Tier1QuotaState = 'normal' | 'near_limit' | 'exhausted_until';
 
 export type Tier1AccountRuntime = {
-  accountId: string,
-  inFlight: number,
-  accountDisabled: boolean,
-  accountCooldownUntil: number,
-  accountCooldownReason: string | null,
-  consecutiveAccountFailures: number,
-  consecutiveRateLimits: number,
-  scopeAmbiguous429: boolean,
-  rateLimitRecoveryPending: boolean,
-  rateLimitRecoveryUntil: number,
-  quotaState: Tier1QuotaState,
-  quotaResetAt: number,
+  accountId: string;
+  inFlight: number;
+  accountDisabled: boolean;
+  accountCooldownUntil: number;
+  accountCooldownReason: string | null;
+  consecutiveAccountFailures: number;
+  consecutiveRateLimits: number;
+  scopeAmbiguous429: boolean;
+  rateLimitRecoveryPending: boolean;
+  rateLimitRecoveryUntil: number;
+  quotaState: Tier1QuotaState;
+  quotaResetAt: number;
   // Provider-reported quota, isolate-local. `null` = unknown: the gateway never
   // fabricates a hard limit and keeps its reactive adaptive-429 + cooldown
   // behavior. When a provider reports remaining requests/tokens, these drive a
   // reservation counter so concurrent admission cannot all see the same tail of
   // a window (the "20 concurrent requests see remaining=10" guard).
-  quotaRemainingRequests: number | null,
-  quotaRemainingTokens: number | null,
-  quotaSource: string | null,
+  quotaRemainingRequests: number | null;
+  quotaRemainingTokens: number | null;
+  quotaSource: string | null;
   // Per-account outstanding reservations not yet settled with actual usage.
   // Restored on release-before-settle (abort/pre-execution failure); confirmed
   // consumed on settle. Synchronous claim->makeToken keeps this race-free in
   // the single-threaded isolate.
-  quotaReservedInFlight: number,
+  quotaReservedInFlight: number;
   // model_missing is about the provider-facing model id, not the gateway's
   // logical alias. Keep that short cooldown separate from logical-model
   // performance/circuit state so remapping Code-Max does not inherit stale 404s.
-  upstreamModelCooldowns: Map<string, number>,
-  models: Map<string, Tier1ModelRuntime>,
+  upstreamModelCooldowns: Map<string, number>;
+  models: Map<string, Tier1ModelRuntime>;
 };
 
-export type Tier1ReleaseToken = { accountId: string, released: boolean, settled: boolean, quotaReserved: number };
+export type Tier1ReleaseToken = { accountId: string; released: boolean; settled: boolean; quotaReserved: number };
 
 /** Failure-kind classification input consumed from the reliability layer.
  * `kind` is an open string: stream-layer kinds (e.g. 'stream_interrupted')
  * also flow through here, carrying the stream-layer `streamReason`. */
-export type Tier1FailureInput = {
-  kind?: string,
-  cooldownMs?: number,
-  retryAfterMs?: number,
-  rateLimitScope?: string,
-  streamReason?: unknown,
-} | null | undefined;
+export type Tier1FailureInput =
+  | {
+      kind?: string;
+      cooldownMs?: number;
+      retryAfterMs?: number;
+      rateLimitScope?: string;
+      streamReason?: unknown;
+    }
+  | null
+  | undefined;
 
 export type Tier1Outcome = {
-  scope: 'account' | 'model' | 'upstream_model' | 'none',
-  action: 'disable' | 'cooldown' | 'neutral',
-  reason: string,
-  counted?: boolean,
-  cooldownMs?: number,
-  backoff?: 'rate_limit' | 'timeout' | 'server' | 'default',
-  scopeAmbiguous?: boolean,
+  scope: 'account' | 'model' | 'upstream_model' | 'none';
+  action: 'disable' | 'cooldown' | 'neutral';
+  reason: string;
+  counted?: boolean;
+  cooldownMs?: number;
+  backoff?: 'rate_limit' | 'timeout' | 'server' | 'default';
+  scopeAmbiguous?: boolean;
 };
 
 const accounts = new Map<string, Tier1AccountRuntime>();
@@ -225,7 +226,12 @@ function normalizeQuotaWindow(account: Tier1AccountRuntime, now: number): void {
   }
 }
 
-export function claimTier1Slot(node: RuntimeNode, now: number = Date.now(), modelId: string | null = null, maxInFlight: number | null = null): boolean {
+export function claimTier1Slot(
+  node: RuntimeNode,
+  now: number = Date.now(),
+  modelId: string | null = null,
+  maxInFlight: number | null = null,
+): boolean {
   const account = getTier1Account(node.id);
   normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
@@ -304,8 +310,14 @@ function modelBlocked(model: Tier1ModelRuntime | null | undefined, now: number):
   return model?.disabled || (model?.cooldownUntil ?? 0) > now;
 }
 
-export function isTier1Eligible(node: RuntimeNode, req: RoutableRequest, now: number = Date.now(), knownModels?: ReadonlySet<string> | null, maxInFlight?: number | null): boolean {
-  if (!node || node.tier !== 'tier-1') return false;
+export function isTier1Eligible(
+  node: RuntimeNode,
+  req: RoutableRequest,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+  maxInFlight?: number | null,
+): boolean {
+  if (node?.tier !== 'tier-1') return false;
   if (node.protocol !== req.protocol) return false;
   if (!Array.isArray(node.surfaces) || !node.surfaces.includes(req.surface)) return false;
   if (!servesModel(node, req.model, knownModels)) return false;
@@ -334,7 +346,14 @@ export function maybeTransitionToHalfOpen(accountId: string, modelId: string, no
   }
 }
 
-export function tier1CountDispatchableNodes(nodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), knownModels?: ReadonlySet<string> | null, maxInFlight?: number | null): number {
+export function tier1CountDispatchableNodes(
+  nodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+  maxInFlight?: number | null,
+): number {
   let count = 0;
   for (const node of nodes ?? []) {
     if (attempted.has(node.id)) continue;
@@ -344,7 +363,14 @@ export function tier1CountDispatchableNodes(nodes: ReadonlyArray<RuntimeNode>, r
   return count;
 }
 
-export function tier1HasDispatchableNode(nodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), knownModels?: ReadonlySet<string> | null, maxInFlight?: number | null): boolean {
+export function tier1HasDispatchableNode(
+  nodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+  maxInFlight?: number | null,
+): boolean {
   return tier1CountDispatchableNodes(nodes, req, attempted, now, knownModels, maxInFlight) > 0;
 }
 
@@ -363,8 +389,7 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
     } else {
       model.consecutiveOutliers = 0;
     }
-    model.ttftEwma = TIER1_EWMA_ALPHA * effectiveSample
-      + (1 - TIER1_EWMA_ALPHA) * model.ttftEwma;
+    model.ttftEwma = TIER1_EWMA_ALPHA * effectiveSample + (1 - TIER1_EWMA_ALPHA) * model.ttftEwma;
   }
   model.sampleCount++;
   model.lastObservedAt = now;
@@ -376,14 +401,19 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
   const kind = classification?.kind;
   if (kind === 'auth') {
     return {
-      scope: 'account', action: 'disable', reason: kind,
+      scope: 'account',
+      action: 'disable',
+      reason: kind,
       cooldownMs: Math.max(0, classification?.cooldownMs ?? TIER1_AUTH_DEFAULT_COOLDOWN_MS),
     };
   }
   if (kind === 'model_missing') {
     return {
-      scope: 'upstream_model', action: 'cooldown', counted: false,
-      cooldownMs: classification?.cooldownMs || 5_000, reason: kind,
+      scope: 'upstream_model',
+      action: 'cooldown',
+      counted: false,
+      cooldownMs: classification?.cooldownMs || 5_000,
+      reason: kind,
     };
   }
   if (kind === 'endpoint_not_found') {
@@ -393,8 +423,11 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
     const explicit = retryAfterMs ?? classification?.retryAfterMs ?? 0;
     return {
       scope: classification?.rateLimitScope === 'model' ? 'model' : 'account',
-      action: 'cooldown', counted: false, cooldownMs: explicit,
-      backoff: 'rate_limit', reason: kind,
+      action: 'cooldown',
+      counted: false,
+      cooldownMs: explicit,
+      backoff: 'rate_limit',
+      reason: kind,
       scopeAmbiguous: !classification?.rateLimitScope,
     };
   }
@@ -436,10 +469,7 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
     const cooldownMs = Math.min(Math.max(0, outcome.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
     if (cooldownMs > 0) {
       const until = now + cooldownMs;
-      account.upstreamModelCooldowns.set(
-        modelId,
-        Math.max(account.upstreamModelCooldowns.get(modelId) ?? 0, until),
-      );
+      account.upstreamModelCooldowns.set(modelId, Math.max(account.upstreamModelCooldowns.get(modelId) ?? 0, until));
     }
     return;
   }
@@ -519,10 +549,11 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   const model = getTier1Model(accountId, modelId);
   account.consecutiveAccountFailures = 0;
 
-  const accountRecoveryProbe = account.accountCooldownReason === 'rate_limit'
-    && account.accountCooldownUntil <= now
-    && !account.rateLimitRecoveryPending
-    && account.rateLimitRecoveryUntil > 0;
+  const accountRecoveryProbe =
+    account.accountCooldownReason === 'rate_limit' &&
+    account.accountCooldownUntil <= now &&
+    !account.rateLimitRecoveryPending &&
+    account.rateLimitRecoveryUntil > 0;
   if (accountRecoveryProbe) {
     account.consecutiveRateLimits = 0;
     account.accountCooldownUntil = 0;
@@ -533,10 +564,8 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   }
 
   model.consecutiveFailures = 0;
-  const modelRecoveryProbe = model.cooldownReason === 'rate_limit'
-    && model.cooldownUntil <= now
-    && !model.rateLimitRecoveryPending
-    && model.rateLimitRecoveryUntil > 0;
+  const modelRecoveryProbe =
+    model.cooldownReason === 'rate_limit' && model.cooldownUntil <= now && !model.rateLimitRecoveryPending && model.rateLimitRecoveryUntil > 0;
   if (modelRecoveryProbe) {
     model.consecutiveRateLimits = 0;
     model.cooldownUntil = 0;
@@ -581,7 +610,13 @@ export function tier1BlockingWaitMs(node: RuntimeNode, modelId: string, now: num
   return Infinity;
 }
 
-export function tier1HasDeferredCapacity(nodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), knownModels?: ReadonlySet<string> | null): boolean {
+export function tier1HasDeferredCapacity(
+  nodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+): boolean {
   for (const node of nodes ?? []) {
     if (attempted.has(node.id) || node.tier !== 'tier-1') continue;
     if (node.protocol !== req.protocol || !node.surfaces?.includes(req.surface) || !servesModel(node, req.model, knownModels)) continue;
@@ -597,7 +632,11 @@ export function tier1HasDeferredCapacity(nodes: ReadonlyArray<RuntimeNode>, req:
   return false;
 }
 
-export function recordTier1QuotaSignal(accountId: string, signal: { remainingRatio?: number, resetAtMs?: number } = {}, now: number = Date.now()): boolean {
+export function recordTier1QuotaSignal(
+  accountId: string,
+  signal: { remainingRatio?: number; resetAtMs?: number } = {},
+  now: number = Date.now(),
+): boolean {
   const { remainingRatio, resetAtMs = 0 } = signal;
   if (typeof remainingRatio !== 'number' || !Number.isFinite(remainingRatio) || remainingRatio < 0 || remainingRatio > 1) return false;
   const account = getTier1Account(accountId);
@@ -621,7 +660,14 @@ export function recordTier1QuotaSignal(accountId: string, signal: { remainingRat
  *  ignored — unknown quota stays a no-op pass-through. */
 export function recordTier1QuotaReport(
   accountId: string,
-  signal: { remainingRequests?: number, remainingTokens?: number, limitRequests?: number, limitTokens?: number, resetAtMs?: number, source?: string } | null,
+  signal: {
+    remainingRequests?: number;
+    remainingTokens?: number;
+    limitRequests?: number;
+    limitTokens?: number;
+    resetAtMs?: number;
+    source?: string;
+  } | null,
   now: number = Date.now(),
 ): boolean {
   if (!signal) return false;
@@ -677,16 +723,13 @@ export function snapshotTier1Runtime(accountId: string, modelId: string, now: nu
   return {
     account_id: accountId,
     model: modelId,
-    state: account?.accountDisabled ? 'disabled'
-      : account && account.accountCooldownUntil > now ? 'cooldown'
-      : modelDiagnosticState(model, now),
+    state: account?.accountDisabled ? 'disabled' : account && account.accountCooldownUntil > now ? 'cooldown' : modelDiagnosticState(model, now),
     account_disabled: account?.accountDisabled ?? false,
     account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,
     account_consecutive_rate_limits: account?.consecutiveRateLimits ?? 0,
     account_scope_ambiguous_429: account?.scopeAmbiguous429 ?? false,
     in_flight: account?.inFlight ?? 0,
-    quota_state: account?.quotaState === 'exhausted_until' && (account?.quotaResetAt ?? 0) <= now
-      ? 'normal' : account?.quotaState ?? 'normal',
+    quota_state: account?.quotaState === 'exhausted_until' && (account?.quotaResetAt ?? 0) <= now ? 'normal' : (account?.quotaState ?? 'normal'),
     quota_reset_at: account && account.quotaResetAt > now ? new Date(account.quotaResetAt).toISOString() : null,
     failure_state: model?.failureState ?? FAILURE_STATE.NORMAL,
     consecutive_failures: model?.consecutiveFailures ?? 0,
@@ -708,10 +751,15 @@ export function snapshotTier1AccountRuntime(accountId: string, modelIds: Readonl
   for (const id of account?.models.keys() ?? []) ids.add(id);
   const models = [...ids].sort().map((id) => snapshotTier1Runtime(accountId, id, now));
   return {
-    state: account?.accountDisabled ? 'disabled'
-      : account && account.accountCooldownUntil > now ? 'cooldown'
-      : models.some((m) => m.state === 'observed_healthy') ? 'observed_healthy'
-      : account ? 'unknown' : 'configured',
+    state: account?.accountDisabled
+      ? 'disabled'
+      : account && account.accountCooldownUntil > now
+        ? 'cooldown'
+        : models.some((m) => m.state === 'observed_healthy')
+          ? 'observed_healthy'
+          : account
+            ? 'unknown'
+            : 'configured',
     in_flight: account?.inFlight ?? 0,
     account_disabled: account?.accountDisabled ?? false,
     account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,

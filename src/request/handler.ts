@@ -13,28 +13,21 @@
 // Streaming rule: the first-event guard runs BEFORE any streaming Response is
 // returned to the client; after that point transparent failover is forbidden.
 
-import { TIER_ORDER } from './router.ts';
 import { getLogger } from '../observability/logger.ts';
+import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
+import type { RuntimeNode } from '../types/node.ts';
+import type { ConversionContext, LoopContext, RouteFeasibilityResult } from '../types/request.ts';
+import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
+import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
+import { dispatchWithHedge } from './attempt.ts';
+import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './edge-cache.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse } from './errors.ts';
-import {
-  resolveTier1SessionId, readTier1Affinity,
-  shouldEvaluateAffinity, recordTier1AffinityDecision,
-} from '../scheduler/tier1-affinity.ts';
+import { runFallbackChain } from './fallback.ts';
+import { buildModelFallbackPlan, failedDomainNodeIds, rememberFailedDomains } from './model-fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
-import { resolveEdgeCachePlan, matchEdgeCache, type EdgeCachePlan, injectMissHeader, storeEdgeCacheResponse } from './edge-cache.ts';
-import {
-  buildModelFallbackPlan,
-  failedDomainNodeIds,
-  rememberFailedDomains,
-} from './model-fallback.ts';
-import { pickForTier, makeTier1Rng, computeTierCaps, countRemainingDispatchableAttempts } from './tier-loop.ts';
-import { runFallbackChain } from './fallback.ts';
-import { dispatchWithHedge } from './attempt.ts';
-import type { LoopContext, ConversionContext, RouteFeasibilityResult } from '../types/request.ts';
-import type { TierMap, RoutableRequest } from '../types/scheduler.ts';
-import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
-import type { RuntimeNode } from '../types/node.ts';
+import { TIER_ORDER } from './router.ts';
+import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   const logger = getLogger(env);
@@ -45,10 +38,22 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   }
 
   const {
-    requestId, requestStartMs,
-    route, requestedModel, clientWantsStream, fakeStream, bodyJson,
-    limits, exposeUpstreamInfo, requestDescriptor: reqDescriptor,
-    config, tiers, policy, failoverBudgetMs, knownModels, feasibility,
+    requestId,
+    requestStartMs,
+    route,
+    requestedModel,
+    clientWantsStream,
+    fakeStream,
+    bodyJson,
+    limits,
+    exposeUpstreamInfo,
+    requestDescriptor: reqDescriptor,
+    config,
+    tiers,
+    policy,
+    failoverBudgetMs,
+    knownModels,
+    feasibility,
   } = pre;
 
   // Edge cache: compute plan and check for HIT before any upstream work.
@@ -73,24 +78,19 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
   // Flatten only for request-plan accounting. Execution still follows the
   // bounded rounds below.
-  const orderedModelPasses = modelPlan.flatMap((round, roundIndex) =>
-    round.map((pass, passIndex) => ({ roundIndex, passIndex, pass })));
+  const orderedModelPasses = modelPlan.flatMap((round, roundIndex) => round.map((pass, passIndex) => ({ roundIndex, passIndex, pass })));
 
   const baseFeasibility = new Map<string, RouteFeasibilityResult>([[requestedModel, feasibility]]);
-  const feasibilityForModel = (
-    model: string,
-    excludedNodeIds?: ReadonlySet<string> | null,
-  ): RouteFeasibilityResult => {
+  const feasibilityForModel = (model: string, excludedNodeIds?: ReadonlySet<string> | null): RouteFeasibilityResult => {
     if (!excludedNodeIds?.size) {
       const cached = baseFeasibility.get(model);
       if (cached) return cached;
     }
     const descriptor = { ...reqDescriptor, model };
     const scopedTiers = excludedNodeIds?.size
-      ? Object.fromEntries(TIER_ORDER.map((tierNumber) => [
-        tierNumber,
-        tiers[tierNumber].filter((node) => !excludedNodeIds.has(node.id)),
-      ])) as TierMap<RuntimeNode[]>
+      ? (Object.fromEntries(
+          TIER_ORDER.map((tierNumber) => [tierNumber, tiers[tierNumber].filter((node) => !excludedNodeIds.has(node.id))]),
+        ) as TierMap<RuntimeNode[]>)
       : tiers;
     const result = evaluateRouteFeasibility({
       route,
@@ -128,8 +128,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
   // Three separate request-wide counters. Model switches never reset them.
   const state: LoopContext['state'] = {
-    attempted: new Set<string>(), attempts: [], logicalAttempts: 0, dispatches: 0, hedges: 0,
-    failureKinds: {}, logger, requestId, maxAttempts: requestPolicy.maxAttempts,
+    attempted: new Set<string>(),
+    attempts: [],
+    logicalAttempts: 0,
+    dispatches: 0,
+    hedges: 0,
+    failureKinds: {},
+    logger,
+    requestId,
+    maxAttempts: requestPolicy.maxAttempts,
     maxDispatches: requestPolicy.maxAttempts + limits.maxHedgesPerRequest,
     requestedModel,
     nodes: config.nodes,
@@ -142,17 +149,35 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   const tier1Rng = makeTier1Rng(env);
 
   const loopCtx: LoopContext = {
-    request, env, ctx, logger, requestId, route, requestedModel,
-    clientWantsStream, fakeStream, bodyJson, limits, exposeUpstreamInfo, state,
-    failoverBudgetMs, requestStartMs, policy: requestPolicy, tiers,
-    tier1Affinity, tier1EvaluateAffinity, tier1Rng, tier1Session,
-    knownModels, feasibility, futureAttemptReserve: 0,
+    request,
+    env,
+    ctx,
+    logger,
+    requestId,
+    route,
+    requestedModel,
+    clientWantsStream,
+    fakeStream,
+    bodyJson,
+    limits,
+    exposeUpstreamInfo,
+    state,
+    failoverBudgetMs,
+    requestStartMs,
+    policy: requestPolicy,
+    tiers,
+    tier1Affinity,
+    tier1EvaluateAffinity,
+    tier1Rng,
+    tier1Session,
+    knownModels,
+    feasibility,
+    futureAttemptReserve: 0,
     edgeCachePlan,
   };
 
   let planOrdinal = 0;
-  modelRoundsLoop:
-  for (let roundIndex = 0; roundIndex < modelPlan.length; roundIndex++) {
+  modelRoundsLoop: for (let roundIndex = 0; roundIndex < modelPlan.length; roundIndex++) {
     const round = modelPlan[roundIndex];
     if (!round) continue;
     for (let passIndex = 0; passIndex < round.length; passIndex++) {
@@ -168,12 +193,9 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
       const effectiveModel = pass.model;
       const passStartAttempts = state.logicalAttempts;
-      const passAttemptCeiling = pass.attemptCap == null
-        ? requestPolicy.maxAttempts
-        : Math.min(requestPolicy.maxAttempts, passStartAttempts + pass.attemptCap);
-      const passPolicy = passAttemptCeiling === requestPolicy.maxAttempts
-        ? requestPolicy
-        : { ...requestPolicy, maxAttempts: passAttemptCeiling };
+      const passAttemptCeiling =
+        pass.attemptCap == null ? requestPolicy.maxAttempts : Math.min(requestPolicy.maxAttempts, passStartAttempts + pass.attemptCap);
+      const passPolicy = passAttemptCeiling === requestPolicy.maxAttempts ? requestPolicy : { ...requestPolicy, maxAttempts: passAttemptCeiling };
 
       const effectiveReqDescriptor = { ...reqDescriptor, model: effectiveModel };
       state.attempted = failedDomainNodeIds(config.nodes, effectiveModel, failedDomains);
@@ -185,9 +207,9 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       if (!effectiveFeasibility.reachable) {
         if (domainExcluded > 0) {
           logger.debug(
-            `model-fallback skip request=${requestId} requested=${requestedModel}`
-            + ` effective=${effectiveModel} reason=spent_failure_domain`
-            + ` domain_excluded=${domainExcluded}`,
+            `model-fallback skip request=${requestId} requested=${requestedModel}` +
+              ` effective=${effectiveModel} reason=spent_failure_domain` +
+              ` domain_excluded=${domainExcluded}`,
           );
         }
         continue;
@@ -204,12 +226,12 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
       if (effectiveModel !== requestedModel || roundIndex > 0 || domainExcluded > 0) {
         logger.info(
-          `model-fallback request=${requestId} round=${roundIndex + 1}/${modelPlan.length}`
-          + ` requested=${requestedModel} effective=${effectiveModel}`
-          + ` pass_cap=${pass.attemptCap ?? 'policy'}`
-          + ` future_reserve=${futureAttemptReserve}`
-          + ` domain_excluded=${domainExcluded}`
-          + ` logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
+          `model-fallback request=${requestId} round=${roundIndex + 1}/${modelPlan.length}` +
+            ` requested=${requestedModel} effective=${effectiveModel}` +
+            ` pass_cap=${pass.attemptCap ?? 'policy'}` +
+            ` future_reserve=${futureAttemptReserve}` +
+            ` domain_excluded=${domainExcluded}` +
+            ` logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
         );
       }
 
@@ -256,18 +278,50 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
   state.requestedModel = requestedModel;
   return buildExhaustedResponse(
-    request, env, route, requestId, requestedModel, state, tiers,
-    exposeUpstreamInfo, reqDescriptor, knownModels, familyFallback,
+    request,
+    env,
+    route,
+    requestId,
+    requestedModel,
+    state,
+    tiers,
+    exposeUpstreamInfo,
+    reqDescriptor,
+    knownModels,
+    familyFallback,
   );
 }
 
-async function runTierLoop(loopCtx: LoopContext, reqDescriptor: RoutableRequest, conversionContext: ConversionContext | null, overrideTierCaps?: TierMap<number> | null): Promise<Response | null> {
+async function runTierLoop(
+  loopCtx: LoopContext,
+  reqDescriptor: RoutableRequest,
+  conversionContext: ConversionContext | null,
+  overrideTierCaps?: TierMap<number> | null,
+): Promise<Response | null> {
   const {
-    request, env, ctx, logger, requestId, route, requestedModel,
-    clientWantsStream, fakeStream, bodyJson, limits, exposeUpstreamInfo, state,
-    failoverBudgetMs, requestStartMs, policy, tiers,
-    tier1Affinity, tier1EvaluateAffinity, tier1Rng, tier1Session,
-    knownModels, futureAttemptReserve,
+    request,
+    env,
+    ctx,
+    logger,
+    requestId,
+    route,
+    requestedModel,
+    clientWantsStream,
+    fakeStream,
+    bodyJson,
+    limits,
+    exposeUpstreamInfo,
+    state,
+    failoverBudgetMs,
+    requestStartMs,
+    policy,
+    tiers,
+    tier1Affinity,
+    tier1EvaluateAffinity,
+    tier1Rng,
+    tier1Session,
+    knownModels,
+    futureAttemptReserve,
   } = loopCtx;
   const tierCaps = overrideTierCaps ?? computeTierCaps(tiers, reqDescriptor, state.attempted, policy, knownModels, policy.maxInFlight ?? null);
   for (const tierNumber of TIER_ORDER) {
@@ -280,14 +334,18 @@ async function runTierLoop(loopCtx: LoopContext, reqDescriptor: RoutableRequest,
         return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
       }
       const currentPassRemaining = countRemainingDispatchableAttempts(
-        tiers, reqDescriptor, state.attempted, tierCaps,
-        tierNumber, usedInTier, policy.maxAttempts - state.logicalAttempts, knownModels, policy.maxInFlight ?? null,
+        tiers,
+        reqDescriptor,
+        state.attempted,
+        tierCaps,
+        tierNumber,
+        usedInTier,
+        policy.maxAttempts - state.logicalAttempts,
+        knownModels,
+        policy.maxInFlight ?? null,
       );
       const requestRemaining = Math.max(1, state.maxAttempts - state.logicalAttempts);
-      const remainingDispatchableAttempts = Math.max(1, Math.min(
-        requestRemaining,
-        currentPassRemaining + Math.max(0, futureAttemptReserve),
-      ));
+      const remainingDispatchableAttempts = Math.max(1, Math.min(requestRemaining, currentPassRemaining + Math.max(0, futureAttemptReserve)));
       const pick = pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, {
         affinityAccountId: tierNumber === 1 ? tier1Affinity : null,
         evaluateAffinity: tierNumber === 1 && tier1EvaluateAffinity,
@@ -309,20 +367,39 @@ async function runTierLoop(loopCtx: LoopContext, reqDescriptor: RoutableRequest,
           escaped: pick.tier1EscapedFromAffinity,
         });
       }
-      const outcome = await dispatchWithHedge({
-        request, env, ctx, logger, requestId, route, node, requestedModel,
-        clientWantsStream, fakeStream, bodyJson, limits, exposeUpstreamInfo, state,
-        failoverBudgetMs, requestStartMs, reqDescriptor,
-        remainingDispatchableAttempts, policy, tierNumber,
-        tier1ReleaseToken: pick.tier1ReleaseToken || null,
-        tier1EscapedFromAffinity: !!pick.tier1EscapedFromAffinity,
-        tier1UpdateAffinity: !!pick.tier1UpdateAffinity,
-        tier1AffinityAccountId: tier1Affinity,
-        tier1EvaluateAffinity,
-        tier1Session,
-        rng: tier1Rng,
-        conversionContext,
-      }, tiers[tierNumber]);
+      const outcome = await dispatchWithHedge(
+        {
+          request,
+          env,
+          ctx,
+          logger,
+          requestId,
+          route,
+          node,
+          requestedModel,
+          clientWantsStream,
+          fakeStream,
+          bodyJson,
+          limits,
+          exposeUpstreamInfo,
+          state,
+          failoverBudgetMs,
+          requestStartMs,
+          reqDescriptor,
+          remainingDispatchableAttempts,
+          policy,
+          tierNumber,
+          tier1ReleaseToken: pick.tier1ReleaseToken || null,
+          tier1EscapedFromAffinity: !!pick.tier1EscapedFromAffinity,
+          tier1UpdateAffinity: !!pick.tier1UpdateAffinity,
+          tier1AffinityAccountId: tier1Affinity,
+          tier1EvaluateAffinity,
+          tier1Session,
+          rng: tier1Rng,
+          conversionContext,
+        },
+        tiers[tierNumber],
+      );
       if (outcome.budgetCharged) usedInTier++;
       if (outcome.response) return outcome.response;
       if (outcome.stop) break;

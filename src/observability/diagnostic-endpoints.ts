@@ -4,19 +4,19 @@
 // Diagnostic HTTP endpoints: /health, /metrics, /v1/models.
 // Responses contain runtime state only — never credentials.
 
+import { filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
+import type { RegistryEntry } from '../config/registry.ts';
+import { collectKnownModels, modelRegistryEntry, servesModel } from '../config/registry.ts';
+import { corsHeaders, jsonError } from '../protocol/http.ts';
 import { snapshotNode } from '../reliability/node-state.ts';
 import { snapshotTier1AccountRuntime } from '../reliability/tier1-state.ts';
 import { snapshotTier1Affinity } from '../scheduler/tier1-affinity.ts';
-import { gatewayStats, streamStats } from './gateway-stats.ts';
-import { tokenStats, summarizeTokenStats, tokenMetricSeries } from './token-usage.ts';
-import { corsHeaders, jsonError } from '../protocol/http.ts';
-import { modelRegistryEntry, servesModel, collectKnownModels } from '../config/registry.ts';
-import { filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
-import type { RegistryEntry } from '../config/registry.ts';
-import type { AuthResult } from '../types/request.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
+import type { AuthResult } from '../types/request.ts';
+import { gatewayStats, streamStats } from './gateway-stats.ts';
+import { summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
 
 export const APP_META = Object.freeze({
   name: 'ai-gateway',
@@ -32,19 +32,26 @@ export function resolveBuildSha(env: Record<string, unknown>): string {
 }
 
 function sanitizePrometheusLabel(value: unknown): string {
-  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n');
 }
 
-function buildModelsList(nodes: RuntimeNode[], env: Record<string, unknown>, authResult: AuthResult): { object: string, data: Array<Record<string, unknown>> } {
+function buildModelsList(
+  nodes: RuntimeNode[],
+  env: Record<string, unknown>,
+  authResult: AuthResult,
+): { object: string; data: Array<Record<string, unknown>> } {
   const logicalNames = collectKnownModels(nodes, env);
   type ModelListEntry = {
-    id: string,
-    object: string,
-    created: number,
-    owned_by: string,
-    apiBackends: Set<string>,
-    surfaces: Set<Surface>,
-    reg: RegistryEntry,
+    id: string;
+    object: string;
+    created: number;
+    owned_by: string;
+    apiBackends: Set<string>;
+    surfaces: Set<Surface>;
+    reg: RegistryEntry;
   };
   const models = new Map<string, ModelListEntry>();
   const entryFor = (logical: string): ModelListEntry => {
@@ -76,9 +83,7 @@ function buildModelsList(nodes: RuntimeNode[], env: Record<string, unknown>, aut
     }
   }
 
-  const filterShape = authResult.authorized && authResult.mode !== 'skip'
-    ? { allowAll: authResult.allowAll, allowlist: authResult.allowlist }
-    : null;
+  const filterShape = authResult.authorized && authResult.mode !== 'skip' ? { allowAll: authResult.allowAll, allowlist: authResult.allowlist } : null;
   const allowedSet = new Set(filterModelsByKey(filterShape, logicalNames));
   const data = [...models.values()]
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -114,8 +119,13 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
     const configuredModels = Object.keys(n.models || {});
     const models = configuredModels.length ? configuredModels : [...allLogical];
     const base = {
-      id: n.id, tier: n.tier, provider: n.provider, protocol: n.protocol,
-      surfaces: n.surfaces, priority: n.priority, models: configuredModels,
+      id: n.id,
+      tier: n.tier,
+      provider: n.provider,
+      protocol: n.protocol,
+      surfaces: n.surfaces,
+      priority: n.priority,
+      models: configuredModels,
     };
     if (n.tier !== 'tier-1') return { ...base, ...snapshotNode(n.id, now) };
     const runtime = snapshotTier1AccountRuntime(n.id, models, now);
@@ -137,59 +147,66 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
   const unknown = endpoints.filter((e) => e.status === 'configured' || e.status === 'unknown').length;
   const statusCode = config.status === 'invalid' || config.status === 'unconfigured' ? 503 : 200;
 
-  return new Response(JSON.stringify({
-    build: resolveBuildSha(env),
-    status: config.status,
-    ready: config.ready,
-    nodes_total: config.nodesTotal,
-    nodes_usable: config.nodesUsable,
-    nodes_active: config.nodesUsable - cooling - disabled,
-    nodes_observed_healthy: observedHealthy,
-    nodes_unknown_or_configured: unknown,
-    nodes_cooling_down: cooling,
-    nodes_disabled: disabled,
-    tiers: {
-      'tier-1': config.nodes.filter((n) => n.tier === 'tier-1').length,
-      'tier-2': config.nodes.filter((n) => n.tier === 'tier-2').length,
-      'tier-3': config.nodes.filter((n) => n.tier === 'tier-3').length,
-    },
-    note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
-    tier1_affinity: snapshotTier1Affinity(env),
-    client_stats: {
-      started_at: new Date(gatewayStats.startedAt).toISOString(),
-      requests_total: gatewayStats.requests,
-      successes_total: gatewayStats.successes,
-      failures_total: gatewayStats.failures,
-      active_requests: gatewayStats.activeRequests,
-      cancellations_total: gatewayStats.cancellations,
-    },
-    token_stats: (() => {
-      const s = summarizeTokenStats();
-      return {
-        started_at: new Date(s.startedAt).toISOString(),
-        totals: {
-          input_tokens: s.totals.input,
-          output_tokens: s.totals.output,
-          total_tokens: s.totals.total,
-          usage_reports: s.totals.reports,
-          usage_missing: s.totals.missing,
+  return new Response(
+    JSON.stringify(
+      {
+        build: resolveBuildSha(env),
+        status: config.status,
+        ready: config.ready,
+        nodes_total: config.nodesTotal,
+        nodes_usable: config.nodesUsable,
+        nodes_active: config.nodesUsable - cooling - disabled,
+        nodes_observed_healthy: observedHealthy,
+        nodes_unknown_or_configured: unknown,
+        nodes_cooling_down: cooling,
+        nodes_disabled: disabled,
+        tiers: {
+          'tier-1': config.nodes.filter((n) => n.tier === 'tier-1').length,
+          'tier-2': config.nodes.filter((n) => n.tier === 'tier-2').length,
+          'tier-3': config.nodes.filter((n) => n.tier === 'tier-3').length,
         },
-        usage_coverage: s.usageCoverage,
-        note: 'Isolate-local, best-effort, upstream-reported usage only; missing usage is never estimated. Not billing-grade.',
-      };
-    })(),
-    diagnostics: config.diagnostics,
-    endpoints,
-    request_id: requestId,
-  }, null, 2), {
-    status: statusCode,
-    headers: {
-      'content-type': 'application/json;charset=UTF-8',
-      'cache-control': 'no-store',
-      'x-request-id': requestId,
-      ...corsHeaders(request, env),
+        note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
+        tier1_affinity: snapshotTier1Affinity(env),
+        client_stats: {
+          started_at: new Date(gatewayStats.startedAt).toISOString(),
+          requests_total: gatewayStats.requests,
+          successes_total: gatewayStats.successes,
+          failures_total: gatewayStats.failures,
+          active_requests: gatewayStats.activeRequests,
+          cancellations_total: gatewayStats.cancellations,
+        },
+        token_stats: (() => {
+          const s = summarizeTokenStats();
+          return {
+            started_at: new Date(s.startedAt).toISOString(),
+            totals: {
+              input_tokens: s.totals.input,
+              output_tokens: s.totals.output,
+              total_tokens: s.totals.total,
+              usage_reports: s.totals.reports,
+              usage_missing: s.totals.missing,
+            },
+            usage_coverage: s.usageCoverage,
+            note: 'Isolate-local, best-effort, upstream-reported usage only; missing usage is never estimated. Not billing-grade.',
+          };
+        })(),
+        diagnostics: config.diagnostics,
+        endpoints,
+        request_id: requestId,
+      },
+      null,
+      2,
+    ),
+    {
+      status: statusCode,
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+        ...corsHeaders(request, env),
+      },
     },
-  });
+  );
 }
 
 export function metricsResponse(request: Request, env: Record<string, unknown>, requestId: string): Response {
@@ -272,7 +289,11 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
       }
     } else {
       counter('gateway_node_health_score', s.health_score, label);
-      counter('gateway_node_circuit_state', ({ closed: 0, 'half-open': 1, open: 2 } as Record<string, number>)[s.circuit_state] ?? 0, `node_id="${sanitizePrometheusLabel(node.id)}"`);
+      counter(
+        'gateway_node_circuit_state',
+        ({ closed: 0, 'half-open': 1, open: 2 } as Record<string, number>)[s.circuit_state] ?? 0,
+        `node_id="${sanitizePrometheusLabel(node.id)}"`,
+      );
       counter('gateway_node_active_requests', s.active_requests, label);
       counter('gateway_node_cooldown_remaining_ms', s.cooldown_remaining_ms, label);
       counter('gateway_node_avg_latency_ms', s.avg_latency_ms, label);
@@ -282,7 +303,7 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
     counter('gateway_node_failures_total', s.total_failures, label);
   }
 
-  return new Response(lines.join('\n') + '\n', {
+  return new Response(`${lines.join('\n')}\n`, {
     status: 200,
     headers: {
       'content-type': 'text/plain; version=0.0.4; charset=utf-8',
@@ -308,9 +329,7 @@ export function modelsListResponse(request: Request, env: Record<string, unknown
 
 export function sanitizedInternalError(request: Request, env: Record<string, unknown>, isAnthropic: boolean, requestId: string): Response {
   const message = 'Internal gateway error.';
-  return isAnthropic
-    ? anthropicErrorResponseSafe(request, env, message, requestId)
-    : jsonError(request, env, 500, message, undefined, requestId);
+  return isAnthropic ? anthropicErrorResponseSafe(request, env, message, requestId) : jsonError(request, env, 500, message, undefined, requestId);
 }
 
 export function sanitizedInternalErrorForRoute(request: Request, env: Record<string, unknown>, route: string, requestId: string): Response {

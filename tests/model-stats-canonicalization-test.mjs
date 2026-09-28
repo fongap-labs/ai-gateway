@@ -25,13 +25,12 @@
 // The 24h evidence window and the TTFT precision contracts live in their
 // own suites (model-status-window-contract-test / ttft-query-contract-test).
 
-import assert from 'node:assert/strict';
 import {
-  queryTokenModelUsage,
-  queryRecentModelEvidence,
+  persistTokenUsage,
   queryAllModelsTtftPercentiles,
   queryModelUsageCoverage,
-  persistTokenUsage,
+  queryRecentModelEvidence,
+  queryTokenModelUsage,
 } from '../src/observability/token-usage-store.ts';
 import { createMockD1 } from './mock-d1-database.mjs';
 
@@ -43,7 +42,10 @@ const h0 = Math.floor((now() - 30 * 60_000) / HOUR) * HOUR; // 30 min ago
 let failures = 0;
 function check(name, ok, detail) {
   if (ok) console.log(`  ok  ${name}`);
-  else { failures++; console.error(`FAIL  ${name}${detail ? ` — ${detail}` : ''}`); }
+  else {
+    failures++;
+    console.error(`FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
+  }
 }
 
 // ---- C01: Token Usage merges historical case variants -------------------------
@@ -57,12 +59,16 @@ function check(name, ok, detail) {
   d1.seedModelRow(h0 - 3 * HOUR, ' Code-Max ', { total: 10, requests: 1 });
   const env = { TOKEN_STATS_DB: d1 };
   const res = await queryTokenModelUsage(env, 7, now());
-  check('C01 variants produce exactly ONE canonical stats dimension',
+  check(
+    'C01 variants produce exactly ONE canonical stats dimension',
     res.available === true && res.rows.length === 1 && res.rows[0].model === 'code-max',
-    `rows=${JSON.stringify(res.rows)}`);
-  check('C01 totals and requests are the true sums across variants',
+    `rows=${JSON.stringify(res.rows)}`,
+  );
+  check(
+    'C01 totals and requests are the true sums across variants',
     res.rows.length === 1 && res.rows[0].total === 185 && res.rows[0].requests === 5,
-    `rows=${JSON.stringify(res.rows)}`);
+    `rows=${JSON.stringify(res.rows)}`,
+  );
 }
 
 // ---- C02: TTFT histograms merge before percentiles (no Map overwrite) ---------
@@ -80,15 +86,18 @@ function check(name, ok, detail) {
   const env = { TOKEN_STATS_DB: d1 };
   const res = await queryAllModelsTtftPercentiles(env, WEEK_MS, now());
   const entry = res.ttft.get('code-max');
-  check('C02 variants merge into one TTFT entry with the true sample count',
+  check(
+    'C02 variants merge into one TTFT entry with the true sample count',
     res.available === true && res.ttft.size === 1 && entry && entry.sampleCount === 20,
-    `keys=${JSON.stringify([...res.ttft.keys()])} entry=${JSON.stringify(entry)}`);
+    `keys=${JSON.stringify([...res.ttft.keys()])} entry=${JSON.stringify(entry)}`,
+  );
   // p50: ceil(20*0.5)=10th sample -> cumulative b0=3, b1=6, b2=11 -> bucket 2 (1000ms).
   // p95: ceil(20*0.95)=19th sample -> cumulative b3=11, b4=20 -> bucket 4 (5000ms).
-  check('C02 percentiles are computed from the MERGED histogram (not the last variant)',
-    entry && entry.p50Insufficient === false && entry.p95Insufficient === false
-      && entry.p50 === 1000 && entry.p95 === 5000,
-    `p50=${entry && entry.p50} p95=${entry && entry.p95}`);
+  check(
+    'C02 percentiles are computed from the MERGED histogram (not the last variant)',
+    entry && entry.p50Insufficient === false && entry.p95Insufficient === false && entry.p50 === 1000 && entry.p95 === 5000,
+    `p50=${entry?.p50} p95=${entry?.p95}`,
+  );
 }
 
 // ---- C03: Recent Evidence returns only the canonical key ----------------------
@@ -99,9 +108,11 @@ function check(name, ok, detail) {
   d1.seedModelRow(h0 - 2 * HOUR, 'other-model', { requests: 1 });
   const env = { TOKEN_STATS_DB: d1 };
   const evidence = await queryRecentModelEvidence(env, undefined, now());
-  check('C03 evidence contains only canonical keys',
+  check(
+    'C03 evidence contains only canonical keys',
     evidence.size === 2 && evidence.has('code-max') && evidence.has('other-model'),
-    `evidence=${JSON.stringify([...evidence])}`);
+    `evidence=${JSON.stringify([...evidence])}`,
+  );
 }
 
 // ---- C04: Usage Coverage merges requests / reports / missing ------------------
@@ -113,12 +124,16 @@ function check(name, ok, detail) {
   const env = { TOKEN_STATS_DB: d1 };
   const res = await queryModelUsageCoverage(env, 7, now());
   const row = res.rows.find((r) => r.model === 'code-max');
-  check('C04 coverage variants merge into one row with summed counts',
+  check(
+    'C04 coverage variants merge into one row with summed counts',
     res.rows.length === 1 && row && row.requests === 5 && row.reports === 3 && row.missing === 2,
-    `rows=${JSON.stringify(res.rows)}`);
-  check('C04 coverage ratio is computed from the merged numbers',
+    `rows=${JSON.stringify(res.rows)}`,
+  );
+  check(
+    'C04 coverage ratio is computed from the merged numbers',
     row && row.usageCoverage !== null && Math.abs(row.usageCoverage - 0.6) < 1e-9,
-    `usageCoverage=${row && row.usageCoverage}`);
+    `usageCoverage=${row?.usageCoverage}`,
+  );
 }
 
 // ---- C05: writer canonical output keeps working (double insurance) ------------
@@ -127,15 +142,16 @@ function check(name, ok, detail) {
   const env = { TOKEN_STATS_DB: d1 };
   await persistTokenUsage(env, { prompt_tokens: 10, completion_tokens: 5 }, h0, 'Code-Max', 400);
   await persistTokenUsage(env, { prompt_tokens: 1, completion_tokens: 1 }, h0, 'CODE-MAX', 400);
-  const [usage, evidence] = await Promise.all([
-    queryTokenModelUsage(env, 7, now()),
-    queryRecentModelEvidence(env, undefined, now()),
-  ]);
-  check('C05 writer-canonicalized rows read back as one canonical dimension',
-    usage.rows.length === 1 && usage.rows[0].model === 'code-max'
-      && usage.rows[0].total === 17 && usage.rows[0].requests === 2
-      && evidence.has('code-max'),
-    `rows=${JSON.stringify(usage.rows)} evidence=${JSON.stringify([...evidence])}`);
+  const [usage, evidence] = await Promise.all([queryTokenModelUsage(env, 7, now()), queryRecentModelEvidence(env, undefined, now())]);
+  check(
+    'C05 writer-canonicalized rows read back as one canonical dimension',
+    usage.rows.length === 1 &&
+      usage.rows[0].model === 'code-max' &&
+      usage.rows[0].total === 17 &&
+      usage.rows[0].requests === 2 &&
+      evidence.has('code-max'),
+    `rows=${JSON.stringify(usage.rows)} evidence=${JSON.stringify([...evidence])}`,
+  );
 }
 
 if (failures > 0) {

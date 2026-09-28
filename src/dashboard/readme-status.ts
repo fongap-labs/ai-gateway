@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { getCachedDashboardStats } from './usage-view.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
+import { getCachedDashboardStats } from './usage-view.ts';
 
 type LiveStatusData = {
-  today: number,
-  h24: number,
-  d7: number,
-  cumulative: number,
-  input: number,
-  output: number,
-  cacheHitRatio: number | null,
-  observedAt: string,
-  available: boolean,
+  today: number;
+  h24: number;
+  d7: number;
+  cumulative: number;
+  input: number;
+  output: number;
+  cacheHitRatio: number | null;
+  observedAt: string;
+  available: boolean;
 };
 
 function compactTokens(value: number): string {
   if (!Number.isFinite(value) || value < 0) return '—';
-  const units: Array<[number, string]> = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  const units: Array<[number, string]> = [
+    [1e12, 'T'],
+    [1e9, 'B'],
+    [1e6, 'M'],
+    [1e3, 'K'],
+  ];
   for (const [base, suffix] of units) {
     if (value >= base) {
       const scaled = value / base;
@@ -35,27 +40,28 @@ function compactPercent(value: number | null): string {
 }
 
 export function renderReadmeStatusSvg(data: LiveStatusData): string {
-  const values = data.available
-    ? [data.today, data.h24, data.d7, data.cumulative].map(compactTokens)
-    : ['—', '—', '—', '—'];
+  const values = data.available ? [data.today, data.h24, data.d7, data.cumulative].map(compactTokens) : ['—', '—', '—', '—'];
   const labels = ['TODAY', '24 HOURS', '7 DAYS', 'ALL TIME'];
   const status = data.available ? 'LIVE' : 'UNAVAILABLE';
   const statusColor = data.available ? '#0f5d53' : '#777777';
   const cacheHit = data.available ? compactPercent(data.cacheHitRatio) : '—';
   const input = data.available ? compactTokens(data.input) : '—';
   const output = data.available ? compactTokens(data.output) : '—';
-  const observed = data.available && data.observedAt
-    ? `Observed ${data.observedAt.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')}`
-    : 'Live data temporarily unavailable';
+  const observed =
+    data.available && data.observedAt
+      ? `Observed ${data.observedAt.replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')}`
+      : 'Live data temporarily unavailable';
 
-  const cards = values.map((value, index) => {
-    const x = 18 + index * 224;
-    return `<g transform="translate(${x} 54)">
+  const cards = values
+    .map((value, index) => {
+      const x = 18 + index * 224;
+      return `<g transform="translate(${x} 54)">
       <rect x="0" y="0" width="212" height="100" rx="14" fill="#ffffff" stroke="#e7e9e5"/>
       <text x="20" y="29" class="label">${labels[index]}</text>
       <text x="20" y="73" class="value">${value}</text>
     </g>`;
-  }).join('');
+    })
+    .join('');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="920" height="278" viewBox="0 0 920 278" role="img" aria-labelledby="title desc">
   <title id="title">AI Gateway live production usage</title>

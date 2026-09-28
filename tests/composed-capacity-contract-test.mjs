@@ -12,14 +12,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  __resetTier1StateForTests,
-  claimTier1Slot,
-  makeTier1ReleaseToken,
-  releaseTier1Slot,
-} from '../src/reliability/tier1-state.ts';
-import { pickTier1Candidate } from '../src/scheduler/tier1-scheduler.ts';
+import { __resetTier1StateForTests, claimTier1Slot, makeTier1ReleaseToken, releaseTier1Slot } from '../src/reliability/tier1-state.ts';
 import { computeTierCaps } from '../src/request/tier-loop.ts';
+import { pickTier1Candidate } from '../src/scheduler/tier1-scheduler.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -66,8 +61,7 @@ assert.equal(
   'a saturated Tier 1 account must not be selectable when the explicit cap is propagated',
 );
 const uncappedPick = pickTier1Candidate([hedgeNode], hedgeReq, new Set(), { maxInFlight: null });
-assert.equal(uncappedPick?.node?.id, hedgeNode.id,
-  'dropping maxInFlight would admit the saturated account and recreate the hedge bypass');
+assert.equal(uncappedPick?.node?.id, hedgeNode.id, 'dropping maxInFlight would admit the saturated account and recreate the hedge bypass');
 assert.equal(releaseTier1Slot(hedgeNode.id, uncappedPick?.releaseToken), true);
 assert.equal(releaseTier1Slot(hedgeNode.id, occupiedToken), true);
 
@@ -76,11 +70,7 @@ const fallbackSource = source('src/request/fallback.ts');
 const fallbackCallStart = fallbackSource.indexOf('const fbTierCaps = computeTierCaps(');
 assert.ok(fallbackCallStart >= 0, 'protocol fallback tier-cap computation must exist');
 const fallbackCall = fallbackSource.slice(fallbackCallStart, fallbackCallStart + 700);
-assert.match(
-  fallbackCall,
-  /policy\.maxInFlight\s*\?\?\s*null/,
-  'protocol fallback must propagate policy.maxInFlight into computeTierCaps',
-);
+assert.match(fallbackCall, /policy\.maxInFlight\s*\?\?\s*null/, 'protocol fallback must propagate policy.maxInFlight into computeTierCaps');
 
 __resetTier1StateForTests();
 const fallbackNode = node('fallback-cap', 'anthropic', 'messages');
@@ -92,10 +82,8 @@ const policy = { maxAttempts: 5, budgetSplit: 'even', tierAttempts: {} };
 const knownModels = new Set(['general-air']);
 const capped = computeTierCaps(tiers, fallbackReq, new Set(), policy, knownModels, 1);
 const uncapped = computeTierCaps(tiers, fallbackReq, new Set(), policy, knownModels, null);
-assert.equal(capped[1], 0,
-  'fallback planning must assign zero Tier 1 attempts when every account is at the explicit cap');
-assert.ok(uncapped[1] > 0,
-  'without the cap, the same fallback pool appears dispatchable, proving the composition bug is observable');
+assert.equal(capped[1], 0, 'fallback planning must assign zero Tier 1 attempts when every account is at the explicit cap');
+assert.ok(uncapped[1] > 0, 'without the cap, the same fallback pool appears dispatchable, proving the composition bug is observable');
 assert.equal(releaseTier1Slot(fallbackNode.id, fallbackToken), true);
 
 console.log('composed capacity contract tests passed.');

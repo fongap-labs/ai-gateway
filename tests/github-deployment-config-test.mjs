@@ -3,10 +3,17 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {
-  loadRuntimeConfig, normalizeRuntimeConfig, normalizeNodeConfigJsonText,
-  validateGatewayRuntime, buildWranglerConfig, withStaleNodeSecretsRemoved,
-  collectVarsFromEnv, collectSecretsFromEnv, buildRuntimeFromEnv, preflight,
   buildDeploymentSummary,
+  buildRuntimeFromEnv,
+  buildWranglerConfig,
+  collectSecretsFromEnv,
+  collectVarsFromEnv,
+  loadRuntimeConfig,
+  normalizeNodeConfigJsonText,
+  normalizeRuntimeConfig,
+  preflight,
+  validateGatewayRuntime,
+  withStaleNodeSecretsRemoved,
 } from '../scripts/github-deployment-config.mjs';
 
 const currentNode = (id = 'node-a') => ({
@@ -47,14 +54,17 @@ assert.throws(
   /TIER\[123\]_CREDENTIALS|TIER[123]_CREDENTIALS/,
 );
 assert.throws(
-  () => validateGatewayRuntime(normalizeRuntimeConfig({
-    vars: {
-      ...fixture().vars,
-      AIG_MODELS_CONFIG: { 'code-pro': { policy: 'missing' } },
-      AIG_POLICIES_CONFIG: {},
-    },
-    secrets: fixture().secrets,
-  })),
+  () =>
+    validateGatewayRuntime(
+      normalizeRuntimeConfig({
+        vars: {
+          ...fixture().vars,
+          AIG_MODELS_CONFIG: { 'code-pro': { policy: 'missing' } },
+          AIG_POLICIES_CONFIG: {},
+        },
+        secrets: fixture().secrets,
+      }),
+    ),
   /references unknown policy/,
 );
 
@@ -185,7 +195,8 @@ function envFixture() {
     affinityKvConfigured: 'kv-id',
     removedSecretShards: 1,
   });
-  for (const fragment of ['Deployment completed', 'Nodes: 1/1 usable', 'Models: 1', 'Status: ready', 'OK']) assert.ok(summary.includes(fragment), fragment);
+  for (const fragment of ['Deployment completed', 'Nodes: 1/1 usable', 'Models: 1', 'Status: ready', 'OK'])
+    assert.ok(summary.includes(fragment), fragment);
   for (const secret of ['upstream-key', 'gateway-key', 'Bearer', 'authorization']) assert.ok(!summary.includes(secret), `summary leaks ${secret}`);
 }
 

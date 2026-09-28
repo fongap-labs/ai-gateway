@@ -13,36 +13,26 @@
 // or extend the local ladder, preventing one burst from jumping straight to a
 // long block. An explicit upstream Retry-After may still extend the deadline.
 
-export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([
-  15_000,
-  30_000,
-  60_000,
-  120_000,
-  300_000,
-  900_000,
-  1_800_000,
-  3_600_000,
-] as const);
+export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([15_000, 30_000, 60_000, 120_000, 300_000, 900_000, 1_800_000, 3_600_000] as const);
 
 const MAX_ENTRIES = 512;
 
 type Adaptive429State = {
-  stage: number,
-  cooldownUntil: number,
-  last429At: number,
+  stage: number;
+  cooldownUntil: number;
+  last429At: number;
 };
 
 const states = new Map<string, Adaptive429State>();
 
 function scopeKey(provider: string, keyId: string): string {
-  return `${String(provider || '').trim().toLowerCase()}\u0000${String(keyId || '').trim()}`;
+  return `${String(provider || '')
+    .trim()
+    .toLowerCase()}\u0000${String(keyId || '').trim()}`;
 }
 
 function automaticCooldownMs(stage: number): number {
-  const index = Math.min(
-    Math.max(0, stage - 1),
-    ADAPTIVE_429_COOLDOWN_STEPS_MS.length - 1,
-  );
+  const index = Math.min(Math.max(0, stage - 1), ADAPTIVE_429_COOLDOWN_STEPS_MS.length - 1);
   return ADAPTIVE_429_COOLDOWN_STEPS_MS[index] ?? ADAPTIVE_429_COOLDOWN_STEPS_MS[0];
 }
 
@@ -62,12 +52,7 @@ function pruneIfNeeded(): void {
  * retryAfterMs is treated as a minimum provider hint. Repeated recovery 429s
  * may extend beyond it; a provider hint never shortens the adaptive ladder.
  */
-export function nextAdaptive429CooldownMs(
-  provider: string,
-  keyId: string,
-  retryAfterMs: number = 0,
-  now: number = Date.now(),
-): number {
+export function nextAdaptive429CooldownMs(provider: string, keyId: string, retryAfterMs: number = 0, now: number = Date.now()): number {
   const key = scopeKey(provider, keyId);
   const explicit = Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? Math.round(retryAfterMs) : 0;
   let state = states.get(key);

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import { loadPoliciesConfig, getPolicy, getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { loadModelsConfig } from '../src/config/models.ts';
+import { getPoliciesConfigDiagnostics, getPolicy, loadPoliciesConfig } from '../src/config/policies.ts';
 
 const builtins = loadPoliciesConfig({});
 assert.equal(builtins.fast.failoverBudgetMs, 60_000);

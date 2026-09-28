@@ -16,38 +16,35 @@
 //   - Boundary invariants (no coupling to runtime hot path)
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  PROTOCOLS,
-  SURFACES_BY_PROTOCOL,
+  aggregateCatalogCapabilities,
+  checkRuntimeAgainstCatalog,
+  diffCatalogs,
   EVIDENCE_LEVELS,
-  SUPPORT_TRUE,
+  formatActionSummary,
+  formatChangesMarkdown,
+  formatJsonReport,
+  hasProtocolDowngrade,
+  isEvidence,
+  isProtocol,
+  isSupportTriState,
+  isSurfaceFor,
+  loadCatalogFile,
+  normalizeCapabilityEntry,
+  normalizeCatalog,
+  normalizeRuntimeView,
   SUPPORT_FALSE,
   SUPPORT_NULL,
-  validateCatalog,
-  validateCapabilityEntry,
-  isProtocol,
-  isSurfaceFor,
-  isEvidence,
-  isSupportTriState,
-  loadCatalogFile,
-  normalizeCatalog,
-  normalizeCapabilityEntry,
-  normalizeRuntimeView,
-  diffCatalogs,
+  SUPPORT_TRUE,
   summarizeBySeverity,
-  hasProtocolDowngrade,
-  checkRuntimeAgainstCatalog,
-  summarizeWarnings,
-  aggregateCatalogCapabilities,
-  formatChangesMarkdown,
-  formatActionSummary,
-  formatJsonReport,
+  validateCapabilityEntry,
+  validateCatalog,
 } from '../scripts/provider-discovery/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -63,7 +60,7 @@ function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -196,31 +193,17 @@ test('surfaces entry with supported=false must be empty', () => {
 test('A successful /models observation does NOT imply Responses support', () => {
   const discoveryRoot = path.join(root, 'scripts', 'provider-discovery');
   const files = fs.readdirSync(discoveryRoot).filter((f) => f.endsWith('.js'));
-  const forbiddenEndpoints = [
-    '/v1/chat/completions',
-    '/v1/responses',
-    '/v1/messages',
-    'POST ',
-    'speed test',
-    'active probe',
-    'health probe',
-  ];
+  const forbiddenEndpoints = ['/v1/chat/completions', '/v1/responses', '/v1/messages', 'POST ', 'speed test', 'active probe', 'health probe'];
   for (const f of files) {
     if (f === 'README.md') continue;
     const text = fs.readFileSync(path.join(discoveryRoot, f), 'utf8');
     for (const needle of forbiddenEndpoints) {
-      assert.ok(
-        !text.toLowerCase().includes(needle.toLowerCase()),
-        `${f} contains forbidden token "${needle}"`,
-      );
+      assert.ok(!text.toLowerCase().includes(needle.toLowerCase()), `${f} contains forbidden token "${needle}"`);
     }
   }
   const cliText = fs.readFileSync(cliPath, 'utf8');
   for (const needle of forbiddenEndpoints) {
-    assert.ok(
-      !cliText.toLowerCase().includes(needle.toLowerCase()),
-      `provider-discovery.mjs contains forbidden token "${needle}"`,
-    );
+    assert.ok(!cliText.toLowerCase().includes(needle.toLowerCase()), `provider-discovery.mjs contains forbidden token "${needle}"`);
   }
 });
 
@@ -241,26 +224,12 @@ test('Discovery module never imports src/runtime, src/scheduler, src/transport, 
       '../protocol/',
       '../dashboard/',
     ]) {
-      assert.ok(
-        !text.includes(forbidden),
-        `${f} imports runtime-coupled path "${forbidden}"`,
-      );
+      assert.ok(!text.includes(forbidden), `${f} imports runtime-coupled path "${forbidden}"`);
     }
   }
   const cliText = fs.readFileSync(cliPath, 'utf8');
-  for (const forbidden of [
-    '../runtime/',
-    '../scheduler/',
-    '../transport/',
-    '../request/',
-    '../reliability/',
-    '../stream/',
-    '../conversion/',
-  ]) {
-    assert.ok(
-      !cliText.includes(forbidden),
-      `provider-discovery.mjs imports runtime-coupled path "${forbidden}"`,
-    );
+  for (const forbidden of ['../runtime/', '../scheduler/', '../transport/', '../request/', '../reliability/', '../stream/', '../conversion/']) {
+    assert.ok(!cliText.includes(forbidden), `provider-discovery.mjs imports runtime-coupled path "${forbidden}"`);
   }
 });
 
@@ -279,8 +248,8 @@ test('OpenAI and Anthropic can keep distinct base URLs', () => {
   assert.equal(warnings.length, 0);
   assert.equal(catalog.providers.multi.openai.base_url, 'https://open.multi.example/v1');
   assert.ok(
-    catalog.providers.multi.anthropic.base_url === 'https://anthropic.multi.example'
-      || catalog.providers.multi.anthropic.base_url === 'https://anthropic.multi.example/',
+    catalog.providers.multi.anthropic.base_url === 'https://anthropic.multi.example' ||
+      catalog.providers.multi.anthropic.base_url === 'https://anthropic.multi.example/',
     `expected canonical URL, got ${catalog.providers.multi.anthropic.base_url}`,
   );
 });
@@ -319,13 +288,19 @@ test('Base URL order/format changes do not produce false diff', () => {
   const a = normalizeCatalog({
     schema_version: '1.1',
     providers: {
-      ex: { openai: { supported: true, base_url: 'https://api.example.com/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
+      ex: {
+        openai: { supported: true, base_url: 'https://api.example.com/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
     },
   }).catalog;
   const bRaw = {
     schema_version: '1.1',
     providers: {
-      ex: { openai: { supported: true, base_url: 'https://api.example.com/v1/', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
+      ex: {
+        openai: { supported: true, base_url: 'https://api.example.com/v1/', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
     },
   };
   const b = normalizeCatalog(bRaw).catalog;
@@ -345,7 +320,7 @@ test('Credential-bearing URLs are refused', () => {
 });
 
 test('Credential-like token in base URL is dropped, not persisted', () => {
-  const secretMarker = 'sk-' + 'a'.repeat(24);
+  const secretMarker = `sk-${'a'.repeat(24)}`;
   const { entry, warnings } = normalizeCapabilityEntry('openai', {
     supported: true,
     base_url: `https://api.example.com/v1?key=${secretMarker}`,
@@ -371,11 +346,21 @@ test('http:// base URL is refused (Discovery is conservative)', () => {
 test('protocol_support_changed is reported when support flips', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(before, after);
   const protoChanges = diff.changed.filter((c) => c.kind === 'protocol_support_changed');
@@ -389,11 +374,21 @@ test('protocol_support_changed is reported when support flips', () => {
 test('surface_support_changed is reported when a surface appears/disappears', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(before, after);
   const surf = diff.changed.filter((c) => c.kind === 'surface_support_changed' && c.surface === 'responses');
@@ -406,11 +401,21 @@ test('surface_support_changed is reported when a surface appears/disappears', ()
 test('base_url_changed is reported when URL differs', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://old.example/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://old.example/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(before, after);
   const urlChanges = diff.changed.filter((c) => c.kind === 'base_url_changed');
@@ -423,11 +428,21 @@ test('base_url_changed is reported when URL differs', () => {
 test('unknown -> supported is a lower-severity change than supported -> unsupported', () => {
   const a = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const b = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d1 = diffCatalogs(a, b);
   const downgrade = d1.changed.find((c) => c.kind === 'protocol_support_changed');
@@ -435,11 +450,21 @@ test('unknown -> supported is a lower-severity change than supported -> unsuppor
 
   const c = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d2 = diffCatalogs(c, d);
   const upgrade = d2.changed.find((c2) => c2.kind === 'protocol_support_changed');
@@ -449,11 +474,21 @@ test('unknown -> supported is a lower-severity change than supported -> unsuppor
 test('supported -> unknown is more severe than unknown -> supported', () => {
   const a = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const b = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d1 = diffCatalogs(a, b);
   const downUnknown = d1.changed.find((c) => c.kind === 'protocol_support_changed');
@@ -461,11 +496,21 @@ test('supported -> unknown is more severe than unknown -> supported', () => {
 
   const c = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const d2 = diffCatalogs(c, d);
   const upUnknown = d2.changed.find((c2) => c2.kind === 'protocol_support_changed');
@@ -479,15 +524,27 @@ test('Provider /models ordering or JSON key order does not produce CHANGED', () 
   const a = normalizeCatalog({
     schema_version: '1.1',
     providers: {
-      b: { openai: { supported: true, base_url: 'https://b/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
-      a: { openai: { supported: true, base_url: 'https://a/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
+      b: {
+        openai: { supported: true, base_url: 'https://b/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+      a: {
+        openai: { supported: true, base_url: 'https://a/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
     },
   }).catalog;
   const bRaw = {
     schema_version: '1.1',
     providers: {
-      a: { openai: { supported: true, base_url: 'https://a/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
-      b: { openai: { supported: true, base_url: 'https://b/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
+      a: {
+        openai: { supported: true, base_url: 'https://a/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+      b: {
+        openai: { supported: true, base_url: 'https://b/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
     },
   };
   const b = normalizeCatalog(bRaw).catalog;
@@ -500,11 +557,21 @@ test('Provider /models ordering or JSON key order does not produce CHANGED', () 
 test('Surfaces array reorder does not produce CHANGED', () => {
   const a = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const b = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['responses', 'chat_completions'], evidence: 'official' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['responses', 'chat_completions'], evidence: 'official' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(a, b);
   assert.equal(diff.changed.length, 0);
@@ -513,16 +580,31 @@ test('Surfaces array reorder does not produce CHANGED', () => {
 test('hasProtocolDowngrade true iff supported flipped to false/null', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const afterDown = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: false, base_url: null, surfaces: [], evidence: 'verified' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   assert.equal(hasProtocolDowngrade(diffCatalogs(before, afterDown)), true);
   const afterLateral = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions', 'responses'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   assert.equal(hasProtocolDowngrade(diffCatalogs(before, afterLateral)), false);
 });
@@ -530,11 +612,21 @@ test('hasProtocolDowngrade true iff supported flipped to false/null', () => {
 test('summarizeBySeverity buckets counts correctly', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: false, base_url: 'https://ex/v2', surfaces: [], evidence: 'verified' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: false, base_url: 'https://ex/v2', surfaces: [], evidence: 'verified' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(before, after);
   const sev = summarizeBySeverity(diff);
@@ -547,11 +639,14 @@ test('summarizeBySeverity buckets counts correctly', () => {
 test('Runtime Node with unsupported capability yields a warning', () => {
   const catalog = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
-  const runtime = normalizeRuntimeView([
-    { id: 'n1', provider: 'ex', protocol: 'openai', surfaces: ['responses'], base_url: 'https://ex/v1' },
-  ]);
+  const runtime = normalizeRuntimeView([{ id: 'n1', provider: 'ex', protocol: 'openai', surfaces: ['responses'], base_url: 'https://ex/v1' }]);
   const warnings = checkRuntimeAgainstCatalog(runtime, catalog);
   assert.ok(warnings.length >= 1, 'expected at least one warning');
   assert.ok(warnings.some((w) => w.kind === 'runtime_surface_mismatch'));
@@ -560,7 +655,12 @@ test('Runtime Node with unsupported capability yields a warning', () => {
 test('Runtime Node Base URL differs yields a warning (does not claim invalid)', () => {
   const catalog = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const runtime = normalizeRuntimeView([
     { id: 'n1', provider: 'ex', protocol: 'openai', surfaces: ['chat_completions'], base_url: 'https://old.example/v1' },
@@ -580,7 +680,12 @@ test('Discovery warnings do not mutate Runtime Node', () => {
   const snapshot = JSON.stringify(runtime);
   const catalog = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://new.example/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   checkRuntimeAgainstCatalog(runtime, catalog);
   assert.equal(JSON.stringify(runtime), snapshot, 'runtime view must be immutable from the check');
@@ -600,7 +705,12 @@ test('Discovery does not synthesize or create Runtime Nodes', () => {
 test('count_tokens mismatch is NOT a Runtime Node conflict (Runtime schema does not declare it)', () => {
   const catalog = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: true, base_url: 'https://ex', surfaces: ['messages', 'count_tokens'], evidence: 'official' } } },
+    providers: {
+      ex: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: true, base_url: 'https://ex', surfaces: ['messages', 'count_tokens'], evidence: 'official' },
+      },
+    },
   }).catalog;
   const runtime = normalizeRuntimeView([
     { id: 'a1', provider: 'ex', protocol: 'anthropic', surfaces: ['messages', 'count_tokens'], base_url: 'https://ex' },
@@ -612,14 +722,24 @@ test('count_tokens mismatch is NOT a Runtime Node conflict (Runtime schema does 
 // ----------------- Security -----------------------------------------------
 
 test('Secrets do not appear in changes.md output', () => {
-  const secretMarker = 'sk-' + 'a'.repeat(24);
+  const secretMarker = `sk-${'a'.repeat(24)}`;
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: `https://${secretMarker}.example/v1`, surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: `https://${secretMarker}.example/v1`, surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const diff = diffCatalogs(before, after);
   const md = formatChangesMarkdown({ diff, catalog: after, warnings: [], generatedAt: 'test' });
@@ -629,9 +749,19 @@ test('Secrets do not appear in changes.md output', () => {
 test('Secrets do not appear in Action Summary output', () => {
   const catalog = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
-  const summary = formatActionSummary({ diff: { added: [], removed: [], changed: [] }, warnings: [], capability: aggregateCatalogCapabilities(catalog), generatedAt: 'test' });
+  const summary = formatActionSummary({
+    diff: { added: [], removed: [], changed: [] },
+    warnings: [],
+    capability: aggregateCatalogCapabilities(catalog),
+    generatedAt: 'test',
+  });
   assert.ok(!/Bearer/.test(summary));
   assert.ok(!/Authorization/i.test(summary));
 });
@@ -639,11 +769,21 @@ test('Secrets do not appear in Action Summary output', () => {
 test('Secrets do not appear in JSON artifact output', () => {
   const before = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const after = normalizeCatalog({
     schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
+    providers: {
+      ex: {
+        openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+    },
   }).catalog;
   const json = formatJsonReport({ diff: diffCatalogs(before, after), warnings: [], catalog: after, generatedAt: 'test' });
   assert.ok(!/Bearer/.test(json));
@@ -703,10 +843,22 @@ test('aggregateCatalogCapabilities counts supported only (no inferred), supports
   const catalog = normalizeCatalog({
     schema_version: '1.1',
     providers: {
-      openai_only: { openai: { supported: true, base_url: 'https://o/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
-      anthropic_only: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: true, base_url: 'https://a', surfaces: ['messages', 'count_tokens'], evidence: 'official' } },
-      mixed: { openai: { supported: true, base_url: 'https://m/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' }, anthropic: { supported: true, base_url: 'https://m', surfaces: ['messages'], evidence: 'official' } },
-      unknown_only: { openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } },
+      openai_only: {
+        openai: { supported: true, base_url: 'https://o/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
+      anthropic_only: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: true, base_url: 'https://a', surfaces: ['messages', 'count_tokens'], evidence: 'official' },
+      },
+      mixed: {
+        openai: { supported: true, base_url: 'https://m/v1', surfaces: ['chat_completions', 'responses'], evidence: 'official' },
+        anthropic: { supported: true, base_url: 'https://m', surfaces: ['messages'], evidence: 'official' },
+      },
+      unknown_only: {
+        openai: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+      },
     },
   }).catalog;
   const agg = aggregateCatalogCapabilities(catalog);
@@ -764,13 +916,19 @@ test('CLI runtime-check exits 2 when P1 surface mismatch is present', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pd-test-'));
   const catPath = path.join(tmp, 'cat.json');
   const rtPath = path.join(tmp, 'rt.json');
-  fs.writeFileSync(catPath, JSON.stringify({
-    schema_version: '1.1',
-    providers: { ex: { openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' }, anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' } } },
-  }));
-  fs.writeFileSync(rtPath, JSON.stringify([
-    { id: 'n1', provider: 'ex', protocol: 'openai', surfaces: ['responses'], base_url: 'https://ex/v1' },
-  ]));
+  fs.writeFileSync(
+    catPath,
+    JSON.stringify({
+      schema_version: '1.1',
+      providers: {
+        ex: {
+          openai: { supported: true, base_url: 'https://ex/v1', surfaces: ['chat_completions'], evidence: 'configured' },
+          anthropic: { supported: null, base_url: null, surfaces: [], evidence: 'unknown' },
+        },
+      },
+    }),
+  );
+  fs.writeFileSync(rtPath, JSON.stringify([{ id: 'n1', provider: 'ex', protocol: 'openai', surfaces: ['responses'], base_url: 'https://ex/v1' }]));
   const result = spawnSync(process.execPath, [cliPath, 'runtime-check', catPath, rtPath], { encoding: 'utf8' });
   assert.equal(result.status, 2, `expected exit 2 for P1 conflict, got ${result.status}`);
   assert.ok(/runtime_surface_mismatch/.test(result.stdout));

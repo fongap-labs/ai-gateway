@@ -11,17 +11,15 @@
 // or fabricate tokens). Run directly.
 import assert from 'node:assert/strict';
 import {
-  normalizeHour,
-  tokenUsagePayload,
-  persistTokenUsage,
-  queryTokenSummary,
+  cleanupModelStats,
   loadUpstreamSummary,
+  normalizeHour,
+  persistTokenUsage,
   queryTokenDailySeries,
   queryTokenModelUsage,
-  cleanupModelStats,
+  queryTokenSummary,
   tokenStatsD1,
-  utc8DayStartUtcMs,
-  isoDayUtc8,
+  tokenUsagePayload,
 } from '../src/observability/token-usage-store.ts';
 import { createMockD1 } from './mock-d1-database.mjs';
 
@@ -33,7 +31,7 @@ async function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -46,28 +44,61 @@ const H0 = Math.floor(Date.now() / HOUR) * HOUR;
 
 await test('normalizeHour produces a UTC-aligned YYYY-MM-DDTHH:00:00Z key', async () => {
   assert.equal(normalizeHour(new Date('2026-08-28T08:59:59Z')), '2026-08-28T08:00:00Z');
-  assert.equal(normalizeHour(H0), new Date(H0).toISOString().slice(0, 13) + ':00:00Z');
+  assert.equal(normalizeHour(H0), `${new Date(H0).toISOString().slice(0, 13)}:00:00Z`);
   assert.equal(normalizeHour(new Date('2026-01-01T23:30:00Z')), '2026-01-01T23:00:00Z');
 });
 
 // ---- tokenUsagePayload (reported-vs-missing gate) ----------------------------
 
 await test('reported usage yields a report payload with its token totals', async () => {
-  assert.deepEqual(
-    tokenUsagePayload({ prompt_tokens: 2, completion_tokens: 3 }),
-    { input: 2, output: 3, cacheCreation: 0, cacheRead: 0, effectiveInput: 2, observedCacheRead: 0, observedCacheInput: 0, cacheReadReports: 0, total: 5, requests: 1, reports: 1, missing: 0 },
-  );
-  assert.deepEqual(
-    tokenUsagePayload({ input_tokens: 4, output_tokens: 6 }),
-    { input: 4, output: 6, cacheCreation: 0, cacheRead: 0, effectiveInput: 4, observedCacheRead: 0, observedCacheInput: 0, cacheReadReports: 0, total: 10, requests: 1, reports: 1, missing: 0 },
-  );
+  assert.deepEqual(tokenUsagePayload({ prompt_tokens: 2, completion_tokens: 3 }), {
+    input: 2,
+    output: 3,
+    cacheCreation: 0,
+    cacheRead: 0,
+    effectiveInput: 2,
+    observedCacheRead: 0,
+    observedCacheInput: 0,
+    cacheReadReports: 0,
+    total: 5,
+    requests: 1,
+    reports: 1,
+    missing: 0,
+  });
+  assert.deepEqual(tokenUsagePayload({ input_tokens: 4, output_tokens: 6 }), {
+    input: 4,
+    output: 6,
+    cacheCreation: 0,
+    cacheRead: 0,
+    effectiveInput: 4,
+    observedCacheRead: 0,
+    observedCacheInput: 0,
+    cacheReadReports: 0,
+    total: 10,
+    requests: 1,
+    reports: 1,
+    missing: 0,
+  });
 });
 
 await test('missing usage yields a missing payload and never fabricates tokens', async () => {
   for (const usage of [null, undefined, {}, [], 'x', 42]) {
     assert.deepEqual(
       tokenUsagePayload(usage),
-      { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, effectiveInput: 0, observedCacheRead: 0, observedCacheInput: 0, cacheReadReports: 0, total: 0, requests: 1, reports: 0, missing: 1 },
+      {
+        input: 0,
+        output: 0,
+        cacheCreation: 0,
+        cacheRead: 0,
+        effectiveInput: 0,
+        observedCacheRead: 0,
+        observedCacheInput: 0,
+        cacheReadReports: 0,
+        total: 0,
+        requests: 1,
+        reports: 0,
+        missing: 1,
+      },
       String(usage),
     );
   }
@@ -78,15 +109,28 @@ await test('missing usage yields a missing payload and never fabricates tokens',
 await test('first insert creates the hour bucket and records both accounting views', async () => {
   const d1 = createMockD1();
   await persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 2, completion_tokens: 8 }, H0);
-  assert.deepEqual(
-    d1._rows.get(normalizeHour(H0)),
-    {
-      input: 2, output: 8, cacheCreation: 0, cacheRead: 0, total: 10, requests: 1, reports: 1, missing: 0,
-      upstreamInput: 2, upstreamOutput: 8, upstreamCacheCreation: 0, upstreamCacheRead: 0,
-      upstreamEffectiveInput: 2, upstreamObservedRead: 0, upstreamObservedInput: 0, upstreamReadReports: 0,
-      upstreamTotal: 10, upstreamAttempts: 1, upstreamReports: 1, upstreamMissing: 0,
-    },
-  );
+  assert.deepEqual(d1._rows.get(normalizeHour(H0)), {
+    input: 2,
+    output: 8,
+    cacheCreation: 0,
+    cacheRead: 0,
+    total: 10,
+    requests: 1,
+    reports: 1,
+    missing: 0,
+    upstreamInput: 2,
+    upstreamOutput: 8,
+    upstreamCacheCreation: 0,
+    upstreamCacheRead: 0,
+    upstreamEffectiveInput: 2,
+    upstreamObservedRead: 0,
+    upstreamObservedInput: 0,
+    upstreamReadReports: 0,
+    upstreamTotal: 10,
+    upstreamAttempts: 1,
+    upstreamReports: 1,
+    upstreamMissing: 0,
+  });
   assert.equal(d1._writes.length, 2, 'global + totals writes');
   assert.match(d1._writes[0].sql, /ON CONFLICT\(hour\) DO UPDATE SET/);
   assert.match(d1._writes[1].sql, /token_usage_totals/i, 'second write is totals');
@@ -96,15 +140,28 @@ await test('same-hour upsert accumulates delivered and upstream success views at
   const d1 = createMockD1();
   await persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 2, completion_tokens: 3 }, H0);
   await persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 4, completion_tokens: 6 }, H0);
-  assert.deepEqual(
-    d1._rows.get(normalizeHour(H0)),
-    {
-      input: 6, output: 9, cacheCreation: 0, cacheRead: 0, total: 15, requests: 2, reports: 2, missing: 0,
-      upstreamInput: 6, upstreamOutput: 9, upstreamCacheCreation: 0, upstreamCacheRead: 0,
-      upstreamEffectiveInput: 6, upstreamObservedRead: 0, upstreamObservedInput: 0, upstreamReadReports: 0,
-      upstreamTotal: 15, upstreamAttempts: 2, upstreamReports: 2, upstreamMissing: 0,
-    },
-  );
+  assert.deepEqual(d1._rows.get(normalizeHour(H0)), {
+    input: 6,
+    output: 9,
+    cacheCreation: 0,
+    cacheRead: 0,
+    total: 15,
+    requests: 2,
+    reports: 2,
+    missing: 0,
+    upstreamInput: 6,
+    upstreamOutput: 9,
+    upstreamCacheCreation: 0,
+    upstreamCacheRead: 0,
+    upstreamEffectiveInput: 6,
+    upstreamObservedRead: 0,
+    upstreamObservedInput: 0,
+    upstreamReadReports: 0,
+    upstreamTotal: 15,
+    upstreamAttempts: 2,
+    upstreamReports: 2,
+    upstreamMissing: 0,
+  });
 });
 
 await test('different hours create separate buckets', async () => {
@@ -122,10 +179,26 @@ await test('missing usage bumps both success and upstream coverage counters, nev
   await persistTokenUsage({ TOKEN_STATS_DB: d1 }, {}, H0);
   const row = d1._rows.get(normalizeHour(H0));
   assert.deepEqual(row, {
-    input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0, requests: 2, reports: 0, missing: 2,
-    upstreamInput: 0, upstreamOutput: 0, upstreamCacheCreation: 0, upstreamCacheRead: 0,
-    upstreamEffectiveInput: 0, upstreamObservedRead: 0, upstreamObservedInput: 0, upstreamReadReports: 0,
-    upstreamTotal: 0, upstreamAttempts: 2, upstreamReports: 0, upstreamMissing: 2,
+    input: 0,
+    output: 0,
+    cacheCreation: 0,
+    cacheRead: 0,
+    total: 0,
+    requests: 2,
+    reports: 0,
+    missing: 2,
+    upstreamInput: 0,
+    upstreamOutput: 0,
+    upstreamCacheCreation: 0,
+    upstreamCacheRead: 0,
+    upstreamEffectiveInput: 0,
+    upstreamObservedRead: 0,
+    upstreamObservedInput: 0,
+    upstreamReadReports: 0,
+    upstreamTotal: 0,
+    upstreamAttempts: 2,
+    upstreamReports: 0,
+    upstreamMissing: 2,
   });
 });
 
@@ -212,11 +285,15 @@ await test('historical cache totals stay in input until reliable cache observati
 await test('upstream summary recognizes OpenAI-compatible cached-token details without inflating input', async () => {
   const d1 = createMockD1();
   const env = { TOKEN_STATS_DB: d1 };
-  await persistTokenUsage(env, {
-    prompt_tokens: 100,
-    completion_tokens: 10,
-    prompt_tokens_details: { cached_tokens: 80 },
-  }, H0);
+  await persistTokenUsage(
+    env,
+    {
+      prompt_tokens: 100,
+      completion_tokens: 10,
+      prompt_tokens_details: { cached_tokens: 80 },
+    },
+    H0,
+  );
   await persistTokenUsage(env, { prompt_tokens: 50, completion_tokens: 5 }, H0);
   const s = await loadUpstreamSummary(env, H0 + HOUR / 2);
   assert.equal(s.available, true);
@@ -230,11 +307,15 @@ await test('upstream summary recognizes OpenAI-compatible cached-token details w
 await test('explicit zero cache report is preserved as observed zero instead of unknown', async () => {
   const d1 = createMockD1();
   const env = { TOKEN_STATS_DB: d1 };
-  await persistTokenUsage(env, {
-    input_tokens: 40,
-    output_tokens: 2,
-    input_tokens_details: { cached_tokens: 0 },
-  }, H0);
+  await persistTokenUsage(
+    env,
+    {
+      input_tokens: 40,
+      output_tokens: 2,
+      input_tokens_details: { cached_tokens: 0 },
+    },
+    H0,
+  );
   const s = await loadUpstreamSummary(env, H0 + HOUR / 2);
   assert.equal(s.available, true);
   assert.equal(s.cumulative.cacheRead, 0);
@@ -274,7 +355,7 @@ await test('today follows the UTC+8 day boundary (Beijing 00:00 = 16:00Z)', asyn
 // ---- queryTokenDailySeries: daily rollup for the activity heatmap -----------
 
 // Helper: convert UTC ms to UTC+8 date string (YYYY-MM-DD)
-function toUtc8Day(ms) {
+function _toUtc8Day(ms) {
   return new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
 }
 
@@ -313,7 +394,13 @@ await test('daily series fails open on missing binding or read errors', async ()
 
 await test('persistTokenUsage with no binding resolves without touching D1', async () => {
   let called = false;
-  const env = { TOKEN_STATS_DB: { prepare: () => { called = true; } } };
+  const _env = {
+    TOKEN_STATS_DB: {
+      prepare: () => {
+        called = true;
+      },
+    },
+  };
   // A non-D1-looking prepare is rejected by tokenStatsD1, so persistence skips.
   const res = await persistTokenUsage({}, { prompt_tokens: 1 });
   assert.equal(res, undefined);
@@ -322,14 +409,15 @@ await test('persistTokenUsage with no binding resolves without touching D1', asy
 
 await test('a D1 write rejection rejects the returned promise (caller swallows it)', async () => {
   const d1 = createMockD1({ failWrites: true });
-  await assert.rejects(
-    persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 1 }, H0),
-    /mock D1 write failure/,
-  );
+  await assert.rejects(persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 1 }, H0), /mock D1 write failure/);
 });
 
 await test('a synchronous D1 prepare failure is converted to a classified promise rejection', async () => {
-  const d1 = { prepare() { throw new Error('mock synchronous prepare failure'); } };
+  const d1 = {
+    prepare() {
+      throw new Error('mock synchronous prepare failure');
+    },
+  };
   let failure;
   try {
     await persistTokenUsage({ TOKEN_STATS_DB: d1 }, { prompt_tokens: 1 }, H0, 'test-model');
@@ -425,10 +513,7 @@ await test('global write failure is the single classified rejection when both wr
   const d1 = createMockD1({ failWrites: true });
   const env = { TOKEN_STATS_DB: d1 };
   // Global write fails -> promise rejects (caller catches and logs)
-  await assert.rejects(
-    persistTokenUsage(env, { prompt_tokens: 1 }, H0, 'test-model'),
-    /mock D1 write failure/,
-  );
+  await assert.rejects(persistTokenUsage(env, { prompt_tokens: 1 }, H0, 'test-model'), /mock D1 write failure/);
   // Since global write failed, no rows should be written
   assert.equal(d1._rows.size, 0, 'no global rows when write fails');
   assert.equal(d1._modelRows.size, 0, 'no model rows when global write fails');

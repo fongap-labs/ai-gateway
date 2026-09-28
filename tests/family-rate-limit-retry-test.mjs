@@ -25,9 +25,27 @@ globalThis.fetch = async (input, init) => {
 };
 
 const nodes = [
-  { id: 'code-ultra-rl', provider: 'provider-ultra', base_url: 'https://code-ultra-rl.example.com/v1', priority: 10, models: { 'Code-Ultra': 'up-code-ultra' } },
-  { id: 'code-max-rl', provider: 'provider-max', base_url: 'https://code-max-rl.example.com/v1', priority: 10, models: { 'Code-Max': 'up-code-max' } },
-  { id: 'code-pro-rl', provider: 'provider-pro', base_url: 'https://code-pro-rl.example.com/v1', priority: 10, models: { 'Code-Pro': 'up-code-pro' } },
+  {
+    id: 'code-ultra-rl',
+    provider: 'provider-ultra',
+    base_url: 'https://code-ultra-rl.example.com/v1',
+    priority: 10,
+    models: { 'Code-Ultra': 'up-code-ultra' },
+  },
+  {
+    id: 'code-max-rl',
+    provider: 'provider-max',
+    base_url: 'https://code-max-rl.example.com/v1',
+    priority: 10,
+    models: { 'Code-Max': 'up-code-max' },
+  },
+  {
+    id: 'code-pro-rl',
+    provider: 'provider-pro',
+    base_url: 'https://code-pro-rl.example.com/v1',
+    priority: 10,
+    models: { 'Code-Pro': 'up-code-pro' },
+  },
 ];
 
 const env = {
@@ -36,7 +54,9 @@ const env = {
   AIG_PROTOCOL_FALLBACKS: 'disable',
   AIG_TIER1_NODES_01: JSON.stringify(nodes),
   AIG_TIER1_CREDENTIALS_01: JSON.stringify({
-    'code-ultra-rl': 'k-ultra', 'code-max-rl': 'k-max', 'code-pro-rl': 'k-pro',
+    'code-ultra-rl': 'k-ultra',
+    'code-max-rl': 'k-max',
+    'code-pro-rl': 'k-pro',
   }),
 };
 
@@ -56,7 +76,10 @@ assert.equal(response.headers.get('x-should-retry'), null);
 const retryAfter = Number(response.headers.get('retry-after'));
 assert.ok(Number.isFinite(retryAfter) && retryAfter >= 25 && retryAfter <= 30);
 assert.equal(body?.error?.details?.failure_kinds?.rate_limit, 3);
-assert.deepEqual(calls.map((c) => c.model), ['up-code-ultra', 'up-code-max', 'up-code-pro']);
+assert.deepEqual(
+  calls.map((c) => c.model),
+  ['up-code-ultra', 'up-code-max', 'up-code-pro'],
+);
 
 calls.length = 0;
 __resetAllStateForTests();
@@ -64,9 +87,27 @@ __resetTier1StateForTests();
 __resetTier1AffinityForTests();
 
 const auditNodes = [
-  { id: 'audit-ultra-rl', provider: 'provider-audit-ultra', base_url: 'https://audit-ultra-rl.example.com/v1', priority: 10, models: { 'Audit-Ultra': 'up-audit-ultra' } },
-  { id: 'audit-max-rl', provider: 'provider-audit-max', base_url: 'https://audit-max-rl.example.com/v1', priority: 10, models: { 'Audit-Max': 'up-audit-max' } },
-  { id: 'audit-pro-rl', provider: 'provider-audit-pro', base_url: 'https://audit-pro-rl.example.com/v1', priority: 10, models: { 'Audit-Pro': 'up-audit-pro' } },
+  {
+    id: 'audit-ultra-rl',
+    provider: 'provider-audit-ultra',
+    base_url: 'https://audit-ultra-rl.example.com/v1',
+    priority: 10,
+    models: { 'Audit-Ultra': 'up-audit-ultra' },
+  },
+  {
+    id: 'audit-max-rl',
+    provider: 'provider-audit-max',
+    base_url: 'https://audit-max-rl.example.com/v1',
+    priority: 10,
+    models: { 'Audit-Max': 'up-audit-max' },
+  },
+  {
+    id: 'audit-pro-rl',
+    provider: 'provider-audit-pro',
+    base_url: 'https://audit-pro-rl.example.com/v1',
+    priority: 10,
+    models: { 'Audit-Pro': 'up-audit-pro' },
+  },
 ];
 
 const auditEnv = {

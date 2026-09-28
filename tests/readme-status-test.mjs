@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import assert from 'node:assert/strict';
-import { renderReadmeStatusSvg, readmeStatusSvgResponse } from '../src/dashboard/readme-status.ts';
+import { readmeStatusSvgResponse, renderReadmeStatusSvg } from '../src/dashboard/readme-status.ts';
 import { preflight } from '../src/request/preflight.ts';
 
 const svg = renderReadmeStatusSvg({
@@ -60,11 +60,7 @@ assert.match(degradedSvg, /Live data temporarily unavailable/);
 assert.equal((degradedSvg.match(/class="value">—<\/text>/g) || []).length, 4);
 assert.match(degradedSvg, /class="metric-value">—<\/text>/);
 
-const publicRoute = await preflight(
-  new Request('https://gateway.example/readme-status.svg', { headers: { accept: 'image/svg+xml' } }),
-  {},
-  {},
-);
+const publicRoute = await preflight(new Request('https://gateway.example/readme-status.svg', { headers: { accept: 'image/svg+xml' } }), {}, {});
 assert.equal(publicRoute.ok, false);
 assert.equal(publicRoute.response.status, 200);
 assert.match(publicRoute.response.headers.get('content-type') || '', /^image\/svg\+xml/);

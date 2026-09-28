@@ -9,14 +9,14 @@
 // - Provider-agnostic: no provider-specific logic
 
 import assert from 'node:assert/strict';
-import { createMockD1 } from './mock-d1-database.mjs';
 import {
   persistTokenUsage,
   queryAllModelsTtftPercentiles,
   queryModelUsageCoverage,
-  ttftBucketIndex,
   TTFT_BUCKET_BOUNDARIES_MS,
+  ttftBucketIndex,
 } from '../src/observability/token-usage-store.ts';
+import { createMockD1 } from './mock-d1-database.mjs';
 
 const WEEK_MS = 7 * 24 * 3600_000;
 
@@ -125,8 +125,10 @@ await test('has 6 boundaries', () => {
 
 await test('boundaries are strictly increasing', () => {
   for (let i = 1; i < TTFT_BUCKET_BOUNDARIES_MS.length; i++) {
-    assert.ok(TTFT_BUCKET_BOUNDARIES_MS[i] > TTFT_BUCKET_BOUNDARIES_MS[i - 1],
-      `boundary ${i} (${TTFT_BUCKET_BOUNDARIES_MS[i]}) must be > ${i - 1} (${TTFT_BUCKET_BOUNDARIES_MS[i - 1]})`);
+    assert.ok(
+      TTFT_BUCKET_BOUNDARIES_MS[i] > TTFT_BUCKET_BOUNDARIES_MS[i - 1],
+      `boundary ${i} (${TTFT_BUCKET_BOUNDARIES_MS[i]}) must be > ${i - 1} (${TTFT_BUCKET_BOUNDARIES_MS[i - 1]})`,
+    );
   }
 });
 
@@ -174,10 +176,10 @@ await test('multiple TTFT samples accumulate correctly', async () => {
   const d1 = createMockD1();
   const env = { TOKEN_STATS_DB: d1 };
   const usage = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
-  await persistTokenUsage(env, usage, 1000, 'model-a', 50);    // bucket 0
-  await persistTokenUsage(env, usage, 2000, 'model-a', 200);   // bucket 1
-  await persistTokenUsage(env, usage, 3000, 'model-a', 1500);  // bucket 3
-  await persistTokenUsage(env, usage, 4000, 'model-a', 6000);  // bucket 5
+  await persistTokenUsage(env, usage, 1000, 'model-a', 50); // bucket 0
+  await persistTokenUsage(env, usage, 2000, 'model-a', 200); // bucket 1
+  await persistTokenUsage(env, usage, 3000, 'model-a', 1500); // bucket 3
+  await persistTokenUsage(env, usage, 4000, 'model-a', 6000); // bucket 5
   const key = `${new Date(1000).toISOString().slice(0, 13)}:00:00Z|model-a`;
   const row = d1._modelRows.get(key);
   assert.ok(row, 'model row exists');

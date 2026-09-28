@@ -1,38 +1,39 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { loadGatewayConfig } from '../config/nodes.ts';
-import { loadModelsConfig } from '../config/models.ts';
-import { loadPoliciesConfig, getPolicy } from '../config/policies.ts';
-import { getLimits } from '../config/timeouts.ts';
-import { gatewayError } from './errors.ts';
-import { authorize } from './auth.ts';
 import { loadAccessKeysConfig } from '../config/access-keys.ts';
+import { loadModelsConfig } from '../config/models.ts';
+import type { GatewayConfig } from '../config/nodes.ts';
+import { loadGatewayConfig } from '../config/nodes.ts';
+import { getPolicy, loadPoliciesConfig } from '../config/policies.ts';
 import { collectKnownModels } from '../config/registry.ts';
-import { authorizeModel, filterVisibleModels } from './model-authz.ts';
-import { evaluateRouteFeasibility } from './route-feasibility.ts';
-import { modelFallbackCandidates } from './model-fallback.ts';
-import { detectRoute, normalizePath, acceptsHtml } from './router.ts';
+import type { Limits } from '../config/timeouts.ts';
+import { getLimits } from '../config/timeouts.ts';
 import { dashboardResponse } from '../dashboard/pages.ts';
 import { readmeStatusSvgResponse } from '../dashboard/readme-status.ts';
 import { handleOAuthRoute } from '../oauth/routes.ts';
-import { corsHeaders, readBodyTextWithLimit, BodyTooLargeError } from '../protocol/http.ts';
-import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import {
   anthropicErrorResponse,
-  validateAnthropicMessagesRequest, validateAnthropicCountTokensRequest,
   estimateAnthropicInputTokens,
+  validateAnthropicCountTokensRequest,
+  validateAnthropicMessagesRequest,
 } from '../protocol/anthropic.ts';
+import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
+import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
-import { jsonResponse } from './response-helpers.ts';
 import { admitKeyRequest } from '../ratelimit/key-rpm.ts';
-import type { AuthResult, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
-import type { GatewayConfig } from '../config/nodes.ts';
-import type { PolicyConfig } from '../types/policy.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { TierMap } from '../types/scheduler.ts';
-import type { Limits } from '../config/timeouts.ts';
+import type { PolicyConfig } from '../types/policy.ts';
+import type { AuthResult, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
+import type { TierMap } from '../types/scheduler.ts';
+import { authorize } from './auth.ts';
+import { gatewayError } from './errors.ts';
+import { authorizeModel, filterVisibleModels } from './model-authz.ts';
+import { modelFallbackCandidates } from './model-fallback.ts';
+import { jsonResponse } from './response-helpers.ts';
+import { evaluateRouteFeasibility } from './route-feasibility.ts';
+import { acceptsHtml, detectRoute, normalizePath } from './router.ts';
 
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
@@ -40,33 +41,36 @@ const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   anthropic_messages: { protocol: 'anthropic', surface: 'messages' },
 } as const);
 
-export function getRouteProtocolSurface(route: keyof typeof ROUTE_PROTOCOL_SURFACE): { protocol: 'openai' | 'anthropic', surface: 'chat_completions' | 'responses' | 'messages' } {
+export function getRouteProtocolSurface(route: keyof typeof ROUTE_PROTOCOL_SURFACE): {
+  protocol: 'openai' | 'anthropic';
+  surface: 'chat_completions' | 'responses' | 'messages';
+} {
   return ROUTE_PROTOCOL_SURFACE[route];
 }
 
-export type PreflightTerminal = { ok: false, response: Response };
+export type PreflightTerminal = { ok: false; response: Response };
 export type PreflightOk = {
-  ok: true,
-  request: Request,
-  env: GatewayEnv,
-  ctx: ExecutionContextLike,
-  requestId: string,
-  requestStartMs: number,
-  route: string,
-  requestedModel: string,
-  clientWantsStream: boolean,
-  fakeStream: boolean,
-  bodyJson: Record<string, unknown>,
-  limits: Limits,
-  exposeUpstreamInfo: boolean,
-  authResult: AuthResult,
-  requestDescriptor: RequestDescriptor,
-  config: GatewayConfig,
-  tiers: TierMap<RuntimeNode[]>,
-  policy: PolicyConfig,
-  failoverBudgetMs: number,
-  knownModels: Set<string>,
-  feasibility: RouteFeasibilityResult,
+  ok: true;
+  request: Request;
+  env: GatewayEnv;
+  ctx: ExecutionContextLike;
+  requestId: string;
+  requestStartMs: number;
+  route: string;
+  requestedModel: string;
+  clientWantsStream: boolean;
+  fakeStream: boolean;
+  bodyJson: Record<string, unknown>;
+  limits: Limits;
+  exposeUpstreamInfo: boolean;
+  authResult: AuthResult;
+  requestDescriptor: RequestDescriptor;
+  config: GatewayConfig;
+  tiers: TierMap<RuntimeNode[]>;
+  policy: PolicyConfig;
+  failoverBudgetMs: number;
+  knownModels: Set<string>;
+  feasibility: RouteFeasibilityResult;
 };
 export type PreflightResult = PreflightTerminal | PreflightOk;
 
@@ -76,13 +80,21 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const pathname = normalizePath(requestUrl.pathname);
   const route = detectRoute(request.method, pathname);
   const requestStartMs = Date.now();
-  const exposeUpstreamInfo = String(env?.AIG_SHOULD_EXPOSE_UPSTREAM ?? '').trim().toLowerCase() === 'true';
+  const exposeUpstreamInfo =
+    String(env?.AIG_SHOULD_EXPOSE_UPSTREAM ?? '')
+      .trim()
+      .toLowerCase() === 'true';
 
   if (request.method === 'OPTIONS') {
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
   }
   if (request.method === 'GET' && pathname === '/' && acceptsHtml(request)) {
-    return { ok: false, response: await dashboardResponse(request, env) };
+    const dashboardPublic =
+      String(env?.AIG_DASHBOARD_PUBLIC ?? '')
+        .trim()
+        .toLowerCase() === 'true';
+    const dashboardAuth = dashboardPublic ? { authorized: true } : await authorize(request, env);
+    return { ok: false, response: await dashboardResponse(request, env, dashboardAuth) };
   }
   if (request.method === 'GET' && pathname === '/readme-status.svg') {
     return { ok: false, response: await readmeStatusSvgResponse(env) };
@@ -94,11 +106,18 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // callback and paste routes are authorized by their single-use D1 state.
   if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
     const config = loadGatewayConfig(env);
-    const oauthResponse = await handleOAuthRoute(request, env, {
-      tier2Nodes: (config.tiers[2] || []).map((node) => ({
-        id: node.id, provider: node.provider, auth: node.auth,
-      })),
-    }, pathname);
+    const oauthResponse = await handleOAuthRoute(
+      request,
+      env,
+      {
+        tier2Nodes: (config.tiers[2] || []).map((node) => ({
+          id: node.id,
+          provider: node.provider,
+          auth: node.auth,
+        })),
+      },
+      pathname,
+    );
     return { ok: false, response: oauthResponse };
   }
 
@@ -106,8 +125,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (accessConfig.keys.length === 0) {
     return {
       ok: false,
-      response: gatewayError(request, env, route, 500,
-        'Gateway misconfigured: no AIG_ACCESS_KEY_<GROUP> is set.', requestId),
+      response: gatewayError(request, env, route, 500, 'Gateway misconfigured: no AIG_ACCESS_KEY_<GROUP> is set.', requestId),
     };
   }
   const authResult: AuthResult = await authorize(request, env);
@@ -120,8 +138,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   // Local diagnostics/model-list routes carry no upstream cost and do not
   // consume the client-key RPM budget.
-  if (route !== 'health' && route !== 'metrics'
-      && route !== 'models' && route !== 'anthropic_count_tokens') {
+  if (route !== 'health' && route !== 'metrics' && route !== 'models' && route !== 'anthropic_count_tokens') {
     const limits = getLimits(env);
     const fingerprint = ('group' in authResult ? authResult.group : null) || 'ANON';
     const verdict = admitKeyRequest(fingerprint, limits.gatewayKeyRpm);
@@ -132,14 +149,17 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       };
       return {
         ok: false,
-        response: new Response(JSON.stringify({
-          error: {
-            message: `Gateway access-key RPM cap exceeded. Retry after ${verdict.retryAfterSec}s.`,
-            type: 'rate_limit_error',
-            code: 'gateway_key_rpm',
-            retry_after_seconds: verdict.retryAfterSec,
-          },
-        }), { status: 429, headers: { 'content-type': 'application/json', ...headers } }),
+        response: new Response(
+          JSON.stringify({
+            error: {
+              message: `Gateway access-key RPM cap exceeded. Retry after ${verdict.retryAfterSec}s.`,
+              type: 'rate_limit_error',
+              code: 'gateway_key_rpm',
+              retry_after_seconds: verdict.retryAfterSec,
+            },
+          }),
+          { status: 429, headers: { 'content-type': 'application/json', ...headers } },
+        ),
       };
     }
   }
@@ -215,9 +235,12 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const requestedModel = String(bodyJson.model || '');
   const clientWantsStream = bodyJson.stream === true;
-  const fakeStream = route === 'openai_chat'
-    && String(env?.AIG_HAS_STREAM_GUARD ?? '').trim().toLowerCase() === 'true'
-    && !clientWantsStream;
+  const fakeStream =
+    route === 'openai_chat' &&
+    String(env?.AIG_HAS_STREAM_GUARD ?? '')
+      .trim()
+      .toLowerCase() === 'true' &&
+    !clientWantsStream;
 
   const gatewayConfigForAuth = loadGatewayConfig(env);
   const knownModels = collectKnownModels(gatewayConfigForAuth.nodes, env);
@@ -226,10 +249,19 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     const denyStatus = modelAuthz.status;
     return {
       ok: false,
-      response: gatewayError(request, env, route, denyStatus, denyStatus === 403
-        ? 'Forbidden: the provided key is not permitted to use this model.'
-        : 'Model not found for this key.', requestId,
-        { configuration_status: gatewayConfigForAuth.status, known_model_count: knownModels.size, ...(exposeUpstreamInfo ? { diagnostics: gatewayConfigForAuth.diagnostics.slice(0, 5) } : {}) }),
+      response: gatewayError(
+        request,
+        env,
+        route,
+        denyStatus,
+        denyStatus === 403 ? 'Forbidden: the provided key is not permitted to use this model.' : 'Model not found for this key.',
+        requestId,
+        {
+          configuration_status: gatewayConfigForAuth.status,
+          known_model_count: knownModels.size,
+          ...(exposeUpstreamInfo ? { diagnostics: gatewayConfigForAuth.diagnostics.slice(0, 5) } : {}),
+        },
+      ),
     };
   }
 
@@ -238,10 +270,15 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (!config.ready) {
     return {
       ok: false,
-      response: gatewayError(request, env, route, 500,
+      response: gatewayError(
+        request,
+        env,
+        route,
+        500,
         'Gateway misconfigured: no usable node configuration. Check TIER*_NODES_* and TIER*_CREDENTIALS_*.',
         requestId,
-        { configuration_status: config.status, ...(exposeUpstreamInfo ? { diagnostics: config.diagnostics.slice(0, 5) } : {}) }),
+        { configuration_status: config.status, ...(exposeUpstreamInfo ? { diagnostics: config.diagnostics.slice(0, 5) } : {}) },
+      ),
     };
   }
 
@@ -253,7 +290,12 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   };
 
   const feasibility = evaluateRouteFeasibility({
-    route, requestedModel, requestDescriptor, tiers, knownModels: callableModels, env,
+    route,
+    requestedModel,
+    requestDescriptor,
+    tiers,
+    knownModels: callableModels,
+    env,
   });
   let familyReachable = feasibility.reachable;
   if (!familyReachable) {
@@ -277,8 +319,14 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (!familyReachable) {
     return {
       ok: false,
-      response: gatewayError(request, env, route, 404,
-        `No configured route can serve model "${requestedModel}" for client protocol "${requestDescriptor.protocol}" surface "${requestDescriptor.surface}", including internal compatible model fallback.`, requestId),
+      response: gatewayError(
+        request,
+        env,
+        route,
+        404,
+        `No configured route can serve model "${requestedModel}" for client protocol "${requestDescriptor.protocol}" surface "${requestDescriptor.surface}", including internal compatible model fallback.`,
+        requestId,
+      ),
     };
   }
 

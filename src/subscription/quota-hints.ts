@@ -79,9 +79,12 @@ export function hintFromResetBody(body: string, fields: readonly string[]): numb
   for (const field of fields) {
     const raw = record[field];
     if (typeof raw !== 'string' && typeof raw !== 'number') continue;
-    const at = typeof raw === 'number'
-      ? (raw > 1e12 ? raw : raw * 1000) // epoch seconds or ms
-      : parseResetValue(String(raw));
+    const at =
+      typeof raw === 'number'
+        ? raw > 1e12
+          ? raw
+          : raw * 1000 // epoch seconds or ms
+        : parseResetValue(String(raw));
     if (at !== null && (best === null || at > best)) best = at;
   }
   return best;

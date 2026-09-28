@@ -3,8 +3,8 @@
 // Copyright (c) 2026 Fongap Labs
 
 import assert from 'node:assert/strict';
-import worker from '../src/index.ts';
 import { convertAnthropicToOpenAIRequest } from '../src/conversion/anthropic-to-openai.ts';
+import worker from '../src/index.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
@@ -92,8 +92,7 @@ try {
   });
 
   const response = await worker.fetch(request, env, {});
-  assert.equal(response.status, 502,
-    'pre-dispatch conversion incompatibility must be reported as 502, not cooldown 429');
+  assert.equal(response.status, 502, 'pre-dispatch conversion incompatibility must be reported as 502, not cooldown 429');
   assert.equal(upstreamCalls, 0, 'conversion failure must not dispatch upstream');
 
   const body = await response.json();

@@ -3,22 +3,27 @@
 // Copyright (c) 2026 Fongap Labs
 
 import assert from 'node:assert/strict';
-import {
-  buildModelFallbackPlan,
-  buildModelFallbackRounds,
-  hasModelFamilyFallback,
-  modelFallbackCandidates,
-} from '../src/request/model-fallback.ts';
+import { buildModelFallbackPlan, buildModelFallbackRounds, hasModelFamilyFallback, modelFallbackCandidates } from '../src/request/model-fallback.ts';
 
 function catalog(...models) {
   return new Set(models);
 }
 
 const all = catalog(
-  'Code-Ultra', 'Code-Max', 'Code-Pro',
-  'Ultra', 'Max', 'Pro', 'Air',
-  'Audit-Ultra', 'Audit-Max', 'Audit-Pro',
-  'Editor-Air', 'Editor-Pro', 'Editor-Max', 'Editor-Ultra',
+  'Code-Ultra',
+  'Code-Max',
+  'Code-Pro',
+  'Ultra',
+  'Max',
+  'Pro',
+  'Air',
+  'Audit-Ultra',
+  'Audit-Max',
+  'Audit-Pro',
+  'Editor-Air',
+  'Editor-Pro',
+  'Editor-Max',
+  'Editor-Ultra',
 );
 
 assert.deepEqual(
@@ -143,10 +148,7 @@ assert.deepEqual(
 // candidate set beyond the number of logical attempts the policy allows.
 assert.deepEqual(
   buildModelFallbackPlan('Code-Max', all, 1),
-  [
-    [{ model: 'Code-Max', attemptCap: 1 }],
-    [{ model: 'Code-Max', attemptCap: 1 }],
-  ],
+  [[{ model: 'Code-Max', attemptCap: 1 }], [{ model: 'Code-Max', attemptCap: 1 }]],
   'budget 1 exposes only the requested model',
 );
 
@@ -270,11 +272,7 @@ assert.deepEqual(
   'candidate list must never cross Code/non-Code families',
 );
 
-assert.deepEqual(
-  modelFallbackCandidates('Max', all),
-  ['Max', 'Pro', 'Ultra'],
-  'general family candidate list must never include Air',
-);
+assert.deepEqual(modelFallbackCandidates('Max', all), ['Max', 'Pro', 'Ultra'], 'general family candidate list must never include Air');
 
 assert.deepEqual(
   buildModelFallbackRounds('Max', catalog('Max', 'Ultra')),
@@ -321,12 +319,8 @@ assert.deepEqual(
   'unknown model families keep their original policy-owned attempt budget',
 );
 
-
 assert.deepEqual(
-  buildModelFallbackRounds(
-    'Research-Reasoning-Ultra',
-    catalog('Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'),
-  ),
+  buildModelFallbackRounds('Research-Reasoning-Ultra', catalog('Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro')),
   [
     ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
     ['Research-Reasoning-Ultra', 'Research-Reasoning-Max', 'Research-Reasoning-Pro'],
@@ -334,10 +328,6 @@ assert.deepEqual(
   'arbitrary multi-segment family prefixes must inherit tier fallback without code changes',
 );
 
-assert.equal(
-  hasModelFamilyFallback('Research-Reasoning-Max'),
-  true,
-  'new prefixed families are recognized from the final capability tier alone',
-);
+assert.equal(hasModelFamilyFallback('Research-Reasoning-Max'), true, 'new prefixed families are recognized from the final capability tier alone');
 
 console.log('model-family fallback tests passed.');

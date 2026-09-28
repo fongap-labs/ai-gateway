@@ -10,7 +10,6 @@ export class ConversionError extends Error {
   }
 }
 
-
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -27,7 +26,9 @@ export function parseToolArguments(value: unknown): Record<string, unknown> {
   if (value === undefined || value === '') return {};
   let parsed: unknown = value;
   if (typeof value === 'string') {
-    try { parsed = JSON.parse(value); } catch {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
       throw new ConversionError('conversion_not_supported: tool arguments must be a JSON object');
     }
   }

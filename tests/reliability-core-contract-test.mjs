@@ -28,8 +28,8 @@
 // failure-kind consumer-facing value" test that pins the KIND union.
 
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -47,22 +47,33 @@ function check(name, ok, detail) {
 // 1) KIND is the only place that defines the failure-kind vocabulary.
 const classifySource = readFileSync(join(root, 'src', 'reliability', 'classify.ts'), 'utf8');
 const kindBlockMatch = classifySource.match(/export const KIND = \{([\s\S]*?)\} as const;/);
-const kindValues = kindBlockMatch
-  ? [...kindBlockMatch[1].matchAll(/^\s*([A-Z][A-Z0-9_]*):\s*'([^']+)'/gm)].map((m) => m[2])
-  : [];
+const kindValues = kindBlockMatch ? [...kindBlockMatch[1].matchAll(/^\s*([A-Z][A-Z0-9_]*):\s*'([^']+)'/gm)].map((m) => m[2]) : [];
 const expectedKinds = [
-  'rate_limit', 'auth', 'client', 'model_missing', 'endpoint_not_found',
-  'server', 'network', 'headers_timeout', 'first_event_timeout',
-  'client_abort', 'rate_limit_global', 'invalid_base_url',
-  'stream_interrupted', 'upstream_200_non_json_body',
+  'rate_limit',
+  'auth',
+  'client',
+  'model_missing',
+  'endpoint_not_found',
+  'server',
+  'network',
+  'headers_timeout',
+  'first_event_timeout',
+  'client_abort',
+  'rate_limit_global',
+  'invalid_base_url',
+  'stream_interrupted',
+  'upstream_200_non_json_body',
   'upstream_200_no_meaningful_output',
-  'cancelled_after_peer_commit', 'unknown',
+  'cancelled_after_peer_commit',
+  'unknown',
 ];
 const missingFromKind = expectedKinds.filter((k) => !kindValues.includes(k));
 const extraInKind = kindValues.filter((k) => !expectedKinds.includes(k));
-check('C19 KIND in src/reliability/classify.ts is the closed failure-kind vocabulary (no missing, no extra)',
+check(
+  'C19 KIND in src/reliability/classify.ts is the closed failure-kind vocabulary (no missing, no extra)',
   missingFromKind.length === 0 && extraInKind.length === 0,
-  `missing=${JSON.stringify(missingFromKind)} extra=${JSON.stringify(extraInKind)} actual=${JSON.stringify(kindValues)}`);
+  `missing=${JSON.stringify(missingFromKind)} extra=${JSON.stringify(extraInKind)} actual=${JSON.stringify(kindValues)}`,
+);
 
 // 2) No `kind: '...'` raw string literal in src/ that is not in KIND.
 // We scan every .ts file under src/ for `kind: '<...>'` patterns. The
@@ -71,22 +82,23 @@ check('C19 KIND in src/reliability/classify.ts is the closed failure-kind vocabu
 const kindLiteralRe = /\bkind\s*:\s*['"]([a-z_]+)['"]/g;
 const violationFiles = [];
 const allKindLiterals = new Set();
-function walk(dir) {
+function _walk(dir) {
   const { readdirSync, statSync } = require('node:fs');
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) {
       if (name === 'node_modules' || name === 'dist' || name === '.wrangler-dry-run') continue;
-      walk(full);
+      _walk(full);
     } else if (full.endsWith('.ts')) {
       const text = readFileSync(full, 'utf8');
-      let m;
-      while ((m = kindLiteralRe.exec(text)) !== null) {
+      let m = kindLiteralRe.exec(text);
+      while (m) {
         allKindLiterals.add(m[1]);
         if (!full.endsWith('reliability/classify.ts') && !full.endsWith('reliability\\classify.ts')) {
           // Allow classify.ts (where the constants live).
           violationFiles.push({ file: full, literal: m[1] });
         }
+        m = kindLiteralRe.exec(text);
       }
     }
   }
@@ -101,38 +113,46 @@ function walkSync(dir) {
       walkSync(full);
     } else if (full.endsWith('.ts')) {
       const text = readFileSync(full, 'utf8');
-      let m;
-      while ((m = kindLiteralRe.exec(text)) !== null) {
+      let m = kindLiteralRe.exec(text);
+      while (m) {
         allKindLiterals.add(m[1]);
         if (!full.replace(/\\/g, '/').endsWith('src/reliability/classify.ts')) {
           violationFiles.push({ file: full, literal: m[1] });
         }
+        m = kindLiteralRe.exec(text);
       }
     }
   }
 }
 walkSync(join(root, 'src'));
 const unknownLiterals = [...allKindLiterals].filter((k) => !kindValues.includes(k));
-check('C20 no raw failure-kind string literals in src/ outside classify.ts (closed vocabulary)',
+check(
+  'C20 no raw failure-kind string literals in src/ outside classify.ts (closed vocabulary)',
   violationFiles.length === 0 && unknownLiterals.length === 0,
-  `violations=${JSON.stringify(violationFiles.slice(0, 5))} unknownLiterals=${JSON.stringify(unknownLiterals)} allLiterals=${JSON.stringify([...allKindLiterals])}`);
+  `violations=${JSON.stringify(violationFiles.slice(0, 5))} unknownLiterals=${JSON.stringify(unknownLiterals)} allLiterals=${JSON.stringify([...allKindLiterals])}`,
+);
 
 // 3) AttemptOutcome.kind is typed as FailureKind (not string).
 const requestTypesSource = readFileSync(join(root, 'src', 'types', 'request.ts'), 'utf8');
 const outcomeBlock = requestTypesSource.match(/export type AttemptOutcome = \{([\s\S]*?)\};/);
-const kindFieldLine = outcomeBlock ? outcomeBlock[1].match(/kind\?:\s*([^,]+),/) : null;
+const kindFieldLine = outcomeBlock ? outcomeBlock[1].match(/kind\?:\s*([^;,]+)/) : null;
 const kindType = kindFieldLine ? kindFieldLine[1].trim() : null;
-check('C21 AttemptOutcome.kind is typed as FailureKind (not string) — compiler catches drift',
+check(
+  'C21 AttemptOutcome.kind is typed as FailureKind (not string) — compiler catches drift',
   kindType === 'FailureKind',
-  `kindType=${JSON.stringify(kindType)} (expected "FailureKind")`);
+  `kindType=${JSON.stringify(kindType)} (expected "FailureKind")`,
+);
 
 // 4) FailureKind is imported in src/types/request.ts (proves the type
 // comes from src/reliability/classify.ts, the single source of truth).
-const importsFailureKind = /import\s+type\s+\{[^}]*\bFailureKind\b[^}]*\}\s+from\s+['"][^'"]*reliability\/classify/.test(requestTypesSource)
-  || /import\s+type\s+\{[^}]*\bFailureKind\b[^}]*\}\s+from\s+['"][^'"]*reliability\\classify/.test(requestTypesSource);
-check('C22 src/types/request.ts imports FailureKind from src/reliability/classify.ts',
+const importsFailureKind =
+  /import\s+type\s+\{[^}]*\bFailureKind\b[^}]*\}\s+from\s+['"][^'"]*reliability\/classify/.test(requestTypesSource) ||
+  /import\s+type\s+\{[^}]*\bFailureKind\b[^}]*\}\s+from\s+['"][^'"]*reliability\\classify/.test(requestTypesSource);
+check(
+  'C22 src/types/request.ts imports FailureKind from src/reliability/classify.ts',
   importsFailureKind,
-  `importsFailureKind=${importsFailureKind}`);
+  `importsFailureKind=${importsFailureKind}`,
+);
 
 if (failures > 0) {
   console.error(`reliability-core-contract: ${failures} contract(s) FAILED`);

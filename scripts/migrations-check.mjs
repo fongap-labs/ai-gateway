@@ -20,17 +20,17 @@
 // This is a pure-Node check; it does not need a D1 binding.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const migDir = path.join(root, 'migrations');
 
 const FILENAME_RE = /^(\d{3,})_([a-z0-9_]+)\.sql$/;
-const MIGRATION_NUMBER_RE = /^(\d+)_/;
+const _MIGRATION_NUMBER_RE = /^(\d+)_/;
 
 // Explicit allowlist of migration files that contain destructive SQL but are
 // verified to be backward-compatible with the previous Worker version.
@@ -43,7 +43,8 @@ const DESTRUCTIVE_ALLOWLIST = new Set([
 ]);
 
 function listMigrations() {
-  return fs.readdirSync(migDir)
+  return fs
+    .readdirSync(migDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 }
@@ -78,8 +79,7 @@ function checkIdempotent(files) {
     for (const match of createMatches) {
       const offset = match.index ?? 0;
       const after = upper.slice(offset, offset + 200);
-      assert.ok(after.includes('IF NOT EXISTS'),
-        `${f}: every CREATE must use IF NOT EXISTS so re-applies are no-ops (D1 has no migrations table)`);
+      assert.ok(after.includes('IF NOT EXISTS'), `${f}: every CREATE must use IF NOT EXISTS so re-applies are no-ops (D1 has no migrations table)`);
     }
   }
 }
@@ -155,8 +155,7 @@ function checkImmutability(files) {
     if (!file.endsWith('.sql')) continue;
     // Allow: Added (A) — new migration files
     // Block: Modified (M), Deleted (D), Renamed (R), Copied (C)
-    assert.ok(code === 'A',
-      `${file} is in a non-add state (${code}). Applied migrations are immutable; create a new NNN_*.sql file instead.`);
+    assert.ok(code === 'A', `${file} is in a non-add state (${code}). Applied migrations are immutable; create a new NNN_*.sql file instead.`);
   }
 }
 
@@ -176,10 +175,12 @@ function checkDestructiveOps(files) {
     if (/\bRENAME\s+COLUMN\b/i.test(sql)) destructive.push('RENAME COLUMN');
     if (/\bDELETE\s+FROM\b/i.test(sql)) destructive.push('DELETE FROM');
     if (destructive.length === 0) continue;
-    assert.ok(DESTRUCTIVE_ALLOWLIST.has(f),
+    assert.ok(
+      DESTRUCTIVE_ALLOWLIST.has(f),
       `${f}: destructive migration (${destructive.join(', ')}) is blocked by default. ` +
-      `A destructive op can break rolling deploys (old Worker + new schema). ` +
-      `Verify backward compatibility, then add to DESTRUCTIVE_ALLOWLIST in migrations-check.mjs.`);
+        `A destructive op can break rolling deploys (old Worker + new schema). ` +
+        `Verify backward compatibility, then add to DESTRUCTIVE_ALLOWLIST in migrations-check.mjs.`,
+    );
   }
 }
 

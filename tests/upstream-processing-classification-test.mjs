@@ -6,16 +6,9 @@
 // layer and let reliability/classify.ts decide HOW the node is treated.
 
 import assert from 'node:assert/strict';
-import {
-  classifyPostHeadersFailure,
-  KIND,
-} from '../src/reliability/classify.ts';
-import {
-  UPSTREAM_PROCESSING_ERROR,
-  upstreamProcessingError,
-  upstreamProcessingErrorCode,
-} from '../src/types/upstream-processing.ts';
+import { classifyPostHeadersFailure, KIND } from '../src/reliability/classify.ts';
 import { collectOpenAIStreamObject } from '../src/stream/assemble.ts';
+import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingError, upstreamProcessingErrorCode } from '../src/types/upstream-processing.ts';
 
 const cases = [
   [UPSTREAM_PROCESSING_ERROR.DEADLINE, KIND.FIRST_EVENT_TIMEOUT],
@@ -29,11 +22,7 @@ const cases = [
 for (const [code, expectedKind] of cases) {
   const error = upstreamProcessingError(code, `test:${code}`);
   assert.equal(upstreamProcessingErrorCode(error), code);
-  assert.equal(
-    classifyPostHeadersFailure(error).kind,
-    expectedKind,
-    `${code} must map to ${expectedKind}`,
-  );
+  assert.equal(classifyPostHeadersFailure(error).kind, expectedKind, `${code} must map to ${expectedKind}`);
 }
 
 assert.equal(
@@ -44,12 +33,15 @@ assert.equal(
 
 // Integration guard: the OpenAI stream assembler must emit a typed malformed
 // error instead of a generic Error whose message callers would need to parse.
-const malformed = new Response(new ReadableStream({
-  start(controller) {
-    controller.enqueue(new TextEncoder().encode('data: {not-json}\n\n'));
-    controller.close();
-  },
-}), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+const malformed = new Response(
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {not-json}\n\n'));
+      controller.close();
+    },
+  }),
+  { status: 200, headers: { 'content-type': 'text/event-stream' } },
+);
 
 await assert.rejects(
   () => collectOpenAIStreamObject(malformed, null, Date.now() + 1000),

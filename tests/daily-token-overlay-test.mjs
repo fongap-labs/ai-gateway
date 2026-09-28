@@ -7,10 +7,7 @@
 // daily cron snapshot cannot make yesterday's usage drop after midnight.
 
 import assert from 'node:assert/strict';
-import {
-  persistTokenUsage,
-  queryTokenDailySeries,
-} from '../src/observability/token-usage-store.ts';
+import { persistTokenUsage, queryTokenDailySeries } from '../src/observability/token-usage-store.ts';
 import { createMockD1 } from './mock-d1-database.mjs';
 
 let passed = 0;
@@ -21,12 +18,12 @@ async function test(name, fn) {
     console.log(`ok - ${name}`);
   } catch (error) {
     console.error(`FAIL: ${name}`);
-    console.error(error && error.stack || error);
+    console.error(error?.stack || error);
     process.exitCode = 1;
   }
 }
 
-const HOUR = 3_600_000;
+const _HOUR = 3_600_000;
 
 await test('recent seven full UTC+8 days override stale daily snapshots', async () => {
   const d1 = createMockD1();
@@ -39,12 +36,22 @@ await test('recent seven full UTC+8 days override stale daily snapshots', async 
   // Simulate the 09-10 daily snapshot having been materialized at 11:00,
   // before the rest of that day's traffic arrived.
   d1._dailyRows.set('2026-09-10', {
-    input: 30, output: 0, total: 30, requests: 1, reports: 1, missing: 0,
+    input: 30,
+    output: 0,
+    total: 30,
+    requests: 1,
+    reports: 1,
+    missing: 0,
   });
   // Older stable history must not be overwritten by a potentially partial
   // seventh-previous calendar day from rolling hourly retention.
   d1._dailyRows.set('2026-09-04', {
-    input: 500, output: 0, total: 500, requests: 5, reports: 5, missing: 0,
+    input: 500,
+    output: 0,
+    total: 500,
+    requests: 5,
+    reports: 5,
+    missing: 0,
   });
 
   // 09-10 UTC+8: 01:00, 12:00, 22:00 => full-day total 120.
@@ -70,7 +77,12 @@ await test('today is also rebuilt from hourly when a stale daily row exists', as
   const now = Date.UTC(2026, 8, 11, 1, 30, 0); // 09:30 UTC+8
 
   d1._dailyRows.set('2026-09-11', {
-    input: 1, output: 0, total: 1, requests: 1, reports: 1, missing: 0,
+    input: 1,
+    output: 0,
+    total: 1,
+    requests: 1,
+    reports: 1,
+    missing: 0,
   });
   await persistTokenUsage(env, { prompt_tokens: 20, completion_tokens: 0 }, Date.UTC(2026, 8, 11, 0, 0, 0));
 

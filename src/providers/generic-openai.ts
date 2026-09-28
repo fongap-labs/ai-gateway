@@ -6,8 +6,8 @@
 // OpenAI-compatible Chat Completions wire works by configuration only -
 // provider, base_url, credential, models - with zero source changes.
 
-import type { ProviderAdapter, ProviderWire } from './types.ts';
 import type { Surface } from '../types/protocol.ts';
+import type { ProviderAdapter, ProviderWire } from './types.ts';
 
 export const GENERIC_OPENAI_ADAPTER_ID = 'generic-openai';
 

@@ -21,9 +21,9 @@ export type TierMap<T> = Record<Tier, T>;
  * requested model — this is NOT the DOM Request.
  */
 export type RoutableRequest = {
-  model: string,
-  protocol: Protocol,
-  surface: Surface,
+  model: string;
+  protocol: Protocol;
+  surface: Surface;
 };
 
 /**
@@ -32,11 +32,11 @@ export type RoutableRequest = {
  * (Tier 1 with affinity release token, Tier 2/3 with priority/LRU).
  */
 export type PickedCandidate = {
-  node?: RuntimeNode,
-  raceLost?: boolean,
-  raceLostNodeId?: string,
-  releaseToken?: { accountId: string, released: boolean, settled: boolean, quotaReserved: number } | null,
-  updateAffinity?: boolean,
-  escapedFromAffinity?: boolean,
-  affinityHit?: boolean,
+  node?: RuntimeNode;
+  raceLost?: boolean;
+  raceLostNodeId?: string;
+  releaseToken?: { accountId: string; released: boolean; settled: boolean; quotaReserved: number } | null;
+  updateAffinity?: boolean;
+  escapedFromAffinity?: boolean;
+  affinityHit?: boolean;
 };

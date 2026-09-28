@@ -3,18 +3,11 @@
 // Copyright (c) 2026 Fongap Labs
 
 import assert from 'node:assert/strict';
-import {
-  persistTokenUsage,
-  persistUpstreamAttemptUsage,
-} from '../src/observability/token-usage-store.ts';
-import {
-  observeUpstreamAttemptUsage,
-  recordTokens,
-  recordUndeliveredUpstreamAttempt,
-} from '../src/request/attempt/observability.ts';
-import { reportedUsageFromPayload } from '../src/observability/reported-usage.ts';
-import { trackStreamResponse } from '../src/stream/track.ts';
 import { createOpenAIChatStreamFromAnthropic } from '../src/conversion/anthropic-stream-to-openai-chat.ts';
+import { reportedUsageFromPayload } from '../src/observability/reported-usage.ts';
+import { persistTokenUsage, persistUpstreamAttemptUsage } from '../src/observability/token-usage-store.ts';
+import { observeUpstreamAttemptUsage, recordTokens, recordUndeliveredUpstreamAttempt } from '../src/request/attempt/observability.ts';
+import { trackStreamResponse } from '../src/stream/track.ts';
 
 function fakeD1() {
   const writes = [];
@@ -38,14 +31,17 @@ function fakeD1() {
 function sseResponse(parts) {
   const enc = new TextEncoder();
   let i = 0;
-  return new Response(new ReadableStream({
-    pull(controller) {
-      if (i >= parts.length) return controller.close();
-      const part = parts[i++];
-      if (part instanceof Error) return controller.error(part);
-      controller.enqueue(enc.encode(part));
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (i >= parts.length) return controller.close();
+        const part = parts[i++];
+        if (part instanceof Error) return controller.error(part);
+        controller.enqueue(enc.encode(part));
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
+  );
 }
 
 async function drain(response) {
@@ -90,7 +86,11 @@ test('one physical attempt is settled exactly once even when multiple paths try 
   const waits = [];
   const c = {
     env: { TOKEN_STATS_DB: d1 },
-    ctx: { waitUntil(p) { waits.push(Promise.resolve(p)); } },
+    ctx: {
+      waitUntil(p) {
+        waits.push(Promise.resolve(p));
+      },
+    },
     logger: { info() {}, debug() {}, error() {} },
     requestedModel: 'Code-Max',
     reqDescriptor: { model: 'Code-Max' },
@@ -112,7 +112,11 @@ test('successful settlement preserves a provider report observed before the term
   const waits = [];
   const c = {
     env: { TOKEN_STATS_DB: d1 },
-    ctx: { waitUntil(p) { waits.push(Promise.resolve(p)); } },
+    ctx: {
+      waitUntil(p) {
+        waits.push(Promise.resolve(p));
+      },
+    },
     logger: { info() {}, debug() {}, error() {} },
     requestedModel: 'Code-Max',
     reqDescriptor: { model: 'Code-Max' },
@@ -132,7 +136,11 @@ test('Anthropic to OpenAI stream keeps raw provider usage including cache fields
   const waits = [];
   const c = {
     env: { TOKEN_STATS_DB: d1 },
-    ctx: { waitUntil(p) { waits.push(Promise.resolve(p)); } },
+    ctx: {
+      waitUntil(p) {
+        waits.push(Promise.resolve(p));
+      },
+    },
     logger: { info() {}, debug() {}, error() {} },
     requestedModel: 'Code-Max',
     reqDescriptor: { model: 'Code-Max' },
@@ -164,19 +172,22 @@ test('Anthropic to OpenAI stream keeps raw provider usage including cache fields
 test('interrupted stream exposes reported usage to physical-attempt accounting but not delivered onUsage', async () => {
   const attempts = [];
   const delivered = [];
-  const tracked = trackStreamResponse(sseResponse([
-    'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
-    'data: {"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}\n\n',
-    new Error('truncated'),
-  ]), {
-    idleTimeoutMs: 1000,
-    completionMarker: /data:\s*\[DONE\]/,
-    onSuccess() {},
-    onFailure() {},
-    onNeutral() {},
-    onUsage: (u) => delivered.push(u),
-    onAttemptUsage: (u, outcome) => attempts.push({ u, outcome }),
-  });
+  const tracked = trackStreamResponse(
+    sseResponse([
+      'data: {"choices":[{"delta":{"content":"x"}}]}\n\n',
+      'data: {"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}\n\n',
+      new Error('truncated'),
+    ]),
+    {
+      idleTimeoutMs: 1000,
+      completionMarker: /data:\s*\[DONE\]/,
+      onSuccess() {},
+      onFailure() {},
+      onNeutral() {},
+      onUsage: (u) => delivered.push(u),
+      onAttemptUsage: (u, outcome) => attempts.push({ u, outcome }),
+    },
+  );
   await drain(tracked);
   assert.equal(delivered.length, 0, 'interrupted stream must not become delivered-success evidence');
   assert.equal(attempts.length, 1);
@@ -188,18 +199,25 @@ test('clean EOF without completion marker is a failed physical attempt, not a de
   const attempts = [];
   const delivered = [];
   let failures = 0;
-  const tracked = trackStreamResponse(sseResponse([
-    'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
-    'data: {"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11}}\n\n',
-  ]), {
-    idleTimeoutMs: 1000,
-    completionMarker: /data:\s*\[DONE\]/,
-    onSuccess() { throw new Error('truncated stream must not be successful'); },
-    onFailure() { failures++; },
-    onNeutral() {},
-    onUsage: (u) => delivered.push(u),
-    onAttemptUsage: (u, outcome) => attempts.push({ u, outcome }),
-  });
+  const tracked = trackStreamResponse(
+    sseResponse([
+      'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+      'data: {"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11}}\n\n',
+    ]),
+    {
+      idleTimeoutMs: 1000,
+      completionMarker: /data:\s*\[DONE\]/,
+      onSuccess() {
+        throw new Error('truncated stream must not be successful');
+      },
+      onFailure() {
+        failures++;
+      },
+      onNeutral() {},
+      onUsage: (u) => delivered.push(u),
+      onAttemptUsage: (u, outcome) => attempts.push({ u, outcome }),
+    },
+  );
   await drain(tracked);
   assert.equal(failures, 1);
   assert.equal(delivered.length, 0);

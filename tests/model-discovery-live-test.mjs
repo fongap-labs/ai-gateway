@@ -2,13 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import assert from 'node:assert/strict';
+import { collectDiscoveryNodes, diffModelSnapshots, formatDiscoveryMarkdown, scanDiscoveryNode } from '../scripts/provider-discovery/index.js';
 import { providerWire } from '../src/providers/registry.ts';
-import {
-  collectDiscoveryNodes,
-  scanDiscoveryNode,
-  diffModelSnapshots,
-  formatDiscoveryMarkdown,
-} from '../scripts/provider-discovery/index.js';
 
 const GENERIC_SECRET = 'never-print-generic-key';
 const OPENAI_SECRET = 'never-print-openai-key';
@@ -114,10 +109,15 @@ assert.equal(openaiResult.capabilities.responses.status, 'unsupported');
 const previous = {
   schema_version: 1,
   generated_at: '2026-09-11T00:00:00.000Z',
-  nodes: [{
-    node_id: 'provider-a-01', provider: 'provider-a', status: 'ok',
-    models: ['model-a', 'model-old'], capabilities: {},
-  }],
+  nodes: [
+    {
+      node_id: 'provider-a-01',
+      provider: 'provider-a',
+      status: 'ok',
+      models: ['model-a', 'model-old'],
+      capabilities: {},
+    },
+  ],
 };
 const current = {
   schema_version: 1,
@@ -138,10 +138,16 @@ assert.match(md, /- model-old/);
 const failedCurrent = {
   schema_version: 1,
   generated_at: '2026-09-12T01:00:00.000Z',
-  nodes: [{
-    node_id: 'provider-a-01', provider: 'provider-a', status: 'scan_failed',
-    models: [], capabilities: {}, error: 'HTTP 503',
-  }],
+  nodes: [
+    {
+      node_id: 'provider-a-01',
+      provider: 'provider-a',
+      status: 'scan_failed',
+      models: [],
+      capabilities: {},
+      error: 'HTTP 503',
+    },
+  ],
 };
 const failedDiff = diffModelSnapshots(previous, failedCurrent);
 assert.deepEqual(failedDiff.changes[0].removed, []);

@@ -14,7 +14,10 @@ export function convertSseStream(
   let cancelled = false;
   return new ReadableStream({
     start(controller) {
-      if (!body) { controller.error(new Error('Upstream stream body is not readable')); return; }
+      if (!body) {
+        controller.error(new Error('Upstream stream body is not readable'));
+        return;
+      }
       reader = body.getReader();
       const upstream = reader;
       const decoder = new TextDecoder();
@@ -26,7 +29,11 @@ export function convertSseStream(
           while (!cancelled && !isTerminal()) {
             const { done, value } = await upstream.read();
             if (cancelled) return;
-            if (done) { scanner.push(decoder.decode()); scanner.flush(); break; }
+            if (done) {
+              scanner.push(decoder.decode());
+              scanner.flush();
+              break;
+            }
             scanner.push(decoder.decode(value, { stream: true }));
           }
           if (cancelled) return;

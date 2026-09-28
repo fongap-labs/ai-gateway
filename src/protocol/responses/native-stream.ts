@@ -18,14 +18,10 @@
 // helpers run BEFORE any byte reaches the client, so a failure inside them
 // still rotates to another node.
 
-import { createSseScanner, readWithDeadline } from '../../stream/guard.ts';
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
+import { createSseScanner, readWithDeadline } from '../../stream/guard.ts';
+import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../../types/upstream-processing.ts';
 import { ResponsesEventBuilder } from './events.ts';
-import {
-  UPSTREAM_PROCESSING_ERROR,
-  upstreamProcessingError,
-  type UpstreamProcessingErrorCode,
-} from '../../types/upstream-processing.ts';
 
 const MAX_COLLECTED_BYTES = 2 * 1024 * 1024;
 
@@ -34,7 +30,11 @@ const MAX_COLLECTED_BYTES = 2 * 1024 * 1024;
 //   response.completed / response.incomplete -> resolve with `response`
 //   response.failed                          -> throw (rotate; client saw nothing)
 // EOF without a terminal event                -> throw (truncated stream)
-export async function collectResponsesObject(upstream: Response, clientSignal: AbortSignal | null | undefined, deadlineMs?: number | null): Promise<Record<string, unknown>> {
+export async function collectResponsesObject(
+  upstream: Response,
+  clientSignal: AbortSignal | null | undefined,
+  deadlineMs?: number | null,
+): Promise<Record<string, unknown>> {
   if (!upstream.body) throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.EMPTY, 'Upstream response has no body.');
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
@@ -49,24 +49,21 @@ export async function collectResponsesObject(upstream: Response, clientSignal: A
   let semanticEof = false;
   const scanner = createSseScanner((data) => {
     if (!data || data === '[DONE]') return;
-    let json;
+    let json: Record<string, unknown> | null = null;
     try {
-      json = JSON.parse(data);
+      json = JSON.parse(data) as Record<string, unknown> | null;
     } catch (error) {
-      throw upstreamProcessingError(
-        UPSTREAM_PROCESSING_ERROR.MALFORMED,
-        'Upstream returned malformed streaming data.',
-        error,
-      );
+      throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.MALFORMED, 'Upstream returned malformed streaming data.', error);
     }
     if (json?.type === 'response.failed') {
+      const failed = (json.response ?? {}) as { error?: { message?: string } };
       throw upstreamProcessingError(
         UPSTREAM_PROCESSING_ERROR.TERMINAL,
-        `Upstream reported response.failed: ${json.response?.error?.message || 'unknown error'}`,
+        `Upstream reported response.failed: ${failed.error?.message || 'unknown error'}`,
       );
     }
-    if ((json?.type === 'response.completed' || json?.type === 'response.incomplete') && json.response) {
-      collected = json.response;
+    if ((json?.type === 'response.completed' || json?.type === 'response.incomplete') && json.response && typeof json.response === 'object') {
+      collected = json.response as Record<string, unknown>;
       semanticEof = true;
     }
   });
@@ -77,11 +74,7 @@ export async function collectResponsesObject(upstream: Response, clientSignal: A
         await reader.cancel().catch(() => {});
         throw new DOMException('Client aborted during stream assembly.', 'AbortError');
       }
-      const { done, value } = await readWithDeadline(
-        reader,
-        deadlineMs,
-        (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message),
-      );
+      const { done, value } = await readWithDeadline(reader, deadlineMs, (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message));
       if (done) break;
       receivedBytes += value.byteLength;
       scanner.push(decoder.decode(value, { stream: true }));
@@ -115,7 +108,11 @@ export async function collectResponsesObject(upstream: Response, clientSignal: A
 // response.created -> per-item added/delta/done -> response.completed.
 // Synthetic streams carry an internal lifecycle marker consumed and stripped
 // by the outer request boundary; real upstream streams never carry it.
-export function synthesizeResponsesFromObject(response: Record<string, unknown> | null | undefined, requestedModel: string, extraHeaders?: Record<string, string>): Response {
+export function synthesizeResponsesFromObject(
+  response: Record<string, unknown> | null | undefined,
+  requestedModel: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   const events = new ResponsesEventBuilder();
   const encoder = new TextEncoder();
   const chunks: string[] = [];

@@ -3,43 +3,39 @@
 //
 // Public re-export surface for the token-usage store.
 
+export { aggregateDailyToWeekly, aggregateHourlyToDaily } from './aggregation.ts';
 export {
-  TTFT_BUCKET_BOUNDARIES_MS,
   DISPLAY_TIMEZONE_OFFSET_MS,
-  utc8DayStartUtcMs,
   isoDayUtc8,
   normalizeHour,
-  ttftBucketIndex,
   normalizeModelKey,
+  TTFT_BUCKET_BOUNDARIES_MS,
   tokenStatsD1,
+  ttftBucketIndex,
+  utc8DayStartUtcMs,
 } from './keys.ts';
-
-export { persistTokenUsage, persistUpstreamAttemptUsage, tokenUsagePayload } from './writer.ts';
 
 // Delivered-response queries remain the source for Public Model Status / TTFT.
 export {
-  queryTokenSummary,
+  MODEL_STATUS_HISTORICAL_WINDOW_MS,
+  MODEL_STATUS_RECENT_WINDOW_MS,
+  queryAllModelsTtftPercentiles,
+  queryModelUsageCoverage,
+  queryRecentModelEvidence,
   queryTokenDailySeries,
   queryTokenModelUsage,
-  MODEL_STATUS_RECENT_WINDOW_MS,
-  MODEL_STATUS_HISTORICAL_WINDOW_MS,
-  queryAllModelsTtftPercentiles,
-  queryRecentModelEvidence,
-  queryModelUsageCoverage,
+  queryTokenSummary,
 } from './queries.ts';
-
+export {
+  cleanupModelStats,
+  cleanupUsageRetention,
+  maintainUsageStats,
+} from './retention.ts';
 // Dashboard consumption queries: physical upstream attempts, including failed
 // fallback/retry/hedge work when the upstream reported usage.
 export {
-  loadUpstreamSummary,
   loadUpstreamDaily,
   loadUpstreamModels,
+  loadUpstreamSummary,
 } from './upstream-queries.ts';
-
-export { aggregateHourlyToDaily, aggregateDailyToWeekly } from './aggregation.ts';
-
-export {
-  cleanupUsageRetention,
-  cleanupModelStats,
-  maintainUsageStats,
-} from './retention.ts';
+export { persistTokenUsage, persistUpstreamAttemptUsage, tokenUsagePayload } from './writer.ts';

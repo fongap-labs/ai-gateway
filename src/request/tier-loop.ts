@@ -7,14 +7,14 @@
 // precedence model; lower-tier node counts never pull surplus budget away from
 // a higher tier.
 
-import { TIER_ORDER } from './router.ts';
-import { tierHasDispatchableNode, countDispatchableNodes } from '../scheduler/scheduler.ts';
+import { tier1CountDispatchableNodes, tier1HasDispatchableNode } from '../reliability/tier1-state.ts';
 import { routingStrategyFor } from '../scheduler/routing-strategy.ts';
-import { tier1HasDispatchableNode, tier1CountDispatchableNodes } from '../reliability/tier1-state.ts';
-import type { Tier, TierMap, RoutableRequest } from '../types/scheduler.ts';
+import { countDispatchableNodes, tierHasDispatchableNode } from '../scheduler/scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
+import type { RoutableRequest, Tier, TierMap } from '../types/scheduler.ts';
+import { TIER_ORDER } from './router.ts';
 
 function tier1Dispatchable(
   nodes: ReadonlyArray<RuntimeNode>,
@@ -39,24 +39,24 @@ function tier1LiveCount(
 }
 
 export type TierPickResult = {
-  node?: RuntimeNode,
-  raceLost?: boolean,
-  raceLostNodeId?: string,
-  tier1ReleaseToken?: { accountId: string, released: boolean, settled: boolean, quotaReserved: number } | null,
-  tier1EscapedFromAffinity?: boolean,
-  tier1UpdateAffinity?: boolean,
-  tier1AffinityHit?: boolean,
+  node?: RuntimeNode;
+  raceLost?: boolean;
+  raceLostNodeId?: string;
+  tier1ReleaseToken?: { accountId: string; released: boolean; settled: boolean; quotaReserved: number } | null;
+  tier1EscapedFromAffinity?: boolean;
+  tier1UpdateAffinity?: boolean;
+  tier1AffinityHit?: boolean;
 } | null;
 
 type PickForTierOpts = {
-  knownModels?: ReadonlySet<string> | null,
-  affinityAccountId?: string | null,
-  evaluateAffinity?: boolean,
-  now?: number,
-  rng?: () => number,
-  excludeId?: string | null,
-  raceLostIds?: Set<string> | null,
-  maxInFlight?: number | null,
+  knownModels?: ReadonlySet<string> | null;
+  affinityAccountId?: string | null;
+  evaluateAffinity?: boolean;
+  now?: number;
+  rng?: () => number;
+  excludeId?: string | null;
+  raceLostIds?: Set<string> | null;
+  maxInFlight?: number | null;
 };
 
 export function pickForTier(
@@ -95,7 +95,7 @@ export function makeTier1Rng(env: GatewayEnv): () => number {
   let a = h >>> 0;
   return () => {
     a |= 0;
-    a = (a + 0x6D2B79F5) | 0;
+    a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -128,14 +128,13 @@ export function computeTierCaps(
   const dispatchable = TIER_ORDER.filter((t) =>
     t === 1
       ? tier1Dispatchable(tiers[t], reqDescriptor, attempted, now, knownModels, maxInFlight)
-      : tierHasDispatchableNode(tiers[t], reqDescriptor, attempted, now, knownModels));
+      : tierHasDispatchableNode(tiers[t], reqDescriptor, attempted, now, knownModels),
+  );
   if (dispatchable.length === 0) return caps;
 
   const max = policy.maxAttempts;
-  const explicitTotal = TIER_ORDER.reduce((sum, t) =>
-    sum + (policy.tierAttempts?.[`tier${t}`] ?? 0), 0);
-  const adjustable = dispatchable.filter((t) =>
-    policy.tierAttempts?.[`tier${t}`] === undefined);
+  const explicitTotal = TIER_ORDER.reduce((sum, t) => sum + (policy.tierAttempts?.[`tier${t}`] ?? 0), 0);
+  const adjustable = dispatchable.filter((t) => policy.tierAttempts?.[`tier${t}`] === undefined);
 
   for (const t of dispatchable) {
     const override = policy.tierAttempts?.[`tier${t}`];
@@ -173,12 +172,12 @@ export function countRemainingDispatchableAttempts(
   for (const tierNumber of TIER_ORDER) {
     if (tierNumber === currentTier) hasReachedCurrentTier = true;
     if (!hasReachedCurrentTier) continue;
-    const capRemaining = Math.max(0,
-      (tierCaps[tierNumber] ?? 0) - (tierNumber === currentTier ? usedInTier : 0));
+    const capRemaining = Math.max(0, (tierCaps[tierNumber] ?? 0) - (tierNumber === currentTier ? usedInTier : 0));
     if (capRemaining === 0) continue;
-    const live = tierNumber === 1
-      ? tier1LiveCount(tiers[tierNumber], reqDescriptor, attempted, now, knownModels, maxInFlight)
-      : countDispatchableNodes(tiers[tierNumber], reqDescriptor, attempted, now, knownModels);
+    const live =
+      tierNumber === 1
+        ? tier1LiveCount(tiers[tierNumber], reqDescriptor, attempted, now, knownModels, maxInFlight)
+        : countDispatchableNodes(tiers[tierNumber], reqDescriptor, attempted, now, knownModels);
     total += Math.min(capRemaining, live);
   }
   return Math.max(1, Math.min(Math.max(1, sharedRemaining), total || 1));

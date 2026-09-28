@@ -13,14 +13,21 @@
 //   - adapter-declared OAuth defaults feed the AIG_OAUTH_PROVIDERS merge
 
 import assert from 'node:assert/strict';
-import { getProviderAdapter, providerWire, streamUsageEnabled, builtinOAuthProviderConfigs } from '../src/providers/registry.ts';
 import { loadGatewayConfig } from '../src/config/nodes.ts';
-import { loadOAuthProviders, __resetOAuthProvidersCacheForTests } from '../src/oauth/provider-configs.ts';
+import { __resetOAuthProvidersCacheForTests, loadOAuthProviders } from '../src/oauth/provider-configs.ts';
+import { builtinOAuthProviderConfigs, getProviderAdapter, providerWire, streamUsageEnabled } from '../src/providers/registry.ts';
 
 let passed = 0;
 function test(name, fn) {
-  try { fn(); passed++; console.log(`ok - ${name}`); }
-  catch (e) { console.error(`FAIL - ${name}`); console.error(e?.stack || e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (e) {
+    console.error(`FAIL - ${name}`);
+    console.error(e?.stack || e);
+    process.exitCode = 1;
+  }
 }
 
 function envFor(nodes) {
@@ -89,7 +96,18 @@ test('google shapes Code Assist subscription requests and declares a proprietary
   assert.equal(typeof adapter.wire.streamToNative, 'function');
   assert.equal(typeof adapter.wire.objectToNative, 'function');
   const prepared = adapter.prepare({
-    node: { id: 'g', tier: 'tier-2', provider: 'google', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: 'https://cloudcode-pa.googleapis.com', credential: '', priority: 10, models: {}, auth: 'oauth' },
+    node: {
+      id: 'g',
+      tier: 'tier-2',
+      provider: 'google',
+      protocol: 'openai',
+      surfaces: ['chat_completions'],
+      baseUrl: 'https://cloudcode-pa.googleapis.com',
+      credential: '',
+      priority: 10,
+      models: {},
+      auth: 'oauth',
+    },
     credential: { ok: true, token: 't', accountId: null },
     request: new Request('https://gateway.example.com/v1/chat/completions', { method: 'POST' }),
     body: { model: 'gemini-2.5-pro', messages: [{ role: 'user', content: 'hi' }] },
@@ -102,7 +120,18 @@ test('google shapes Code Assist subscription requests and declares a proprietary
   assert.ok(prepared.body.request.contents);
   // Streaming request selects the streaming endpoint.
   const streamed = adapter.prepare({
-    node: { id: 'g', tier: 'tier-2', provider: 'google', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: 'https://cloudcode-pa.googleapis.com', credential: '', priority: 10, models: {}, auth: 'oauth' },
+    node: {
+      id: 'g',
+      tier: 'tier-2',
+      provider: 'google',
+      protocol: 'openai',
+      surfaces: ['chat_completions'],
+      baseUrl: 'https://cloudcode-pa.googleapis.com',
+      credential: '',
+      priority: 10,
+      models: {},
+      auth: 'oauth',
+    },
     credential: { ok: true, token: 't', accountId: null },
     request: new Request('https://gateway.example.com/v1/chat/completions', { method: 'POST' }),
     body: { model: 'gemini-2.5-pro', stream: true, messages: [{ role: 'user', content: 'hi' }] },
@@ -115,15 +144,38 @@ test('google shapes Code Assist subscription requests and declares a proprietary
 
 test('google subscription adapter refuses unsupported surfaces and bodies (fail-closed)', () => {
   const adapter = getProviderAdapter('google').subscription;
-  const node = { id: 'g', tier: 'tier-2', provider: 'google', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: 'https://cloudcode-pa.googleapis.com', credential: '', priority: 10, models: {}, auth: 'oauth' };
+  const node = {
+    id: 'g',
+    tier: 'tier-2',
+    provider: 'google',
+    protocol: 'openai',
+    surfaces: ['chat_completions'],
+    baseUrl: 'https://cloudcode-pa.googleapis.com',
+    credential: '',
+    priority: 10,
+    models: {},
+    auth: 'oauth',
+  };
   const cred = { ok: true, token: 't', accountId: null };
   const request = new Request('https://gateway.example.com/v1/chat/completions', { method: 'POST' });
   // Responses surface: google Code Assist has one chat surface only.
-  assert.equal(adapter.prepare({ node, credential: cred, request, body: { model: 'm', messages: [{ role: 'user', content: 'hi' }] }, surface: 'responses' }), null);
+  assert.equal(
+    adapter.prepare({ node, credential: cred, request, body: { model: 'm', messages: [{ role: 'user', content: 'hi' }] }, surface: 'responses' }),
+    null,
+  );
   // Unsupported request body (no messages): fail-closed rotation.
   assert.equal(adapter.prepare({ node, credential: cred, request, body: { model: 'm' }, surface: 'chat_completions' }), null);
   // Unresolved credential: fail-closed rotation.
-  assert.equal(adapter.prepare({ node, credential: { ok: false, reason: 'no_token' }, request, body: { model: 'm', messages: [{ role: 'user', content: 'hi' }] }, surface: 'chat_completions' }), null);
+  assert.equal(
+    adapter.prepare({
+      node,
+      credential: { ok: false, reason: 'no_token' },
+      request,
+      body: { model: 'm', messages: [{ role: 'user', content: 'hi' }] },
+      surface: 'chat_completions',
+    }),
+    null,
+  );
 });
 
 test('openai and anthropic adapters keep their subscription semantics', () => {
@@ -133,7 +185,18 @@ test('openai and anthropic adapters keep their subscription semantics', () => {
   assert.ok(claude, 'anthropic must expose its claude subscription adapter');
 
   const codexPrepared = codex.prepare({
-    node: { id: 'o', tier: 'tier-2', provider: 'openai', protocol: 'openai', surfaces: ['chat_completions', 'responses'], baseUrl: 'https://o.example.com', credential: '', priority: 10, models: {}, auth: 'oauth' },
+    node: {
+      id: 'o',
+      tier: 'tier-2',
+      provider: 'openai',
+      protocol: 'openai',
+      surfaces: ['chat_completions', 'responses'],
+      baseUrl: 'https://o.example.com',
+      credential: '',
+      priority: 10,
+      models: {},
+      auth: 'oauth',
+    },
     credential: { ok: true, token: 't', accountId: 'acct-1' },
     request: new Request('https://gateway.example.com/v1/responses', { method: 'POST' }),
     body: { model: 'm' },
@@ -144,7 +207,18 @@ test('openai and anthropic adapters keep their subscription semantics', () => {
   assert.equal(codexPrepared.body.instructions, '');
 
   const claudePrepared = claude.prepare({
-    node: { id: 'a', tier: 'tier-2', provider: 'anthropic', protocol: 'anthropic', surfaces: ['messages'], baseUrl: 'https://a.example.com', credential: '', priority: 10, models: {}, auth: 'oauth' },
+    node: {
+      id: 'a',
+      tier: 'tier-2',
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      surfaces: ['messages'],
+      baseUrl: 'https://a.example.com',
+      credential: '',
+      priority: 10,
+      models: {},
+      auth: 'oauth',
+    },
     credential: { ok: true, token: 't', accountId: null },
     request: new Request('https://gateway.example.com/v1/messages', { method: 'POST', headers: { 'anthropic-beta': 'claude-code-20250219' } }),
     body: { model: 'm' },
@@ -156,38 +230,56 @@ test('openai and anthropic adapters keep their subscription semantics', () => {
 
 test('subscription adapters keep their quota-reset hint semantics', () => {
   const now = Date.now();
-  const codexHint = getProviderAdapter('openai').subscription.quotaResetHint({
-    status: 429,
-    headers: new Headers({ 'x-codex-primary-used-window-reset': String(Math.floor(now / 1000) + 1800) }),
-    body: '',
-  }, now);
-  assert.ok(codexHint !== null && Math.abs(codexHint - 1800 * 1000) < 5000,
-    'codex window-reset header must produce a ~30m cooldown hint');
+  const codexHint = getProviderAdapter('openai').subscription.quotaResetHint(
+    {
+      status: 429,
+      headers: new Headers({ 'x-codex-primary-used-window-reset': String(Math.floor(now / 1000) + 1800) }),
+      body: '',
+    },
+    now,
+  );
+  assert.ok(codexHint !== null && Math.abs(codexHint - 1800 * 1000) < 5000, 'codex window-reset header must produce a ~30m cooldown hint');
 
-  const claudeHint = getProviderAdapter('anthropic').subscription.quotaResetHint({
-    status: 429,
-    headers: new Headers({ 'anthropic-ratelimit-requests-reset': '900' }),
-    body: '',
-  }, now);
+  const claudeHint = getProviderAdapter('anthropic').subscription.quotaResetHint(
+    {
+      status: 429,
+      headers: new Headers({ 'anthropic-ratelimit-requests-reset': '900' }),
+      body: '',
+    },
+    now,
+  );
   assert.equal(claudeHint, 900 * 1000);
 
-  const googleRetryHint = getProviderAdapter('google').subscription.quotaResetHint({
-    status: 429,
-    headers: new Headers(),
-    body: JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '42s' }] } }),
-  }, now);
+  const googleRetryHint = getProviderAdapter('google').subscription.quotaResetHint(
+    {
+      status: 429,
+      headers: new Headers(),
+      body: JSON.stringify({
+        error: { code: 429, status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '42s' }] },
+      }),
+    },
+    now,
+  );
   assert.equal(googleRetryHint, 42 * 1000, 'google gRPC retryDelay produces a cooldown hint');
 
-  const googleRetryAfterHint = getProviderAdapter('google').subscription.quotaResetHint({
-    status: 429,
-    headers: new Headers({ 'retry-after': '60' }),
-    body: '',
-  }, now);
+  const googleRetryAfterHint = getProviderAdapter('google').subscription.quotaResetHint(
+    {
+      status: 429,
+      headers: new Headers({ 'retry-after': '60' }),
+      body: '',
+    },
+    now,
+  );
   assert.equal(googleRetryAfterHint, 60 * 1000, 'google Retry-After header produces a cooldown hint');
 
-  const noHint = getProviderAdapter('openai').subscription.quotaResetHint({
-    status: 500, headers: new Headers(), body: '',
-  }, now);
+  const noHint = getProviderAdapter('openai').subscription.quotaResetHint(
+    {
+      status: 500,
+      headers: new Headers(),
+      body: '',
+    },
+    now,
+  );
   assert.equal(noHint, null, 'quota hints only apply to rate-limit responses');
 });
 

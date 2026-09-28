@@ -98,9 +98,13 @@ await test('rolling-52-weeks: business data is matched by YYYY-MM-DD key, not po
   });
   // Find the cell whose date is 2026-08-15.
   let found = null;
-  for (const week of heatmap.weeks) for (const cell of week) {
-    if (cell.date === '2026-08-15') { found = cell; break; }
-  }
+  for (const week of heatmap.weeks)
+    for (const cell of week) {
+      if (cell.date === '2026-08-15') {
+        found = cell;
+        break;
+      }
+    }
   assert.ok(found, 'cell exists for 2026-08-15');
   assert.equal(found.value, 100, 'value comes from the data Map, not from a position');
 });
@@ -110,9 +114,13 @@ await test('rolling-52-weeks: in-range past cells with no data are 0 (real numbe
   const heatmap = buildCalendarHeatmap({ mode: 'rolling-52-weeks', today, data: null });
   // Pick a date well in the past — its value should be 0, not null.
   let past = null;
-  for (const week of heatmap.weeks) for (const cell of week) {
-    if (cell.date === '2026-08-01') { past = cell; break; }
-  }
+  for (const week of heatmap.weeks)
+    for (const cell of week) {
+      if (cell.date === '2026-08-01') {
+        past = cell;
+        break;
+      }
+    }
   assert.ok(past, 'cell for 2026-08-01 exists');
   assert.equal(past.inRange, true);
   assert.equal(past.isFuture, false);
@@ -132,9 +140,13 @@ await test('calendar-year 2026: 2026-01-01 is a Thursday (weekdayIndex=3)', () =
   const today = dateAtIso('2026-09-04');
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2026 });
   let first = null;
-  for (const week of heatmap.weeks) for (const cell of week) {
-    if (cell.date === '2026-01-01') { first = cell; break; }
-  }
+  for (const week of heatmap.weeks)
+    for (const cell of week) {
+      if (cell.date === '2026-01-01') {
+        first = cell;
+        break;
+      }
+    }
   assert.ok(first, '2026-01-01 cell exists');
   assert.equal(first.weekdayIndex, 3, '2026-01-01 is Thursday (Mon=0..Sun=6 -> 3)');
 });
@@ -146,9 +158,13 @@ await test('calendar-year 2026: layout padding before Jan 1 is out of range', ()
   // placeholders for the first column but inRange must be false.
   for (const iso of ['2025-12-29', '2025-12-30', '2025-12-31']) {
     let cell = null;
-    for (const week of heatmap.weeks) for (const c of week) {
-      if (c.date === iso) { cell = c; break; }
-    }
+    for (const week of heatmap.weeks)
+      for (const c of week) {
+        if (c.date === iso) {
+          cell = c;
+          break;
+        }
+      }
     assert.ok(cell, `${iso} cell exists (layout placeholder)`);
     assert.equal(cell.inRange, false, `${iso} is layout padding, not in 2026 range`);
     assert.equal(cell.value, null, `${iso} value is null`);
@@ -160,11 +176,12 @@ await test('calendar-year 2026: layout padding after Dec 31 is out of range', ()
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2026 });
   // 2027-01-01..2027-01-03 may or may not be in the grid depending on
   // 2026-12-31's weekday. If present, they must be inRange=false.
-  for (const week of heatmap.weeks) for (const cell of week) {
-    if (cell.date >= '2027-01-01') {
-      assert.equal(cell.inRange, false, `${cell.date} is 2027, not in 2026 range`);
+  for (const week of heatmap.weeks)
+    for (const cell of week) {
+      if (cell.date >= '2027-01-01') {
+        assert.equal(cell.inRange, false, `${cell.date} is 2027, not in 2026 range`);
+      }
     }
-  }
 });
 
 await test('calendar-year 2026: months 1..12 each have a label, anchored to the week of their 1st day', () => {
@@ -185,9 +202,13 @@ await test('calendar-year current year: future days in-range but value null', ()
   const today = dateAtIso('2026-09-04');
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2026 });
   let future = null;
-  for (const week of heatmap.weeks) for (const c of week) {
-    if (c.date === '2026-12-31') { future = c; break; }
-  }
+  for (const week of heatmap.weeks)
+    for (const c of week) {
+      if (c.date === '2026-12-31') {
+        future = c;
+        break;
+      }
+    }
   assert.ok(future, '2026-12-31 cell exists');
   assert.equal(future.inRange, true);
   assert.equal(future.isFuture, true, '2026-12-31 is in-range future when today=2026-09-04');
@@ -198,11 +219,12 @@ await test('calendar-year historical year: no future days', () => {
   // 2025 is fully in the past relative to today=2026-09-04.
   const today = dateAtIso('2026-09-04');
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2025 });
-  for (const week of heatmap.weeks) for (const cell of week) {
-    if (cell.inRange) {
-      assert.equal(cell.isFuture, false, `${cell.date} in 2025 must NOT be future when today=2026-09-04`);
+  for (const week of heatmap.weeks)
+    for (const cell of week) {
+      if (cell.inRange) {
+        assert.equal(cell.isFuture, false, `${cell.date} in 2025 must NOT be future when today=2026-09-04`);
+      }
     }
-  }
 });
 
 await test('calendar-year: 2026 has EXACTLY 53 columns and 365 in-range days', () => {
@@ -245,9 +267,13 @@ await test('calendar-year: leap year 2028 includes 2028-02-29 and has EXACTLY 53
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2028 });
   assert.equal(heatmap.weeks.length, 53, `got ${heatmap.weeks.length} weeks`);
   let leap = null;
-  for (const week of heatmap.weeks) for (const c of week) {
-    if (c.date === '2028-02-29') { leap = c; break; }
-  }
+  for (const week of heatmap.weeks)
+    for (const c of week) {
+      if (c.date === '2028-02-29') {
+        leap = c;
+        break;
+      }
+    }
   assert.ok(leap, '2028-02-29 cell exists');
   assert.equal(leap.inRange, true, '2028-02-29 is in 2028 range');
   const inRange = heatmap.weeks.flat().filter((c) => c.inRange).length;
@@ -272,8 +298,7 @@ await test('calendar-year: month starting on Monday anchors to its own week colu
   const heatmap = buildCalendarHeatmap({ mode: 'calendar-year', today, year: 2027 });
   const feb = heatmap.monthLabels.find((l) => l.month === 1);
   assert.ok(feb, 'February label exists');
-  assert.equal(heatmap.weeks[feb.weekIndex][0].date, '2027-02-01',
-    '2027-02-01 is a Monday -> the February label column starts on it');
+  assert.equal(heatmap.weeks[feb.weekIndex][0].date, '2027-02-01', '2027-02-01 is a Monday -> the February label column starts on it');
 });
 
 await test('calendar-year: month starting on Sunday anchors to the PREVIOUS week column (2026-02-01)', () => {
@@ -283,8 +308,11 @@ await test('calendar-year: month starting on Sunday anchors to the PREVIOUS week
   assert.ok(feb, 'February label exists');
   const col = heatmap.weeks[feb.weekIndex].map((c) => c.date);
   assert.ok(col.includes('2026-02-01'), 'label column contains 2026-02-01');
-  assert.equal(heatmap.weeks[feb.weekIndex][0].date, '2026-01-26',
-    '2026-02-01 is a Sunday -> column Monday is 2026-01-26 (label is NOT pushed to the next column)');
+  assert.equal(
+    heatmap.weeks[feb.weekIndex][0].date,
+    '2026-01-26',
+    '2026-02-01 is a Sunday -> column Monday is 2026-01-26 (label is NOT pushed to the next column)',
+  );
 });
 
 await test('rolling-52-weeks: labels span the 12月 → 1月 year boundary', () => {

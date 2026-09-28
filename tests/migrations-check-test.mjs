@@ -17,7 +17,7 @@ const checkPath = path.join(root, 'scripts', 'migrations-check.mjs');
 
 // Re-import the same constants the check uses by parsing the source.
 // This keeps the test in lockstep with whatever the production regex is.
-const source = await import(pathToFileURL(checkPath).href).catch(() => null);
+const _source = await import(pathToFileURL(checkPath).href).catch(() => null);
 // The check is a script, not a module — re-derive the same regex.
 
 const FILENAME_RE = /^(\d{3,})_([a-z0-9_]+)\.sql$/;

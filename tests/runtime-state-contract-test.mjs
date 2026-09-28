@@ -13,19 +13,30 @@
 //     by importing backend internals per tier
 
 import assert from 'node:assert/strict';
-import { runtimeStateStoreFor, tier1RuntimeStateStore, nodeRuntimeStateStore } from '../src/reliability/runtime-state-store.ts';
+import { __resetAllStateForTests, acquireSlot, recordFailure, recordSuccess, recordTtft } from '../src/reliability/node-state.ts';
+import { nodeRuntimeStateStore, runtimeStateStoreFor, tier1RuntimeStateStore } from '../src/reliability/runtime-state-store.ts';
 import {
-  claimTier1Slot, makeTier1ReleaseToken, releaseTier1Slot, settleTier1Quota,
-  recordTier1QuotaReport, recordTier1Success, recordTier1Ttft, __resetTier1StateForTests,
+  __resetTier1StateForTests,
+  claimTier1Slot,
+  makeTier1ReleaseToken,
+  recordTier1QuotaReport,
+  recordTier1Success,
+  recordTier1Ttft,
+  releaseTier1Slot,
+  settleTier1Quota,
 } from '../src/reliability/tier1-state.ts';
-import {
-  acquireSlot, recordTtft, recordSuccess, recordFailure, __resetAllStateForTests,
-} from '../src/reliability/node-state.ts';
 
 let passed = 0;
 function test(name, fn) {
-  try { fn(); passed++; console.log(`ok - ${name}`); }
-  catch (e) { console.error(`FAIL - ${name}`); console.error(e?.stack || e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (e) {
+    console.error(`FAIL - ${name}`);
+    console.error(e?.stack || e);
+    process.exitCode = 1;
+  }
 }
 
 test('both backends satisfy the same RuntimeStateStore contract', () => {
@@ -49,13 +60,30 @@ test('tier-1 projection is honest: no fabricated health, endpoint circuit, or mo
   const account = tier1RuntimeStateStore.account('a1');
   assert.equal(account.quota.state, 'unknown', 'no provider report -> unknown quota');
   assert.equal(account.disabled, false);
-  assert.equal(tier1RuntimeStateStore.model('a1', 'never-observed'), null,
-    'unobserved model pairs surface null, not fabricated entries');
+  assert.equal(tier1RuntimeStateStore.model('a1', 'never-observed'), null, 'unobserved model pairs surface null, not fabricated entries');
 });
 
 test('tier-1 projections reflect real state transitions end to end', () => {
   __resetTier1StateForTests();
-  assert.equal(claimTier1Slot({ id: 'a2', tier: 'tier-1', provider: 'mock', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: 'https://a2.example.com/v1', credential: 'k', priority: 10, models: { 'Code-Max': 'up' } }, 1000, 'Code-Max', null), true);
+  assert.equal(
+    claimTier1Slot(
+      {
+        id: 'a2',
+        tier: 'tier-1',
+        provider: 'mock',
+        protocol: 'openai',
+        surfaces: ['chat_completions'],
+        baseUrl: 'https://a2.example.com/v1',
+        credential: 'k',
+        priority: 10,
+        models: { 'Code-Max': 'up' },
+      },
+      1000,
+      'Code-Max',
+      null,
+    ),
+    true,
+  );
   const token = makeTier1ReleaseToken('a2');
   assert.equal(tier1RuntimeStateStore.account('a2').inFlight, 1);
   recordTier1Ttft('a2', 'Code-Max', 120, 1001);

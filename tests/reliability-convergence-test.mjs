@@ -3,8 +3,8 @@
 // Cross-module reliability convergence invariants.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import worker from '../src/index.ts';
 import { loadPoliciesConfig } from '../src/config/policies.ts';
+import worker from '../src/index.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
@@ -15,21 +15,30 @@ function reset() {
   __resetTier1AffinityForTests();
 }
 function chatCompletion(model, content = 'ok') {
-  return new Response(JSON.stringify({
-    id: 'chatcmpl-test', object: 'chat.completion', model,
-    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(
+    JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion',
+      model,
+      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
 }
 function request(model, key) {
   return new Request('https://gateway.example.com/v1/chat/completions', {
-    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({ model, messages: [{ role: 'user', content: 'test' }] }),
   });
 }
 function node(id, model, upstreamModel = `up-${model.toLowerCase()}`) {
   return {
-    id, provider: id.split('-')[0], base_url: `https://${id}.example.com/v1`, priority: 10,
+    id,
+    provider: id.split('-')[0],
+    base_url: `https://${id}.example.com/v1`,
+    priority: 10,
     models: { [model]: upstreamModel },
   };
 }
@@ -43,18 +52,26 @@ function node(id, model, upstreamModel = `up-${model.toLowerCase()}`) {
     const body = JSON.parse(init.body);
     calls.push({ host: url.hostname, model: body.model });
     if (url.hostname.startsWith('air-')) {
-      return new Response(JSON.stringify({ error: { message: 'temporary unavailable' } }), { status: 503, headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ error: { message: 'temporary unavailable' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
     }
     return chatCompletion(body.model, 'should-not-be-called');
   };
   const env = {
-    AIG_ACCESS_KEY_AIR: key, AIG_ACCESS_MODELS_AIR: 'Air,SenseNova', AIG_PROTOCOL_FALLBACKS: 'disable',
+    AIG_ACCESS_KEY_AIR: key,
+    AIG_ACCESS_MODELS_AIR: 'Air,SenseNova',
+    AIG_PROTOCOL_FALLBACKS: 'disable',
     AIG_TIER1_NODES_01: JSON.stringify([node('air-01', 'Air', 'up-air'), node('pro-01', 'Pro', 'up-pro'), node('max-01', 'Max', 'up-max')]),
     AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'air-01': 'a', 'pro-01': 'p', 'max-01': 'm' }),
   };
   const response = await worker.fetch(request('Air', key), env, {});
   assert.notEqual(response.status, 200);
-  assert.deepEqual(calls.map((c) => c.model), ['up-air']);
+  assert.deepEqual(
+    calls.map((c) => c.model),
+    ['up-air'],
+  );
 }
 
 {
@@ -64,11 +81,17 @@ function node(id, model, upstreamModel = `up-${model.toLowerCase()}`) {
   globalThis.fetch = async (_input, init) => {
     const body = JSON.parse(init.body);
     calls.push(body.model);
-    if (body.model === 'up-max') return new Response(JSON.stringify({ error: { message: 'model not found' } }), { status: 404, headers: { 'content-type': 'application/json' } });
+    if (body.model === 'up-max')
+      return new Response(JSON.stringify({ error: { message: 'model not found' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
     return chatCompletion(body.model, 'fallback-ok');
   };
   const env = {
-    AIG_ACCESS_KEY_MAX: key, AIG_ACCESS_MODELS_MAX: 'Max,Pro,Ultra', AIG_PROTOCOL_FALLBACKS: 'disable',
+    AIG_ACCESS_KEY_MAX: key,
+    AIG_ACCESS_MODELS_MAX: 'Max,Pro,Ultra',
+    AIG_PROTOCOL_FALLBACKS: 'disable',
     AIG_TIER1_NODES_01: JSON.stringify([node('max-01', 'Max', 'up-max'), node('pro-01', 'Pro', 'up-pro')]),
     AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'max-01': 'm', 'pro-01': 'p' }),
   };

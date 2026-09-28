@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Closed Model Catalog regression contracts.
 import assert from 'node:assert/strict';
-import { collectKnownModels, servesModel, isWildcardNode } from '../src/config/registry.ts';
+import { collectKnownModels, isWildcardNode, servesModel } from '../src/config/registry.ts';
 import { authorizeModel, filterVisibleModels } from '../src/request/model-authz.ts';
 import { supportsRequest } from '../src/scheduler/scheduler.ts';
 

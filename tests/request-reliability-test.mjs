@@ -3,21 +3,45 @@
 // breaker transitions, half-open single probe.
 import assert from 'node:assert/strict';
 import {
-  acquireSlot, peekAvailability, recordSuccess, recordFailure, recordNeutralEnd,
-  getNodeState, getCooldownRemainingMs, applyHealthPenalty,
-  CIRCUIT_FAILURE_THRESHOLD, CIRCUIT_OPEN_MS,
-} from '../src/reliability/node-state.ts';
-import {
-  parseRetryAfterMs, attemptBudgetSliceMs, attemptHeadersTimeoutMs, attemptFirstEventTimeoutMs,
-  MIN_ATTEMPT_HEADERS_MS, MIN_ATTEMPT_FIRST_EVENT_MS,
+  attemptBudgetSliceMs,
+  attemptFirstEventTimeoutMs,
+  attemptHeadersTimeoutMs,
+  getLimits,
+  MIN_ATTEMPT_FIRST_EVENT_MS,
+  MIN_ATTEMPT_HEADERS_MS,
+  parseRetryAfterMs,
 } from '../src/config/timeouts.ts';
-import { classifyUpstreamStatus, classifyNetworkError, classifyFirstEventFailure, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyStreamInterrupted, classifyHedgeRaceLoss, classifyHedgeUnknown, classifyNonJsonBody, KIND } from '../src/reliability/classify.ts';
-import { getLimits } from '../src/config/timeouts.ts';
+import {
+  classifyClientAbort,
+  classifyFirstEventFailure,
+  classifyHedgeRaceLoss,
+  classifyHedgeUnknown,
+  classifyNetworkError,
+  classifyNonJsonBody,
+  classifyPreDispatchInvalidBaseUrl,
+  classifyStreamInterrupted,
+  classifyUpstreamStatus,
+  KIND,
+} from '../src/reliability/classify.ts';
+import {
+  acquireSlot,
+  applyHealthPenalty,
+  CIRCUIT_FAILURE_THRESHOLD,
+  CIRCUIT_OPEN_MS,
+  getCooldownRemainingMs,
+  getNodeState,
+  peekAvailability,
+  recordFailure,
+  recordNeutralEnd,
+  recordSuccess,
+} from '../src/reliability/node-state.ts';
 import { countDispatchableNodes } from '../src/scheduler/scheduler.ts';
 
 const ENV = {};
 let now = 1_000_000;
-const tick = (ms) => { now += ms; };
+const tick = (ms) => {
+  now += ms;
+};
 
 let passed = 0;
 async function test(name, fn) {
@@ -26,7 +50,7 @@ async function test(name, fn) {
     passed++;
   } catch (e) {
     console.error(`FAIL: ${name}`);
-    console.error(e && e.stack || e);
+    console.error(e?.stack || e);
     process.exitCode = 1;
   }
 }
@@ -45,18 +69,22 @@ await test('slot accounting never leaks', async () => {
 await test('consecutive failures open circuit; interleaved success keeps it closed', async () => {
   // 503 success 503 success 503 -> CLOSED
   for (let i = 0; i < 2; i++) {
-    acquireSlot('c1', now); tick(1);
+    acquireSlot('c1', now);
+    tick(1);
     recordFailure('c1', { counted: true, cooldownMs: 100 }, now);
-    acquireSlot('c1', now); tick(1);
+    acquireSlot('c1', now);
+    tick(1);
     recordSuccess('c1', 5, now);
   }
-  acquireSlot('c1', now); tick(1);
+  acquireSlot('c1', now);
+  tick(1);
   recordFailure('c1', { counted: true, cooldownMs: 100 }, now);
   assert.equal(getNodeState('c1').circuitState, 'closed');
 
   // N consecutive failures -> OPEN
   for (let i = 0; i < CIRCUIT_FAILURE_THRESHOLD; i++) {
-    acquireSlot('c1', now); tick(1);
+    acquireSlot('c1', now);
+    tick(1);
     recordFailure('c1', { counted: true, cooldownMs: 100 }, now);
   }
   assert.equal(getNodeState('c1').circuitState, 'open');
@@ -65,7 +93,8 @@ await test('consecutive failures open circuit; interleaved success keeps it clos
 await test('half-open allows exactly one probe; probe failure reopens', async () => {
   const id = 'c2';
   for (let i = 0; i < CIRCUIT_FAILURE_THRESHOLD; i++) {
-    acquireSlot(id, now); tick(1);
+    acquireSlot(id, now);
+    tick(1);
     recordFailure(id, { counted: true, cooldownMs: 50 }, now);
   }
   assert.equal(peekAvailability(id, now), 'no');
@@ -92,7 +121,8 @@ await test('429 rotates with Retry-After but never opens the circuit', async () 
   assert.equal(c.cooldownMs, 30_000);
   assert.equal(c.counted, false);
   for (let i = 0; i < 10; i++) {
-    acquireSlot(id, now); tick(1);
+    acquireSlot(id, now);
+    tick(1);
     recordFailure(id, { counted: c.counted, cooldownMs: c.cooldownMs }, now);
   }
   assert.equal(getNodeState(id).circuitState, 'closed');
@@ -129,7 +159,8 @@ await test('400 rotates locally while hard client errors stop without penalty', 
     assert.equal(c.counted, false);
   }
   const id = 'ce1';
-  acquireSlot(id, now); tick(1);
+  acquireSlot(id, now);
+  tick(1);
   const before = getNodeState(id).healthScore;
   applyHealthPenalty(id, 'client');
   assert.equal(getNodeState(id).healthScore, before); // client kind has no penalty
@@ -145,11 +176,13 @@ await test('5xx failures are counted for the circuit without standalone cooldown
 
 await test('success resets consecutive failures and closes half-open', async () => {
   const id = 's1';
-  acquireSlot(id, now); tick(1);
+  acquireSlot(id, now);
+  tick(1);
   recordSuccess(id, 20, now);
   assert.equal(getNodeState(id).consecutiveFailures, 0);
   assert.equal(getNodeState(id).avgLatencyMs, 20);
-  acquireSlot(id, now); tick(1);
+  acquireSlot(id, now);
+  tick(1);
   recordSuccess(id, 40, now);
   assert.ok(Math.abs(getNodeState(id).avgLatencyMs - 26) < 1); // EWMA alpha .3
 });
@@ -161,7 +194,8 @@ await test('success resets consecutive failures and closes half-open', async () 
 
 function openCircuitForProbe(id) {
   for (let i = 0; i < CIRCUIT_FAILURE_THRESHOLD; i++) {
-    acquireSlot(id, now); tick(1);
+    acquireSlot(id, now);
+    tick(1);
     recordFailure(id, { counted: true, cooldownMs: 50 }, now);
   }
   tick(CIRCUIT_OPEN_MS + 1);
@@ -328,16 +362,18 @@ await test('hedge defaults: 3000ms delay, 1 hedge per request, overridable', asy
 
 await test('dispatchable count keeps busy nodes as soft capacity', async () => {
   const makeNode = (id) => ({
-    id, models: { m: 'upstream' }, priority: 10,
-    protocol: 'openai', surfaces: ['chat_completions'],
+    id,
+    models: { m: 'upstream' },
+    priority: 10,
+    protocol: 'openai',
+    surfaces: ['chat_completions'],
   });
   const req = { model: 'm', protocol: 'openai', surface: 'chat_completions' };
   const nodes = [makeNode('live-count-a'), makeNode('live-count-b')];
   assert.equal(countDispatchableNodes(nodes, req, new Set(), now), 2);
   assert.equal(countDispatchableNodes(nodes, req, new Set(['live-count-a']), now), 1);
   acquireSlot('live-count-b', now);
-  assert.equal(countDispatchableNodes(nodes, req, new Set(), now), 2,
-    'configured concurrency is ranking-only; a busy node remains dispatchable');
+  assert.equal(countDispatchableNodes(nodes, req, new Set(), now), 2, 'configured concurrency is ranking-only; a busy node remains dispatchable');
   recordNeutralEnd('live-count-b');
 });
 
@@ -393,11 +429,22 @@ await test('every failure-kind consumer-facing value appears in KIND', async () 
   // AttemptOutcome.kind / terminalStatus dispatch. New kinds require
   // editing KIND in src/reliability/classify.ts AND this test.
   const expected = [
-    KIND.RATE_LIMIT, KIND.RATE_LIMIT_GLOBAL, KIND.AUTH, KIND.CLIENT,
-    KIND.MODEL_MISSING, KIND.ENDPOINT_NOT_FOUND, KIND.SERVER, KIND.NETWORK,
-    KIND.HEADERS_TIMEOUT, KIND.FIRST_EVENT_TIMEOUT, KIND.CLIENT_ABORT,
-    KIND.INVALID_BASE_URL, KIND.STREAM_INTERRUPTED, KIND.NON_JSON_BODY,
-    KIND.CANCELLED_AFTER_PEER_COMMIT, KIND.UNKNOWN,
+    KIND.RATE_LIMIT,
+    KIND.RATE_LIMIT_GLOBAL,
+    KIND.AUTH,
+    KIND.CLIENT,
+    KIND.MODEL_MISSING,
+    KIND.ENDPOINT_NOT_FOUND,
+    KIND.SERVER,
+    KIND.NETWORK,
+    KIND.HEADERS_TIMEOUT,
+    KIND.FIRST_EVENT_TIMEOUT,
+    KIND.CLIENT_ABORT,
+    KIND.INVALID_BASE_URL,
+    KIND.STREAM_INTERRUPTED,
+    KIND.NON_JSON_BODY,
+    KIND.CANCELLED_AFTER_PEER_COMMIT,
+    KIND.UNKNOWN,
   ];
   // Sanity: no duplicates.
   assert.equal(new Set(expected).size, expected.length, 'KIND values must be unique');

@@ -9,12 +9,12 @@
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
 import { buildResponsesError } from '../src/protocol/responses/index.ts';
-import { terminalStatus } from '../src/request/errors.ts';
+import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 import { KIND } from '../src/reliability/classify.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
+import { terminalStatus } from '../src/request/errors.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
-import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 
 const ACCESS_KEY = 'responses-diagnostics-key';
 let routeHandlers = {};
@@ -119,11 +119,7 @@ assert.ok(!JSON.stringify(badReqBody).includes('bad input'), 'raw upstream 4xx m
 
 reset();
 routeHandlers['badreq-exposed.example.com'] = () => json({ error: { message: 'provider-specific bad input' } }, 400);
-const badReqExposed = await worker.fetch(
-  request(),
-  envFor('badreq-exposed', { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' }),
-  {},
-);
+const badReqExposed = await worker.fetch(request(), envFor('badreq-exposed', { AIG_SHOULD_EXPOSE_UPSTREAM: 'true' }), {});
 assert.equal(badReqExposed.status, 502);
 const badReqExposedBody = await badReqExposed.json();
 assert.equal(badReqExposedBody.error.message, 'All attempted nodes failed for model "code-max".');

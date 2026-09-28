@@ -26,7 +26,7 @@ export const GUARD_ERROR = {
   SSE_LINE_EXCEEDED: 'first_event_sse_line_exceeded',
 } as const;
 
-export type GuardErrorCode = typeof GUARD_ERROR[keyof typeof GUARD_ERROR];
+export type GuardErrorCode = (typeof GUARD_ERROR)[keyof typeof GUARD_ERROR];
 
 class GuardError extends Error {
   code: GuardErrorCode;
@@ -46,14 +46,14 @@ const guardedStreamState = new WeakMap<object, { failureReason: string | null }>
 export const FIRST_EVENT_MAX_PRE_BYTES = 2 * 1024 * 1024;
 export const FIRST_EVENT_MAX_SSE_LINE = 1024 * 1024;
 
-export type SseEventState = { dataLines: string[], dataLength: number };
+export type SseEventState = { dataLines: string[]; dataLength: number };
 export type SseEventHandler = (data: string) => void;
 
 export function guardedStreamFailureReason(response: Response): string | null {
   return guardedStreamState.get(response)?.failureReason || null;
 }
 
-export function createSseScanner(onEvent: SseEventHandler): { push(chunkText: string): void, flush(): void } {
+export function createSseScanner(onEvent: SseEventHandler): { push(chunkText: string): void; flush(): void } {
   let buffer = '';
   const eventState: SseEventState = { dataLines: [], dataLength: 0 };
   return {
@@ -65,7 +65,7 @@ export function createSseScanner(onEvent: SseEventHandler): { push(chunkText: st
       }
     },
     flush(): void {
-      buffer = drainLines(buffer + '', eventState, onEvent, true);
+      buffer = drainLines(`${buffer}`, eventState, onEvent, true);
     },
   };
 }
@@ -148,10 +148,7 @@ export async function readWithDeadline(
     timerId = setTimeout(() => resolve('timeout'), remaining);
   });
   try {
-    const result = await Promise.race([
-      reader.read().then((v) => ({ chunk: v })),
-      timeoutP.then(() => 'timeout' as const),
-    ]);
+    const result = await Promise.race([reader.read().then((v) => ({ chunk: v })), timeoutP.then(() => 'timeout' as const)]);
     if (result === 'timeout') return onDeadline(message);
     return result.chunk;
   } finally {
@@ -191,7 +188,9 @@ export async function ensureFirstSseEvent(
           for (const chunk of consumed) controller.enqueue(chunk);
           void pump(reader, controller, state);
         },
-        cancel() { reader.cancel().catch(() => {}); },
+        cancel() {
+          reader.cancel().catch(() => {});
+        },
       });
       const replay = new Response(stream, {
         status: upstreamResponse.status,
@@ -216,6 +215,7 @@ export async function ensureFirstSseEvent(
         finishErr(GUARD_ERROR.DONE_ONLY);
         return;
       }
+      // biome-ignore lint/suspicious/noImplicitAnyLet: upstream SSE events are dynamic untrusted JSON at this protocol boundary; tsc treats the evolving `let json` as any
       let json;
       try {
         json = JSON.parse(data);
@@ -223,7 +223,11 @@ export async function ensureFirstSseEvent(
         finishErr(GUARD_ERROR.MALFORMED);
         return;
       }
-      try { onParsedEvent?.(json); } catch { /* observability must not affect failover */ }
+      try {
+        onParsedEvent?.(json);
+      } catch {
+        /* observability must not affect failover */
+      }
       if (json && typeof json === 'object' && !Array.isArray(json) && json.error) {
         finishErr(GUARD_ERROR.ERROR_ENVELOPE);
         return;
@@ -240,14 +244,21 @@ export async function ensureFirstSseEvent(
     timerId = setTimeout(() => finishErr(GUARD_ERROR.TIMEOUT), timeoutMs);
 
     void consumeSseEventsWithReader(reader, check, consumed, () => settled)
-      .then(() => { if (!settled) finishErr(GUARD_ERROR.EMPTY); })
+      .then(() => {
+        if (!settled) finishErr(GUARD_ERROR.EMPTY);
+      })
       .catch((error) => {
         if (!settled) finishErr(error?.code || GUARD_ERROR.EMPTY);
       });
   });
 }
 
-async function consumeSseEventsWithReader(reader: ReadableStreamDefaultReader<Uint8Array>, onData: SseEventHandler, consumed: Uint8Array[], isSettled: () => boolean): Promise<void> {
+async function consumeSseEventsWithReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onData: SseEventHandler,
+  consumed: Uint8Array[],
+  isSettled: () => boolean,
+): Promise<void> {
   const decoder = new TextDecoder();
   const scanner = createSseScanner(onData);
   let preBytes = 0;
@@ -266,7 +277,11 @@ async function consumeSseEventsWithReader(reader: ReadableStreamDefaultReader<Ui
   if (!isSettled()) scanner.flush();
 }
 
-async function pump(reader: ReadableStreamDefaultReader<Uint8Array>, controller: ReadableStreamDefaultController<Uint8Array>, state: { failureReason: string | null }): Promise<void> {
+async function pump(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  state: { failureReason: string | null },
+): Promise<void> {
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -276,6 +291,10 @@ async function pump(reader: ReadableStreamDefaultReader<Uint8Array>, controller:
     controller.close();
   } catch {
     state.failureReason = 'reader_error';
-    try { controller.close(); } catch { /* already closed */ }
+    try {
+      controller.close();
+    } catch {
+      /* already closed */
+    }
   }
 }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { verifyRemote } from '../scripts/github-deployment-config.mjs';
-import { readFileSync } from 'node:fs';
 import { resolveBuildSha } from '../src/observability/diagnostic-endpoints.ts';
 
 test('runtime build identity uses the gateway-scoped source SHA only', () => {
@@ -18,7 +18,7 @@ test('online verification rejects the wrong Worker build before accepting health
   const expected = 'a'.repeat(40);
   const shortGrace = { graceMs: 100, intervalMs: 10 };
   let calls = [];
-  globalThis.fetch = async url => {
+  globalThis.fetch = async (url) => {
     calls.push(url);
     if (url.endsWith('/health')) return Response.json({ ready: true, build: 'b'.repeat(40) });
     return Response.json({});
@@ -28,7 +28,7 @@ test('online verification rejects the wrong Worker build before accepting health
     assert.ok(calls.filter((url) => url.endsWith('/health')).length >= 2, 'expected build-propagation retries');
 
     calls = [];
-    globalThis.fetch = async url => {
+    globalThis.fetch = async (url) => {
       calls.push(url);
       if (url.endsWith('/health')) return Response.json({ ready: true, build: expected });
       return Response.json({});
@@ -39,7 +39,9 @@ test('online verification rejects the wrong Worker build before accepting health
     calls = [];
     await verifyRemote('https://gateway.example', 'test-placeholder');
     assert.equal(calls.length, 3, 'rollback probes health without asserting a target SHA');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('deployment validation remains project-owned while orchestration is central', () => {

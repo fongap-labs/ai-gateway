@@ -8,16 +8,11 @@
 
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
-import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
-import {
-  __resetTier1StateForTests,
-  getTier1Model,
-  tier1AccountInFlight,
-  recordTier1Ttft,
-} from '../src/reliability/tier1-state.ts';
-import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
-import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 import { gatewayStats } from '../src/observability/gateway-stats.ts';
+import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
+import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
+import { __resetTier1StateForTests, getTier1Model, recordTier1Ttft, tier1AccountInFlight } from '../src/reliability/tier1-state.ts';
+import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
 
 const ACCESS_KEY = 'test-stress-key';
 let passed = 0;
@@ -57,9 +52,7 @@ function resetMock() {
 }
 
 function makeEnv({ tier1, tier2, tier3, secrets = {}, extraEnv = {} } = {}) {
-  const subset = (nodes = []) => Object.fromEntries(
-    nodes.map((n) => [n.id, secrets[n.id]]).filter(([, value]) => value !== undefined),
-  );
+  const subset = (nodes = []) => Object.fromEntries(nodes.map((n) => [n.id, secrets[n.id]]).filter(([, value]) => value !== undefined));
   const t1s = subset(tier1);
   const t2s = subset(tier2);
   const t3s = subset(tier3);
@@ -102,7 +95,9 @@ function jsonResponse(data, status = 200, headers = {}) {
 }
 
 const okCompletion = {
-  id: 'x', object: 'chat.completion', model: 'up-model',
+  id: 'x',
+  object: 'chat.completion',
+  model: 'up-model',
   choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
   usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
 };
@@ -119,8 +114,13 @@ function assertNoLeaks(ids) {
 
 await test('S1 burst: default Tier 1 has no guessed per-account concurrency ceiling', async () => {
   let release;
-  const gate = new Promise((resolve) => { release = resolve; });
-  routeHandlers['burst.example.com'] = async () => { await gate; return jsonResponse(okCompletion); };
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  routeHandlers['burst.example.com'] = async () => {
+    await gate;
+    return jsonResponse(okCompletion);
+  };
   const env = makeEnv({ tier1: [node('burst')], secrets: { burst: 'k' } });
   const requests = Array.from({ length: 8 }, () => worker.fetch(chatRequest(), env, {}));
   for (let i = 0; i < 100 && upstreamCalls.length < 8; i++) await new Promise((r) => setTimeout(r, 5));
@@ -134,15 +134,25 @@ await test('S1 burst: default Tier 1 has no guessed per-account concurrency ceil
 
 await test('S2 pool burst: P2C spreads live work without a default hard ceiling', async () => {
   let release;
-  const gate = new Promise((resolve) => { release = resolve; });
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
   const ids = ['p1', 'p2', 'p3', 'p4'];
-  for (const id of ids) routeHandlers[`${id}.example.com`] = async () => { await gate; return jsonResponse(okCompletion); };
+  for (const id of ids)
+    routeHandlers[`${id}.example.com`] = async () => {
+      await gate;
+      return jsonResponse(okCompletion);
+    };
   const env = makeEnv({ tier1: ids.map((id) => node(id)), secrets: Object.fromEntries(ids.map((id) => [id, 'k'])) });
   const requests = Array.from({ length: 20 }, () => worker.fetch(chatRequest(), env, {}));
   for (let i = 0; i < 100 && upstreamCalls.length < 20; i++) await new Promise((r) => setTimeout(r, 5));
   const used = new Set(upstreamCalls.map((c) => c.host));
   assert.equal(upstreamCalls.length, 20, 'all default burst requests must reach an eligible Tier 1 node');
-  assert.equal(ids.reduce((sum, id) => sum + tier1AccountInFlight(id), 0), 20, 'the pool must hold all 20 concurrent requests before release');
+  assert.equal(
+    ids.reduce((sum, id) => sum + tier1AccountInFlight(id), 0),
+    20,
+    'the pool must hold all 20 concurrent requests before release',
+  );
   assert.ok(used.size >= 2, `expected P2C to spread live work, got ${JSON.stringify([...used])}`);
   release();
   const statuses = await Promise.all(requests.map((p) => p.then((r) => r.status)));
@@ -152,8 +162,13 @@ await test('S2 pool burst: P2C spreads live work without a default hard ceiling'
 
 await test('S2b explicit max_in_flight=4 remains an opt-in admission ceiling', async () => {
   let release;
-  const gate = new Promise((resolve) => { release = resolve; });
-  routeHandlers['capped.example.com'] = async () => { await gate; return jsonResponse(okCompletion); };
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  routeHandlers['capped.example.com'] = async () => {
+    await gate;
+    return jsonResponse(okCompletion);
+  };
   const env = makeEnv({
     tier1: [node('capped')],
     secrets: { capped: 'k' },
@@ -163,10 +178,12 @@ await test('S2b explicit max_in_flight=4 remains an opt-in admission ceiling', a
     },
   });
   const settled = [];
-  const requests = Array.from({ length: 8 }, () => worker.fetch(chatRequest(), env, {}).then((response) => {
-    settled.push(response.status);
-    return response;
-  }));
+  const requests = Array.from({ length: 8 }, () =>
+    worker.fetch(chatRequest(), env, {}).then((response) => {
+      settled.push(response.status);
+      return response;
+    }),
+  );
   for (let i = 0; i < 100 && (upstreamCalls.length < 4 || settled.length < 4); i++) await new Promise((r) => setTimeout(r, 5));
   assert.equal(upstreamCalls.length, 4, 'explicit max_in_flight=4 must cap this account at four concurrent dispatches');
   assert.equal(tier1AccountInFlight('capped'), 4);
@@ -207,8 +224,7 @@ await test('S4 429 storm: a cooling key short-circuits without upstream hammerin
   const first = await worker.fetch(chatRequest(), env, {});
   assert.equal(first.status, 429);
   const callsAfterFirst = upstreamCalls.length;
-  const statuses = await Promise.all(Array.from({ length: 20 }, () =>
-    worker.fetch(chatRequest(), env, {}).then((r) => r.status)));
+  const statuses = await Promise.all(Array.from({ length: 20 }, () => worker.fetch(chatRequest(), env, {}).then((r) => r.status)));
   assert.ok(statuses.every((status) => status === 429));
   assert.equal(upstreamCalls.length, callsAfterFirst, 'cooldown must absorb the storm locally');
   assertNoLeaks(['cool']);
@@ -217,7 +233,9 @@ await test('S4 429 storm: a cooling key short-circuits without upstream hammerin
 await test('S5 recovery: sustained failure admits one real half-open request at a time', async () => {
   let fail = true;
   let release;
-  const gate = new Promise((resolve) => { release = resolve; });
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
   routeHandlers['recover.example.com'] = async () => {
     if (fail) return jsonResponse({}, 503);
     await gate;
@@ -255,14 +273,22 @@ await test('S5 recovery: sustained failure admits one real half-open request at 
 await test('S6 client cancellation after stream commit releases the Tier 1 slot neutrally', async () => {
   const encoder = new TextEncoder();
   let controller;
-  routeHandlers['cancel.example.com'] = () => new Response(new ReadableStream({
-    start(c) { controller = c; },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  routeHandlers['cancel.example.com'] = () =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          controller = c;
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
   const env = makeEnv({ tier1: [node('cancel')], secrets: { cancel: 'k' } });
   const ac = new AbortController();
   const pending = worker.fetch(chatRequest({ stream: true }, { signal: ac.signal }), env, {});
   for (let i = 0; i < 100 && !controller; i++) await new Promise((r) => setTimeout(r, 5));
-  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: 'x', choices: [{ index: 0, delta: { content: 'first' }, finish_reason: null }] })}\n\n`));
+  controller.enqueue(
+    encoder.encode(`data: ${JSON.stringify({ id: 'x', choices: [{ index: 0, delta: { content: 'first' }, finish_reason: null }] })}\n\n`),
+  );
   const res = await pending;
   const reader = res.body.getReader();
   await reader.read();
@@ -293,7 +319,10 @@ await test('S7 failover wall-clock budget prevents dispatch after the budget is 
   });
   const res = await worker.fetch(chatRequest(), env, {});
   assert.equal(res.status, 504);
-  assert.deepEqual(upstreamCalls.map((c) => c.host), ['slow.example.com']);
+  assert.deepEqual(
+    upstreamCalls.map((c) => c.host),
+    ['slow.example.com'],
+  );
   assert.equal(res.headers.get('x-should-retry'), 'false');
   assertNoLeaks(['slow', 'fast']);
 });

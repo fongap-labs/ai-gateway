@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import {
-  loadGatewayConfig, collectShards, TIER_SHARD_PATTERN, SECRET_SHARD_PATTERN,
-} from '../src/config/nodes.ts';
-import { loadModelRegistry, modelRegistryEntry, servesModel, isWildcardNode } from '../src/config/registry.ts';
 import { getModelsConfigDiagnostics } from '../src/config/models.ts';
+import { collectShards, loadGatewayConfig, SECRET_SHARD_PATTERN, TIER_SHARD_PATTERN } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from '../src/config/policies.ts';
+import { isWildcardNode, loadModelRegistry, modelRegistryEntry, servesModel } from '../src/config/registry.ts';
 
 let passed = 0;
 function test(name, fn) {
-  try { fn(); passed++; console.log(`ok - ${name}`); }
-  catch (e) { console.error(`FAIL: ${name}`); console.error(e?.stack || e); process.exitCode = 1; }
+  try {
+    fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (e) {
+    console.error(`FAIL: ${name}`);
+    console.error(e?.stack || e);
+    process.exitCode = 1;
+  }
 }
 
 const node = (id, extra = {}) => ({
@@ -38,9 +43,16 @@ test('collectShards accepts 01..10 and reports out-of-range/malformed names', ()
   const diags = [];
   const secrets = collectShards(
     { AIG_TIER1_CREDENTIALS_01: '{}', AIG_TIER1_CREDENTIALS_09: '{}', AIG_TIER1_CREDENTIALS_12: '{}' },
-    SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diags,
+    SECRET_SHARD_PATTERN,
+    'AIG_TIER1_CREDENTIALS_',
+    'AIG_TIER1_CREDENTIALS_01',
+    2,
+    diags,
   );
-  assert.deepEqual(secrets.map((s) => s.index), [1, 9]);
+  assert.deepEqual(
+    secrets.map((s) => s.index),
+    [1, 9],
+  );
   assert.ok(diags.some((d) => /12.*out of range/.test(d)));
   const tiers = collectShards({ AIG_TIER2_NODES_03: '[]' }, TIER_SHARD_PATTERN, 'AIG_TIER2_NODES_', 'AIG_TIER2_NODES_01', 2, []);
   assert.equal(tiers[0].tierNumber, 2);
@@ -62,7 +74,10 @@ test('provider, base_url and models are required account fields', () => {
     delete n[field];
     const cfg = loadGatewayConfig(makeEnv({ tier1: [n], secrets: { [n.id]: 'x' } }));
     assert.equal(cfg.nodes.length, 0, `${field} omission must fail`);
-    assert.ok(cfg.diagnostics.some((d) => d.includes(field)), `missing ${field} diagnostic required`);
+    assert.ok(
+      cfg.diagnostics.some((d) => d.includes(field)),
+      `missing ${field} diagnostic required`,
+    );
   }
 });
 
@@ -81,10 +96,7 @@ test('provider wire profiles are single-sourced', () => {
 });
 
 test('protocol and surfaces are not node fields', () => {
-  for (const extra of [
-    { protocol: 'openai' },
-    { surfaces: ['chat_completions'] },
-  ]) {
+  for (const extra of [{ protocol: 'openai' }, { surfaces: ['chat_completions'] }]) {
     const cfg = loadGatewayConfig(makeEnv({ tier1: [node('wire-field', extra)], secrets: { 'wire-field': 'x' } }));
     assert.equal(cfg.nodes.length, 0);
     assert.ok(cfg.diagnostics.some((d) => d.includes('unknown field')));
@@ -102,11 +114,7 @@ test('models accepts object only; explicit empty object is intentional wildcard'
 });
 
 test('unknown, credential and retired capacity fields are rejected', () => {
-  for (const extra of [
-    { prioirty: 5 },
-    { limits: { concurrency: 2 } },
-    { api_key: 'secret' },
-  ]) {
+  for (const extra of [{ prioirty: 5 }, { limits: { concurrency: 2 } }, { api_key: 'secret' }]) {
     const cfg = loadGatewayConfig(makeEnv({ tier1: [node('bad-field', extra)], secrets: { 'bad-field': 'x' } }));
     assert.equal(cfg.nodes.length, 0);
   }
@@ -125,7 +133,8 @@ test('priority is numeric-only; absent priority uses current default 100', () =>
 // Registry / wildcard behavior.
 test('registry carries declared capabilities and conservative defaults', () => {
   const env = makeEnv({
-    tier1: [node('r', { models: {} })], secrets: { r: 'x' },
+    tier1: [node('r', { models: {} })],
+    secrets: { r: 'x' },
     extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'code-pro': { policy: 'fast', capabilities: { vision: true }, reasoning_efforts: ['high'] } }) },
   });
   const reg = loadModelRegistry(env);
@@ -141,8 +150,7 @@ test('registry carries declared capabilities and conservative defaults', () => {
 test('wildcard and explicit model mappings remain distinct', () => {
   assert.equal(isWildcardNode(node('w', { models: {} })), true);
   assert.equal(servesModel(node('w', { models: {} }), 'known', new Set(['known'])), true);
-  assert.equal(servesModel(node('w', { models: {} }), 'unknown', new Set(['known'])), false,
-    'wildcard must be bounded by known catalog');
+  assert.equal(servesModel(node('w', { models: {} }), 'unknown', new Set(['known'])), false, 'wildcard must be bounded by known catalog');
   assert.equal(servesModel(node('m', { models: { only: 'x' } }), 'only', new Set(['only'])), true);
   assert.equal(servesModel(node('m', { models: { only: 'x' } }), 'other', new Set(['only', 'other'])), false);
 });
@@ -157,10 +165,14 @@ test('AIG_MODELS_CONFIG rejects malformed or unknown capability fields', () => {
 });
 
 test('AIG_MODELS_CONFIG accepts current modalities/ocr/ui fields', () => {
-  const env = makeEnv({ extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({
-    Omni: { modalities: { input: ['text', 'image', 'audio'], output: ['text', 'audio'] } },
-    OCR: { capabilities: { ocr: true }, ui_visible: false },
-  }) } });
+  const env = makeEnv({
+    extraEnv: {
+      AIG_MODELS_CONFIG: JSON.stringify({
+        Omni: { modalities: { input: ['text', 'image', 'audio'], output: ['text', 'audio'] } },
+        OCR: { capabilities: { ocr: true }, ui_visible: false },
+      }),
+    },
+  });
   assert.deepEqual(getModelsConfigDiagnostics(env), []);
   const reg = loadModelRegistry(env);
   assert.deepEqual(reg.Omni.catalog.modalities, { input: ['text', 'image', 'audio'], output: ['text', 'audio'] });
@@ -183,13 +195,16 @@ test('AIG_MODELS_CONFIG rejects obvious capability contradictions without provid
   });
   assert.ok(vision.some((d) => d.includes('modalities.input to include "image"')));
 
-  assert.deepEqual(modelDiags({
-    m: {
-      capabilities: { reasoning: true, vision: true, ocr: true },
-      reasoning_efforts: ['high'],
-      modalities: { input: ['text', 'image'], output: ['text'] },
-    },
-  }), []);
+  assert.deepEqual(
+    modelDiags({
+      m: {
+        capabilities: { reasoning: true, vision: true, ocr: true },
+        reasoning_efforts: ['high'],
+        modalities: { input: ['text', 'image'], output: ['text'] },
+      },
+    }),
+    [],
+  );
 });
 
 // Strict policy schema.
@@ -206,17 +221,27 @@ test('max_attempts and tier_attempts accept only bounded integer numbers', () =>
 test('budget_split and other retired policy fields are rejected as unknown', () => {
   for (const value of ['even', 'weighted', null]) {
     const diags = policyDiags({ p: { max_attempts: 5, budget_split: value } });
-    assert.ok(diags.some((d) => d.includes('unknown field "budget_split"')),
-      `budget_split=${JSON.stringify(value)} must not be accepted`);
+    assert.ok(
+      diags.some((d) => d.includes('unknown field "budget_split"')),
+      `budget_split=${JSON.stringify(value)} must not be accepted`,
+    );
   }
 });
 
 test('hedge and max_in_flight current fields validate without coercion', () => {
-  const policies = loadPoliciesConfig(makeEnv({ extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ p: {
-    max_attempts: 5,
-    hedge: { enabled: true, delay_ms: 4000, tiers: ['tier1'] },
-    max_in_flight: 4,
-  } }) } }));
+  const policies = loadPoliciesConfig(
+    makeEnv({
+      extraEnv: {
+        AIG_POLICIES_CONFIG: JSON.stringify({
+          p: {
+            max_attempts: 5,
+            hedge: { enabled: true, delay_ms: 4000, tiers: ['tier1'] },
+            max_in_flight: 4,
+          },
+        }),
+      },
+    }),
+  );
   assert.equal(policies.p.hedge.enabled, true);
   assert.equal(policies.p.hedge.delayMs, 4000);
   assert.deepEqual(policies.p.hedge.tiers, ['tier1']);
@@ -225,15 +250,21 @@ test('hedge and max_in_flight current fields validate without coercion', () => {
 });
 
 test('invalid policy/model references are fatal end-to-end', () => {
-  const badAttempts = loadGatewayConfig(makeEnv({
-    tier1: [node('f1')], secrets: { f1: 'x' },
-    extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 0 } }) },
-  }));
+  const badAttempts = loadGatewayConfig(
+    makeEnv({
+      tier1: [node('f1')],
+      secrets: { f1: 'x' },
+      extraEnv: { AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 0 } }) },
+    }),
+  );
   assert.equal(badAttempts.ready, false);
-  const missingPolicy = loadGatewayConfig(makeEnv({
-    tier1: [node('f2')], secrets: { f2: 'x' },
-    extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'missing' } }) },
-  }));
+  const missingPolicy = loadGatewayConfig(
+    makeEnv({
+      tier1: [node('f2')],
+      secrets: { f2: 'x' },
+      extraEnv: { AIG_MODELS_CONFIG: JSON.stringify({ 'general-air': { policy: 'missing' } }) },
+    }),
+  );
   assert.equal(missingPolicy.ready, false);
   assert.ok(missingPolicy.diagnostics.some((d) => d.includes('missing')));
 });

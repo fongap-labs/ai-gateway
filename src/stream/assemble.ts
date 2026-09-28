@@ -8,19 +8,19 @@
 // so a failure here still allows node rotation.
 
 import { extractOpenAITextContent } from '../protocol/openai.ts';
+import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../types/upstream-processing.ts';
 import { createSseScanner, readWithDeadline } from './guard.ts';
-import {
-  UPSTREAM_PROCESSING_ERROR,
-  upstreamProcessingError,
-  type UpstreamProcessingErrorCode,
-} from '../types/upstream-processing.ts';
 
 const MAX_ASSEMBLED_BYTES = 2 * 1024 * 1024;
 
-type ToolCallState = { id: string, type: string, function: { name: string, arguments: string } };
-type ChoiceState = { content: string, reasoning_content: string, toolCalls: Map<number, ToolCallState>, finish_reason: unknown };
+type ToolCallState = { id: string; type: string; function: { name: string; arguments: string } };
+type ChoiceState = { content: string; reasoning_content: string; toolCalls: Map<number, ToolCallState>; finish_reason: unknown };
 
-export async function collectOpenAIStreamObject(upstream: Response, clientSignal: AbortSignal | null | undefined, deadlineMs?: number | null): Promise<Record<string, unknown>> {
+export async function collectOpenAIStreamObject(
+  upstream: Response,
+  clientSignal: AbortSignal | null | undefined,
+  deadlineMs?: number | null,
+): Promise<Record<string, unknown>> {
   if (!upstream.body) throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.EMPTY, 'Upstream response has no body.');
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
@@ -45,16 +45,16 @@ export async function collectOpenAIStreamObject(upstream: Response, clientSignal
 
   let semanticEof = false;
   const scanner = createSseScanner((data) => {
-    if (!data || data === '[DONE]') { semanticEof = true; return; }
+    if (!data || data === '[DONE]') {
+      semanticEof = true;
+      return;
+    }
+    // biome-ignore lint/suspicious/noImplicitAnyLet: upstream SSE events are dynamic untrusted JSON at this protocol boundary; tsc treats the evolving `let json` as any
     let json;
     try {
       json = JSON.parse(data);
     } catch (e) {
-      throw upstreamProcessingError(
-        UPSTREAM_PROCESSING_ERROR.MALFORMED,
-        'Upstream returned malformed streaming data.',
-        e,
-      );
+      throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.MALFORMED, 'Upstream returned malformed streaming data.', e);
     }
     if (json.id) id = json.id;
     if (json.created) created = json.created;
@@ -85,10 +85,19 @@ export async function collectOpenAIStreamObject(upstream: Response, clientSignal
           existing = { id: '', type: 'function', function: { name: '', arguments: '' } };
           state.toolCalls.set(tcIdx, existing);
         }
-        if (tc.id !== existing.id) { existing.id = tc.id; countBytes(tc.id); }
+        if (tc.id !== existing.id) {
+          existing.id = tc.id;
+          countBytes(tc.id);
+        }
         if (tc.type !== existing.type) existing.type = tc.type;
-        if (tc.function?.name) { existing.function.name += tc.function.name; countBytes(tc.function.name); }
-        if (tc.function?.arguments) { existing.function.arguments += tc.function.arguments; countBytes(tc.function.arguments); }
+        if (tc.function?.name) {
+          existing.function.name += tc.function.name;
+          countBytes(tc.function.name);
+        }
+        if (tc.function?.arguments) {
+          existing.function.arguments += tc.function.arguments;
+          countBytes(tc.function.arguments);
+        }
       }
       if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
         state.finish_reason = choice.finish_reason;
@@ -103,11 +112,7 @@ export async function collectOpenAIStreamObject(upstream: Response, clientSignal
         await reader.cancel().catch(() => {});
         throw new DOMException('Client aborted during stream assembly.', 'AbortError');
       }
-      const { done, value } = await readWithDeadline(
-        reader,
-        deadlineMs,
-        (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message),
-      );
+      const { done, value } = await readWithDeadline(reader, deadlineMs, (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message));
       if (done) break;
       scanner.push(decoder.decode(value, { stream: true }));
       if (currentBytes > MAX_ASSEMBLED_BYTES) {

@@ -43,17 +43,14 @@
 //     dispatch, return a dedicated 502 instead of misreporting the condition as
 //     node cooldown/circuit exhaustion.
 
-import {
-  convertAnthropicToOpenAIResult,
-  convertOpenAIChatToAnthropicResult,
-} from '../conversion/result.ts';
+import type { ConversionResult } from '../conversion/result.ts';
+import { convertAnthropicToOpenAIResult, convertOpenAIChatToAnthropicResult } from '../conversion/result.ts';
 import { ConversionError } from '../conversion/validation.ts';
 import { getLogger } from '../observability/logger.ts';
+import type { ConversionContext, LoopContext } from '../types/request.ts';
+import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from './errors.ts';
 import { computeTierCaps } from './tier-loop.ts';
-import type { ConversionResult } from '../conversion/result.ts';
-import type { LoopContext, ConversionContext } from '../types/request.ts';
-import type { TierMap, RoutableRequest } from '../types/scheduler.ts';
 
 const HIGH_RISK_DROPPED_FEATURES = new Set([
   'provider_native_tool',
@@ -71,25 +68,25 @@ type TierLoopRunner = (
 ) => Promise<Response | null>;
 
 function highRiskSemanticLoss(result: ConversionResult): string[] {
-  return result.diagnostics
-    .filter((d) => d.action === 'dropped' && HIGH_RISK_DROPPED_FEATURES.has(d.feature))
-    .map((d) => d.feature);
+  return result.diagnostics.filter((d) => d.action === 'dropped' && HIGH_RISK_DROPPED_FEATURES.has(d.feature)).map((d) => d.feature);
 }
 
 /**
  * Run the cross-protocol fallback chain.
  */
-export async function runFallbackChain({ loopCtx, route, requestedModel, runTierLoop }: {
-  loopCtx: LoopContext,
-  route: string,
-  requestedModel: string,
-  runTierLoop: TierLoopRunner,
+export async function runFallbackChain({
+  loopCtx,
+  route,
+  requestedModel,
+  runTierLoop,
+}: {
+  loopCtx: LoopContext;
+  route: string;
+  requestedModel: string;
+  runTierLoop: TierLoopRunner;
 }): Promise<Response | null> {
-  const {
-    env, requestId, exposeUpstreamInfo, request, state, policy,
-    failoverBudgetMs, requestStartMs, tiers, bodyJson, knownModels,
-    feasibility,
-  } = loopCtx;
+  const { env, requestId, exposeUpstreamInfo, request, state, policy, failoverBudgetMs, requestStartMs, tiers, bodyJson, knownModels, feasibility } =
+    loopCtx;
   const fallbacks = feasibility?.fallbacks ?? [];
   const logger = getLogger(env);
   let conversionRejectedCount = 0;
@@ -118,14 +115,16 @@ export async function runFallbackChain({ loopCtx, route, requestedModel, runTier
       if (e instanceof ConversionError) {
         conversionRejectedCount++;
         const reason = String(e.message || e.code || 'conversion_not_supported').slice(0, 300);
-        logger.error(JSON.stringify({
-          event: 'fallback_conversion_skipped',
-          request_id: requestId,
-          route,
-          fallback_protocol: fb.protocol,
-          fallback_surface: fb.surface,
-          reason,
-        }));
+        logger.error(
+          JSON.stringify({
+            event: 'fallback_conversion_skipped',
+            request_id: requestId,
+            route,
+            fallback_protocol: fb.protocol,
+            fallback_surface: fb.surface,
+            reason,
+          }),
+        );
         continue;
       }
       throw e;
@@ -133,32 +132,34 @@ export async function runFallbackChain({ loopCtx, route, requestedModel, runTier
 
     // Debug-only: provides an exact denominator for fidelity analysis when an
     // operator enables debug logging, without adding default per-request noise.
-    logger.debug(JSON.stringify({
-      event: 'fallback_conversion',
-      request_id: requestId,
-      route,
-      fallback_protocol: fb.protocol,
-      fallback_surface: fb.surface,
-      fidelity: conversionResult.fidelity,
-      diagnostic_count: conversionResult.diagnostics.length,
-      diagnostics: conversionResult.diagnostics,
-      ...(conversionResult.structuredOutput
-        ? { structured_output_strategy: conversionResult.structuredOutput.strategy }
-        : {}),
-    }));
-
-    const highRiskLoss = highRiskSemanticLoss(conversionResult);
-    if (highRiskLoss.length > 0) {
-      conversionRejectedCount++;
-      logger.error(JSON.stringify({
-        event: 'fallback_conversion_skipped',
+    logger.debug(
+      JSON.stringify({
+        event: 'fallback_conversion',
         request_id: requestId,
         route,
         fallback_protocol: fb.protocol,
         fallback_surface: fb.surface,
-        reason: 'high_risk_semantic_loss',
-        features: highRiskLoss,
-      }));
+        fidelity: conversionResult.fidelity,
+        diagnostic_count: conversionResult.diagnostics.length,
+        diagnostics: conversionResult.diagnostics,
+        ...(conversionResult.structuredOutput ? { structured_output_strategy: conversionResult.structuredOutput.strategy } : {}),
+      }),
+    );
+
+    const highRiskLoss = highRiskSemanticLoss(conversionResult);
+    if (highRiskLoss.length > 0) {
+      conversionRejectedCount++;
+      logger.error(
+        JSON.stringify({
+          event: 'fallback_conversion_skipped',
+          request_id: requestId,
+          route,
+          fallback_protocol: fb.protocol,
+          fallback_surface: fb.surface,
+          reason: 'high_risk_semantic_loss',
+          features: highRiskLoss,
+        }),
+      );
       continue;
     }
 
@@ -167,10 +168,7 @@ export async function runFallbackChain({ loopCtx, route, requestedModel, runTier
     // contract as the native pass. Omitting maxInFlight here overstates live
     // capacity and can distort tier caps / fair-share timeout slicing before
     // the downstream picker eventually rejects the saturated account.
-    const fbTierCaps = computeTierCaps(
-      tiers, fbReqDescriptor, state.attempted, policy, knownModels,
-      policy.maxInFlight ?? null,
-    );
+    const fbTierCaps = computeTierCaps(tiers, fbReqDescriptor, state.attempted, policy, knownModels, policy.maxInFlight ?? null);
     const conversionContext: ConversionContext = {
       convertedBody: conversionResult.body,
       fallbackProtocol: fb.protocol,
@@ -182,21 +180,13 @@ export async function runFallbackChain({ loopCtx, route, requestedModel, runTier
   }
 
   if (conversionRejectedCount > 0 && convertedTargetCount === 0 && state.dispatches === 0) {
-    return gatewayError(
-      request,
-      env,
-      route,
-      502,
-      'Configured protocol fallback cannot represent this request.',
-      requestId,
-      {
-        requested_model: requestedModel,
-        attempts: state.logicalAttempts,
-        dispatches: state.dispatches,
-        hedges: state.hedges,
-        failure_kind: 'conversion_not_supported',
-      },
-    );
+    return gatewayError(request, env, route, 502, 'Configured protocol fallback cannot represent this request.', requestId, {
+      requested_model: requestedModel,
+      attempts: state.logicalAttempts,
+      dispatches: state.dispatches,
+      hedges: state.hedges,
+      failure_kind: 'conversion_not_supported',
+    });
   }
 
   return null;

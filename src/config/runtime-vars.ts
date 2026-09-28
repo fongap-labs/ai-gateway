@@ -15,21 +15,21 @@
 // the deployment bridge passes it through separately from runtime tunables.
 
 export interface RuntimeTunable {
-  name: string,
-  type: 'int',
-  min: number,
-  max: number,
-  def: number,
+  name: string;
+  type: 'int';
+  min: number;
+  max: number;
+  def: number;
 }
 
 export interface RuntimeStringVar {
-  name: string,
-  def: string,
+  name: string;
+  def: string;
 }
 
 export interface RuntimeBoolVar {
-  name: string,
-  def: boolean,
+  name: string;
+  def: boolean;
 }
 
 export const RUNTIME_TUNABLES = [
@@ -56,7 +56,7 @@ export const RUNTIME_TUNABLES = [
   { name: 'AIG_EDGE_CACHE_TTL_SEC', type: 'int', min: 0, max: 7 * 86_400, def: 14_400 },
 ] as const satisfies readonly RuntimeTunable[];
 
-export type RuntimeTunableName = typeof RUNTIME_TUNABLES[number]['name'];
+export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
 
 export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_CORS_ORIGIN', def: '' },

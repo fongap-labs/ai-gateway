@@ -35,8 +35,8 @@ const ESCAPE_MAX_ENTRIES = 500;
 // binding arrives as an untyped env value and is validated structurally in
 // kvOf() before use.
 type AffinityKV = {
-  get(key: string, options?: unknown): Promise<string | null | undefined>,
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>,
+  get(key: string, options?: unknown): Promise<string | null | undefined>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
 };
 
 // ---- Bounded TTL Map ---------------------------------------------------------
@@ -45,7 +45,7 @@ type AffinityKV = {
 // (Map preserves insertion order in JS). No precise LRU — see the task spec:
 // "no need to implement complex precise LRU".
 class BoundedTtlMap<V> {
-  private _map: Map<string, { value: V, expiresAt: number }>;
+  private _map: Map<string, { value: V; expiresAt: number }>;
   private _max: number;
   private _ttlMs: number;
 
@@ -112,16 +112,22 @@ const cache = new BoundedTtlMap<string | null>(CACHE_MAX_ENTRIES, CACHE_TTL_MS);
 // Escape counters have no natural TTL — they track request frequency per
 // session. Use a generous TTL (same as the escape check window) so stale
 // counters for sessions that stop sending are eventually cleaned up.
-const escapeCounters = new BoundedTtlMap<{ requests: number, lastCheck: number }>(ESCAPE_MAX_ENTRIES, ESCAPE_CHECK_MS);
+const escapeCounters = new BoundedTtlMap<{ requests: number; lastCheck: number }>(ESCAPE_MAX_ENTRIES, ESCAPE_CHECK_MS);
 
 const stats = {
-  reads: 0, hits: 0, misses: 0, writes: 0, writeFailures: 0,
-  selections: 0, selectionHits: 0, escapes: 0,
+  reads: 0,
+  hits: 0,
+  misses: 0,
+  writes: 0,
+  writeFailures: 0,
+  selections: 0,
+  selectionHits: 0,
+  escapes: 0,
 };
 
 function kvOf(env: GatewayEnv): AffinityKV | null {
   const kv = env?.[KV_BINDING] as Partial<AffinityKV> | null | undefined;
-  return kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? kv as AffinityKV : null;
+  return kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? (kv as AffinityKV) : null;
 }
 
 async function affinityKey(sessionId: string): Promise<string> {
@@ -143,7 +149,7 @@ function sessionHash(sessionId: string): string {
     hash ^= str.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193);
   }
-  return 'h' + (hash >>> 0).toString(16).padStart(8, '0');
+  return `h${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 export function resolveTier1SessionId(request: Request): string | null {
@@ -159,14 +165,19 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Pro
   if (!kv) return null;
   const key = await affinityKey(sessionId);
   const cached = cache.get(key);
-  if (cached !== undefined) { return cached; }
+  if (cached !== undefined) {
+    return cached;
+  }
   stats.reads++;
   let accountId: string | null = null;
   try {
     const value = await kv.get(key);
     if (typeof value === 'string' && value.length > 0 && value.length <= 64) accountId = value;
-  } catch { /* affinity is advisory; a transient KV read failure yields no bias */ }
-  if (accountId) stats.hits++; else stats.misses++;
+  } catch {
+    /* affinity is advisory; a transient KV read failure yields no bias */
+  }
+  if (accountId) stats.hits++;
+  else stats.misses++;
   cache.set(key, accountId, CACHE_TTL_MS);
   return accountId;
 }
@@ -181,9 +192,15 @@ export function writeTier1Affinity(env: GatewayEnv, ctx: ExecutionContextLike, s
     await kv.put(key, accountId, { expirationTtl: TTL_SECONDS });
     cache.set(key, accountId, CACHE_TTL_MS);
     stats.writes++;
-  })().catch(() => { stats.writeFailures++; });
+  })().catch(() => {
+    stats.writeFailures++;
+  });
   if (ctx && typeof ctx.waitUntil === 'function') {
-    try { ctx.waitUntil(operation); } catch { operation.catch(() => {}); }
+    try {
+      ctx.waitUntil(operation);
+    } catch {
+      operation.catch(() => {});
+    }
   }
   return true;
 }
@@ -206,15 +223,14 @@ export function shouldEvaluateAffinity(sessionId: string | null, now: number = D
 }
 
 export function affinityShouldEscape(affinityScore: number, winnerScore: number): boolean {
-  return Number.isFinite(affinityScore) && Number.isFinite(winnerScore)
-    && affinityScore > winnerScore * ESCAPE_THRESHOLD;
+  return Number.isFinite(affinityScore) && Number.isFinite(winnerScore) && affinityScore > winnerScore * ESCAPE_THRESHOLD;
 }
 
 export function tier1AffinityFactor(accountId: string, affinityAccountId: string | null): number {
   return affinityAccountId && accountId === affinityAccountId ? AIG_AFFINITY_KV_FACTOR : 1;
 }
 
-export function recordTier1AffinityDecision({ affinityHit = false, escaped = false }: { affinityHit?: boolean, escaped?: boolean } = {}): void {
+export function recordTier1AffinityDecision({ affinityHit = false, escaped = false }: { affinityHit?: boolean; escaped?: boolean } = {}): void {
   stats.selections++;
   if (affinityHit) stats.selectionHits++;
   if (escaped) stats.escapes++;
@@ -239,7 +255,13 @@ export function __resetTier1AffinityForTests(): void {
   cache.clear();
   escapeCounters.clear();
   Object.assign(stats, {
-    reads: 0, hits: 0, misses: 0, writes: 0, writeFailures: 0,
-    selections: 0, selectionHits: 0, escapes: 0,
+    reads: 0,
+    hits: 0,
+    misses: 0,
+    writes: 0,
+    writeFailures: 0,
+    selections: 0,
+    selectionHits: 0,
+    escapes: 0,
   });
 }

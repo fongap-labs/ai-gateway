@@ -19,19 +19,18 @@ const GROUP_LABEL = KEY_GROUPS.join(', ');
 const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10))$`);
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
-  '^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|' +
-  GROUP_MODELS_PATTERN + '|' + RUNTIME_VAR_NAMES.join('|') + ')$',
+  `^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
 );
 const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL']);
-const CREDENTIAL_NAMES = new Set([
-  'CLOUDFLARE_API_TOKEN',
-  ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`),
-]);
+const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
 
 export function parseConfigObject(text, label = 'configuration') {
   let parsed;
-  try { parsed = JSON.parse(String(text || '')); }
-  catch (error) { throw new Error(`${label} is not valid JSON (${error.message})`); }
+  try {
+    parsed = JSON.parse(String(text || ''));
+  } catch (error) {
+    throw new Error(`${label} is not valid JSON (${error.message})`);
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${label} must be a JSON object`);
   }
@@ -67,7 +66,11 @@ export function normalizeNodeConfigJsonText(text) {
       else if (ch === '"') inString = false;
       continue;
     }
-    if (ch === '"') { inString = true; out += ch; continue; }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
     if (ch === '、' || ch === '，') {
       let j = i + 1;
       while (j < source.length && /\s/.test(source[j])) j++;
@@ -189,21 +192,35 @@ export function preflight(env) {
 
 export function buildDeploymentSummary({ config, runtime, d1Configured, affinityKvConfigured, removedSecretShards = 0 }) {
   const modelsCount = (() => {
-    try { return Object.keys(JSON.parse(runtime.vars.AIG_MODELS_CONFIG || '{}')).length; }
-    catch { return 0; }
+    try {
+      return Object.keys(JSON.parse(runtime.vars.AIG_MODELS_CONFIG || '{}')).length;
+    } catch {
+      return 0;
+    }
   })();
   return [
-    'Deployment completed', '', 'Gateway',
+    'Deployment completed',
+    '',
+    'Gateway',
     '  Status: ready',
     `  Nodes: ${config.nodesUsable}/${config.nodesTotal} usable`,
-    `  Models: ${modelsCount}`, '', 'Configuration',
+    `  Models: ${modelsCount}`,
+    '',
+    'Configuration',
     `  Worker variables: ${Object.keys(runtime.vars).length}`,
     `  Node secret shards: ${Object.keys(runtime.secrets).filter((n) => NODE_SECRET.test(n)).length}`,
-    `  Obsolete node-secret shards removed: ${removedSecretShards}`, '', 'D1',
-    `  Status: ${String(d1Configured || '').trim() ? 'ready' : 'disabled (AIG_USAGE_D1_ID is not configured)'}`, '',
+    `  Obsolete node-secret shards removed: ${removedSecretShards}`,
+    '',
+    'D1',
+    `  Status: ${String(d1Configured || '').trim() ? 'ready' : 'disabled (AIG_USAGE_D1_ID is not configured)'}`,
+    '',
     'Tier 1 affinity KV',
-    `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (AIG_AFFINITY_KV_ID is not configured)'}`, '',
-    'Health', '  /health                    OK', '  /v1/models                 OK', '  /v1/messages/count_tokens  OK',
+    `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (AIG_AFFINITY_KV_ID is not configured)'}`,
+    '',
+    'Health',
+    '  /health                    OK',
+    '  /v1/models                 OK',
+    '  /v1/messages/count_tokens  OK',
   ].join('\n');
 }
 
@@ -238,10 +255,14 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') 
     vars,
   };
   if (String(d1DatabaseId || '').trim()) {
-    out.d1_databases = [{
-      binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: String(d1DatabaseId).trim(),
-      migrations_dir: path.resolve(root, 'migrations'),
-    }];
+    out.d1_databases = [
+      {
+        binding: 'TOKEN_STATS_DB',
+        database_name: 'ai-gateway-stats',
+        database_id: String(d1DatabaseId).trim(),
+        migrations_dir: path.resolve(root, 'migrations'),
+      },
+    ];
   }
   if (String(affinityKvId || '').trim()) {
     out.kv_namespaces = [{ binding: 'TIER1_AFFINITY', id: String(affinityKvId).trim() }];
@@ -250,11 +271,19 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') 
 }
 
 function readFile(file) {
-  try { return fs.readFileSync(file, 'utf8'); }
-  catch { throw new Error(`Cannot read ${file}`); }
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    throw new Error(`Cannot read ${file}`);
+  }
 }
-function argValue(argv, flag) { const index = argv.indexOf(flag); return index >= 0 ? argv[index + 1] : undefined; }
-function hasFlag(argv, flag) { return argv.includes(flag); }
+function argValue(argv, flag) {
+  const index = argv.indexOf(flag);
+  return index >= 0 ? argv[index + 1] : undefined;
+}
+function hasFlag(argv, flag) {
+  return argv.includes(flag);
+}
 function readSecretList(file) {
   const parsed = JSON.parse(readFile(file));
   if (!Array.isArray(parsed)) throw new Error(`${file} must be a JSON array from "wrangler secret list"`);
@@ -284,12 +313,16 @@ export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs 
       if (!health.ok || !healthBody?.ready) {
         lastError = new Error(`remote /health is not ready (HTTP ${health.status}, status ${healthBody?.status || 'unknown'})`);
       } else if (expectedBuild !== undefined && healthBody?.build !== expectedBuild) {
-        lastError = new Error(`Remote /health.build does not match the validated deployment SHA (got ${healthBody?.build ?? 'unknown'}, expected ${expectedBuild})`);
+        lastError = new Error(
+          `Remote /health.build does not match the validated deployment SHA (got ${healthBody?.build ?? 'unknown'}, expected ${expectedBuild})`,
+        );
       } else {
         lastError = null;
         break;
       }
-    } catch (e) { lastError = e; }
+    } catch (e) {
+      lastError = e;
+    }
     const remaining = deadline - Date.now();
     if (remaining > 0) await sleepMs(Math.min(intervalMs, remaining));
   } while (Date.now() < deadline);
@@ -331,28 +364,42 @@ async function main() {
     const s = collectSecretsFromEnv(process.env);
     const tierShards = Object.keys(v.vars).filter((n) => NODE_VAR.test(n)).length;
     const secretShards = Object.keys(s.secrets).filter((n) => NODE_SECRET.test(n)).length;
-    console.log(`Preflight passed: ${tierShards} node-config shard(s), ${secretShards} credential shard(s), ${Object.keys(v.vars).length + Object.keys(s.secrets).length} total binding(s), Gateway Access Group Key present.`);
+    console.log(
+      `Preflight passed: ${tierShards} node-config shard(s), ${secretShards} credential shard(s), ${Object.keys(v.vars).length + Object.keys(s.secrets).length} total binding(s), Gateway Access Group Key present.`,
+    );
     return;
   }
   if (command === 'prepare') {
     const wrangler = argValue(argv, '--wrangler');
     const secretsOut = argValue(argv, '--secrets');
-    if (!wrangler || !secretsOut) throw new Error('usage: prepare --from-env | --vars FILE --secrets-input FILE --wrangler FILE --secrets FILE [--existing-secrets FILE]');
+    if (!wrangler || !secretsOut)
+      throw new Error('usage: prepare --from-env | --vars FILE --secrets-input FILE --wrangler FILE --secrets FILE [--existing-secrets FILE]');
     const runtime = resolveRuntime(argv);
     const config = validateGatewayRuntime(runtime);
     const existingSecretsFile = argValue(argv, '--existing-secrets');
     const bulkSecrets = existingSecretsFile ? withStaleNodeSecretsRemoved(runtime.secrets, readSecretList(existingSecretsFile)) : runtime.secrets;
-    fs.writeFileSync(wrangler, JSON.stringify(buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID), null, 2));
+    fs.writeFileSync(
+      wrangler,
+      JSON.stringify(buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID), null, 2),
+    );
     fs.writeFileSync(secretsOut, JSON.stringify(bulkSecrets));
     const removed = Object.values(bulkSecrets).filter((value) => value === null).length;
     const summaryOut = argValue(argv, '--summary');
     if (summaryOut) {
-      fs.writeFileSync(summaryOut, buildDeploymentSummary({
-        config, runtime, d1Configured: process.env.AIG_USAGE_D1_ID,
-        affinityKvConfigured: process.env.AIG_AFFINITY_KV_ID, removedSecretShards: removed,
-      }) + '\n');
+      fs.writeFileSync(
+        summaryOut,
+        `${buildDeploymentSummary({
+          config,
+          runtime,
+          d1Configured: process.env.AIG_USAGE_D1_ID,
+          affinityKvConfigured: process.env.AIG_AFFINITY_KV_ID,
+          removedSecretShards: removed,
+        })}\n`,
+      );
     }
-    console.log(`Runtime configuration package is valid: ${config.nodesUsable}/${config.nodesTotal} usable node(s), ${Object.keys(runtime.vars).length} Worker text variable(s), ${Object.keys(runtime.secrets).length} Worker Secret(s), ${removed} obsolete node-secret shard(s) removed.`);
+    console.log(
+      `Runtime configuration package is valid: ${config.nodesUsable}/${config.nodesTotal} usable node(s), ${Object.keys(runtime.vars).length} Worker text variable(s), ${Object.keys(runtime.secrets).length} Worker Secret(s), ${removed} obsolete node-secret shard(s) removed.`,
+    );
     return;
   }
   if (command === 'health-check') {
@@ -367,5 +414,8 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => { console.error(`error: ${error.message}`); process.exitCode = 1; });
+  main().catch((error) => {
+    console.error(`error: ${error.message}`);
+    process.exitCode = 1;
+  });
 }

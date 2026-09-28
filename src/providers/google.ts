@@ -12,10 +12,16 @@
 // proprietary wire never enters the gateway's general transport or
 // conversion layers; it is converted to/from the OpenAI Chat surface inside
 // the subscription adapter and the dispatch layer.
+//
+// OAuth client constants (client_id, client_secret) sourced from the
+// Gemini CLI public OAuth client:
+// https://github.com/google-gemini/gemini-cli (Apache-2.0 licensed)
+// These are public constants designed for installed applications and are
+// not considered secret. See SECURITY.md "Google OAuth client constants".
 
 import { googleSubscriptionAdapter } from '../subscription/google.ts';
 import type { Surface } from '../types/protocol.ts';
-import type { ProviderAdapter, ProviderWire, OAuthProviderConfig } from './types.ts';
+import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const GOOGLE_WIRE: ProviderWire = Object.freeze({
   protocol: 'openai',
@@ -27,7 +33,8 @@ const GOOGLE_OAUTH_DEFAULTS: OAuthProviderConfig = Object.freeze({
   tokenUrl: 'https://oauth2.googleapis.com/token',
   clientId: '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com',
   clientSecret: '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',
-  scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs',
+  scope:
+    'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs',
   manualRedirectUrl: 'https://codeassist.google.com/authcode',
   upstreamHeaders: Object.freeze({}),
 });

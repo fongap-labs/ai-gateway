@@ -3,8 +3,8 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -91,7 +91,10 @@ let passed = 0;
 for (const rel of UNIT_TESTS) {
   const result = spawnSync(process.execPath, [join(root, rel)], { stdio: 'inherit', cwd: root });
   if (result.status === 0) passed++;
-  else { failed++; console.error(`\n[runner] FAILED: ${rel} (exit ${result.status})\n`); }
+  else {
+    failed++;
+    console.error(`\n[runner] FAILED: ${rel} (exit ${result.status})\n`);
+  }
 }
 console.log(`\n[test:unit] ${passed}/${UNIT_TESTS.length} suites passed${failed ? `, ${failed} FAILED` : ''}`);
 if (failed > 0) process.exit(1);

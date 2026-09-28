@@ -5,12 +5,12 @@
 import assert from 'node:assert/strict';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import {
+  __resetTier1StateForTests,
   applyTier1Outcome,
   classifyTier1Failure,
   getTier1ModelPerf,
   isTier1Eligible,
   tier1BlockingWaitMs,
-  __resetTier1StateForTests,
 } from '../src/reliability/tier1-state.ts';
 import { recordOutcome } from '../src/request/attempt/outcome.ts';
 
@@ -57,17 +57,14 @@ applyTier1Outcome(node.id, node.models['Code-Max'], tier1Class, now);
 assert.equal(isTier1Eligible(node, req('Code-Max'), now), false);
 assert.equal(tier1BlockingWaitMs(node, 'Code-Max', now), 5_000);
 assert.equal(isTier1Eligible(node, req('Code-Pro'), now), true);
-assert.equal(getTier1ModelPerf(node.id, 'Code-Max'), null,
-  'model_missing must not pollute logical-model performance/circuit state');
+assert.equal(getTier1ModelPerf(node.id, 'Code-Max'), null, 'model_missing must not pollute logical-model performance/circuit state');
 
 const remappedNode = {
   ...node,
   models: { ...node.models, 'Code-Max': 'another/provider-model' },
 };
-assert.equal(isTier1Eligible(remappedNode, req('Code-Max'), now), true,
-  'new upstream mapping must not inherit the old upstream model cooldown');
-assert.equal(isTier1Eligible(node, req('Code-Max'), now + 5_001), true,
-  'the original upstream model becomes eligible after the short cooldown');
+assert.equal(isTier1Eligible(remappedNode, req('Code-Max'), now), true, 'new upstream mapping must not inherit the old upstream model cooldown');
+assert.equal(isTier1Eligible(node, req('Code-Max'), now + 5_001), true, 'the original upstream model becomes eligible after the short cooldown');
 
 // Request-path regression: recordOutcome must resolve Code-Max through the
 // selected node before it records model_missing state.
@@ -104,7 +101,6 @@ assert.ok(tier1BlockingWaitMs(node, 'Code-Max', afterRecord) > 0);
 assert.ok(tier1BlockingWaitMs(node, 'Code-Max', afterRecord) <= 5_000);
 assert.equal(isTier1Eligible(remappedNode, req('Code-Max'), afterRecord), true);
 assert.equal(isTier1Eligible(node, req('Code-Pro'), afterRecord), true);
-assert.equal(getTier1ModelPerf(node.id, 'Code-Max'), null,
-  'recordOutcome must keep logical Code-Max state untouched for model_missing');
+assert.equal(getTier1ModelPerf(node.id, 'Code-Max'), null, 'recordOutcome must keep logical Code-Max state untouched for model_missing');
 
 console.log('tier1-upstream-model-cooldown: all tests passed');

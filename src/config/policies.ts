@@ -6,23 +6,31 @@
 // is fixed (tier-1 -> tier-2 -> tier-3); there is one allocation model and no
 // configurable cross-tier budget splitter.
 
-import { readEnv } from './env.ts';
-import { getLimits } from './timeouts.ts';
 import type { PolicyConfig } from '../types/policy.ts';
+import { readEnv } from './env.ts';
 import type { ModelEntry } from './models.ts';
+import { getLimits } from './timeouts.ts';
 
 const MIN_ATTEMPTS = 1;
 const MAX_ATTEMPTS = 8;
 const TIER_KEYS = ['tier1', 'tier2', 'tier3'];
-const ALLOWED_FIELDS = new Set(['max_attempts', 'tier_attempts', 'hedge', 'headers_timeout_ms', 'first_event_timeout_ms', 'failover_budget_ms', 'max_in_flight']);
+const ALLOWED_FIELDS = new Set([
+  'max_attempts',
+  'tier_attempts',
+  'hedge',
+  'headers_timeout_ms',
+  'first_event_timeout_ms',
+  'failover_budget_ms',
+  'max_in_flight',
+]);
 
-type HedgePolicy = { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
-type TierAttempts = { tier1?: number, tier2?: number, tier3?: number } | null;
+type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
+type TierAttempts = { tier1?: number; tier2?: number; tier3?: number } | null;
 
 const BUILTIN_POLICIES: Readonly<{
-  default: PolicyConfig,
-  fast: PolicyConfig,
-  'long-reasoning': PolicyConfig,
+  default: PolicyConfig;
+  fast: PolicyConfig;
+  'long-reasoning': PolicyConfig;
 }> = Object.freeze({
   default: {
     maxAttempts: 5,
@@ -54,7 +62,7 @@ const BUILTIN_POLICIES: Readonly<{
 });
 
 let cachedEnv: Record<string, unknown> | undefined;
-let cached: { policies: Record<string, PolicyConfig>, errors: string[] } | undefined;
+let cached: { policies: Record<string, PolicyConfig>; errors: string[] } | undefined;
 
 export function loadPoliciesConfig(env: Record<string, unknown>): Record<string, PolicyConfig> {
   return analyzePolicies(env).policies;
@@ -64,7 +72,7 @@ export function getPoliciesConfigDiagnostics(env: Record<string, unknown>): stri
   return analyzePolicies(env).errors;
 }
 
-function analyzePolicies(env: Record<string, unknown>): { policies: Record<string, PolicyConfig>, errors: string[] } {
+function analyzePolicies(env: Record<string, unknown>): { policies: Record<string, PolicyConfig>; errors: string[] } {
   if (cachedEnv === env && cached) return cached;
   cachedEnv = env;
   const raw = readEnv(env, 'AIG_POLICIES_CONFIG');
@@ -105,41 +113,35 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
         const key = name.trim();
         const base = policies[key];
         const tierErrorsBefore = errors.length;
-        const tierAttempts = cfg.tier_attempts === undefined
-          ? (base?.tierAttempts ?? null)
-          : parseTierAttempts(cfg.tier_attempts, key, errors);
+        const tierAttempts = cfg.tier_attempts === undefined ? (base?.tierAttempts ?? null) : parseTierAttempts(cfg.tier_attempts, key, errors);
         const tierAttemptsValid = errors.length === tierErrorsBefore;
-        const hedge = cfg.hedge === undefined
-          ? (base?.hedge ?? null)
-          : parseHedge(cfg.hedge, key, errors);
-        const headersTimeoutMs = cfg.headers_timeout_ms === undefined
-          ? (base?.headersTimeoutMs ?? null)
-          : parseHeadersTimeoutMs(cfg.headers_timeout_ms, key, errors);
-        const firstEventTimeoutMs = cfg.first_event_timeout_ms === undefined
-          ? (base?.firstEventTimeoutMs ?? null)
-          : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
-        const failoverBudgetMs = cfg.failover_budget_ms === undefined
-          ? (base?.failoverBudgetMs ?? null)
-          : parseFailoverBudgetMs(cfg.failover_budget_ms, key, errors);
+        const hedge = cfg.hedge === undefined ? (base?.hedge ?? null) : parseHedge(cfg.hedge, key, errors);
+        const headersTimeoutMs =
+          cfg.headers_timeout_ms === undefined ? (base?.headersTimeoutMs ?? null) : parseHeadersTimeoutMs(cfg.headers_timeout_ms, key, errors);
+        const firstEventTimeoutMs =
+          cfg.first_event_timeout_ms === undefined
+            ? (base?.firstEventTimeoutMs ?? null)
+            : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
+        const failoverBudgetMs =
+          cfg.failover_budget_ms === undefined ? (base?.failoverBudgetMs ?? null) : parseFailoverBudgetMs(cfg.failover_budget_ms, key, errors);
         const effectiveFailoverBudgetMs = failoverBudgetMs ?? getLimits(env).failoverBudgetMs;
         if (headersTimeoutMs !== null && headersTimeoutMs > effectiveFailoverBudgetMs) {
-          errors.push(`AIG_POLICIES_CONFIG: "${key}": headers_timeout_ms (${headersTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`);
+          errors.push(
+            `AIG_POLICIES_CONFIG: "${key}": headers_timeout_ms (${headersTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`,
+          );
         }
         if (firstEventTimeoutMs !== null && firstEventTimeoutMs > effectiveFailoverBudgetMs) {
-          errors.push(`AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`);
+          errors.push(
+            `AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`,
+          );
         }
-        const maxInFlight = cfg.max_in_flight === undefined
-          ? (base?.maxInFlight ?? null)
-          : parseMaxInFlight(cfg.max_in_flight, key, errors);
+        const maxInFlight = cfg.max_in_flight === undefined ? (base?.maxInFlight ?? null) : parseMaxInFlight(cfg.max_in_flight, key, errors);
 
         let attempts: number;
         let isMaxAttemptsValid = true;
         if (cfg.max_attempts !== undefined) {
           const rawMax = cfg.max_attempts;
-          if (typeof rawMax !== 'number'
-            || !Number.isInteger(rawMax)
-            || rawMax < MIN_ATTEMPTS
-            || rawMax > MAX_ATTEMPTS) {
+          if (typeof rawMax !== 'number' || !Number.isInteger(rawMax) || rawMax < MIN_ATTEMPTS || rawMax > MAX_ATTEMPTS) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
             attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
             isMaxAttemptsValid = false;
@@ -181,7 +183,7 @@ function parseHedge(value: unknown, policyName: string, errors: string[]): Hedge
     return null;
   }
   const rec = value as Record<string, unknown>;
-  const out: { enabled?: boolean, delayMs?: number, tiers?: Array<'tier1' | 'tier2' | 'tier3'> } = { enabled: true };
+  const out: { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2' | 'tier3'> } = { enabled: true };
   if (rec.enabled !== undefined) {
     if (typeof rec.enabled !== 'boolean') errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.enabled must be a boolean`);
     else out.enabled = rec.enabled;
@@ -209,7 +211,7 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
     errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts must be an object { tier1, tier2, tier3 }`);
     return null;
   }
-  const out: { tier1?: number, tier2?: number, tier3?: number } = {};
+  const out: { tier1?: number; tier2?: number; tier3?: number } = {};
   let hasAnyTierAttempt = false;
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!TIER_KEYS.includes(key)) {

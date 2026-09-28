@@ -7,10 +7,10 @@
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
 import { gatewayStats } from '../src/observability/gateway-stats.ts';
+import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
-import { __resetAdaptive429StateForTests } from '../src/reliability/adaptive-429.ts';
 
 const ACCESS_KEY = 'request-execution-ownership-test-key';
 let calls = [];
@@ -48,9 +48,7 @@ function envFor(nodes, extra = {}) {
     const tierNodes = nodes.filter((node) => node.__tier === tier);
     if (!tierNodes.length) continue;
     env[`AIG_TIER${tier}_NODES_01`] = JSON.stringify(tierNodes.map(({ __tier, ...node }) => node));
-    env[`AIG_TIER${tier}_CREDENTIALS_01`] = JSON.stringify(
-      Object.fromEntries(tierNodes.map((node) => [node.id, `secret-${node.id}`])),
-    );
+    env[`AIG_TIER${tier}_CREDENTIALS_01`] = JSON.stringify(Object.fromEntries(tierNodes.map((node) => [node.id, `secret-${node.id}`])));
   }
   return env;
 }
@@ -66,7 +64,9 @@ function responsesRequest(model, stream = false) {
 function completedResponsesObject(model, text = 'ok') {
   return {
     id: `resp_${model.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
-    object: 'response', status: 'completed', model,
+    object: 'response',
+    status: 'completed',
+    model,
     output: [{ id: 'msg_1', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] }],
     usage: { input_tokens: 2, output_tokens: 2, total_tokens: 4 },
   };
@@ -77,15 +77,31 @@ function jsonResponse(body, status = 200) {
 }
 
 function hangingSseHeaders() {
-  return new Response(new ReadableStream({ pull() { return new Promise(() => {}); } }), {
-    status: 200, headers: { 'content-type': 'text/event-stream' },
-  });
+  return new Response(
+    new ReadableStream({
+      pull() {
+        return new Promise(() => {});
+      },
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    },
+  );
 }
 
 function hangingErrorBody(status = 503) {
-  return new Response(new ReadableStream({ pull() { return new Promise(() => {}); } }), {
-    status, headers: { 'content-type': 'application/json' },
-  });
+  return new Response(
+    new ReadableStream({
+      pull() {
+        return new Promise(() => {});
+      },
+    }),
+    {
+      status,
+      headers: { 'content-type': 'application/json' },
+    },
+  );
 }
 
 function installFetch(routes) {
@@ -104,9 +120,13 @@ async function withDeadline(promise, ms, label) {
   try {
     return await Promise.race([
       promise,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms); }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms);
+      }),
     ]);
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 reset();
@@ -127,7 +147,10 @@ assert.equal(familyResponse.status, 200, 'a sibling model must still receive wal
 const familyText = await withDeadline(familyResponse.text(), 1000, 'family synthesized stream drain');
 assert.match(familyText, /sibling recovered/);
 assert.ok(Date.now() - familyStarted < 1800);
-assert.deepEqual(calls.map((c) => c.host), ['family-max.example.com', 'family-pro.example.com']);
+assert.deepEqual(
+  calls.map((c) => c.host),
+  ['family-max.example.com', 'family-pro.example.com'],
+);
 
 reset();
 const badTier2 = configNode('tier2-stall', 2, { Solo: 'solo-upstream' }, 1);
@@ -146,7 +169,10 @@ const errorResponse = await withDeadline(worker.fetch(responsesRequest('Solo', f
 assert.equal(errorResponse.status, 200, 'a stalled 503 diagnostic body must time out inside the attempt and rotate');
 assert.match(await errorResponse.text(), /fallback node succeeded/);
 assert.ok(Date.now() - errorStarted < 1800);
-assert.deepEqual(calls.map((c) => c.host), ['tier2-stall.example.com', 'tier2-good.example.com']);
+assert.deepEqual(
+  calls.map((c) => c.host),
+  ['tier2-stall.example.com', 'tier2-good.example.com'],
+);
 
 reset();
 const synthNode = configNode('synth-json', 1, { SoloStream: 'solo-stream-upstream' });
@@ -170,10 +196,14 @@ assert.equal(gatewayStats.cancellations, cancelBefore);
 const cancelActiveBefore = gatewayStats.activeRequests;
 const cancelSuccessBefore = gatewayStats.successes;
 const cancelCountBefore = gatewayStats.cancellations;
-const cancelResponse = await worker.fetch(responsesRequest('SoloStream', true), envFor([synthNode], {
-  AIG_MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
-  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
-}), {});
+const cancelResponse = await worker.fetch(
+  responsesRequest('SoloStream', true),
+  envFor([synthNode], {
+    AIG_MODELS_CONFIG: JSON.stringify({ SoloStream: { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
+  }),
+  {},
+);
 assert.equal(gatewayStats.activeRequests, cancelActiveBefore + 1);
 const cancelReader = cancelResponse.body.getReader();
 await cancelReader.cancel('test cancellation');

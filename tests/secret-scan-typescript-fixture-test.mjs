@@ -6,10 +6,10 @@
 // temporary directory so secret-looking strings never live in the repository.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,7 +17,7 @@ const scanner = path.join(root, 'scripts', 'secret-scan.mjs');
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-gateway-secret-scan-'));
 
 try {
-  const fakeKey = 's' + 'k-' + 'A'.repeat(24);
+  const fakeKey = `sk-${'A'.repeat(24)}`;
   for (const ext of ['.ts', '.tsx', '.mts', '.cts']) {
     fs.writeFileSync(path.join(fixtureRoot, `fixture${ext}`), `export const leaked = '${fakeKey}';\n`, 'utf8');
   }
@@ -30,8 +30,7 @@ try {
 
   assert.equal(result.status, 1, 'secret scanner must reject TypeScript fixtures containing a fake secret');
   for (const ext of ['.ts', '.tsx', '.mts', '.cts']) {
-    assert.ok(output.includes(`fixture${ext}`),
-      `scanner output must include the ${ext} fixture`);
+    assert.ok(output.includes(`fixture${ext}`), `scanner output must include the ${ext} fixture`);
   }
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });

@@ -18,28 +18,28 @@
 // helpers run BEFORE any byte reaches the client, so a failure inside them
 // still rotates to another node.
 
-import { createSseScanner, readWithDeadline } from './guard.ts';
-import { markSyntheticClientStreamHeaders } from './client-lifecycle.ts';
 import { mergeReportedUsage } from '../observability/token-usage.ts';
-import {
-  UPSTREAM_PROCESSING_ERROR,
-  upstreamProcessingError,
-  type UpstreamProcessingErrorCode,
-} from '../types/upstream-processing.ts';
+import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../types/upstream-processing.ts';
+import { markSyntheticClientStreamHeaders } from './client-lifecycle.ts';
+import { createSseScanner, readWithDeadline } from './guard.ts';
 
 const MAX_COLLECTED_BYTES = 2 * 1024 * 1024;
 
-export async function collectAnthropicMessageObject(upstream: Response, clientSignal: AbortSignal | null | undefined, deadlineMs?: number | null): Promise<Record<string, unknown>> {
+export async function collectAnthropicMessageObject(
+  upstream: Response,
+  clientSignal: AbortSignal | null | undefined,
+  deadlineMs?: number | null,
+): Promise<Record<string, unknown>> {
   if (!upstream.body) throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.EMPTY, 'Upstream response has no body.');
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let receivedBytes = 0;
   let stopMessageStop = false;
-  let messageBase: { id: unknown, model: unknown } | null | undefined;
+  let messageBase: { id: unknown; model: unknown } | null | undefined;
   let stopReason: unknown = null;
   let usage: Record<string, unknown> = { input_tokens: 0, output_tokens: 0 } as Record<string, unknown>;
   const blocks: Record<string, unknown>[] = [];
-  const blockState = new Map<number, Record<string, unknown> & { text?: string, thinking?: string, signature?: string, partialJson?: string }>();
+  const blockState = new Map<number, Record<string, unknown> & { text?: string; thinking?: string; signature?: string; partialJson?: string }>();
 
   const fail = async (code: UpstreamProcessingErrorCode, message: string): Promise<never> => {
     await reader.cancel().catch(() => {});
@@ -48,15 +48,12 @@ export async function collectAnthropicMessageObject(upstream: Response, clientSi
 
   const scanner = createSseScanner((data) => {
     if (!data || data === '[DONE]') return;
+    // biome-ignore lint/suspicious/noImplicitAnyLet: upstream SSE events are dynamic untrusted JSON at this protocol boundary; tsc treats the evolving `let json` as any
     let json;
     try {
       json = JSON.parse(data);
     } catch (error) {
-      throw upstreamProcessingError(
-        UPSTREAM_PROCESSING_ERROR.MALFORMED,
-        'Upstream returned malformed streaming data.',
-        error,
-      );
+      throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.MALFORMED, 'Upstream returned malformed streaming data.', error);
     }
     if (receivedBytes > MAX_COLLECTED_BYTES) return;
     switch (json?.type) {
@@ -114,11 +111,7 @@ export async function collectAnthropicMessageObject(upstream: Response, clientSi
         await reader.cancel().catch(() => {});
         throw new DOMException('Client aborted during stream assembly.', 'AbortError');
       }
-      const { done, value } = await readWithDeadline(
-        reader,
-        deadlineMs,
-        (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message),
-      );
+      const { done, value } = await readWithDeadline(reader, deadlineMs, (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message));
       if (done) break;
       receivedBytes += value.byteLength;
       scanner.push(decoder.decode(value, { stream: true }));
@@ -154,14 +147,18 @@ export async function collectAnthropicMessageObject(upstream: Response, clientSi
   };
 }
 
-function anthropicBlockFromState(state: Record<string, unknown> & { text?: string, thinking?: string, signature?: string, partialJson?: string }): Record<string, unknown> {
+function anthropicBlockFromState(
+  state: Record<string, unknown> & { text?: string; thinking?: string; signature?: string; partialJson?: string },
+): Record<string, unknown> {
   if (state.type === 'tool_use') {
     let input: unknown = {};
     const raw = state.partialJson || '{}';
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed;
-    } catch { input = { _raw: raw }; }
+    } catch {
+      input = { _raw: raw };
+    }
     return { type: 'tool_use', id: state.id || '', name: state.name || 'unknown_tool', input };
   }
   if (state.type === 'thinking') {
@@ -182,9 +179,8 @@ export function synthesizeAnthropicFromMessage(message: Record<string, unknown> 
   const emit = (chunks: string[], event: string, data: unknown) => chunks.push(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   const object: Record<string, unknown> = message && typeof message === 'object' ? message : {};
   const content = Array.isArray(object.content) ? object.content : [];
-  const usageObj = object.usage && typeof object.usage === 'object'
-    ? object.usage as Record<string, unknown>
-    : { input_tokens: 0, output_tokens: 0 };
+  const usageObj =
+    object.usage && typeof object.usage === 'object' ? (object.usage as Record<string, unknown>) : { input_tokens: 0, output_tokens: 0 };
   const usage = {
     input_tokens: Number(usageObj.input_tokens ?? 0) || 0,
     cache_creation_input_tokens: Number(usageObj.cache_creation_input_tokens ?? 0) || 0,
@@ -203,7 +199,12 @@ export function synthesizeAnthropicFromMessage(message: Record<string, unknown> 
       content: [],
       stop_reason: null,
       stop_sequence: null,
-      usage: { input_tokens: usage.input_tokens, cache_creation_input_tokens: usage.cache_creation_input_tokens, cache_read_input_tokens: usage.cache_read_input_tokens, output_tokens: 0 },
+      usage: {
+        input_tokens: usage.input_tokens,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+        cache_read_input_tokens: usage.cache_read_input_tokens,
+        output_tokens: 0,
+      },
     },
   });
   for (let index = 0; index < content.length; index++) {
@@ -213,7 +214,8 @@ export function synthesizeAnthropicFromMessage(message: Record<string, unknown> 
       emit(chunks, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } });
     } else if (block.type === 'thinking' && block.thinking) {
       emit(chunks, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } });
-      if (block.signature) emit(chunks, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } });
+      if (block.signature)
+        emit(chunks, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } });
     } else if (block.type === 'tool_use') {
       emit(chunks, 'content_block_delta', {
         type: 'content_block_delta',

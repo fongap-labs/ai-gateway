@@ -18,27 +18,23 @@
 // touches only upstream_* columns and therefore cannot fabricate success
 // evidence in `requests` / `usage_reports` / TTFT histograms.
 
-import { normalizeUsageReport } from '../token-usage.ts';
-import {
-  TABLE, TABLE_MODEL, TABLE_TOTALS,
-  TTFT_BUCKET_COUNT,
-  normalizeHour, tokenStatsD1, normalizeModelKey, ttftBucketIndex,
-} from './keys.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
+import { normalizeUsageReport } from '../token-usage.ts';
+import { normalizeHour, normalizeModelKey, TABLE, TABLE_MODEL, TABLE_TOTALS, TTFT_BUCKET_COUNT, tokenStatsD1, ttftBucketIndex } from './keys.ts';
 
 type UsagePayload = {
-  input: number,
-  output: number,
-  cacheCreation: number,
-  cacheRead: number,
-  effectiveInput: number,
-  observedCacheRead: number,
-  observedCacheInput: number,
-  cacheReadReports: number,
-  total: number,
-  requests: number,
-  reports: number,
-  missing: number,
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+  effectiveInput: number;
+  observedCacheRead: number;
+  observedCacheInput: number;
+  cacheReadReports: number;
+  total: number;
+  requests: number;
+  reports: number;
+  missing: number;
 };
 
 export function tokenUsagePayload(usage: unknown): UsagePayload {
@@ -61,15 +57,24 @@ export function tokenUsagePayload(usage: unknown): UsagePayload {
     };
   }
   return {
-    input: 0, output: 0, cacheCreation: 0, cacheRead: 0,
-    effectiveInput: 0, observedCacheRead: 0, observedCacheInput: 0, cacheReadReports: 0,
-    total: 0, requests: 1, reports: 0, missing: 1,
+    input: 0,
+    output: 0,
+    cacheCreation: 0,
+    cacheRead: 0,
+    effectiveInput: 0,
+    observedCacheRead: 0,
+    observedCacheInput: 0,
+    cacheReadReports: 0,
+    total: 0,
+    requests: 1,
+    reports: 0,
+    missing: 1,
   };
 }
 
-function persistFailure(scope: string, cause: unknown, model: string | null = null): Error & { scope: string, model?: string } {
+function persistFailure(scope: string, cause: unknown, model: string | null = null): Error & { scope: string; model?: string } {
   const rawMessage = (cause as { message?: unknown } | null | undefined)?.message || String(cause || 'D1 persistence failure');
-  const error = new Error(String(rawMessage), { cause }) as Error & { scope: string, model?: string };
+  const error = new Error(String(rawMessage), { cause }) as Error & { scope: string; model?: string };
   error.name = 'TokenStatsPersistError';
   error.scope = scope;
   if (model) error.model = model;
@@ -80,7 +85,13 @@ function persistFailure(scope: string, cause: unknown, model: string | null = nu
 // every statement remains unchanged; upstream columns are appended. Besides
 // easing rolling compatibility, this protects the independently tested TTFT /
 // success-evidence contract from accidental positional drift.
-export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number = Date.now(), model: string | null = null, ttftMs: number | null = null): Promise<void> {
+export function persistTokenUsage(
+  env: GatewayEnv,
+  usage: unknown,
+  now: number = Date.now(),
+  model: string | null = null,
+  ttftMs: number | null = null,
+): Promise<void> {
   const d1 = tokenStatsD1(env);
   if (!d1) return Promise.resolve();
   const hour = normalizeHour(now);
@@ -121,12 +132,33 @@ export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number =
         upstream_cache_observed_input_tokens = ${TABLE}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE}.upstream_cache_read_reports + excluded.upstream_cache_read_reports`,
     );
-    globalTask = Promise.resolve(globalStmt.bind(
-      hour,
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-    ).run());
+    globalTask = Promise.resolve(
+      globalStmt
+        .bind(
+          hour,
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+        )
+        .run(),
+    );
   } catch (cause) {
     return Promise.reject(persistFailure('global', cause));
   }
@@ -168,12 +200,33 @@ export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number =
         upstream_cache_observed_input_tokens = ${TABLE_TOTALS}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE_TOTALS}.upstream_cache_read_reports + excluded.upstream_cache_read_reports`,
     );
-    totalsTask = Promise.resolve(totalsStmt.bind(
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      new Date(now).toISOString(),
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-    ).run());
+    totalsTask = Promise.resolve(
+      totalsStmt
+        .bind(
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          new Date(now).toISOString(),
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+        )
+        .run(),
+    );
   } catch (cause) {
     console.error('token-stats totals persist failed:', (cause as { message?: unknown } | null | undefined)?.message || cause);
     totalsTask = Promise.resolve();
@@ -197,8 +250,10 @@ export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number =
   }
   let modelTask: Promise<unknown>;
   try {
-    modelTask = Promise.resolve(d1.prepare(
-      `INSERT INTO ${TABLE_MODEL} (
+    modelTask = Promise.resolve(
+      d1
+        .prepare(
+          `INSERT INTO ${TABLE_MODEL} (
         hour, model,
         input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
         requests, usage_reports, usage_missing,
@@ -240,14 +295,41 @@ export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number =
         upstream_cache_observed_read_tokens = ${TABLE_MODEL}.upstream_cache_observed_read_tokens + excluded.upstream_cache_observed_read_tokens,
         upstream_cache_observed_input_tokens = ${TABLE_MODEL}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE_MODEL}.upstream_cache_read_reports + excluded.upstream_cache_read_reports`,
-    ).bind(
-      hour, canonicalModel,
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      successTtftCount,
-      buckets[0], buckets[1], buckets[2], buckets[3], buckets[4], buckets[5], buckets[6],
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-    ).run());
+        )
+        .bind(
+          hour,
+          canonicalModel,
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          successTtftCount,
+          buckets[0],
+          buckets[1],
+          buckets[2],
+          buckets[3],
+          buckets[4],
+          buckets[5],
+          buckets[6],
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+        )
+        .run(),
+    );
   } catch (cause) {
     modelTask = Promise.reject(cause);
   }
@@ -261,12 +343,7 @@ export function persistTokenUsage(env: GatewayEnv, usage: unknown, now: number =
 // response (failure, retry/fallback loss, hedge loser, or client-cancelled live
 // upstream). This function never touches delivered `requests`, `usage_reports`,
 // TTFT or success evidence.
-export function persistUpstreamAttemptUsage(
-  env: GatewayEnv,
-  usage: unknown,
-  now: number = Date.now(),
-  model: string | null = null,
-): Promise<void> {
+export function persistUpstreamAttemptUsage(env: GatewayEnv, usage: unknown, now: number = Date.now(), model: string | null = null): Promise<void> {
   const d1 = tokenStatsD1(env);
   if (!d1) return Promise.resolve();
   const hour = normalizeHour(now);
@@ -274,8 +351,10 @@ export function persistUpstreamAttemptUsage(
 
   let globalTask: Promise<unknown>;
   try {
-    globalTask = Promise.resolve(d1.prepare(
-      `INSERT INTO ${TABLE} (
+    globalTask = Promise.resolve(
+      d1
+        .prepare(
+          `INSERT INTO ${TABLE} (
         hour,
         upstream_input_tokens, upstream_output_tokens,
         upstream_cache_creation_input_tokens, upstream_cache_read_input_tokens, upstream_total_tokens,
@@ -296,18 +375,34 @@ export function persistUpstreamAttemptUsage(
         upstream_cache_observed_read_tokens = ${TABLE}.upstream_cache_observed_read_tokens + excluded.upstream_cache_observed_read_tokens,
         upstream_cache_observed_input_tokens = ${TABLE}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE}.upstream_cache_read_reports + excluded.upstream_cache_read_reports`,
-    ).bind(
-      hour, p.input, p.output, p.cacheCreation, p.cacheRead, p.total, p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-    ).run());
+        )
+        .bind(
+          hour,
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+        )
+        .run(),
+    );
   } catch (cause) {
     return Promise.reject(persistFailure('upstream-global', cause));
   }
 
   let totalsTask: Promise<unknown>;
   try {
-    totalsTask = Promise.resolve(d1.prepare(
-      `INSERT INTO ${TABLE_TOTALS} (
+    totalsTask = Promise.resolve(
+      d1
+        .prepare(
+          `INSERT INTO ${TABLE_TOTALS} (
         scope,
         upstream_input_tokens, upstream_output_tokens,
         upstream_cache_creation_input_tokens, upstream_cache_read_input_tokens, upstream_total_tokens,
@@ -330,12 +425,24 @@ export function persistUpstreamAttemptUsage(
         upstream_cache_observed_input_tokens = ${TABLE_TOTALS}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE_TOTALS}.upstream_cache_read_reports + excluded.upstream_cache_read_reports,
         updated_at = excluded.updated_at`,
-    ).bind(
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total,
-      p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-      new Date(now).toISOString(),
-    ).run());
+        )
+        .bind(
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+          new Date(now).toISOString(),
+        )
+        .run(),
+    );
   } catch (cause) {
     console.error('upstream token-stats totals persist failed:', (cause as { message?: unknown } | null | undefined)?.message || cause);
     totalsTask = Promise.resolve();
@@ -350,8 +457,10 @@ export function persistUpstreamAttemptUsage(
   const canonicalModel = normalizeModelKey(model);
   let modelTask: Promise<unknown>;
   try {
-    modelTask = Promise.resolve(d1.prepare(
-      `INSERT INTO ${TABLE_MODEL} (
+    modelTask = Promise.resolve(
+      d1
+        .prepare(
+          `INSERT INTO ${TABLE_MODEL} (
         hour, model,
         upstream_input_tokens, upstream_output_tokens,
         upstream_cache_creation_input_tokens, upstream_cache_read_input_tokens, upstream_total_tokens,
@@ -372,12 +481,25 @@ export function persistUpstreamAttemptUsage(
         upstream_cache_observed_read_tokens = ${TABLE_MODEL}.upstream_cache_observed_read_tokens + excluded.upstream_cache_observed_read_tokens,
         upstream_cache_observed_input_tokens = ${TABLE_MODEL}.upstream_cache_observed_input_tokens + excluded.upstream_cache_observed_input_tokens,
         upstream_cache_read_reports = ${TABLE_MODEL}.upstream_cache_read_reports + excluded.upstream_cache_read_reports`,
-    ).bind(
-      hour, canonicalModel,
-      p.input, p.output, p.cacheCreation, p.cacheRead, p.total,
-      p.requests, p.reports, p.missing,
-      p.effectiveInput, p.observedCacheRead, p.observedCacheInput, p.cacheReadReports,
-    ).run());
+        )
+        .bind(
+          hour,
+          canonicalModel,
+          p.input,
+          p.output,
+          p.cacheCreation,
+          p.cacheRead,
+          p.total,
+          p.requests,
+          p.reports,
+          p.missing,
+          p.effectiveInput,
+          p.observedCacheRead,
+          p.observedCacheInput,
+          p.cacheReadReports,
+        )
+        .run(),
+    );
   } catch (cause) {
     modelTask = Promise.reject(cause);
   }

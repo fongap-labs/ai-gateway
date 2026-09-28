@@ -20,19 +20,19 @@ export type NodeTier = 'tier-1' | 'tier-2' | 'tier-3';
 export type NodeModelMap = { [logicalModel: string]: string };
 
 export type RuntimeNode = {
-  id: string,
-  tier: NodeTier,
-  provider: string,
-  protocol: Protocol,
-  surfaces: ReadonlyArray<Surface>,
-  baseUrl: string,
-  credential: string,
-  priority: number,
-  models: NodeModelMap,
+  id: string;
+  tier: NodeTier;
+  provider: string;
+  protocol: Protocol;
+  surfaces: ReadonlyArray<Surface>;
+  baseUrl: string;
+  credential: string;
+  priority: number;
+  models: NodeModelMap;
   /**
    * Tier 2 subscription nodes resolve their credential at dispatch time from
    * the OAuth token store instead of a static AIG_TIER2_CREDENTIALS_* secret.
    * Undefined for static-credential nodes (Tier 1-3 API-key nodes).
    */
-  auth?: 'oauth',
+  auth?: 'oauth';
 };

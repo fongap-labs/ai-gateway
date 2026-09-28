@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import { getPublicModelStatus } from '../src/runtime/model-status.ts';
-import { renderModels } from '../src/dashboard/model-status-view.ts';
-import { supportsRequest } from '../src/scheduler/scheduler.ts';
-import { __resetTier1StateForTests, recordTier1Ttft } from '../src/reliability/tier1-state.ts';
-import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
+import { renderModels } from '../src/dashboard/model-status-view.ts';
+import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
+import { __resetTier1StateForTests, recordTier1Ttft } from '../src/reliability/tier1-state.ts';
 import { computeTierCaps } from '../src/request/tier-loop.ts';
+import { getPublicModelStatus } from '../src/runtime/model-status.ts';
+import { supportsRequest } from '../src/scheduler/scheduler.ts';
 
 let passed = 0;
 function test(name, fn) {
@@ -28,16 +28,29 @@ function test(name, fn) {
 const access = { AIG_ACCESS_KEY_AIR: 'k', AIG_ACCESS_MODELS_AIR: '*' };
 const env = (models) => ({ ...access, ...(models ? { AIG_MODELS_CONFIG: JSON.stringify(models) } : {}) });
 const runtimeNode = (id, models) => ({
-  id, provider: 'mock', tier: 'tier-1', protocol: 'openai', surfaces: ['chat_completions'],
-  base_url: `https://${id}.example.com/v1`, models,
+  id,
+  provider: 'mock',
+  tier: 'tier-1',
+  protocol: 'openai',
+  surfaces: ['chat_completions'],
+  base_url: `https://${id}.example.com/v1`,
+  models,
 });
 const configNode = (id) => ({
-  id, provider: 'mock',
-  base_url: `https://${id}.example.com/v1`, models: { 'Code-Max': 'up-model' },
+  id,
+  provider: 'mock',
+  base_url: `https://${id}.example.com/v1`,
+  models: { 'Code-Max': 'up-model' },
 });
 const budgetNode = (id, tier) => ({
-  id, tier, provider: 'mock', protocol: 'openai', surfaces: ['chat_completions'],
-  baseUrl: `https://${id}.example.com/v1`, credential: 'k', priority: 10,
+  id,
+  tier,
+  provider: 'mock',
+  protocol: 'openai',
+  surfaces: ['chat_completions'],
+  baseUrl: `https://${id}.example.com/v1`,
+  credential: 'k',
+  priority: 10,
   models: { 'Code-Max': 'up-model' },
 });
 const now = () => 1_700_000_000_000;
@@ -62,13 +75,19 @@ test('visibility internal hides a mapped model but does not make it unrequestabl
   const { html } = renderModels(result);
   assert.ok(html.includes('pub'));
   assert.ok(!html.includes('hidden'));
-  assert.equal(nodes.some((n) => supportsRequest(n, { model: 'hidden', protocol: 'openai', surface: 'chat_completions' })), true);
+  assert.equal(
+    nodes.some((n) => supportsRequest(n, { model: 'hidden', protocol: 'openai', surface: 'chat_completions' })),
+    true,
+  );
 });
 
 test('AIG_MODELS_CONFIG alone never widens public/requestable models', () => {
   const result = getPublicModelStatus([], env({ orphan: { policy: 'fast' } }), new Set(), now());
   assert.ok(!ids(result).includes('orphan'));
-  assert.equal([].some((n) => supportsRequest(n, { model: 'orphan', protocol: 'openai', surface: 'chat_completions' })), false);
+  assert.equal(
+    [].some((n) => supportsRequest(n, { model: 'orphan', protocol: 'openai', surface: 'chat_completions' })),
+    false,
+  );
 });
 
 test('same-tier credential may live in a different shard suffix', () => {
@@ -109,7 +128,8 @@ test('unset lower tier receives remaining budget after explicit higher-tier cap'
 test('surplus goes to the first adjustable dispatchable tier', () => {
   const tiers = {
     1: [budgetNode('t1a', 'tier-1'), budgetNode('t1b', 'tier-1')],
-    2: [budgetNode('t2', 'tier-2')], 3: [budgetNode('t3', 'tier-3')],
+    2: [budgetNode('t2', 'tier-2')],
+    3: [budgetNode('t3', 'tier-3')],
   };
   const policy = { maxAttempts: 5, tierAttempts: null, hedge: null, firstEventTimeoutMs: null, maxInFlight: null };
   assert.deepEqual(computeTierCaps(tiers, req, new Set(), policy, new Set()), { 1: 3, 2: 1, 3: 1 });
@@ -125,7 +145,9 @@ test('explicit zero disables a tier', () => {
 });
 
 test('tier_attempts total above max_attempts is rejected', () => {
-  const diags = getPoliciesConfigDiagnostics({ AIG_POLICIES_CONFIG: JSON.stringify({ over: { max_attempts: 6, tier_attempts: { tier2: 4, tier3: 4 } } }) });
+  const diags = getPoliciesConfigDiagnostics({
+    AIG_POLICIES_CONFIG: JSON.stringify({ over: { max_attempts: 6, tier_attempts: { tier2: 4, tier3: 4 } } }),
+  });
   assert.ok(diags.some((d) => d.includes('tier_attempts total exceeds max_attempts')));
 });
 

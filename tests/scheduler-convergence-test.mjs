@@ -1,20 +1,34 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import { computeTierCaps } from '../src/request/tier-loop.ts';
 import { loadPoliciesConfig } from '../src/config/policies.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
+import { computeTierCaps } from '../src/request/tier-loop.ts';
 
 let passed = 0;
 let failed = 0;
 async function test(name, fn) {
-  try { __resetTier1StateForTests(); await fn(); passed++; console.log(`ok - ${name}`); }
-  catch (error) { failed++; console.error(`FAIL: ${name}`); console.error(error?.stack || error); }
+  try {
+    __resetTier1StateForTests();
+    await fn();
+    passed++;
+    console.log(`ok - ${name}`);
+  } catch (error) {
+    failed++;
+    console.error(`FAIL: ${name}`);
+    console.error(error?.stack || error);
+  }
 }
 function node(id, tier) {
   return {
-    id, tier, provider: 'mock', protocol: 'openai', surfaces: ['chat_completions'],
-    baseUrl: `https://${id}.example.com/v1`, credential: 'secret', priority: 1,
+    id,
+    tier,
+    provider: 'mock',
+    protocol: 'openai',
+    surfaces: ['chat_completions'],
+    baseUrl: `https://${id}.example.com/v1`,
+    credential: 'secret',
+    priority: 1,
     models: { m1: 'upstream-m1' },
   };
 }

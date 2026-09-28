@@ -17,10 +17,10 @@
 // Future strategies (cost / quality / learned) are deliberately NOT
 // implemented without a concrete need; the contract is the extension point.
 
-import { pickTier1Candidate } from './tier1-scheduler.ts';
-import { pickCandidate } from './scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { Tier, PickedCandidate, RoutableRequest } from '../types/scheduler.ts';
+import type { PickedCandidate, RoutableRequest, Tier } from '../types/scheduler.ts';
+import { pickCandidate } from './scheduler.ts';
+import { pickTier1Candidate } from './tier1-scheduler.ts';
 
 export type RoutingStrategyId = 'p2c_ttft' | 'priority_lru';
 
@@ -28,25 +28,20 @@ export type RoutingStrategyId = 'p2c_ttft' | 'priority_lru';
  *  not own are ignored. `excludeIds`/`raceLostIds` are alternative names for
  *  the same set of nodes to skip after a same-tier admission race loss. */
 export type RoutingPickOptions = {
-  now?: number,
-  rng?: () => number,
-  knownModels?: ReadonlySet<string> | null,
-  affinityAccountId?: string | null,
-  evaluateAffinity?: boolean,
-  excludeId?: string | null,
-  excludeIds?: ReadonlySet<string> | null,
-  raceLostIds?: Set<string> | null,
-  maxInFlight?: number | null,
+  now?: number;
+  rng?: () => number;
+  knownModels?: ReadonlySet<string> | null;
+  affinityAccountId?: string | null;
+  evaluateAffinity?: boolean;
+  excludeId?: string | null;
+  excludeIds?: ReadonlySet<string> | null;
+  raceLostIds?: Set<string> | null;
+  maxInFlight?: number | null;
 };
 
 export interface RoutingStrategy {
   readonly id: RoutingStrategyId;
-  pick(
-    tierNodes: ReadonlyArray<RuntimeNode>,
-    req: RoutableRequest,
-    attempted: Set<string>,
-    opts: RoutingPickOptions,
-  ): PickedCandidate | null;
+  pick(tierNodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, opts: RoutingPickOptions): PickedCandidate | null;
 }
 
 /** Tier 1: power-of-two-choices with passive TTFT, soft affinity, provider-model

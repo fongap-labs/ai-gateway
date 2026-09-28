@@ -1,6 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,15 +12,32 @@ const root = rootFlagIndex >= 0 ? path.resolve(process.argv[rootFlagIndex + 1]) 
 const excludedDirs = new Set(['.git', 'node_modules', '.wrangler', '.wrangler-dry-run', 'release']);
 const excludedFiles = new Set(['SHA256SUMS', 'secret-scan.mjs']);
 const textExtensions = new Set([
-  '.js', '.mjs', '.ts', '.tsx', '.mts', '.cts', '.json', '.jsonc', '.md', '.txt', '.yml', '.yaml',
-  '.toml', '.sh', '.ps1', '.env', '.example', '.gitignore', '.editorconfig',
+  '.js',
+  '.mjs',
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.json',
+  '.jsonc',
+  '.md',
+  '.txt',
+  '.yml',
+  '.yaml',
+  '.toml',
+  '.sh',
+  '.ps1',
+  '.env',
+  '.example',
+  '.gitignore',
+  '.editorconfig',
 ]);
 
 const patterns = [
   ['OpenAI-style key', new RegExp('s' + 'k-[A-Za-z0-9_-]{20,}', 'g')],
   ['GitHub token', new RegExp('g' + 'hp_[A-Za-z0-9]{20,}', 'g')],
   ['Google API key', new RegExp('A' + 'Iza[A-Za-z0-9_-]{20,}', 'g')],
-  ['Private key', new RegExp('BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY', 'g')],
+  ['Private key', /BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY/g],
   ['Cloudflare API token assignment', /CLOUDFLARE_API_TOKEN\s*=\s*["']?[A-Za-z0-9_-]{30,}/g],
   ['AWS access key ID', /\bAKIA[0-9A-Z]{16}\b/g],
 ];
@@ -41,7 +58,11 @@ function scanFile(rel) {
   const ext = path.extname(name);
   if (!textExtensions.has(ext) && !name.startsWith('.')) return;
   let content;
-  try { content = fs.readFileSync(path.join(root, normalized), 'utf8'); } catch { return; }
+  try {
+    content = fs.readFileSync(path.join(root, normalized), 'utf8');
+  } catch {
+    return;
+  }
   for (const [label, pattern] of patterns) {
     pattern.lastIndex = 0;
     if (pattern.test(content)) findings.push(`${normalized}: possible ${label}`);
@@ -57,11 +78,16 @@ function scanFile(rel) {
 // that case so release artifacts still receive a useful scan.
 let gitCandidates = null;
 try {
-  gitCandidates = execFileSync(
-    'git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-    { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-  ).split('\0').filter(Boolean);
-} catch { /* archive / environment without git */ }
+  gitCandidates = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+    .split('\0')
+    .filter(Boolean);
+} catch {
+  /* archive / environment without git */
+}
 
 if (gitCandidates) {
   for (const rel of gitCandidates) scanFile(rel);
