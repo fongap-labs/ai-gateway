@@ -2,12 +2,11 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { attemptFirstEventTimeoutMs } from '../../config/timeouts.ts';
-import { markProbeFailure, recordTtft, recordNeutralEnd, bumpNodeCounters } from '../../reliability/node-state.ts';
-import { recordTier1Ttft, releaseTier1Slot } from '../../reliability/tier1-state.ts';
+import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
+import { recordTier1Ttft } from '../../reliability/tier1-state.ts';
 import {
   classifyFirstEventFailure,
   classifyClientAbort,
-  classifyHedgeRaceLoss,
 } from '../../reliability/classify.ts';
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
 import {
@@ -24,9 +23,9 @@ import { createAnthropicStreamFromOpenAI } from '../../conversion/stream-convert
 import { createOpenAIChatStreamFromAnthropic } from '../../conversion/anthropic-stream-to-openai-chat.ts';
 import {
   recordTokens, makeNodeStreamTrack,
-  observeUpstreamAttemptUsage, recordUndeliveredUpstreamAttempt,
+  observeUpstreamAttemptUsage,
 } from './observability.ts';
-import { recordOutcome } from './outcome.ts';
+import { recordOutcome, hedgeLoserOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
 
@@ -89,19 +88,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       // A peer committed while this attempt was waiting for real output.
       // Reliability stays neutral, but the physical dispatch still belongs
       // in upstream accounting (including any usage seen in lifecycle events).
-      recordUndeliveredUpstreamAttempt(c, node);
-      state.attempted.add(node.id);
-      state.dispatches++;
-      if (!c.hedgedAttempt) state.logicalAttempts++;
-      if (node.tier === 'tier-1') {
-        releaseTier1Slot(node.id, c.tier1ReleaseToken);
-        bumpNodeCounters(node.id, { requests: 1 });
-      } else recordNeutralEnd(node.id);
-      logger.info(
-        `hedge loser: request=${requestId} node=${node.id} phase=first_event`
-        + ` reason=cancelled_after_peer_commit neutral=true latency_ms=${Date.now() - (c.attemptStartMs as number)}`,
-      );
-      return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
+      return hedgeLoserOutcome(c, node, 'first_event');
     }
     const classification = classifyFirstEventFailure();
     if (node.tier !== 'tier-1') markProbeFailure(node.id, state.requestedModel);

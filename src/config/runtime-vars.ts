@@ -48,6 +48,12 @@ export const RUNTIME_TUNABLES = [
   // worker binding (this is the existing model, see QUOTA_RATE_LIMITER).
   // 0 disables the cap entirely (default for backward compatibility).
   { name: 'AIG_ACCESS_KEY_RPM', type: 'int', min: 0, max: 100_000, def: 0 },
+  // Edge idempotent-cache TTL for zero-temperature (or x-gateway-cache
+  // opt-in) inference requests. Stored through the Cloudflare Cache API at
+  // the edge colo; a HIT replays the exact client-facing response with zero
+  // upstream consumption. 0 disables the edge cache entirely (match and put
+  // are skipped), matching the AIG_ACCESS_KEY_RPM disable convention.
+  { name: 'AIG_EDGE_CACHE_TTL_SEC', type: 'int', min: 0, max: 7 * 86_400, def: 14_400 },
 ] as const satisfies readonly RuntimeTunable[];
 
 export type RuntimeTunableName = typeof RUNTIME_TUNABLES[number]['name'];

@@ -81,6 +81,7 @@ AIG_TIER1_NODES_01='[
 # AIG_HEDGE_DELAY_MS="3000"                  # default: 3 s
 # AIG_REQUEST_HEDGE_MAX="1"             # default: 1
 # AIG_ACCESS_KEY_RPM="600"                  # default: 0 (disabled)
+# AIG_EDGE_CACHE_TTL_SEC="14400"            # default: 4 h (0 = disabled)
 # AIG_LOG_LEVEL="info"
 # AIG_SHOULD_EXPOSE_UPSTREAM="false"
 # AIG_HAS_STREAM_GUARD="false"

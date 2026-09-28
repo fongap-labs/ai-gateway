@@ -11,6 +11,7 @@ import type { Limits } from '../config/timeouts.ts';
 import type { Tier, TierMap, RoutableRequest } from './scheduler.ts';
 import type { ExecutionContextLike, GatewayEnv, GatewayLogger } from './runtime.ts';
 import type { FailureKind } from '../reliability/classify.ts';
+import type { EdgeCachePlan } from '../request/edge-cache.ts';
 
 /** The (protocol, surface, route) triple identifying one client-facing route. */
 export type RequestDescriptor = {
@@ -115,6 +116,8 @@ export type LoopContext = {
   tier1Session: string | null,
   knownModels: Set<string>,
   feasibility: RouteFeasibilityResult,
+  /** Edge cache plan (key + TTL) for idempotent temperature=0 requests. Null if ineligible. */
+  edgeCachePlan: EdgeCachePlan | null,
   /**
    * Logical-attempt slots intentionally preserved for later model-family
    * passes. This is request-plan state, not tier state: the current pass may

@@ -85,7 +85,7 @@ await test('Responses stream completes on response.completed', async () => {
   assert.equal((await collectResponsesObject(response, null, null)).id, 'r1');
 });
 
-await test('Anthropic to OpenAI conversion ignores thinking content', async () => {
+await test('Anthropic to OpenAI conversion renders thinking as reasoning_content', async () => {
   const events = [
     { type: 'message_start', message: { id: 'm2', model: 'claude', usage: { input_tokens: 5, output_tokens: 0 } } },
     { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
@@ -108,7 +108,7 @@ await test('Anthropic to OpenAI conversion ignores thinking content', async () =
   let out = '';
   for (;;) { const { done, value } = await reader.read(); if (done) break; out += decoder.decode(value); }
   assert.ok(out.includes('visible'));
-  assert.ok(!out.includes('hidden'));
+  assert.ok(out.includes('"reasoning_content":"hidden"'), 'thinking delta is converted to reasoning_content, not dropped');
   assert.ok(out.includes('[DONE]'));
 });
 
