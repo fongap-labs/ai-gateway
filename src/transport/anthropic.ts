@@ -95,17 +95,17 @@ export function isAnthropicMessageMeaningful(json: unknown): boolean {
 }
 
 // Conversion-aware predicate for cross-protocol A->O streaming (Anthropic upstream,
-// OpenAI client). The OpenAI stream converter throws on thinking_delta, so the
-// failover boundary must NOT commit on thinking-only deltas. Real output =
-// non-empty text_delta OR input_json_delta only.
+// OpenAI client). Reasoning alignment converts thinking_delta to the
+// OpenAI-standard reasoning_content field, so it is real client-visible
+// output and commits the failover boundary — a long thinking phase is not a
+// first-event timeout. Real output = non-empty text_delta, thinking_delta, OR
+// input_json_delta.
 export function isAnthropicNativeRealOutputForConversion(json: unknown): boolean {
   if (!isRecord(json)) return false;
   if (json?.type !== 'content_block_delta') return false;
   const delta = isRecord(json.delta) ? json.delta : {};
   if (delta?.type === 'text_delta') return typeof delta.text === 'string' && delta.text.trim().length > 0;
+  if (delta?.type === 'thinking_delta') return typeof delta.thinking === 'string' && delta.thinking.trim().length > 0;
   if (delta?.type === 'input_json_delta') return typeof delta.partial_json === 'string' && delta.partial_json.trim().length > 0;
-  // thinking_delta deliberately NOT counted: the A->O converter throws on it,
-  // so committing the failover boundary on it would produce a hard error
-  // instead of a clean failover for the OpenAI client.
   return false;
 }

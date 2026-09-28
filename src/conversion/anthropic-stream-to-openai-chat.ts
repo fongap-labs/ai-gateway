@@ -15,6 +15,10 @@
 //   - `content_block_start` is a lifecycle event, NOT a commit boundary.
 //   - A real `text_delta` (non-empty text) IS the commit boundary.
 //   - A real `input_json_delta` (tool input) IS the commit boundary.
+//   - A real `thinking_delta` (non-empty thinking) IS the commit boundary:
+//     reasoning alignment converts it to the OpenAI-standard
+//     `delta.reasoning_content` field, so a thinking-only prefix is real,
+//     client-visible output for UIs like Cursor / DeepSeek-style clients.
 //
 // Concretely: the converter MUST NOT buffer the entire upstream response
 // before emitting. It must pipe the upstream SSE chunks through in real
@@ -274,12 +278,12 @@ function processAnthropicEvent(
       } else if (isRecord(block) && block.type === 'text') {
         openTextBlock(state, controller, Number(evt.index ?? 0) || 0);
       } else if (isRecord(block) && (block.type === 'thinking' || block.type === 'redacted_thinking')) {
-        // Thinking blocks are not convertible to OpenAI Chat. Skip silently:
-        // they are valid Anthropic output but have no OpenAI Chat equivalent.
-        // The first-event guard uses isAnthropicNativeRealOutputForConversion
-        // to prevent committing on thinking-only deltas, so thinking events
-        // only appear in the pre-commit replay buffer. The converter must not
-        // throw on them — just skip.
+        // Lifecycle headers for reasoning blocks. `thinking` deltas are
+        // converted below to the OpenAI-standard `reasoning_content` field
+        // (reasoning alignment), so nothing needs to be emitted here — the
+        // first reasoning delta opens the stream. `redacted_thinking` carries
+        // opaque provider-encrypted data with no readable content and no
+        // OpenAI Chat equivalent: skip it rather than fabricating output.
         return;
       } else throw new ConversionError('conversion_not_supported: unsupported Anthropic content block');
       return;
@@ -313,9 +317,29 @@ function processAnthropicEvent(
         state.realOutputEmitted = true;
         return;
       }
-      if (delta.type === 'thinking_delta' || delta.type === 'signature_delta') {
-        // Thinking/signature deltas are not convertible to OpenAI Chat.
-        // Skip silently — same rationale as thinking content_block_start.
+      if (delta.type === 'thinking_delta') {
+        const thinking = typeof delta.thinking === 'string' ? delta.thinking : '';
+        if (!thinking) return;
+        // Reasoning alignment: Anthropic Extended Thinking thinking_delta
+        // becomes the de-facto OpenAI-standard `reasoning_content` field
+        // (DeepSeek shape — the structure Cursor and other OpenAI-compatible
+        // UIs read). The delta streams through in real time with no
+        // buffering, so the thinking chain renders incrementally and the
+        // failover boundary commits on real, client-visible output.
+        emitRoleHeader(state, controller);
+        state.realOutputEmitted = true;
+        emitChunk(controller, {
+          id: state.messageId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: state.model,
+          choices: [{ index: 0, delta: { reasoning_content: thinking }, finish_reason: null }],
+        });
+        return;
+      }
+      if (delta.type === 'signature_delta') {
+        // Anthropic's cryptographic thinking signature has no OpenAI Chat
+        // equivalent and no client-visible meaning: skip without fabricating.
         return;
       }
       throw new ConversionError('conversion_not_supported: unsupported Anthropic content delta');

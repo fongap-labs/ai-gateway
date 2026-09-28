@@ -42,6 +42,19 @@ export function convertOpenAIToAnthropicResponse(data: unknown): Record<string, 
   const message = choice.message || {};
   const content: Record<string, unknown>[] = [];
 
+  // Reasoning alignment: a DeepSeek-R1-style reasoning_content / reasoning
+  // field becomes a NATIVE Anthropic `thinking` content block placed before
+  // the text/tool output, mirroring the Anthropic message content ordering
+  // the streaming converter produces. The chain is preserved instead of lost
+  // to an undefined field.
+  const reasoning = typeof message.reasoning_content === 'string' && message.reasoning_content
+    ? message.reasoning_content
+    : typeof message.reasoning === 'string' && message.reasoning
+      ? message.reasoning
+      : null;
+  if (reasoning) {
+    content.push({ type: 'thinking', thinking: reasoning });
+  }
   if (typeof message.content === 'string' && message.content) {
     content.push({ type: 'text', text: message.content });
   }

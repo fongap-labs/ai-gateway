@@ -44,5 +44,6 @@
       "anthropic:messages"
     ]
   },
+  "AIG_EDGE_CACHE_TTL_SEC": "14400",
   "AIG_REPOSITORY_URL": "https://github.com/your-org/ai-gateway"
 }

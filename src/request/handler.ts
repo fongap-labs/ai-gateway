@@ -22,6 +22,7 @@ import {
 } from '../scheduler/tier1-affinity.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
+import { resolveEdgeCachePlan, matchEdgeCache, type EdgeCachePlan, injectMissHeader, storeEdgeCacheResponse } from './edge-cache.ts';
 import {
   buildModelFallbackPlan,
   failedDomainNodeIds,
@@ -49,6 +50,13 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     limits, exposeUpstreamInfo, requestDescriptor: reqDescriptor,
     config, tiers, policy, failoverBudgetMs, knownModels, feasibility,
   } = pre;
+
+  // Edge cache: compute plan and check for HIT before any upstream work.
+  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env);
+  if (edgeCachePlan) {
+    const hit = await matchEdgeCache(edgeCachePlan.keyRequest, request, env);
+    if (hit) return hit;
+  }
 
   const requestPolicy = policy;
   const modelPlan = buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts);
@@ -139,6 +147,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     failoverBudgetMs, requestStartMs, policy: requestPolicy, tiers,
     tier1Affinity, tier1EvaluateAffinity, tier1Rng, tier1Session,
     knownModels, feasibility, futureAttemptReserve: 0,
+    edgeCachePlan,
   };
 
   let planOrdinal = 0;
@@ -205,7 +214,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       }
 
       const nativeResult = await runTierLoop(effectiveLoopCtx, effectiveReqDescriptor, null);
-      if (nativeResult) return nativeResult;
+      if (nativeResult) {
+        if (effectiveLoopCtx.edgeCachePlan && nativeResult.status === 200) {
+          const clientResponse = nativeResult;
+          const cacheBranch = clientResponse.clone();
+          storeEdgeCacheResponse(effectiveLoopCtx.ctx, effectiveLoopCtx.edgeCachePlan.keyRequest, cacheBranch, effectiveLoopCtx.edgeCachePlan.ttlSec);
+          return injectMissHeader(clientResponse, effectiveLoopCtx.request, effectiveLoopCtx.env);
+        }
+        return nativeResult;
+      }
       rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
 
       if (state.logicalAttempts >= requestPolicy.maxAttempts) break modelRoundsLoop;
@@ -224,7 +241,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
         requestedModel: effectiveModel,
         runTierLoop,
       });
-      if (fbResult) return fbResult;
+      if (fbResult) {
+        if (fallbackLoopCtx.edgeCachePlan && fbResult.status === 200) {
+          const clientResponse = fbResult;
+          const cacheBranch = clientResponse.clone();
+          storeEdgeCacheResponse(fallbackLoopCtx.ctx, fallbackLoopCtx.edgeCachePlan.keyRequest, cacheBranch, fallbackLoopCtx.edgeCachePlan.ttlSec);
+          return injectMissHeader(clientResponse, fallbackLoopCtx.request, fallbackLoopCtx.env);
+        }
+        return fbResult;
+      }
       rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
     }
   }

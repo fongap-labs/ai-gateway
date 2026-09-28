@@ -336,6 +336,7 @@ Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 - `AIG_HEDGE_DELAY_MS`
 - `AIG_REQUEST_HEDGE_MAX`
 - `AIG_ACCESS_KEY_RPM`
+- `AIG_EDGE_CACHE_TTL_SEC`
 
 Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, `AIG_DASHBOARD_MODELS`, and `AIG_OAUTH_PROVIDERS` (see [Tier 2 subscriptions](#tier-2-subscriptions-oauth)).
 

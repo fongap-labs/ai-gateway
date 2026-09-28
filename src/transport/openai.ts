@@ -124,9 +124,10 @@ function isMeaningfulToolCall(call: unknown): boolean {
 }
 
 // Conversion-aware predicate for cross-protocol O->A streaming (OpenAI upstream,
-// Anthropic client). The Anthropic stream converter does NOT convert reasoning
-// content, so the failover boundary must NOT commit on reasoning-only deltas.
-// Real output = non-empty text OR tool-call increment only.
+// Anthropic client). Reasoning alignment converts reasoning /
+// reasoning_content increments to native Anthropic thinking blocks, so they
+// are real client-visible output and commit the failover boundary. Real
+// output = non-empty text, reasoning increment, OR tool-call increment.
 export function isOpenAIChatRealOutputForConversion(json: unknown): boolean {
   if (!isRecord(json)) return false;
   const choices = json?.choices;
@@ -135,10 +136,9 @@ export function isOpenAIChatRealOutputForConversion(json: unknown): boolean {
     const delta = c?.delta;
     if (!delta || typeof delta !== 'object') continue;
     if (typeof delta.content === 'string' && delta.content.trim().length > 0) return true;
+    const reasoning = delta.reasoning ?? delta.reasoning_content;
+    if (typeof reasoning === 'string' && reasoning.trim().length > 0) return true;
     if (Array.isArray(delta.tool_calls) && delta.tool_calls.some(isMeaningfulToolCall)) return true;
-    // reasoning / reasoning_content deliberately NOT counted: the O->A converter
-    // drops them, so committing the failover boundary on them would produce
-    // an honest-commit but empty-output stream for the Anthropic client.
   }
   return false;
 }

@@ -34,7 +34,7 @@ import {
   recordTokens, recordNodeSuccess, makeNodeStreamTrack, recordTier1NonStreamTtft,
   recordUndeliveredUpstreamAttempt,
 } from './observability.ts';
-import { recordOutcome } from './outcome.ts';
+import { recordOutcome, hedgeLoserOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
 
@@ -89,6 +89,12 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
         return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
       }
+      if (c.hedgeAbort?.signal.aborted) {
+        // A peer committed while this attempt was assembling its body. The
+        // abort must stay a neutral reliability end — never a classified
+        // failure that pollutes node health or the retry flow.
+        return hedgeLoserOutcome(c, node, 'object', latencyMs);
+      }
       const classification = classifyPostHeadersFailure(error);
       recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
       return { rotate: true, kind: classification.kind };
@@ -133,6 +139,9 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
         return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
       }
+      if (c.hedgeAbort?.signal.aborted) {
+        return hedgeLoserOutcome(c, node, 'object', latencyMs);
+      }
       const classification = classifyPostHeadersFailure(error);
       recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
       return { rotate: true, kind: classification.kind };
@@ -160,6 +169,9 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         if (request.signal?.aborted) {
           recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
           return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
+        }
+        if (c.hedgeAbort?.signal.aborted) {
+          return hedgeLoserOutcome(c, node, 'object', latencyMs);
         }
         const classification = classifyPostHeadersFailure(error);
         recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
@@ -257,6 +269,9 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
         return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
       }
+      if (c.hedgeAbort?.signal.aborted) {
+        return hedgeLoserOutcome(c, node, 'object', latencyMs);
+      }
       const classification = classifyPostHeadersFailure(error);
       recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
       return { rotate: true, kind: classification.kind };
@@ -295,6 +310,9 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     if (request.signal?.aborted) {
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs, status: upstream.status });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
+    }
+    if (c.hedgeAbort?.signal.aborted) {
+      return hedgeLoserOutcome(c, node, 'object', latencyMs);
     }
     const classification = classifyPostHeadersFailure(error);
     recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });

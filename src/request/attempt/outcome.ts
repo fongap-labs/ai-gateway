@@ -18,7 +18,7 @@ import {
 } from '../../reliability/tier1-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../reliability/tier1-heat.ts';
 import { nextAdaptive429CooldownMs, snapshotAdaptive429State } from '../../reliability/adaptive-429.ts';
-import { KIND } from '../../reliability/classify.ts';
+import { KIND, classifyHedgeRaceLoss } from '../../reliability/classify.ts';
 import type { FailureClassification, FailureKind } from '../../reliability/classify.ts';
 import { trimDiagnostic } from '../../protocol/http.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -52,6 +52,30 @@ export function rotateWithNeutralEnd(state: LoopState, node: RuntimeNode, reason
 
 export function noteFailure(state: LoopState, kind: FailureKind): void {
   state.failureKinds[kind] = (state.failureKinds[kind] || 0) + 1;
+}
+
+// A hedge loser cancelled because its peer committed first. Neutral by the
+// reliability model (the node was slow, not broken): finalize its upstream
+// accounting, release the concurrency slot, and never record a counted failure
+// — the loss must not poison TTFT, health scoring, or the retry flow. Used by
+// every phase where an aborted loser surfaces: the headers fetch
+// (phase="headers"), the first-event guard (phase="first_event"), and
+// post-headers object assembly (phase="object").
+export function hedgeLoserOutcome(c: AttemptContext, node: RuntimeNode, phase: string, latencyMs?: number): AttemptOutcome {
+  recordUndeliveredUpstreamAttempt(c, node);
+  c.state.attempted.add(node.id);
+  c.state.dispatches++;
+  if (!c.hedgedAttempt) c.state.logicalAttempts++;
+  if (node.tier === 'tier-1') {
+    releaseTier1Slot(node.id, c.tier1ReleaseToken);
+    bumpNodeCounters(node.id, { requests: 1 });
+  } else recordNeutralEnd(node.id);
+  const latency = latencyMs ?? (c.attemptStartMs ? Date.now() - c.attemptStartMs : -1);
+  c.state.logger.info(
+    `hedge loser: request=${c.requestId} node=${node.id} phase=${phase}`
+    + ` reason=cancelled_after_peer_commit neutral=true latency_ms=${latency}`,
+  );
+  return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
 }
 
 // Every call here represents a REAL upstream dispatch that did not become the

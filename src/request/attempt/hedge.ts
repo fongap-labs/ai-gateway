@@ -8,6 +8,15 @@
 // primary, the shared logical-attempt deadline, and the winner/loser
 // lifecycle including abort of the losing side.
 //
+// Winner-commit abort (TTFT-based cut): a streaming attempt's logical promise
+// settles at its first real output commit (the first-event guard resolves on
+// meaningful content/reasoning/tool output), and a non-streaming attempt
+// settles at its complete response. Whichever side settles first is the
+// winner; the loser's external AbortController fires immediately with reason
+// "Hedge lost", which dispatch.ts forwards to the underlying fetch — the
+// losing node's TCP/TLS connection is cut at that instant so an upstream that
+// already committed real tokens stops generating and billing.
+//
 // A hedge object enables hedging by default; hedge.enabled=false disables it.
 // The default and stable built-ins hedge Tier 1 only, while fast and
 // long-reasoning explicitly disable it.
@@ -153,7 +162,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
         return;
       }
       resolved = true;
-      loserAbort?.abort();
+      loserAbort?.abort('Hedge lost');
       args.logger.info(
         `hedge winner: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
         + ` winner=${winnerArgs.node.id} loser=${(winnerArgs === primaryArgs ? twinNode : args.node).id}`

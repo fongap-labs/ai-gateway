@@ -534,16 +534,13 @@ await run('conversion: Anthropic response -> OpenAI Chat — unsupported content
     'expected conversion_not_supported');
 });
 
-await run('conversion: Anthropic response -> OpenAI Chat — thinking-only response is rejected (no silent loss)', () => {
-  let caught;
-  try {
-    convertAnthropicResponseToOpenAIChat({
-      id: 'm', type: 'message', role: 'assistant', model: 'm',
-      content: [{ type: 'thinking', thinking: 'let me reason' }], stop_reason: 'end_turn', stop_sequence: null,
-    });
-  } catch (e) { caught = e; }
-  assert.ok(caught && caught.code && caught.code.includes('conversion_not_supported'),
-    'expected conversion_not_supported for thinking block');
+await run('conversion: Anthropic response -> OpenAI Chat — thinking-only response converts to reasoning_content', () => {
+  const out = convertAnthropicResponseToOpenAIChat({
+    id: 'm', type: 'message', role: 'assistant', model: 'm',
+    content: [{ type: 'thinking', thinking: 'let me reason' }], stop_reason: 'end_turn', stop_sequence: null,
+  });
+  assert.equal(out.choices[0].message.reasoning_content, 'let me reason');
+  assert.equal(out.choices[0].message.content, '');
 });
 
 // =====================================================================
@@ -855,6 +852,67 @@ await run('conversion: stream tool_calls roundtrip (split across chunks)', async
   assert.ok(i('content_block_delta') < i('content_block_stop'));
   assert.ok(i('content_block_stop') < i('message_delta'));
   assert.ok(i('message_delta') < i('message_stop'));
+});
+
+await run('conversion: stream OpenAI -> Anthropic — reasoning_content becomes thinking blocks', async () => {
+  // OpenAI SSE (DeepSeek style): role -> reasoning_content "let me think" -> content "hi" -> stop -> [DONE]
+  const openAiChunks = [
+    sseEvent('', { choices: [{ delta: { role: 'assistant' } }] }),
+    sseEvent('', { choices: [{ delta: { reasoning_content: 'let me think' } }] }),
+    sseEvent('', { choices: [{ delta: { reasoning_content: ' more' } }] }),
+    sseEvent('', { choices: [{ delta: { content: 'hi' } }] }),
+    sseEvent('', { choices: [{ delta: {}, finish_reason: 'stop' }] }),
+    'data: [DONE]\n\n',
+  ];
+  const stream = createAnthropicStreamFromOpenAI(makeSseResponse(openAiChunks), {
+    messageId: 'msg_test_reasoning',
+    model: 'claude-x',
+    inputTokens: 4,
+  });
+  const events = await readAnthropicEvents(stream);
+  // Verify the lifecycle: thinking block opens, receives deltas, closes, then text block opens
+  const names = events.map((e) => e.event);
+  const i = (n) => names.indexOf(n);
+  // message_start must appear
+  assert.ok(i('message_start') !== -1);
+  // content_block_start for thinking must appear before text
+  const cbsEvents = events.filter((e) => e.event === 'content_block_start');
+  assert.ok(cbsEvents.length >= 1, 'at least one content_block_start');
+  const thinkingStart = cbsEvents.find((e) => e.data?.content_block?.type === 'thinking');
+  assert.ok(thinkingStart, 'thinking content_block_start emitted');
+  // thinking_delta events must appear
+  const thinkingDeltas = events.filter((e) => e.event === 'content_block_delta' && e.data?.delta?.type === 'thinking_delta');
+  assert.ok(thinkingDeltas.length >= 2, 'multiple thinking_delta events');
+  assert.equal(thinkingDeltas[0].data.delta.thinking, 'let me think');
+  assert.equal(thinkingDeltas[1].data.delta.thinking, ' more');
+  // thinking block must close before text block opens
+  const cbsThinkingStop = events.find((e) => e.event === 'content_block_stop' && events.findIndex(x => x === e) > events.findIndex(x => x === thinkingStart));
+  assert.ok(cbsThinkingStop, 'thinking content_block_stop emitted');
+  // text block must appear
+  const textStart = cbsEvents.find((e) => e.data?.content_block?.type === 'text');
+  assert.ok(textStart, 'text content_block_start emitted after thinking closes');
+  // text_delta must appear
+  const textDelta = events.find((e) => e.event === 'content_block_delta' && e.data?.delta?.type === 'text_delta');
+  assert.ok(textDelta, 'text_delta emitted');
+  assert.equal(textDelta.data.delta.text, 'hi');
+  // Order: thinking_start < thinking_delta(s) < thinking_stop < text_start < text_delta < message_delta < message_stop
+  assert.ok(i('content_block_start') < i('content_block_delta'));
+  assert.ok(i('content_block_delta') < i('content_block_stop'));
+  assert.ok(i('content_block_stop') < events.findIndex(e => e.data?.content_block?.type === 'text' && e.event === 'content_block_start'));
+  assert.ok(i('message_delta') < i('message_stop'));
+});
+
+await run('conversion: non-stream OpenAI -> Anthropic — reasoning_content becomes thinking block', () => {
+  const out = convertOpenAIToAnthropicResponse({
+    id: 'cmpl-test', object: 'chat.completion', created: Date.now(), model: 'deepseek-r1',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'final answer', reasoning_content: 'private reasoning chain' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+  });
+  assert.equal(out.content.length, 2, 'two content blocks: thinking + text');
+  assert.equal(out.content[0].type, 'thinking');
+  assert.equal(out.content[0].thinking, 'private reasoning chain');
+  assert.equal(out.content[1].type, 'text');
+  assert.equal(out.content[1].text, 'final answer');
 });
 
 // ---- protocol-fallbacks config -------------------------------------------
