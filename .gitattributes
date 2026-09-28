@@ -3,5 +3,3 @@
 *.ps1 text eol=crlf
 *.bat text eol=crlf
 
-# Tests are isolated under tests/ and excluded from repository language statistics.
-tests/** linguist-detectable=false

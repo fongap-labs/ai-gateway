@@ -154,17 +154,17 @@ inside the shared `.months` week tracks.
 
 ## Tests
 
-- `tests/calendar-heatmap-test.mjs` — utility contract:
+- `action-worker:tests/packs/ai-gateway/calendar-heatmap-test.mjs` — utility contract:
   rolling-52-weeks, calendar-year (exact column counts incl. 54-column
   years), month-label anchoring, month boundaries, leap year, UTC+8
   day boundary, in-range / out-of-range / future / historical edges.
-- `tests/calendar-heatmap-view-test.mjs` — HTML output contract:
+- `action-worker:tests/packs/ai-gateway/calendar-heatmap-view-test.mjs` — HTML output contract:
   cell count, level quantization, future-cell tooltips, explicit cell
   placement, right-edge label survival, attribute surface.
-- `tests/calendar-heatmap-contract-test.mjs` — C01–C15 spec table
+- `action-worker:tests/packs/ai-gateway/calendar-heatmap-contract-test.mjs` — C01–C15 spec table
   (52 columns, Monday-first, YYYY-MM-DD keys, future ≠ zero,
   monthStart anchoring, no edge drops, exact calendar-year counts,
   padding/future/historical semantics, UTC+8 boundary,
   renderer/builder same column, shared `--week-count` CSS grid).
-- `tests/token-usage-test.mjs` — the 364-cell / 12-month-label
+- `action-worker:tests/packs/ai-gateway/token-usage-test.mjs` — the 364-cell / 12-month-label
   adapter contract is preserved through `buildHeatmap`'s thin adapter.

@@ -21,7 +21,6 @@ function walk(dir, out = []) {
 const files = [
   ...walk(path.join(root, 'src')),
   ...walk(path.join(root, 'scripts')),
-  ...walk(path.join(root, 'tests')),
 ];
 
 for (const file of files) {
