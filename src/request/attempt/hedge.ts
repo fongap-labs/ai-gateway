@@ -149,19 +149,19 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   });
 
   return new Promise((resolve) => {
-    let resolved = false;
+    let isResolved = false;
     let settled = 0;
     let firstFailure: AttemptOutcome | null = null;
     let primaryOutcome: AttemptOutcome | null = null;
     let twinOutcome: AttemptOutcome | null = null;
     const win = (outcome: AttemptOutcome, winnerArgs: AttemptContext, loserAbort: AbortController | null | undefined) => {
-      if (resolved) {
+      if (isResolved) {
         // Lost after the winner was chosen: drop any committed stream so no
         // upstream keeps streaming into the void.
         try { outcome.response?.body?.cancel(); } catch { /* already closed */ }
         return;
       }
-      resolved = true;
+      isResolved = true;
       loserAbort?.abort('Hedge lost');
       args.logger.info(
         `hedge winner: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
@@ -177,10 +177,10 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
       else {
         if (!firstFailure || isPrimary) firstFailure = outcome;
         // Only report a failed hedge when BOTH sides failed. If one side
-        // already won (resolved), the loser's late neutral outcome arrives
+        // already won (isResolved), the loser's late neutral outcome arrives
         // here too — logging then would print a misleading "hedge failed"
         // line with kind=unknown for the successful winner.
-        if (settled >= 2 && !resolved) {
+        if (settled >= 2 && !isResolved) {
           args.logger.info(
             `hedge failed: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
             + ` primary=${args.node.id} twin=${twinNode.id}`
