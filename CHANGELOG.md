@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: bump the Gemini CLI user agent from v0.14.0 to v0.60.0 so Code Assist upstreams accept requests that identify as the current CLI release.
+
 - feat: edge idempotent caching for zero-temperature inference — the Cloudflare Cache API intercepts requests with temperature=0 or x-gateway-cache: true, serving HIT responses with x-gateway-cache-status: HIT in ~50ms and zero upstream cost; MISS responses carry x-gateway-cache-status: MISS. Cache key is SHA-256 of canonicalized route/model/body. TTL controlled by AIG_EDGE_CACHE_TTL_SEC (default 4h, 0 disables). [Phase 3]
 
 - feat: reasoning alignment for DeepSeek-R1 and Claude Extended Thinking — DeepSeek's reasoning_content and Anthropic's thinking/thinking_delta blocks are now converted bidirectionally: O→A streaming emits native Anthropic thinking blocks; A→O streaming/non-streaming emits OpenAI-standard reasoning_content; non-stream converters preserve chains. The conversion-aware first-event guard predicates now commit on reasoning/thinking deltas, eliminating false first-event timeouts during long thinking phases. [Phase 2]
