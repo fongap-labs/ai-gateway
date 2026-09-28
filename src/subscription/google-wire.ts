@@ -29,7 +29,7 @@ import { createSseScanner } from '../stream/guard.ts';
 // ---- Constants (public OAuth/client constants from the open-source Gemini CLI) ----
 
 export const GEMINI_CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
-export const GEMINI_CLI_USER_AGENT = 'GeminiCLI/v0.14.0 (linux; x64)';
+export const GEMINI_CLI_USER_AGENT = 'GeminiCLI/v0.60.0 (linux; x64)';
 
 export const CODE_ASSIST_PATH = Object.freeze({
   stream: '/v1internal:streamGenerateContent?alt=sse',
