@@ -148,11 +148,99 @@ Tier 1 → Tier 2 → Tier 3
 
 ## Tier 2 subscriptions (OAuth)
 
-Tier 2 subscription nodes link an operator-owned provider subscription
-(Claude Pro/Max, ChatGPT/Codex, Google One AI Premium, or any
-OAuth-authorized upstream) through the gateway's PKCE onboarding flow.
+Tier 2 lets the gateway call your **existing paid AI subscriptions** — Claude
+Pro/Max, ChatGPT/Codex, or Google One AI Premium / AI Pro — using each
+provider's standard login, instead of a metered API key. You log in once in a
+browser; the gateway stores an encrypted token and refreshes it automatically.
+You pay nothing extra: it uses the capacity you already pay for, behind the
+gateway's single endpoint.
 
-### Built-in provider defaults
+A subscription node is a Tier 2 node with `"auth": "oauth"`. Its credential is
+an OAuth access token resolved at dispatch time from the subscription token
+store, not a static `AIG_TIER{N}_CREDENTIALS_*` secret. Tier 2 subscription
+nodes link an operator-owned provider subscription (Claude Pro/Max,
+ChatGPT/Codex, Google One AI Premium, or any OAuth-authorized upstream)
+through the gateway's PKCE onboarding flow.
+
+### Before you begin
+
+You need all of these before onboarding a subscription:
+
+- A deployed gateway you can reach in a browser.
+- A gateway access key (`AIG_ACCESS_KEY_<GROUP>`) for some group, e.g. `AGENT`.
+- `AIG_TOKEN_ENCRYPTION_KEY` set (a base64 256-bit AES key — the installer
+  generates one for you; without it, subscription onboarding stays disabled,
+  fail-closed).
+- `AIG_PUBLIC_URL` set (already required by the dashboard — it derives the
+  OAuth redirect URI).
+- A paid subscription to at least one of the three providers.
+
+### First subscription (walkthrough)
+
+The quickest path is a Gemini node — it needs only four fields (the gateway
+resolves the endpoint from the provider adapter):
+
+```json
+[
+  { "id": "gemini", "provider": "google", "auth": "oauth", "models": { "Code-Max": "gemini-2.5-pro" } }
+]
+```
+
+1. Put the JSON above into `AIG_TIER2_NODES_01` (a Cloudflare **Variable**,
+   not a Secret).
+2. Open this URL in a browser (replace the host and key):
+
+   ```
+   https://<your-gateway-url>/oauth/start?provider=google&node=gemini&key=<your-access-key>
+   ```
+
+   The `?key=` query parameter carries the gateway access key so a browser
+   address bar can start onboarding (it cannot set Authorization headers).
+3. Approve Google's consent screen. Google redirects to its own
+   `codeassist.google.com/authcode` page (its OAuth client does not allow
+   arbitrary gateway callback URLs) which displays the authorization code.
+4. Copy the code and paste it at the `/oauth/paste` link the start page shows.
+5. The gateway exchanges the code with PKCE and `client_secret`, stores the
+   encrypted token, and the node is live.
+
+Available upstream Gemini models (the `models` mapping value):
+
+| Upstream model | Notes |
+| --- | --- |
+| `gemini-2.5-pro` | Gemini 2.5 Pro (Google One AI Premium / AI Pro) |
+| `gemini-2.5-flash` | Gemini 2.5 Flash (faster, lower quota) |
+
+Claude and Codex nodes follow the same pattern with `provider: "anthropic"`
+or `provider: "openai"`, and their onboarding is **automatic** (no code paste
+step). See the per-provider onboarding flow below.
+
+### What the gateway does with your login
+
+- Stores the access/refresh tokens **AES-GCM encrypted** in D1; never as
+  plaintext, never in node config. A missing `AIG_TOKEN_ENCRYPTION_KEY`
+  disables all subscription onboarding and resolution (fail-closed).
+- Refreshes tokens automatically at dispatch time, with an isolate-local
+  cache and:
+  - a 5-minute expiry margin before proactive refresh;
+  - isolate-level singleflight (concurrent requests for one node share a
+    single refresh);
+  - cross-isolate compare-and-swap on a persisted `refresh_version`, so a
+    losing refresh writer reloads the winner's rotated credential instead of
+    clobbering it — one refresh token remains the single persisted authority;
+  - a 60-second negative cache on refresh failures so a broken subscription
+    does not hammer the provider's token endpoint.
+- For OpenAI/Codex: the OAuth response's `account_id` is persisted (plaintext,
+  not a secret) and sent as the `chatgpt-account-id` header on every Codex
+  subscription dispatch. Codex subscription dispatches also carry the
+  first-party `Originator: codex-tui` marker and normalize a missing
+  `instructions` field to an empty string on the Responses surface (the
+  ChatGPT backend expects the field to exist).
+- Flow states are single-use and expire after 10 minutes.
+
+The rest of this section is reference: the built-in provider defaults, the
+OAuth variables/secrets, and the per-provider onboarding steps.
+
+### Reference: built-in provider defaults
 
 The three mainstream international providers ship with **built-in defaults**
 (public OAuth constants from their open-source CLIs) — no
@@ -168,7 +256,7 @@ To onboard with defaults, configure the Tier 2 node with the matching
 provider name and run the onboarding flow below. To override a default or
 add a new provider, set `AIG_OAUTH_PROVIDERS`.
 
-### Variables and secrets
+### Reference: variables and secrets
 
 - `AIG_OAUTH_PROVIDERS` (plain Variable, JSON, optional) — per-provider OAuth
   registry. User entries **replace** built-in defaults at the provider level
@@ -206,7 +294,7 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
 - `AIG_PUBLIC_URL` (Variable, already required by the dashboard) — derives
   the OAuth redirect URI `/oauth/callback/<provider>`.
 
-### Onboarding flow
+### Reference: onboarding flow
 
 All onboarding routes accept `?key=<access-key>` as a query parameter so you
 can start the flow from a browser address bar (which cannot set
@@ -233,61 +321,6 @@ works.
    page.
 4. The gateway exchanges the code with PKCE and `client_secret`, stores
    the tokens, and confirms.
-
-Flow states are single-use and expire after 10 minutes. Token refresh happens
-automatically at dispatch time with an isolate-local cache and:
-
-- a 5-minute expiry margin before proactive refresh;
-- isolate-level singleflight (concurrent requests for one node share a
-  single refresh);
-- cross-isolate compare-and-swap on a persisted `refresh_version`, so a
-  losing refresh writer reloads the winner's rotated credential instead of
-  clobbering it — one refresh token remains the single persisted authority;
-- a 60-second negative cache on refresh failures so a broken subscription
-  does not hammer the provider's token endpoint.
-
-The OpenAI OAuth response's `account_id` is persisted (plaintext, not a
-secret) and sent as the `chatgpt-account-id` header on every Codex
-subscription dispatch. Codex subscription dispatches also carry the
-first-party `Originator: codex-tui` marker and normalize a missing
-`instructions` field to an empty string on the Responses surface (the
-ChatGPT backend expects the field to exist).
-
-### Quick example: Gemini subscription
-
-A complete Tier 2 Gemini node requires only four fields (the gateway
-resolves the endpoint from the provider adapter):
-
-```json
-[
-  { "id": "gemini", "provider": "google", "auth": "oauth", "models": { "Code-Max": "gemini-2.5-pro" } }
-]
-```
-
-Set this as `AIG_TIER2_NODES_01` (a Cloudflare Variable, not a Secret). Then
-onboard in a browser:
-
-```
-https://<your-gateway-url>/oauth/start?provider=google&node=gemini&key=<your-access-key>
-```
-
-The `?key=` query parameter carries the gateway access key so a browser
-address bar can start onboarding (it cannot set Authorization headers).
-After Google's consent screen, copy the code from
-`codeassist.google.com/authcode` and paste it at the `/oauth/paste` link the
-start page shows. The gateway stores the encrypted token and the node is
-live.
-
-**Available upstream Gemini models** (the `models` mapping value):
-
-| Upstream model | Notes |
-| --- | --- |
-| `gemini-2.5-pro` | Gemini 2.5 Pro (Google One AI Premium / AI Pro) |
-| `gemini-2.5-flash` | Gemini 2.5 Flash (faster, lower quota) |
-
-Claude and Codex nodes follow the same pattern with `provider: "anthropic"` /
-`provider: "openai"`. Their onboarding is automatic (no code paste) and
-also accepts `?key=` in the browser URL.
 
 ## Runtime variables
 
