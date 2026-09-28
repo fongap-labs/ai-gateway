@@ -115,8 +115,11 @@ for (const file of SHARD_FACT_FILES) {
     text,
     new RegExp(
       [
-        '(?:must|should|required to|需要|必须)[^\\n]{0,80}(?:paired\\s*1:1|matching\\s+(?:config\\s+)?shard|matching\\s+suffix|一一对应|1:1\\s*配对)',
-        '',
+        '(?:must|should|required to|',
+        '需要|必须',
+        ')[^\\n]{0,80}(?:paired\\s*1:1|matching\\s+(?:config\\s+)?shard|matching\\s*suffix|',
+        '一一对应|1:1\\s*配对',
+        ')',
       ].join(''),
       'i',
     ),
