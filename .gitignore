@@ -20,3 +20,6 @@ release/
 wrangler.user.jsonc
 .plan.json
 .preview-dashboard.html
+
+# Local checkout of the central test pack (see scripts/test.mjs)
+.cache/

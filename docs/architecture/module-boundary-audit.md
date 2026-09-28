@@ -109,7 +109,7 @@ OpenAI and Anthropic assemblers share reader/scanner mechanics but have differen
 
 ## Guardrails
 
-`tests/module-boundary-contract-test.mjs` pins the stable dependency directions and the resolved ownership decisions:
+`action-worker:tests/packs/ai-gateway/module-boundary-contract-test.mjs` pins the stable dependency directions and the resolved ownership decisions:
 
 - scheduler owns Tier 1 scoring;
 - reliability owns Tier 1 heat/state;
@@ -120,6 +120,6 @@ OpenAI and Anthropic assemblers share reader/scanner mechanics but have differen
 - persistent observability stays independent from routing execution;
 - dashboard presentation cannot depend back on scheduler/reliability/transport execution state.
 
-`tests/cooldown-jitter-test.mjs` separately pins the shared ±10% arithmetic at lower, neutral and upper random samples.
+`action-worker:tests/packs/ai-gateway/cooldown-jitter-test.mjs` separately pins the shared ±10% arithmetic at lower, neutral and upper random samples.
 
 Future refactors should prefer clean replacement over compatibility layers and should not create new abstractions merely to reduce line count.

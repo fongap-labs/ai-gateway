@@ -36,7 +36,7 @@ PR descriptions should state the problem, behavior change, verification, compati
 ## Repository ownership
 
 - `src/` — Cloudflare Worker runtime.
-- `tests/` — executable tests, contracts, and test-only helpers.
+- Tests are not stored in this repository: they live in `fongap-labs/action-worker` under `tests/packs/ai-gateway/` and run with `npm test`.
 - `scripts/` — repository, CI, configuration, installation, deployment, and discovery tooling.
 - `migrations/` — ordered D1 schema changes.
 - `docs/` — long-lived architecture, operations, and governance documentation.
