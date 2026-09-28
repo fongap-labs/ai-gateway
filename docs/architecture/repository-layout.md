@@ -24,15 +24,7 @@ src/                         Cloudflare Worker runtime
 ├── runtime/                 runtime availability and read-only public model status
 └── dashboard/               public/operator presentation
 
-tests/                       all executable test/contract code
-├── run-unit.mjs             canonical ordered unit/contract registry
-├── *-test.mjs               unit and executable contract suites
-├── integration-test.mjs     integration suite
-├── stress-test.mjs          stress/reliability suite
-├── scheduler-stability-test.mjs
-├── codex-contract-test.mjs  Codex compatibility contract
-├── claude-contract-test.mjs Claude compatibility contract
-└── mock-d1-database.mjs     shared test helper
+tests/                       (absent) suites live in action-worker: tests/packs/ai-gateway/
 
 scripts/                     repository/operator/CI tooling
 ├── README.md                supported tooling entry points and boundaries
@@ -63,9 +55,9 @@ docs/                        long-lived current documentation
 
 ## Ownership rules
 
-`src/` contains only code that is part of the Worker product/runtime. Test-only helpers and executable contracts belong in `tests/`. Repository, deployment, installation, configuration, discovery, and validation tools belong in `scripts/`.
+`src/` contains only code that is part of the Worker product/runtime. Test-only helpers and executable contracts belong in the central pack (`action-worker:tests/packs/ai-gateway/`), never in this repository. Repository, deployment, installation, configuration, discovery, and validation tools belong in `scripts/`.
 
-A file is a **test** when its primary purpose is to verify behavior and failure is meaningful as test evidence. A file is a **script/tool** when operators, CI, or maintainers invoke it to perform an independent repository action. Tests may exercise tools in `scripts/`; the tool itself does not move into `tests/`.
+A file is a **test** when its primary purpose is to verify behavior and failure is meaningful as test evidence. A file is a **script/tool** when operators, CI, or maintainers invoke it to perform an independent repository action. Tests may exercise tools in `scripts/`; the tool itself does not move into the test pack.
 
 `migrations/` remains separate because migration order and immutability are deployment contracts, not test fixtures.
 
@@ -118,7 +110,7 @@ These are read-only consumers of operational evidence. They do not become routin
 
 ## File rules
 
-- `tests/` is the only normal home for executable tests and test-only helpers.
+- Executable tests and test-only helpers live in the central pack, not in this repository (no `tests/` directory).
 - `scripts/` must not accumulate `*-test.mjs` files.
 - `.githooks/` is not committed; local hooks remain developer-local and advisory.
 - `docs/**/*.md` uses lowercase `kebab-case.md` except conventional `README.md`.
