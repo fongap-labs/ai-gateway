@@ -46,7 +46,7 @@ root.addEventListener('click',function(e){
   var b=e.target.closest&&e.target.closest('[data-copy]');if(!b)return;
   var label=b.textContent;var t=document.querySelector(b.getAttribute('data-copy'));
   var text=t?t.textContent:'';
-  function done(ok){b.textContent=ok?'已复制':'复制失败';setTimeout(function(){b.textContent=label;},1400);}
+  function done(ok){var msgs='已复制|复制失败'.split('|');b.textContent=msgs[ok?0:1];setTimeout(function(){b.textContent=label;},1400);}
   function fallback(text){var ta=document.createElement('textarea');ta.value=text;
     ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
     var ok=false;try{ok=document.execCommand('copy');}catch(e){}document.body.removeChild(ta);return ok;}
@@ -158,7 +158,7 @@ root.addEventListener('click',function(e){
   var b=e.target.closest&&e.target.closest('[data-copy]');if(!b)return;
   var label=b.textContent;var t=document.querySelector(b.getAttribute('data-copy'));
   var text=t?t.textContent:'';
-  function done(ok){b.textContent=ok?'已复制':'复制失败';setTimeout(function(){b.textContent=label;},1400);}
+  function done(ok){var msgs='已复制|复制失败'.split('|');b.textContent=msgs[ok?0:1];setTimeout(function(){b.textContent=label;},1400);}
   function fallback(text){var ta=document.createElement('textarea');ta.value=text;
     ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
     var ok=false;try{ok=document.execCommand('copy');}catch(e){}document.body.removeChild(ta);return ok;}

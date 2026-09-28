@@ -108,7 +108,7 @@ for (const file of SHARD_FACT_FILES) {
   const text = read(file);
   assert.match(
     text,
-    /independent|independently|not by matching|无需.*对应|不按.*后缀|Tier\s*\+\s*node id/i,
+    new RegExp(['independent', 'independently', 'not by matching', '无需.*对应', '不按.*后缀', 'Tier\\s*\\+\\s*node id'].join('|'), 'i'),
     `${file}: must state independent Config/Secret shard binding`,
   );
   assert.doesNotMatch(
