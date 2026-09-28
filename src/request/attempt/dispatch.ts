@@ -10,9 +10,7 @@
 // the hedge race lives in hedge.ts.
 
 import { attemptHeadersTimeoutMs, attemptBudgetWindowMs } from '../../config/timeouts.ts';
-import { recordNeutralEnd, bumpNodeCounters } from '../../reliability/node-state.ts';
-import { releaseTier1Slot } from '../../reliability/tier1-state.ts';
-import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyHedgeRaceLoss, classifyNonJsonBody, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
+import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyNonJsonBody, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
 import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/index.ts';
@@ -27,7 +25,7 @@ import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts
 import { gatewayError, buildClientErrorResponse } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { handleSuccess } from './success.ts';
-import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { recordOutcome, rotateWithNeutralEnd, hedgeLoserOutcome } from './outcome.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 
@@ -183,10 +181,14 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined);
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
-  if (c.hedgeAbort) {
-    const onHedgeAbort = () => controller.abort();
-    if (c.hedgeAbort.signal.aborted) onHedgeAbort();
-    else c.hedgeAbort.signal.addEventListener('abort', onHedgeAbort, { once: true });
+  const hedgeAbort = c.hedgeAbort;
+  if (hedgeAbort) {
+    // Forward the hedge race verdict ("Hedge lost" from hedge.ts) into the
+    // underlying fetch so the losing node's connection is cut at the winner's
+    // commit instant (first token for streams, complete response otherwise).
+    const onHedgeAbort = () => controller.abort(hedgeAbort.signal.reason);
+    if (hedgeAbort.signal.aborted) onHedgeAbort();
+    else hedgeAbort.signal.addEventListener('abort', onHedgeAbort, { once: true });
   }
   let attemptHeadersTimeout: number;
   if (c.hedgedAttempt && c.attemptDeadlineMs) {
@@ -236,19 +238,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       // A peer committed first. This still was a real physical dispatch, but
       // it is a neutral reliability end and carries no successful-delivery
       // evidence. Finalize its upstream-attempt accounting before returning.
-      recordUndeliveredUpstreamAttempt(c, node);
-      state.attempted.add(node.id);
-      state.dispatches++;
-      if (!c.hedgedAttempt) state.logicalAttempts++;
-      if (node.tier === 'tier-1') {
-        releaseTier1Slot(node.id, c.tier1ReleaseToken);
-        bumpNodeCounters(node.id, { requests: 1 });
-      } else recordNeutralEnd(node.id);
-      logger.info(
-        `hedge loser: request=${requestId} node=${node.id} phase=headers`
-        + ` reason=cancelled_after_peer_commit neutral=true latency_ms=${latencyMs}`,
-      );
-      return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
+      return hedgeLoserOutcome(c, node, 'headers', latencyMs);
     }
     const classification = classifyNetworkError(hasHeadersTimeoutHit);
     recordOutcome(state, node, classification, c, { latencyMs });

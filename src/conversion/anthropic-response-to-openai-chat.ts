@@ -9,9 +9,13 @@
 // distinct concerns and must not share mutable logic.
 //
 // Supported Anthropic response surface:
-//   text, tool_use, usage, model, id, stop_reason (and stop_sequence).
-// Anything else (thinking, image, audio, server_tool_use, citations, ...)
-// produces a conversion_not_supported error rather than silent loss.
+//   text, thinking, reasoning metadata, tool_use, usage, model, id,
+//   stop_reason (and stop_sequence).
+//   `thinking` blocks are preserved as the OpenAI-standard
+//   `reasoning_content` field (reasoning alignment); `redacted_thinking`
+//   carries opaque encrypted data and is skipped without fabrication.
+// Anything else (server_tool_use, image, audio, citations, ...) produces a
+// conversion_not_supported error rather than silent loss.
 
 import { ConversionError } from './anthropic-to-openai.ts';
 
@@ -62,14 +66,27 @@ function stringifyToolInput(input: unknown): string {
 
 function buildAssistantMessage(content: Array<Record<string, unknown>>): {
   content: string;
+  reasoning_content?: string;
   tool_calls?: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }>;
 } {
   let text = '';
+  let reasoning = '';
   const toolCalls: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }> = [];
   for (const block of content) {
     const type = block?.type;
     if (type === 'text') {
       if (typeof block.text === 'string') text += block.text;
+    } else if (type === 'thinking') {
+      // Reasoning alignment: the thinking chain is preserved as the
+      // OpenAI-standard `reasoning_content` field (the structure Cursor and
+      // other OpenAI-compatible UIs read). Multiple thinking blocks (e.g.
+      // interleaved reasoning) concatenate into one chain, matching the
+      // streaming converter's behavior.
+      if (typeof block.thinking === 'string') reasoning += block.thinking;
+    } else if (type === 'redacted_thinking') {
+      // Opaque provider-encrypted data with no readable content and no
+      // OpenAI Chat equivalent: skipped without fabricating output. The
+      // cryptographic thinking signature has no equivalent either.
     } else if (type === 'tool_use') {
       const id = isString(block.id) ? block.id : '';
       const name = isString(block.name) ? block.name : '';
@@ -77,16 +94,18 @@ function buildAssistantMessage(content: Array<Record<string, unknown>>): {
       if (!name) throw new ConversionError('conversion_not_supported: tool_use.name is required');
       toolCalls.push({ id, type: 'function', function: { name, arguments: stringifyToolInput(block.input) } });
     } else {
-      // Thinking, redacted_thinking, refusal, server_tool_use, image, audio,
-      // document, etc. — none of these have a lossless OpenAI Chat equivalent.
-      // R0.2 contract: do NOT silently drop fields.
+      // Refusal, server_tool_use, image, audio, document, etc. — none of
+      // these have a lossless OpenAI Chat equivalent. R0.2 contract: do NOT
+      // silently drop fields.
       throw new ConversionError(`conversion_not_supported: response content type "${String(type)}" cannot be losslessly represented as OpenAI Chat`);
     }
   }
   const msg: {
     content: string;
+    reasoning_content?: string;
     tool_calls?: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }>;
   } = { content: text };
+  if (reasoning) msg.reasoning_content = reasoning;
   if (toolCalls.length > 0) msg.tool_calls = toolCalls;
   return msg;
 }

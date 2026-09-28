@@ -43,6 +43,7 @@ export type Limits = {
   hedgeDelayMs: number,
   maxHedgesPerRequest: number,
   gatewayKeyRpm: number,
+  edgeCacheTtlSec: number,
 }
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -127,6 +128,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
     hedgeDelayMs: clampInt(readEnv(env, 'AIG_HEDGE_DELAY_MS'), LIMITS.AIG_HEDGE_DELAY_MS.min, LIMITS.AIG_HEDGE_DELAY_MS.max, LIMITS.AIG_HEDGE_DELAY_MS.def),
     maxHedgesPerRequest: clampInt(readEnv(env, 'AIG_REQUEST_HEDGE_MAX'), LIMITS.AIG_REQUEST_HEDGE_MAX.min, LIMITS.AIG_REQUEST_HEDGE_MAX.max, LIMITS.AIG_REQUEST_HEDGE_MAX.def),
     gatewayKeyRpm: clampInt(readEnv(env, 'AIG_ACCESS_KEY_RPM'), LIMITS.AIG_ACCESS_KEY_RPM.min, LIMITS.AIG_ACCESS_KEY_RPM.max, LIMITS.AIG_ACCESS_KEY_RPM.def),
+    edgeCacheTtlSec: clampInt(readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC'), LIMITS.AIG_EDGE_CACHE_TTL_SEC.min, LIMITS.AIG_EDGE_CACHE_TTL_SEC.max, LIMITS.AIG_EDGE_CACHE_TTL_SEC.def),
   };
   cache.set(env, cached);
   return cached;

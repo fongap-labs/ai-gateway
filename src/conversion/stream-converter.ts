@@ -34,6 +34,16 @@ type ToolBlockState = {
   closed: boolean,
 };
 
+// Reasoning alignment: upstreams such as DeepSeek-R1 stream their thinking
+// chain in the proprietary `delta.reasoning_content` (or `delta.reasoning`)
+// field of the OpenAI wire format. The converter captures those increments and
+// re-emits them as NATIVE Anthropic `thinking` content blocks (thinking_delta),
+// so an Anthropic Messages client renders the chain instead of losing it to an
+// undefined field. Reasoning arrives interleaved with text/tool output; each
+// transition closes the currently open block first, mirroring the block
+// lifecycle the native Anthropic stream would have produced. Deltas pass
+// through in real time — no buffering of the chain before emission.
+
 export function createAnthropicStreamFromOpenAI(
   openAiResponseBody: ReadableStream<Uint8Array> | null | undefined,
   options: {
@@ -54,6 +64,9 @@ export function createAnthropicStreamFromOpenAI(
     messageStarted: boolean,
     textBlockOpened: boolean,
     textBlockClosed: boolean,
+    thinkingBlockOpened: boolean,
+    thinkingBlockClosed: boolean,
+    thinkingIndex?: number,
     toolBlocks: Map<number, ToolBlockState>,
     blockIndex: number,
     usage: unknown,
@@ -68,6 +81,8 @@ export function createAnthropicStreamFromOpenAI(
     messageStarted: false,
     textBlockOpened: false,
     textBlockClosed: false,
+    thinkingBlockOpened: false,
+    thinkingBlockClosed: false,
     toolBlocks: new Map(),
     blockIndex: 0,
     usage: null,
@@ -106,6 +121,9 @@ export function createAnthropicStreamFromOpenAI(
     state.textBlockClosed = false;
     state.textBlockOpened = true;
     emitMessageStart(controller);
+    // A text block after reasoning opens a NEW block once the open thinking
+    // block closes (interleaved reasoning keeps one block per transition).
+    closeThinkingBlock(controller);
     const index = state.blockIndex++;
     emit(controller, 'content_block_start', {
       type: 'content_block_start',
@@ -121,6 +139,32 @@ export function createAnthropicStreamFromOpenAI(
     emit(controller, 'content_block_stop', {
       type: 'content_block_stop',
       index: state.textIndex,
+    });
+  };
+
+  const openThinkingBlock = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    if (state.thinkingBlockOpened && !state.thinkingBlockClosed) return;
+    state.thinkingBlockClosed = false;
+    state.thinkingBlockOpened = true;
+    emitMessageStart(controller);
+    // Anthropic content ordering: a thinking block opens after the currently
+    // open text block closes, so the client sees the native block lifecycle.
+    closeTextBlock(controller);
+    const index = state.blockIndex++;
+    emit(controller, 'content_block_start', {
+      type: 'content_block_start',
+      index,
+      content_block: { type: 'thinking', thinking: '' },
+    });
+    state.thinkingIndex = index;
+  };
+
+  const closeThinkingBlock = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    if (!state.thinkingBlockOpened || state.thinkingBlockClosed) return;
+    state.thinkingBlockClosed = true;
+    emit(controller, 'content_block_stop', {
+      type: 'content_block_stop',
+      index: state.thinkingIndex,
     });
   };
 
@@ -149,6 +193,7 @@ export function createAnthropicStreamFromOpenAI(
   };
 
   const closeAllBlocks = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    closeThinkingBlock(controller);
     closeTextBlock(controller);
     for (const tool of state.toolBlocks.values()) {
       if (tool.opened && !tool.closed) {
@@ -197,6 +242,24 @@ export function createAnthropicStreamFromOpenAI(
         state.finishReason = choice.finish_reason;
       }
       const delta = choice.delta || {};
+      // Reasoning alignment: DeepSeek-style thinking chains stream through the
+      // proprietary reasoning_content / reasoning delta field. Capture the
+      // increments and re-emit them as native Anthropic thinking blocks so an
+      // Anthropic Messages client renders the chain instead of losing it to an
+      // undefined field. The delta streams in real time (no buffering).
+      const reasoning = typeof delta.reasoning_content === 'string' && delta.reasoning_content
+        ? delta.reasoning_content
+        : typeof delta.reasoning === 'string' && delta.reasoning
+          ? delta.reasoning
+          : null;
+      if (reasoning) {
+        openThinkingBlock(controller);
+        emit(controller, 'content_block_delta', {
+          type: 'content_block_delta',
+          index: state.thinkingIndex,
+          delta: { type: 'thinking_delta', thinking: reasoning },
+        });
+      }
       if (delta.content) {
         if (typeof delta.content === 'string') {
           if (delta.content) {
@@ -226,6 +289,7 @@ export function createAnthropicStreamFromOpenAI(
           let tool = state.toolBlocks.get(tcIndex);
           if (!tool) {
             emitMessageStart(controller);
+            closeThinkingBlock(controller);
             if (state.textBlockOpened && !state.textBlockClosed) {
               closeTextBlock(controller);
             }
