@@ -65,7 +65,10 @@ Rules:
 - `id` matches `^[a-z0-9][a-z0-9-]{0,63}$` and is globally unique.
 - `tier` is not a node field; the Variable prefix owns the tier.
 - credentials never appear in node JSON.
-- `provider`, `base_url`, and `models` are required.
+- `provider`, `base_url`, and `models` are required. `base_url` is optional
+  only for Tier 2 `auth:"oauth"` subscription nodes whose provider adapter
+  declares a built-in subscription endpoint (anthropic, openai, google);
+  onboarding such a node needs only `{id, provider, auth:"oauth", models}`.
 - `base_url` must be absolute HTTPS unless insecure HTTP is explicitly enabled.
 - `priority`, when present, is a non-negative integer JSON number. Tier 2/3 may use it; Tier 1 does not use static node priority as a P2C score.
 - `models` is an object mapping logical model → upstream model. `{}` is only an intentional catalog-bounded wildcard.
@@ -159,7 +162,7 @@ The three mainstream international providers ship with **built-in defaults**
 | --- | --- | --- | --- |
 | `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Enabled — mainstream reverse-proxy shape: Bearer + required OAuth beta flags (`claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14`, merged with client-supplied betas) + `x-app: cli` + first-party claude-cli user agent. CCH billing-block signing (CLIProxyAPI's extra-paranoid layer) is not implemented; live-verify with your own subscription. |
 | `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id` + `Originator: codex-tui` + `instructions` normalization on the Responses surface) |
-| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | **Fail-closed** — no verified Gemini subscription backend behind the OpenAI-compatible profile |
+| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | Enabled — Code Assist backend (`cloudcode-pa.googleapis.com/v1internal`): the gateway converts OpenAI Chat Completions to/from the proprietary `generateContent`/`streamGenerateContent` envelope inside the subscription adapter (the general transport/conversion layers stay untouched). Bearer + first-party Gemini CLI user agent. |
 
 To onboard with defaults, configure the Tier 2 node with the matching
 provider name and run the onboarding flow below. To override a default or
@@ -191,9 +194,10 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
   your own gateway callback via the default) for the automatic redirect flow.
   Dispatch eligibility is owned by the provider adapter registry
   (`src/providers/`), not by configuration: providers whose subscription
-  adapter is missing or refuses (the built-in `google` default, because no
-  verified Gemini subscription backend exists behind the OpenAI-compatible
-  wire) keep OAuth onboarding working while failing runtime dispatch closed.
+  adapter is missing or refuses keep OAuth onboarding working while failing
+  runtime dispatch closed. The built-in `google` adapter owns the Code Assist
+  wire conversion (`src/subscription/google-wire.ts`); the proprietary wire
+  never enters the gateway's general transport or conversion layers.
 
 - `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
   Generate with: `openssl rand -base64 32`. Without it, subscription
@@ -204,17 +208,24 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
 
 ### Onboarding flow
 
+All onboarding routes accept `?key=<access-key>` as a query parameter so you
+can start the flow from a browser address bar (which cannot set
+Authorization headers). The header form (`Authorization: Bearer <key>`) also
+works.
+
 **Claude / Codex (automatic)**:
 
-1. Open `GET /oauth/start?provider=anthropic&node=<node-id>` (or
-   `provider=openai`) with a gateway access key in the browser.
+1. Open
+   `https://<your-gateway-url>/oauth/start?provider=anthropic&node=<node-id>&key=<access-key>`
+   (or `provider=openai`) in a browser.
 2. Approve the consent screen; the provider redirects back to
    `/oauth/callback/<provider>` and the gateway completes the exchange.
 
 **Gemini (manual paste)**:
 
-1. Open `GET /oauth/start?provider=google&node=<node-id>` with a gateway
-   access key in the browser.
+1. Open
+   `https://<your-gateway-url>/oauth/start?provider=google&node=<node-id>&key=<access-key>`
+   in a browser.
 2. Approve the Google consent screen. Google redirects to its own
    `codeassist.google.com/authcode` page (its OAuth client does not allow
    arbitrary gateway callback URLs) which displays the authorization code.
@@ -241,6 +252,42 @@ subscription dispatch. Codex subscription dispatches also carry the
 first-party `Originator: codex-tui` marker and normalize a missing
 `instructions` field to an empty string on the Responses surface (the
 ChatGPT backend expects the field to exist).
+
+### Quick example: Gemini subscription
+
+A complete Tier 2 Gemini node requires only four fields (the gateway
+resolves the endpoint from the provider adapter):
+
+```json
+[
+  { "id": "gemini", "provider": "google", "auth": "oauth", "models": { "Code-Max": "gemini-2.5-pro" } }
+]
+```
+
+Set this as `AIG_TIER2_NODES_01` (a Cloudflare Variable, not a Secret). Then
+onboard in a browser:
+
+```
+https://<your-gateway-url>/oauth/start?provider=google&node=gemini&key=<your-access-key>
+```
+
+The `?key=` query parameter carries the gateway access key so a browser
+address bar can start onboarding (it cannot set Authorization headers).
+After Google's consent screen, copy the code from
+`codeassist.google.com/authcode` and paste it at the `/oauth/paste` link the
+start page shows. The gateway stores the encrypted token and the node is
+live.
+
+**Available upstream Gemini models** (the `models` mapping value):
+
+| Upstream model | Notes |
+| --- | --- |
+| `gemini-2.5-pro` | Gemini 2.5 Pro (Google One AI Premium / AI Pro) |
+| `gemini-2.5-flash` | Gemini 2.5 Flash (faster, lower quota) |
+
+Claude and Codex nodes follow the same pattern with `provider: "anthropic"` /
+`provider: "openai"`. Their onboarding is automatic (no code paste) and
+also accepts `?key=` in the browser URL.
 
 ## Runtime variables
 

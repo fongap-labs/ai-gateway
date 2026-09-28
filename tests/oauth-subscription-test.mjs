@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import worker from '../src/index.ts';
-import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
+import { __resetAllStateForTests, getNodeState } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
 import { __resetSubscriptionCacheForTests } from '../src/oauth/resolve.ts';
@@ -398,6 +398,23 @@ await test('/oauth/start with a valid key returns a PKCE redirect', async () => 
   const state = location.searchParams.get('state');
   assert.ok(state);
   assert.ok(db.flows.has(state), 'flow state persisted in D1');
+});
+
+await test('/oauth/start accepts ?key= query param for browser onboarding', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({ tier2: [tier2OauthNode('sub1')], db });
+  // No Authorization header: a browser address bar cannot set one. The ?key=
+  // query parameter is the onboarding fallback credential source.
+  const res = await worker.fetch(new Request(`https://gateway.example.com/oauth/start?provider=mock&node=sub1&key=${encodeURIComponent(ACCESS_KEY)}`), env, {});
+  assert.equal(res.status, 302, 'query-param key authorizes the onboarding start');
+  const state = new URL(res.headers.get('location')).searchParams.get('state');
+  assert.ok(state && db.flows.has(state), 'flow state persisted');
+  // A wrong ?key= is still rejected.
+  const bad = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1&key=wrong-key'), env, {});
+  assert.equal(bad.status, 401, 'wrong query-param key rejected');
+  // Without any key (header or query) it stays 401.
+  const none = await worker.fetch(new Request('https://gateway.example.com/oauth/start?provider=mock&node=sub1'), env, {});
+  assert.equal(none.status, 401, 'missing key stays 401');
 });
 
 await test('/oauth/start with an unknown node returns 404', async () => {
@@ -807,25 +824,107 @@ await test('anthropic override with client_secret includes it in the refresh gra
   assert.ok(refreshBody?.includes('confidential-secret'), 'the configured secret value is sent');
 });
 
-await test('google dispatch fails closed by default (no verified subscription adapter)', async () => {
+// ---- P3: Google Gemini (Code Assist) subscription dispatch ------------------
+
+const geminiSse = (chunks) =>
+  chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('');
+
+const geminiNonStreamOk = (text, usage) => ({
+  candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
+  usageMetadata: usage || { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 },
+  modelVersion: 'gemini-2.5-pro',
+});
+
+await test('google streaming dispatch converts Code Assist SSE to OpenAI chat chunks', async () => {
   const db = new MockOAuthD1();
   const env = makeEnv({
-    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gen-lang.example.com/v1beta/openai', models: { 'Code-Max': 'gemini-pro' } }],
+    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } }],
     db,
   });
-  delete env.AIG_OAUTH_PROVIDERS; // built-in google default
-  // Even a validly stored token must not dispatch: the google subscription
-  // adapter refuses (no verified Gemini subscription backend exists behind
-  // the OpenAI-compatible profile).
-  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'valid-token', refreshToken: 'g-refresh', expiresAt: Date.now() + 3600_000 });
-  let upstreamContacted = false;
-  withMockFetch(async () => {
-    upstreamContacted = true;
-    throw new Error('upstream must not be contacted');
+  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
+  let seenUrl = null; let seenAuth = null; let seenUa = null; let seenBody = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    seenUrl = url.pathname + url.search;
+    seenAuth = init?.headers?.get('authorization');
+    seenUa = init?.headers?.get('user-agent');
+    seenBody = JSON.parse(String(init?.body || '{}'));
+    return new Response(geminiSse([
+      { candidates: [{ content: { parts: [{ text: 'Hel' }], role: 'model' }, index: 0 }] },
+      { candidates: [{ content: { parts: [{ text: 'lo' }], role: 'model' }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 2, totalTokenCount: 3 } },
+    ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  });
+  const streamReq = new Request('https://gateway.example.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ACCESS_KEY}`, accept: 'text/event-stream' },
+    body: JSON.stringify({ model: 'Code-Max', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  const res = await worker.fetch(streamReq, env, {});
+  assert.equal(res.status, 200);
+  assert.ok(seenUrl.includes('/v1internal:streamGenerateContent'), 'streaming endpoint path');
+  assert.ok(seenUrl.includes('alt=sse'), 'sse query preserved');
+  assert.equal(seenAuth, 'Bearer g-tok', 'resolved Bearer token');
+  assert.ok(seenUa && seenUa.startsWith('GeminiCLI/'), 'first-party Gemini CLI user agent');
+  assert.equal(seenBody.model, 'gemini-2.5-pro', 'envelope carries the upstream model');
+  assert.ok(Array.isArray(seenBody.request?.contents), 'Code Assist envelope shape');
+  // The client receives a converted OpenAI chat SSE stream.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let sseText = '';
+  for (;;) { const { done, value } = await reader.read(); if (done) break; sseText += decoder.decode(value, { stream: true }); }
+  assert.ok(sseText.includes('"delta":{"content":"Hel"'), 'first text delta converted');
+  assert.ok(sseText.includes('"delta":{"content":"lo"'), 'second text delta converted');
+  assert.ok(sseText.includes('"finish_reason":"stop"'), 'finish chunk converted');
+  assert.ok(sseText.includes('"total_tokens":3'), 'usage chunk converted');
+  assert.ok(sseText.endsWith('data: [DONE]\n\n'), '[DONE] terminal marker');
+});
+
+await test('google non-streaming dispatch converts Code Assist object to chat completion', async () => {
+  const db = new MockOAuthD1();
+  // base_url omitted: the provider adapter's built-in subscriptionEndpoint
+  // (cloudcode-pa.googleapis.com) is resolved by the config layer.
+  const env = makeEnv({
+    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', models: { 'Code-Max': 'gemini-2.5-pro' } }],
+    db,
+  });
+  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
+  let seenUrl = null; let seenBody = null;
+  withMockFetch(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input.url);
+    seenUrl = url.origin + url.pathname;
+    seenBody = JSON.parse(String(init?.body || '{}'));
+    return new Response(JSON.stringify(geminiNonStreamOk('Hello world')), { status: 200, headers: { 'content-type': 'application/json' } });
   });
   const res = await worker.fetch(chatRequest(), env, {});
-  assert.equal(res.status, 502, 'dispatch fails closed to exhaustion');
-  assert.equal(upstreamContacted, false);
+  assert.equal(res.status, 200);
+  assert.equal(seenUrl, 'https://cloudcode-pa.googleapis.com/v1internal:generateContent', 'built-in endpoint + non-stream path');
+  assert.ok(Array.isArray(seenBody.request?.contents), 'envelope shape');
+  const data = await res.json();
+  assert.equal(data.object, 'chat.completion', 'converted object shape');
+  assert.equal(data.choices[0].message.content, 'Hello world', 'text content converted');
+  assert.equal(data.choices[0].finish_reason, 'stop', 'finish reason mapped');
+  assert.equal(data.usage.prompt_tokens, 1, 'usage mapped');
+  assert.equal(data.usage.completion_tokens, 2, 'usage mapped');
+  assert.equal(data.usage.total_tokens, 3, 'usage mapped');
+});
+
+await test('google subscription 429 with gRPC retryDelay extends the cooldown', async () => {
+  const db = new MockOAuthD1();
+  const env = makeEnv({
+    tier2: [{ id: 'gemini-sub', provider: 'google', auth: 'oauth', base_url: 'https://gemini-up.example.com', models: { 'Code-Max': 'gemini-2.5-pro' } }],
+    db,
+  });
+  await storeSubscriptionToken(env, { nodeId: 'gemini-sub', provider: 'google', accessToken: 'g-tok', refreshToken: null, expiresAt: Date.now() + 3600_000 });
+  withMockFetch(async () => {
+    return new Response(JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '3600s' }] } }), {
+      status: 429, headers: { 'content-type': 'application/json' },
+    });
+  });
+  const res = await worker.fetch(chatRequest(), env, {});
+  assert.ok([429, 502].includes(res.status), `request ends rate-limited or exhausted (got ${res.status})`);
+  const state = getNodeState('gemini-sub');
+  assert.ok(state.cooldownUntil > Date.now() + 3000_000,
+    `retryDelay hint extends cooldown beyond 50min (until ${state.cooldownUntil})`);
 });
 
 // ---- P1: refresh singleflight, CAS rotation, account identity ---------------
@@ -1189,8 +1288,6 @@ await test('plain API-key anthropic nodes get no forced oauth betas', async () =
 });
 
 // ---- Quota reset hints (entitlement windows as cooldown hints) ---------------
-
-const { getNodeState } = await import('../src/reliability/node-state.ts');
 
 await test('codex subscription 429 with window-reset header extends the cooldown to the quota window', async () => {
   const db = new MockOAuthD1();

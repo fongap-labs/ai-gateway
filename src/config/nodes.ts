@@ -25,7 +25,7 @@ import { loadModelsConfig, getModelsConfigDiagnostics } from './models.ts';
 import { loadPoliciesConfig, getPoliciesConfigDiagnostics } from './policies.ts';
 import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
 import { loadModelRegistry } from './registry.ts';
-import { providerWire } from '../providers/registry.ts';
+import { providerWire, getProviderAdapter } from '../providers/registry.ts';
 import type { RegistryEntry } from './registry.ts';
 import type { RuntimeNode, NodeTier } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
@@ -287,12 +287,23 @@ function buildRuntimeNode(
     return null;
   }
 
-  const baseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
+  // base_url is required for static-credential nodes. Tier 2 `auth:"oauth"`
+  // subscription nodes may omit base_url: their provider adapter owns the
+  // upstream endpoint when it declares subscriptionEndpoint, so onboarding a
+  // subscription needs only {id, provider, auth:"oauth", models}. A missing
+  // base_url with no provider default is a configuration error (fail-closed).
+  const rawBaseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
+  const baseUrl = rawBaseUrl
+    || (auth === 'oauth' ? (getProviderAdapter(provider).subscriptionEndpoint ?? '') : '');
   let url: URL;
   try {
     url = new URL(baseUrl);
   } catch {
-    diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
+    if (auth === 'oauth' && !rawBaseUrl) {
+      diagnostics.push(`node "${id}": auth:"oauth" nodes require base_url or a provider adapter with a built-in subscription endpoint`);
+    } else {
+      diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
+    }
     return null;
   }
   if (!isHttpAllowed && url.protocol !== 'https:') {

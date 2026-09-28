@@ -12,7 +12,7 @@
 import { attemptHeadersTimeoutMs, attemptBudgetWindowMs } from '../../config/timeouts.ts';
 import { recordNeutralEnd, bumpNodeCounters } from '../../reliability/node-state.ts';
 import { releaseTier1Slot } from '../../reliability/tier1-state.ts';
-import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyHedgeRaceLoss, KIND } from '../../reliability/classify.ts';
+import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyHedgeRaceLoss, classifyNonJsonBody, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
 import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/index.ts';
@@ -20,6 +20,7 @@ import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
 import { isSubscriptionNode } from '../../subscription/index.ts';
+import type { SubscriptionWire } from '../../subscription/types.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import { extractQuotaSignal } from '../../reliability/quota-signal.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
@@ -135,6 +136,8 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // it; the request path never checks node.auth directly.
   let credential = node.credential;
   let subscriptionExtraHeaders: Readonly<Record<string, string>> | undefined;
+  let subscriptionWire: SubscriptionWire | undefined;
+  let subscriptionUpstreamUrl: string | null = null;
   if (isSubscriptionNode(node)) {
     const resolved = await resolveSubscriptionCredential(env, node);
     if (!resolved.ok) {
@@ -156,6 +159,8 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
     }
     if (prepared.body) outboundObject = prepared.body;
+    subscriptionWire = adapter.wire;
+    subscriptionUpstreamUrl = prepared.upstreamUrl;
     // Adapter headers win over provider-config headers; both are
     // deployment/first-party values, never client identity material.
     subscriptionExtraHeaders = {
@@ -167,7 +172,9 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
 
   let targetUrl: URL | string;
   try {
-    targetUrl = buildTargetUrl(node.baseUrl, resolveUpstreamPath(upstreamProtocol, surface));
+    targetUrl = subscriptionUpstreamUrl
+      ? new URL(subscriptionUpstreamUrl).toString()
+      : buildTargetUrl(node.baseUrl, resolveUpstreamPath(upstreamProtocol, surface));
   } catch {
     return rotateWithNeutralEnd(state, node, classifyPreDispatchInvalidBaseUrl().kind, c, true);
   }
@@ -295,6 +302,50 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       return { response: buildClientErrorResponse(request, env, route, requestId, requestedModel, upstream.status, errorText, state, exposeUpstreamInfo) };
     }
     return { rotate: true, kind: classification.kind };
+  }
+
+  // Subscription proprietary wire: convert the OK upstream response into the
+  // node's native protocol shape before the success layer consumes it, so
+  // every success/stream/object handler keeps one consistent contract. A
+  // streaming proprietary body is converted lazily (the converter emits the
+  // native terminal marker and never before real output, so the first-event
+  // guard can still rotate); a non-streaming body is converted eagerly here.
+  // A conversion that finds no meaningful output is an empty-response
+  // rotation, mirroring the native paths.
+  if (subscriptionWire) {
+    if (isOpenAIStreamingResponse(upstream)) {
+      const nativeBody = subscriptionWire.streamToNative(upstream.body, {
+        messageId: `chatcmpl-${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+        model: requestedModel,
+      });
+      const wireHeaders = new Headers();
+      wireHeaders.set('content-type', 'text/event-stream');
+      const buffering = upstream.headers.get('x-accel-buffering');
+      if (buffering) wireHeaders.set('x-accel-buffering', buffering);
+      upstream = new Response(nativeBody, { status: 200, headers: wireHeaders });
+    } else {
+      const text = await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        recordUndeliveredUpstreamAttempt(c, node);
+        const nonJson = classifyNonJsonBody();
+        recordOutcome(state, node, nonJson, c, { latencyMs, status: upstream.status, diagnostic: text });
+        return { rotate: true, kind: nonJson.kind };
+      }
+      const nativeObject = subscriptionWire.objectToNative(parsed);
+      if (!nativeObject) {
+        recordUndeliveredUpstreamAttempt(c, node);
+        const empty = classifyEmptyResponse();
+        recordOutcome(state, node, empty, c, { latencyMs, status: upstream.status, diagnostic: 'subscription wire response carried no meaningful output' });
+        return { rotate: true, kind: empty.kind };
+      }
+      upstream = new Response(JSON.stringify(nativeObject), {
+        status: 200,
+        headers: { 'content-type': 'application/json;charset=UTF-8' },
+      });
+    }
   }
 
   const successNode = effectiveModel === requestedModel

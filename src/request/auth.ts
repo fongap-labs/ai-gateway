@@ -15,6 +15,11 @@
 //   The request handler calls authorizeModel() against the configured
 //   logical model set BEFORE entering the scheduler.
 //
+// OAuth onboarding routes (/oauth/start) may additionally pass the access
+// key as a ?key= query parameter so an operator can start onboarding from
+// a browser address bar (which cannot set custom headers). API request
+// routes never pass queryKey, so they stay header-only.
+//
 // If no AIG_ACCESS_KEY_<GROUP> is configured, no credential is accepted.
 // Raw secrets never leave this module. Only the low-cardinality group label
 // is used in logs/stats.
@@ -53,8 +58,15 @@ function presentedCredentials(request: Request): string[] {
 }
 
 // Resolve the request to an auth result (see AuthResult).
-export async function authorize(request: Request, env: GatewayEnv): Promise<AuthResult> {
+// `options.queryKey` lets OAuth onboarding routes accept a ?key= query
+// parameter as a credential source (browser address bars cannot set
+// Authorization headers). API routes never pass this option.
+export async function authorize(request: Request, env: GatewayEnv, options?: { queryKey?: string }): Promise<AuthResult> {
   const presented = presentedCredentials(request);
+  if (options?.queryKey) {
+    const qk = options.queryKey.trim();
+    if (qk) presented.push(qk);
+  }
   if (presented.length === 0) return { authorized: false, mode: 'none' };
 
   const access = loadAccessKeysConfig(env);

@@ -87,6 +87,58 @@ export function hintFromResetBody(body: string, fields: readonly string[]): numb
   return best;
 }
 
+/** Standard `Retry-After` header: a non-negative integer (seconds) or an
+ *  HTTP-date. Caps at QUOTA_HINT_MAX_MS like every other hint. */
+export function hintFromRetryAfterHeader(headers: Headers, now: number): number | null {
+  const raw = headers.get('retry-after');
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (seconds > 0 && seconds * 1000 <= QUOTA_HINT_MAX_MS) return seconds * 1000;
+    if (seconds > 0) return QUOTA_HINT_MAX_MS;
+    return null;
+  }
+  const at = parseIsoTimestamp(trimmed);
+  if (at === null) return null;
+  const ms = at - now;
+  if (ms > 0 && ms <= QUOTA_HINT_MAX_MS) return ms;
+  return null;
+}
+
+/** gRPC-style RetryInfo embedded in a Google-shaped error body:
+ *  {"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[
+ *    {"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"42s"}]}}
+ *  Hints only — the caller caps and recovers. */
+export function hintFromRetryDelayBody(body: string): number | null {
+  if (!body) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const error = (parsed as Record<string, unknown>).error;
+  if (error === null || typeof error !== 'object' || Array.isArray(error)) return null;
+  const details = (error as Record<string, unknown>).details;
+  if (!Array.isArray(details)) return null;
+  let best: number | null = null;
+  for (const detail of details) {
+    if (detail === null || typeof detail !== 'object' || Array.isArray(detail)) continue;
+    const raw = (detail as Record<string, unknown>).retryDelay;
+    if (typeof raw !== 'string') continue;
+    const m = /^([\d.]+)\s*s$/.exec(raw.trim());
+    if (!m) continue;
+    const ms = Math.round(Number(m[1]) * 1000);
+    if (Number.isFinite(ms) && ms > 0 && ms <= QUOTA_HINT_MAX_MS) {
+      if (best === null || ms > best) best = ms;
+    }
+  }
+  return best;
+}
+
 /** Collapse the per-marker results into one capped hint (ms until reset
  *  relative to now), or null when nothing usable was found. */
 export function capHint(resetAt: number | null, relativeMs: number | null, now: number): number | null {

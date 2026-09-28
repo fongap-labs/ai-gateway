@@ -89,6 +89,15 @@ if ($accessKeys.Count -eq 0) {
   throw 'At least one Gateway Access Group Key must be configured (AIR, PRO, MAX, ULTRA, or AGENT).'
 }
 
+Write-Host '==> Subscription encryption key'
+# Always generate: harmless if unused, and the operator can add subscriptions
+# later without re-running the installer. Generated via node (cross-platform).
+$tokenEncKey = node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'
+Write-Host 'AIG_TOKEN_ENCRYPTION_KEY generated (required for Claude/Codex/Gemini subscriptions).'
+
+$publicUrl = (Read-Host 'Gateway public URL https://... (required for OAuth onboarding + dashboard)').Trim()
+if ($publicUrl -notmatch '^https://') { throw 'Gateway URL must be https://' }
+
 Write-Host '==> Sharding config into variables + secrets'
 $planFile = Join-Path ([IO.Path]::GetTempPath()) ("gateway-plan-" + [guid]::NewGuid().ToString('N') + '.json')
 $tmpFiles = @($planFile)
@@ -106,6 +115,7 @@ try {
   $userConfig.name = $workerName
   $varsMap = [ordered]@{}
   foreach ($prop in $plan.vars.PSObject.Properties) { $varsMap[$prop.Name] = $prop.Value }
+  $varsMap['AIG_PUBLIC_URL'] = $publicUrl
   foreach ($group in $accessModels.Keys) { $varsMap["AIG_ACCESS_MODELS_$group"] = $accessModels[$group] }
   $userConfig | Add-Member -NotePropertyName vars -NotePropertyValue $varsMap -Force
   $userConfig | Add-Member -NotePropertyName kv_namespaces -NotePropertyValue @(
@@ -115,7 +125,7 @@ try {
 
   $bulkPath = Join-Path ([IO.Path]::GetTempPath()) ("gateway-secrets-" + [guid]::NewGuid().ToString('N') + '.json')
   $tmpFiles += $bulkPath
-  $bulk = [ordered]@{}
+  $bulk = [ordered]@{ AIG_TOKEN_ENCRYPTION_KEY = $tokenEncKey }
   foreach ($group in $accessKeys.Keys) { $bulk["AIG_ACCESS_KEY_$group"] = $accessKeys[$group] }
   foreach ($prop in $plan.secrets.PSObject.Properties) { $bulk[$prop.Name] = $prop.Value }
   [IO.File]::WriteAllText($bulkPath, ($bulk | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false))

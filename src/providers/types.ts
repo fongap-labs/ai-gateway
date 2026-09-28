@@ -59,6 +59,12 @@ export type ProviderAdapter = Readonly<{
   /** Built-in OAuth onboarding defaults; absent for providers without an
    *  OAuth subscription onboarding story. */
   oauth?: OAuthProviderConfig,
+  /** Built-in upstream endpoint for Tier 2 `auth:"oauth"` subscription
+   *  nodes. When an operator omits base_url on such a node, the config layer
+   *  resolves base_url from here so onboarding needs only {id, provider,
+   *  auth:"oauth", models}. Absent for providers whose subscription nodes
+   *  require an explicit base_url. */
+  subscriptionEndpoint?: string,
   /** Subscription dispatch semantics for Tier 2 auth:"oauth" nodes.
    *  Absent means the provider has no verified subscription backend and
    *  subscription dispatch fails closed (pre-dispatch rotation). */
