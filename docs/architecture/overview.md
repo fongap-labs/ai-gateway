@@ -35,7 +35,7 @@ Tier roles are permanent architecture boundaries, not generic priority labels.
 | Tier | Long-term role | Design priority |
 | --- | --- | --- |
 | **Tier 1** | Free or effectively free token capacity across providers/accounts | Primary daily traffic; resilience, load spreading, 429 recovery, low cost, continuous availability |
-| **Tier 2** | Membership/subscription entitlement capacity | Reserved for future subscription-entitlement adapters; not a second generic API-key pool |
+| **Tier 2** | Membership/subscription entitlement capacity | Subscription-entitlement adapters (Claude/Codex/Gemini); not a second generic API-key pool |
 | **Tier 3** | Paid API capacity | Protected final fallback; predictable and bounded use |
 
 Tier 1 therefore receives most reliability engineering. Tier 2 and Tier 3 must stay simpler and must not accumulate Tier 1-specific adaptive machinery without a demonstrated need.
@@ -104,7 +104,7 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 
 ## Current invariants
 
-- Account-level Node Config accepts `id`, `provider`, `base_url`, `models`, optional `priority`, and the Tier 2-only `auth:"oauth"` subscription marker; `protocol`, `surfaces`, and `limits` are rejected.
+- Account-level Node Config accepts `id`, `provider`, `base_url`, `models`, optional `priority`, and the Tier 2-only `auth:"oauth"` subscription marker; `protocol`, `surfaces`, and `limits` are rejected. `base_url` is optional for Tier 2 `auth:"oauth"` nodes whose provider adapter declares a built-in subscription endpoint (the config layer resolves it from the provider registry).
 - `auth:"oauth"` is valid only on Tier 2 nodes; Tier 2 subscription nodes must not declare a static credential in `AIG_TIER{N}_CREDENTIALS_*` (one credential source per node).
 - Provider Wire Profiles derive runtime protocol/surfaces: `anthropic` → Messages, `openai` → Chat + Responses, all other providers → OpenAI-compatible Chat.
 - Native OpenAI Chat targets `/v1/chat/completions` upstream.
@@ -126,7 +126,8 @@ These boundaries are intentional. Transport does not select nodes. Scheduler and
 - Tier 2 subscription (`auth:"oauth"`) credentials are resolved at dispatch time from the OAuth token store: isolate cache first, D1 only on cache miss or near expiry, refresh inside a 5-minute margin; resolution failures are pre-dispatch auth rotations with an isolate-local negative cache so a broken subscription does not hammer the provider's token endpoint.
 - Refresh-token rotation safety: one in-flight resolution per node per isolate (singleflight), and refresh persists land only through a compare-and-swap on the persisted `refresh_version`; a losing writer reloads the winner's credential, so exactly one refresh token remains the persisted authority. Durable Objects are not introduced for this.
 - Provider account identity (e.g., the OpenAI `account_id`) is persisted in plaintext beside the credential and applied as the `chatgpt-account-id` header for OpenAI-protocol subscription dispatches only; it never pollutes the RuntimeNode schema.
-- Providers without a verified subscription backend (the built-in `google` default, whose adapter refuses) keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable. The provider registry (`src/providers/`) is the single dispatchability authority: an `auth:"oauth"` node whose provider has no subscription adapter, or whose adapter refuses to shape the request, rotates pre-dispatch.
+- Providers without a verified subscription backend keep OAuth onboarding but fail runtime dispatch closed; they never fall into the generic OpenAI-compatible path pretending to be usable. The provider registry (`src/providers/`) is the single dispatchability authority: an `auth:"oauth"` node whose provider has no subscription adapter, or whose adapter refuses to shape the request, rotates pre-dispatch.
+- The built-in `google` subscription adapter owns the Code Assist proprietary wire (`cloudcode-pa.googleapis.com/v1internal` `generateContent`/`streamGenerateContent`): it converts OpenAI Chat Completions to/from the Code Assist envelope inside the subscription adapter (`src/subscription/google-wire.ts`) and the dispatch layer wraps the OK upstream response into the node's native protocol shape before the success layer consumes it. The proprietary wire never enters the gateway's general transport or conversion layers (the two native protocol families stay unchanged).
 - Subscription quota windows are hints, never truth: provider adapters interpret entitlement reset markers (`quotaResetHint`: window-reset epoch headers, resets_in_seconds bodies) and may only EXTEND a 429 rate-limit cooldown (capped); recovery remains the shared cooldown-expiry -> single half-open probe -> auto-restore circuit that all nodes already use. No subscription-specific reliability state machine exists.
 - Subscription access/refresh tokens are AES-GCM encrypted with the `AIG_TOKEN_ENCRYPTION_KEY` Worker secret; a missing key disables all subscription onboarding and resolution (fail-closed), and tokens are never stored in D1 as plaintext.
 - OAuth onboarding (`/oauth/start`, `/oauth/callback/<provider>`, `/oauth/paste`) uses PKCE S256 with a single-use D1 flow state (10-minute TTL); `/oauth/start` requires a gateway access key and a matching Tier 2 node, and every callback/paste consumes its state row regardless of outcome.
@@ -177,4 +178,4 @@ D1 and KV are deliberately outside the critical scheduling decision path where p
 
 The gateway does not claim cross-PoP globally accurate concurrency or provider-account quota from these local states. Stronger coordination is not added merely because it is theoretically cleaner; it requires measured evidence that the household/small-team deployment model needs it.
 
-See [Protocol model](protocol-model.md), [Routing model](routing-model.md), and [Reliability model](reliability-model.md) for the detailed contracts.
+See [Protocol model](protocol-model.md), [Subscription model](subscription-model.md), [Routing model](routing-model.md), and [Reliability model](reliability-model.md) for the detailed contracts.

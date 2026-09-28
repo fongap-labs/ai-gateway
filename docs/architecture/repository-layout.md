@@ -18,6 +18,7 @@ src/                         Cloudflare Worker runtime
 │   └── attempt/             dispatch, hedge, success, outcome, attempt observability
 ├── oauth/                   OAuth onboarding/credential resolution for Tier 2 subscriptions
 ├── subscription/            subscription request-semantics adapters (codex/claude/google),
+│                            including the google Code Assist wire converter (google-wire.ts),
 │                            composed into provider adapters and bound to nodes
 ├── observability/           logs, metrics, D1/token usage, safe diagnostics
 ├── runtime/                 runtime availability and read-only public model status

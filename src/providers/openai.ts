@@ -28,5 +28,6 @@ export const openAIProviderAdapter: ProviderAdapter = Object.freeze({
   wire: OPENAI_NATIVE_WIRE,
   streamUsage: true,
   oauth: OPENAI_OAUTH_DEFAULTS,
+  subscriptionEndpoint: 'https://api.openai.com',
   subscription: codexSubscriptionAdapter,
 });

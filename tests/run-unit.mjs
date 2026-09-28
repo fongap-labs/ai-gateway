@@ -32,6 +32,7 @@ const UNIT_TESTS = [
   'tests/model-family-failure-domain-test.mjs',
   'tests/family-rate-limit-retry-test.mjs',
   'tests/oauth-subscription-test.mjs',
+  'tests/google-subscription-wire-test.mjs',
   'tests/reliability-convergence-test.mjs',
   'tests/scheduler-convergence-test.mjs',
   'tests/stream-completion-test.mjs',

@@ -14,6 +14,7 @@ const DOCS = [
   'README.md', 'README.zh-CN.md', 'SECURITY.md', 'scripts/README.md',
   'docs/architecture/overview.md',
   'docs/architecture/protocol-model.md',
+  'docs/architecture/subscription-model.md',
   'docs/architecture/routing-model.md',
   'docs/architecture/reliability-model.md',
   'docs/architecture/repository-layout.md',
@@ -47,7 +48,7 @@ for (const file of ['.dev.vars.example', 'config/worker-vars.example.json']) {
   ok(`${file} bidirectional Chat/Messages fallback`);
 }
 
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
 const workerVars = JSON.parse(read('config/worker-vars.example.json'));
 for (const [key, nodes] of Object.entries(workerVars)) {
   if (!/^TIER[123]_NODES_\d{2}$/.test(key)) continue;

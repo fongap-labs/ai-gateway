@@ -8,7 +8,7 @@ Tier order is a product invariant:
 Tier 1 → Tier 2 → Tier 3
 ```
 
-Tier 1 is free/effectively free capacity and the primary daily layer. Tier 2 is reserved for future membership/subscription entitlement capacity. Tier 3 is paid API capacity kept as protected final fallback.
+Tier 1 is free/effectively free capacity and the primary daily layer. Tier 2 is membership/subscription entitlement capacity (Claude/Codex/Gemini subscriptions through OAuth). Tier 3 is paid API capacity kept as protected final fallback.
 
 OpenAI Chat Completions ↔ Anthropic Messages fallback is evaluated only after the native route is exhausted. OpenAI Responses remains Native Only for protocol conversion.
 
@@ -142,7 +142,7 @@ Tier 2/3 use the separate `node-state.ts` reliability model and the existing sel
 
 Tier 2/3 do not consume Tier 1 TTFT, affinity, or provider-model heat state.
 
-Their product roles remain intentionally narrow: Tier 2 is reserved for future subscription-entitlement capacity; Tier 3 is paid API fallback. Do not duplicate Tier 1 machinery into them without measured need.
+Their product roles remain intentionally narrow: Tier 2 is subscription-entitlement capacity; Tier 3 is paid API fallback. Do not duplicate Tier 1 machinery into them without measured need.
 
 ## Attempt allocation
 

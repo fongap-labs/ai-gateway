@@ -117,13 +117,23 @@ if [ "$ACCESS_GROUP_COUNT" -eq 0 ]; then
   exit 1
 fi
 
-WORKER_NAME="$WORKER_NAME" AIG_AFFINITY_KV_ID="$AIG_AFFINITY_KV_ID" node -e '
+echo "==> Subscription encryption key"
+# Always generate: harmless if unused, and the operator can add subscriptions
+# later without re-running the installer. Generated via node (cross-platform).
+AIG_TOKEN_ENCRYPTION_KEY="$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')"
+echo "AIG_TOKEN_ENCRYPTION_KEY generated (required for Claude/Codex/Gemini subscriptions)."
+
+printf "Gateway public URL https://... (required for OAuth onboarding + dashboard): "
+read -r AIG_PUBLIC_URL
+case "$AIG_PUBLIC_URL" in https://*) ;; *) echo "gateway URL must be https://" >&2; exit 1;; esac
+
+WORKER_NAME="$WORKER_NAME" AIG_AFFINITY_KV_ID="$AIG_AFFINITY_KV_ID" AIG_PUBLIC_URL="$AIG_PUBLIC_URL" node -e '
 const fs = require("fs");
 const base = JSON.parse(fs.readFileSync("wrangler.jsonc", "utf8"));
 const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 base.name = process.env.WORKER_NAME;
-base.vars = { ...plan.vars };
+base.vars = { ...plan.vars, AIG_PUBLIC_URL: process.env.AIG_PUBLIC_URL };
 for (const [name, value] of Object.entries(access)) {
   if (name.startsWith("AIG_ACCESS_MODELS_")) base.vars[name] = value;
 }
@@ -135,7 +145,7 @@ node -e '
 const fs = require("fs");
 const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const access = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const bulk = { ...plan.secrets };
+const bulk = { ...plan.secrets, AIG_TOKEN_ENCRYPTION_KEY: process.env.AIG_TOKEN_ENCRYPTION_KEY };
 for (const [name, value] of Object.entries(access)) {
   if (name.startsWith("AIG_ACCESS_KEY_")) bulk[name] = value;
 }

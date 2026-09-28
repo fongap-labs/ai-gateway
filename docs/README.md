@@ -19,6 +19,7 @@ History belongs in Git, Pull Requests and commits. Human-created tags or GitHub 
 | --- | --- |
 | [overview.md](architecture/overview.md) | System boundaries, request flow, fixed tier roles, and source-of-truth ownership |
 | [protocol-model.md](architecture/protocol-model.md) | Native protocols, Chat ↔ Messages fallback, conversion fidelity, streaming boundaries |
+| [subscription-model.md](architecture/subscription-model.md) | Tier 2 subscription adapter contract, quota hints, proprietary wire, fail-closed dispatchability |
 | [routing-model.md](architecture/routing-model.md) | Tier routing, Tier 1 P2C, affinity, heat protection, attempts, hedge |
 | [reliability-model.md](architecture/reliability-model.md) | Failure classification, cooldown, rate-limit recovery, TTFT, circuit behavior |
 | [repository-layout.md](architecture/repository-layout.md) | Repository and module responsibilities |

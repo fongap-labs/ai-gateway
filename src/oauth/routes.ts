@@ -170,7 +170,10 @@ async function completeTokenExchange(env: GatewayEnv, providerConfig: OAuthProvi
 async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRouteContext, url: URL): Promise<Response> {
   const logger = getLogger(env);
   if (!hasTokenKey(env)) return jsonResponse(request, env, 503, { error: { message: 'AIG_TOKEN_ENCRYPTION_KEY is not configured.', type: 'gateway_oauth_disabled' } });
-  const authResult = await authorize(request, env);
+  // Accept ?key= as a fallback credential source so an operator can start
+  // onboarding from a browser address bar (which cannot set headers). API
+  // routes never use this path.
+  const authResult = await authorize(request, env, { queryKey: url.searchParams.get('key') || undefined });
   if (!authResult.authorized) return jsonResponse(request, env, 401, { error: { message: 'Gateway access key required.', type: 'gateway_oauth_unauthorized' } });
   const provider = (url.searchParams.get('provider') || '').trim().toLowerCase();
   const nodeId = (url.searchParams.get('node') || '').trim();

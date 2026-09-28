@@ -46,7 +46,7 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
       && (ctx.body.instructions === undefined || ctx.body.instructions === null)) {
       body = { ...ctx.body, instructions: '' };
     }
-    return { headers, body };
+    return { headers, body, upstreamUrl: null };
   },
 
   quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {

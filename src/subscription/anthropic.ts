@@ -58,6 +58,7 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
         'user-agent': CLAUDE_CLI_USER_AGENT,
       },
       body: null,
+      upstreamUrl: null,
     };
   },
 
