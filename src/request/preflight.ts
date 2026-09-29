@@ -89,12 +89,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
   }
   if (request.method === 'GET' && pathname === '/' && acceptsHtml(request)) {
-    const dashboardPublic =
-      String(env?.AIG_DASHBOARD_PUBLIC ?? '')
-        .trim()
-        .toLowerCase() === 'true';
-    const dashboardAuth = dashboardPublic ? { authorized: true } : await authorize(request, env);
-    return { ok: false, response: await dashboardResponse(request, env, dashboardAuth) };
+    return { ok: false, response: await dashboardResponse(request, env) };
   }
   if (request.method === 'GET' && pathname === '/readme-status.svg') {
     return { ok: false, response: await readmeStatusSvgResponse(env) };
