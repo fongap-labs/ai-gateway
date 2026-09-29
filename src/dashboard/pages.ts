@@ -216,34 +216,11 @@ root.addEventListener('focusout',function(e){
 </body></html>`;
 }
 
-export async function dashboardResponse(
-  request: Request,
-  env: Record<string, unknown>,
-  auth: { authorized: boolean } = { authorized: true },
-): Promise<Response> {
+export async function dashboardResponse(request: Request, env: Record<string, unknown>): Promise<Response> {
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
 
   try {
     const gatewayEnv = env as GatewayEnv;
-
-    if (!auth.authorized) {
-      return htmlResponse(
-        shell({
-          title: 'AI Gateway — Authentication Required',
-          body: `
-            <section class="fallback-section">
-              <div class="wrap">
-                <div class="fallback-card">
-                  <h1>AI Gateway Dashboard</h1>
-                  <p>Authentication required. Provide a valid gateway access key via <code>Authorization: Bearer <key></code> or <code>x-api-key</code> header.</p>
-                </div>
-              </div>
-            </section>`,
-          nonce,
-        }),
-        { status: 401, nonce },
-      );
-    }
 
     const config = loadGatewayConfig(gatewayEnv);
     const now = Date.now();
