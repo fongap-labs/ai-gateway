@@ -34,7 +34,7 @@ export async function collectAnthropicMessageObject(
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let receivedBytes = 0;
-  let stopMessageStop = false;
+  let hasStopMessageStop = false;
   let messageBase: { id: unknown; model: unknown } | null | undefined;
   let stopReason: unknown = null;
   let usage: Record<string, unknown> = { input_tokens: 0, output_tokens: 0 } as Record<string, unknown>;
@@ -93,7 +93,7 @@ export async function collectAnthropicMessageObject(
         break;
       }
       case 'message_stop':
-        stopMessageStop = true;
+        hasStopMessageStop = true;
         break;
       case 'error':
         throw upstreamProcessingError(
@@ -118,7 +118,7 @@ export async function collectAnthropicMessageObject(
       if (receivedBytes > MAX_COLLECTED_BYTES) {
         await fail(UPSTREAM_PROCESSING_ERROR.TOO_LARGE, 'Assembled response exceeded gateway memory safety limit. Use stream:true.');
       }
-      if (stopMessageStop) {
+      if (hasStopMessageStop) {
         await reader.cancel().catch(() => {});
         break;
       }
@@ -129,7 +129,7 @@ export async function collectAnthropicMessageObject(
     throw e;
   }
 
-  if (!stopMessageStop) {
+  if (!hasStopMessageStop) {
     throw upstreamProcessingError(UPSTREAM_PROCESSING_ERROR.TRUNCATED, 'Upstream stream ended before message_stop was received.');
   }
   if (blocks.length === 0) {

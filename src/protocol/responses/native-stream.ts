@@ -46,7 +46,7 @@ export async function collectResponsesObject(
     throw upstreamProcessingError(code, message);
   };
 
-  let semanticEof = false;
+  let isSemanticEof = false;
   const scanner = createSseScanner((data) => {
     if (!data || data === '[DONE]') return;
     let json: Record<string, unknown> | null = null;
@@ -64,7 +64,7 @@ export async function collectResponsesObject(
     }
     if ((json?.type === 'response.completed' || json?.type === 'response.incomplete') && json.response && typeof json.response === 'object') {
       collected = json.response as Record<string, unknown>;
-      semanticEof = true;
+      isSemanticEof = true;
     }
   });
 
@@ -85,7 +85,7 @@ export async function collectResponsesObject(
       // protocol stream is logically finished. Cancel the reader instead of
       // waiting for HTTP EOF so a provider that leaves the connection open
       // doesn't stall the failover budget.
-      if (semanticEof) {
+      if (isSemanticEof) {
         await reader.cancel().catch(() => {});
         break;
       }

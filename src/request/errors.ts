@@ -122,7 +122,7 @@ export function buildBudgetExhaustedResponse(
   requestId: string,
   requestedModel: string,
   state: LoopState,
-  exposeUpstreamInfo: boolean,
+  shouldExposeUpstreamInfo: boolean,
 ): Response {
   const status = 504;
   const details = {
@@ -131,7 +131,7 @@ export function buildBudgetExhaustedResponse(
     dispatches: state.dispatches,
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
-    ...(exposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
     request,
@@ -154,10 +154,10 @@ export function buildExhaustedResponse(
   requestedModel: string,
   state: LoopState,
   tiers: TierMap<RuntimeNode[]>,
-  exposeUpstreamInfo: boolean,
+  shouldExposeUpstreamInfo: boolean,
   reqDescriptor: RequestDescriptor,
   knownModels?: ReadonlySet<string>,
-  retryableFamilyExhaustion: boolean = false,
+  isRetryableFamilyExhaustion: boolean = false,
 ): Response {
   const last = state.attempts[state.attempts.length - 1];
   const nothingAttempted = state.attempts.length === 0;
@@ -177,7 +177,7 @@ export function buildExhaustedResponse(
     status = terminalStatus(state.failureKinds) ?? (last?.status === 429 ? 429 : 502);
     message = `All attempted nodes failed for model "${requestedModel}".`;
 
-    if (retryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
+    if (isRetryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
       const originalStatus = status;
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
@@ -205,7 +205,7 @@ export function buildExhaustedResponse(
     dispatches: state.dispatches,
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
-    ...(exposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
     request,
@@ -272,11 +272,11 @@ export function buildClientErrorResponse(
   status: number,
   errorText: string | Uint8Array,
   state: LoopState,
-  exposeUpstreamInfo: boolean,
+  shouldExposeUpstreamInfo: boolean,
 ): Response {
   const genericDetail = `Upstream rejected the request with HTTP ${status}.`;
-  const detail = exposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
-  const attemptsDetail = exposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {};
+  const detail = shouldExposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
+  const attemptsDetail = shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {};
   if (route === 'anthropic_messages') {
     return new Response(
       JSON.stringify({

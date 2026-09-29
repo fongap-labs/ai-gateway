@@ -87,7 +87,7 @@ export function pickTier1Candidate(
   const affinityNode = affinityAccountId ? eligible.find((n) => n.id === affinityAccountId) : null;
 
   let chosen: RuntimeNode;
-  let escapedFromAffinity = false;
+  let hasEscapedFromAffinity = false;
   let updateAffinity = !affinityAccountId;
 
   const selectionFactor = (node: RuntimeNode): number => tier1SelectionHeatFactor(node, tier1AffinityFactor(node.id, affinityAccountId));
@@ -113,7 +113,7 @@ export function pickTier1Candidate(
       const affScore = scoreFor(affinityNode);
       if (evaluateAffinity && affinityShouldEscape(affScore, p2cWinnerScore)) {
         chosen = p2cWinner;
-        escapedFromAffinity = true;
+        hasEscapedFromAffinity = true;
         updateAffinity = true;
       } else if (evaluateAffinity) {
         chosen = affinityNode;
@@ -141,7 +141,7 @@ export function pickTier1Candidate(
   return {
     node: chosen,
     releaseToken: makeTier1ReleaseToken(chosen.id),
-    escapedFromAffinity,
+    escapedFromAffinity: hasEscapedFromAffinity,
     updateAffinity,
     affinityHit: Boolean(affinityAccountId && chosen.id === affinityAccountId),
   };

@@ -70,7 +70,7 @@ export function createSseScanner(onEvent: SseEventHandler): { push(chunkText: st
   };
 }
 
-function drainLines(buffer: string, eventState: SseEventState, onEvent: SseEventHandler, flush: boolean = false): string {
+function drainLines(buffer: string, eventState: SseEventState, onEvent: SseEventHandler, shouldFlush: boolean = false): string {
   let rest = buffer;
   for (;;) {
     const newline = rest.indexOf('\n');
@@ -83,7 +83,7 @@ function drainLines(buffer: string, eventState: SseEventState, onEvent: SseEvent
     }
     handleSseLine(line, eventState, onEvent);
   }
-  if (flush) {
+  if (shouldFlush) {
     let tail = rest;
     if (tail.endsWith('\r')) tail = tail.slice(0, -1);
     if (tail.length > FIRST_EVENT_MAX_SSE_LINE) {
@@ -171,15 +171,15 @@ export async function ensureFirstSseEvent(
   if (!upstreamResponse.body) throw guardError(GUARD_ERROR.EMPTY);
   const reader = upstreamResponse.body.getReader();
   const consumed: Uint8Array[] = [];
-  let settled = false;
+  let isSettled = false;
 
   return await new Promise((resolve, reject) => {
     let timerId: ReturnType<typeof setTimeout> | undefined;
     const abort = () => finishErr(GUARD_ERROR.ABORTED);
 
     const finishOk = () => {
-      if (settled) return;
-      settled = true;
+      if (isSettled) return;
+      isSettled = true;
       clearTimeout(timerId);
       clientSignal?.removeEventListener('abort', abort);
       const state: { failureReason: string | null } = { failureReason: null };
@@ -202,8 +202,8 @@ export async function ensureFirstSseEvent(
     };
 
     const finishErr = (code: GuardErrorCode) => {
-      if (settled) return;
-      settled = true;
+      if (isSettled) return;
+      isSettled = true;
       clearTimeout(timerId);
       clientSignal?.removeEventListener('abort', abort);
       reader.cancel().catch(() => {});
@@ -243,12 +243,12 @@ export async function ensureFirstSseEvent(
     clientSignal?.addEventListener('abort', abort, { once: true });
     timerId = setTimeout(() => finishErr(GUARD_ERROR.TIMEOUT), timeoutMs);
 
-    void consumeSseEventsWithReader(reader, check, consumed, () => settled)
+    void consumeSseEventsWithReader(reader, check, consumed, () => isSettled)
       .then(() => {
-        if (!settled) finishErr(GUARD_ERROR.EMPTY);
+        if (!isSettled) finishErr(GUARD_ERROR.EMPTY);
       })
       .catch((error) => {
-        if (!settled) finishErr(error?.code || GUARD_ERROR.EMPTY);
+        if (!isSettled) finishErr(error?.code || GUARD_ERROR.EMPTY);
       });
   });
 }

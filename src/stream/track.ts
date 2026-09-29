@@ -74,23 +74,23 @@ export function trackStreamResponse(
   const encoder = rewriteModel !== undefined ? new TextEncoder() : null;
   let lineBuffer = '';
   let diagnosticTail = '';
-  let errorEventSeen = false;
-  let terminalFailureSeen = false;
+  let hasSeenErrorEvent = false;
+  let hasSeenTerminalFailure = false;
   let completionSeen = !completionMarker;
   let nextSequenceNumber = 0;
-  let finished = false;
+  let isFinished = false;
   const usageScan = typeof onUsage === 'function' || typeof onAttemptUsage === 'function';
   let usageLines = '';
   let usageCandidate: unknown = null;
-  let usageReported = false;
-  let attemptUsageReported = false;
+  let isUsageReported = false;
+  let isAttemptUsageReported = false;
   const startMs = Date.now();
   let chunkCount = 0;
   let receivedBytes = 0;
   let failureReason: string | null = null;
 
   const emitInterruption = (controller: ReadableStreamDefaultController<Uint8Array>) => {
-    if (errorEventSeen || typeof interruptionChunk !== 'function') return;
+    if (hasSeenErrorEvent || typeof interruptionChunk !== 'function') return;
     try {
       const chunk = interruptionChunk(failureReason, { nextSequenceNumber });
       if (chunk instanceof Uint8Array && chunk.byteLength > 0) controller.enqueue(chunk);
@@ -123,8 +123,8 @@ export function trackStreamResponse(
   };
 
   const finalize = (result: 'success' | 'failure' | 'neutral') => {
-    if (finished) return;
-    finished = true;
+    if (isFinished) return;
+    isFinished = true;
 
     // A transport-level clean EOF without the protocol completion marker is
     // still a failed upstream attempt. Resolve that semantic outcome BEFORE
@@ -133,8 +133,8 @@ export function trackStreamResponse(
     const failed = result === 'failure' || (result === 'success' && !completionSeen);
     const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : failed ? 'failure' : 'success';
 
-    if (!attemptUsageReported) {
-      attemptUsageReported = true;
+    if (!isAttemptUsageReported) {
+      isAttemptUsageReported = true;
       try {
         onAttemptUsage?.(usageCandidate, attemptOutcome);
       } catch {
@@ -143,8 +143,8 @@ export function trackStreamResponse(
     }
 
     // Existing delivered-response semantics remain success-only.
-    if (usageScan && !usageReported && attemptOutcome === 'success' && typeof onUsage === 'function') {
-      usageReported = true;
+    if (usageScan && !isUsageReported && attemptOutcome === 'success' && typeof onUsage === 'function') {
+      isUsageReported = true;
       try {
         onUsage(usageCandidate);
       } catch {
@@ -208,7 +208,7 @@ export function trackStreamResponse(
 
   const body = new ReadableStream({
     async pull(controller) {
-      if (finished) {
+      if (isFinished) {
         controller.close();
         return;
       }
@@ -247,14 +247,14 @@ export function trackStreamResponse(
           controller.enqueue(encoder.encode(lineBuffer));
           lineBuffer = '';
         }
-        if (!completionSeen && !terminalFailureSeen) emitInterruption(controller);
-        finalize(errorEventSeen || terminalFailureSeen ? 'failure' : 'success');
+        if (!completionSeen && !hasSeenTerminalFailure) emitInterruption(controller);
+        finalize(hasSeenErrorEvent || hasSeenTerminalFailure ? 'failure' : 'success');
         controller.close();
         return;
       }
       chunkCount++;
       receivedBytes += value.byteLength;
-      if (!errorEventSeen || !completionSeen) {
+      if (!hasSeenErrorEvent || !completionSeen) {
         const decoded = tailDecoder.decode(value, { stream: true });
         if (usageScan && !completionSeen) scanUsageLine(decoded);
         const scanWindow = diagnosticTail + decoded;
@@ -266,10 +266,10 @@ export function trackStreamResponse(
             match = sequencePattern.exec(scanWindow);
           }
         }
-        if (!errorEventSeen) {
-          errorEventSeen = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
+        if (!hasSeenErrorEvent) {
+          hasSeenErrorEvent = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
         }
-        if (!terminalFailureSeen && failureMarker?.test(scanWindow)) terminalFailureSeen = true;
+        if (!hasSeenTerminalFailure && failureMarker?.test(scanWindow)) hasSeenTerminalFailure = true;
         if (!completionSeen && completionMarker?.test(scanWindow)) completionSeen = true;
         diagnosticTail = scanWindow.slice(-256);
       }

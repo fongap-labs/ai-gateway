@@ -155,14 +155,14 @@ function hasClientTools(body: Record<string, unknown>): boolean {
 function resolveStructuredStrategy(
   requested: StructuredOutputStrategy,
   body: Record<string, unknown>,
-  strict: boolean | undefined = undefined,
+  isStrict: boolean | undefined = undefined,
 ): StructuredOutputStrategy {
   // Synthetic-tool forcing cannot safely coexist with a client-forced tool
   // contract in this maintenance release. Keep the existing prompt path.
   if (requested === 'tool' && (hasClientTools(body) || body.tool_choice !== undefined)) return 'prompt';
   // Anthropic native structured output is strict-schema output. Do not silently
   // strengthen an explicit OpenAI strict:false request.
-  if (requested === 'native' && strict === false) return 'prompt';
+  if (requested === 'native' && isStrict === false) return 'prompt';
   return requested;
 }
 

@@ -231,7 +231,7 @@ export async function queryTokenDailySeries(
   if (!d1) return null;
   const map = new Map<string, DailyWindowRow>();
   let dailyRows: DailyRow[] = [];
-  let dailyTableHasData = false;
+  let hasDailyTableData = false;
 
   // Materialized history first. Recent retained days are overlaid below from
   // hourly, so a stale cron snapshot can never make a just-finished day jump
@@ -247,12 +247,12 @@ export async function queryTokenDailySeries(
       .bind(startDayIso)
       .all<DailyRow>();
     dailyRows = Array.isArray(res?.results) ? res.results : [];
-    dailyTableHasData = dailyRows.length > 0;
+    hasDailyTableData = dailyRows.length > 0;
   } catch (_e) {
     // Table may not exist yet (migration pending). Hourly becomes the only
     // available source below.
     dailyRows = [];
-    dailyTableHasData = false;
+    hasDailyTableData = false;
   }
 
   for (const r of dailyRows) {
@@ -271,7 +271,7 @@ export async function queryTokenDailySeries(
   // retention still contains.
   const recentStartMs = utc8DayStartUtcMs(now) - 6 * DAY_MS;
   const recentStartIso = isoDayUtc8(recentStartMs);
-  const hourlyStartDayIso = dailyTableHasData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
+  const hourlyStartDayIso = hasDailyTableData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
   const hourlyStartUtcMs = Date.parse(`${hourlyStartDayIso}T00:00:00Z`) - DISPLAY_TIMEZONE_OFFSET_MS;
   const hourlyStart = normalizeHour(hourlyStartUtcMs);
 
@@ -310,7 +310,7 @@ export async function queryTokenDailySeries(
     // With materialized history available, degrade to that snapshot rather
     // than failing the whole dashboard. Without daily history there is no
     // trustworthy source left, so preserve the existing fail-open contract.
-    if (!dailyTableHasData) {
+    if (!hasDailyTableData) {
       return { available: false, error: `queryTokenDailySeries: ${asMessage(e)}` };
     }
   }

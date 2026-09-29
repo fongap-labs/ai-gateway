@@ -43,10 +43,10 @@ export async function collectOpenAIStreamObject(
     throw upstreamProcessingError(code, message);
   };
 
-  let semanticEof = false;
+  let isSemanticEof = false;
   const scanner = createSseScanner((data) => {
     if (!data || data === '[DONE]') {
-      semanticEof = true;
+      isSemanticEof = true;
       return;
     }
     // biome-ignore lint/suspicious/noImplicitAnyLet: upstream SSE events are dynamic untrusted JSON at this protocol boundary; tsc treats the evolving `let json` as any
@@ -101,7 +101,7 @@ export async function collectOpenAIStreamObject(
       }
       if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
         state.finish_reason = choice.finish_reason;
-        semanticEof = true;
+        isSemanticEof = true;
       }
     }
   });
@@ -122,7 +122,7 @@ export async function collectOpenAIStreamObject(
       // is logically finished. Cancel the reader instead of waiting for HTTP
       // EOF so a provider that leaves the connection open doesn't stall the
       // failover budget.
-      if (semanticEof) {
+      if (isSemanticEof) {
         await reader.cancel().catch(() => {});
         break;
       }

@@ -99,10 +99,10 @@ export function trackClientResponse(response: Response): Response {
   headers.delete(SYNTHETIC_CLIENT_STREAM_HEADER);
 
   const reader = streaming.getReader();
-  let finished = false;
+  let isFinished = false;
   const finalize = (outcome: 'success' | 'failure' | 'cancel') => {
-    if (finished) return;
-    finished = true;
+    if (isFinished) return;
+    isFinished = true;
     gatewayStats.activeRequests = Math.max(0, gatewayStats.activeRequests - 1);
     if (outcome === 'success') gatewayStats.successes++;
     else if (outcome === 'failure') gatewayStats.failures++;

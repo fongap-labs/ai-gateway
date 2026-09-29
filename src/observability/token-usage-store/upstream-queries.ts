@@ -259,7 +259,7 @@ export async function loadUpstreamSummary(
     }
   } else {
     let fb: UpstreamFallbackRow | null | undefined;
-    let fbHasObservation = true;
+    let hasFbObservation = true;
     try {
       fb = await d1
         .prepare(
@@ -277,7 +277,7 @@ export async function loadUpstreamSummary(
         )
         .first<UpstreamFallbackRow>();
     } catch {
-      fbHasObservation = false;
+      hasFbObservation = false;
       try {
         fb = await d1
           .prepare(
@@ -302,7 +302,7 @@ export async function loadUpstreamSummary(
     missing = Number(fb?.rm) || 0;
     cumulativeOutput = Number(fb?.output) || 0;
     cumulativeStoredRead = Number(fb?.cache_read) || 0;
-    if (fbHasObservation) {
+    if (hasFbObservation) {
       cumulativeEffectiveInput = Number(fb?.effective_input) || 0;
       cumulativeObservedRead = Number(fb?.cache_observed_read) || 0;
       cumulativeObservedInput = Number(fb?.cache_observed_input) || 0;
@@ -358,7 +358,7 @@ export async function loadUpstreamDaily(
   if (!d1) return null;
   const map = new Map<string, UpstreamDailyWindowRow>();
   let dailyRows: UpstreamDailyRow[] = [];
-  let dailyTableHasData = false;
+  let hasDailyTableData = false;
 
   try {
     const res = await d1
@@ -371,7 +371,7 @@ export async function loadUpstreamDaily(
       .bind(startDayIso)
       .all<UpstreamDailyRow>();
     dailyRows = Array.isArray(res?.results) ? res.results : [];
-    dailyTableHasData = dailyRows.length > 0;
+    hasDailyTableData = dailyRows.length > 0;
   } catch {
     dailyRows = [];
   }
@@ -388,7 +388,7 @@ export async function loadUpstreamDaily(
 
   const recentStartMs = utc8DayStartUtcMs(now) - 6 * DAY_MS;
   const recentStartIso = isoDayUtc8(recentStartMs);
-  const hourlyStartDayIso = dailyTableHasData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
+  const hourlyStartDayIso = hasDailyTableData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
   const hourlyStartUtcMs = Date.parse(`${hourlyStartDayIso}T00:00:00Z`) - DISPLAY_TIMEZONE_OFFSET_MS;
   const hourlyStart = normalizeHour(hourlyStartUtcMs);
 
@@ -420,7 +420,7 @@ export async function loadUpstreamDaily(
     }
     for (const [day, value] of hourlyByDay) map.set(day, value);
   } catch (e) {
-    if (!dailyTableHasData) return { available: false, error: `loadUpstreamDaily: ${asMessage(e)}` };
+    if (!hasDailyTableData) return { available: false, error: `loadUpstreamDaily: ${asMessage(e)}` };
   }
   return map;
 }
