@@ -9,25 +9,33 @@
 // network / client-abort outcomes. Success handling lives in success.ts;
 // the hedge race lives in hedge.ts.
 
-import { attemptHeadersTimeoutMs, attemptBudgetWindowMs } from '../../config/timeouts.ts';
-import { classifyUpstreamStatus, classifyNetworkError, classifyClientAbort, classifyPreDispatchInvalidBaseUrl, classifyNonJsonBody, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs } from '../../config/timeouts.ts';
+import { getOAuthProvider } from '../../oauth/provider-configs.ts';
+import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
+import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
-import { resolveUpstreamPath, buildUpstreamHeadersFor } from '../../transport/index.ts';
-import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
-import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
+import {
+  classifyClientAbort,
+  classifyEmptyResponse,
+  classifyNetworkError,
+  classifyNonJsonBody,
+  classifyPreDispatchInvalidBaseUrl,
+  classifyUpstreamStatus,
+  KIND,
+} from '../../reliability/classify.ts';
+import { extractQuotaSignal } from '../../reliability/quota-signal.ts';
+import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import { isSubscriptionNode } from '../../subscription/index.ts';
 import type { SubscriptionWire } from '../../subscription/types.ts';
-import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
-import { extractQuotaSignal } from '../../reliability/quota-signal.ts';
-import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
-import { gatewayError, buildClientErrorResponse } from '../errors.ts';
-import { upstreamModelOf } from '../response-helpers.ts';
-import { handleSuccess } from './success.ts';
-import { recordOutcome, rotateWithNeutralEnd, hedgeLoserOutcome } from './outcome.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../transport/index.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
+import { buildClientErrorResponse, gatewayError } from '../errors.ts';
+import { upstreamModelOf } from '../response-helpers.ts';
+import { recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { handleSuccess } from './success.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
 
@@ -62,13 +70,13 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
     if (!c.hedgedAttempt) c.state.logicalAttempts++;
     const effectiveModel = c.reqDescriptor.model;
     c.logger.debug(
-      `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}`
-      + ` dispatch=${c.state.dispatches} node=${c.node.id} provider=${c.node.provider}`
-      + ` protocol=${c.upstreamProtocol ?? c.node.protocol} surface=${c.surface} tier=${c.node.tier}`
-      + ` model=${c.requestedModel}${effectiveModel !== c.requestedModel ? `=>${effectiveModel}` : ''}->${upstreamModelOf(c.node, effectiveModel)}`
-      + ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=ok status=${outcome.response.status}`
-      + ` headers_ms=${c.headersMs ?? -1}${c.ttftMs !== undefined ? ` ttft_ms=${c.ttftMs}` : ''}`
-      + ` latency_ms=${c.attemptStartMs ? Date.now() - c.attemptStartMs : -1}`,
+      `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}` +
+        ` dispatch=${c.state.dispatches} node=${c.node.id} provider=${c.node.provider}` +
+        ` protocol=${c.upstreamProtocol ?? c.node.protocol} surface=${c.surface} tier=${c.node.tier}` +
+        ` model=${c.requestedModel}${effectiveModel !== c.requestedModel ? `=>${effectiveModel}` : ''}->${upstreamModelOf(c.node, effectiveModel)}` +
+        ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=ok status=${outcome.response.status}` +
+        ` headers_ms=${c.headersMs ?? -1}${c.ttftMs !== undefined ? ` ttft_ms=${c.ttftMs}` : ''}` +
+        ` latency_ms=${c.attemptStartMs ? Date.now() - c.attemptStartMs : -1}`,
     );
   }
   return outcome;
@@ -76,10 +84,24 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
 
 async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   const {
-    request, env, logger, requestId, route, node, requestedModel, clientWantsStream,
-    fakeStream, bodyJson, limits, exposeUpstreamInfo, state,
-    failoverBudgetMs, requestStartMs, remainingDispatchableAttempts, reqDescriptor,
-    policy, conversionContext,
+    request,
+    env,
+    logger,
+    requestId,
+    route,
+    node,
+    requestedModel,
+    fakeStream,
+    bodyJson,
+    limits,
+    exposeUpstreamInfo,
+    state,
+    failoverBudgetMs,
+    requestStartMs,
+    remainingDispatchableAttempts,
+    reqDescriptor,
+    policy,
+    conversionContext,
   } = c;
   const attemptStartMs = Date.now();
   c.attemptStartMs = attemptStartMs;
@@ -150,7 +172,11 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
     }
     const prepared = adapter.prepare({
-      node, credential: resolved, request, body: outboundObject, surface,
+      node,
+      credential: resolved,
+      request,
+      body: outboundObject,
+      surface,
     });
     if (!prepared) {
       logger.info(`subscription adapter refused dispatch node=${node.id} provider=${node.provider}`);
@@ -177,8 +203,13 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     return rotateWithNeutralEnd(state, node, classifyPreDispatchInvalidBaseUrl().kind, c, true);
   }
 
-  const headers = buildUpstreamHeadersFor(upstreamProtocol, request, credential, requestId,
-    isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined);
+  const headers = buildUpstreamHeadersFor(
+    upstreamProtocol,
+    request,
+    credential,
+    requestId,
+    isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined,
+  );
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
   const hedgeAbort = c.hedgeAbort;
@@ -201,11 +232,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
     const attemptBudgetMs = attemptBudgetWindowMs(remainingBudgetMs, remainingDispatchableAttempts);
     c.attemptDeadlineMs = Date.now() + attemptBudgetMs;
-    attemptHeadersTimeout = attemptHeadersTimeoutMs(
-      policy.headersTimeoutMs ?? limits.headersTimeoutMs,
-      attemptBudgetMs,
-      1,
-    );
+    attemptHeadersTimeout = attemptHeadersTimeoutMs(policy.headersTimeoutMs ?? limits.headersTimeoutMs, attemptBudgetMs, 1);
   }
   const timeoutId = setTimeout(() => {
     hasHeadersTimeoutHit = true;
@@ -289,7 +316,9 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));
     recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorText });
     if (classification.action === 'stop') {
-      return { response: buildClientErrorResponse(request, env, route, requestId, requestedModel, upstream.status, errorText, state, exposeUpstreamInfo) };
+      return {
+        response: buildClientErrorResponse(request, env, route, requestId, requestedModel, upstream.status, errorText, state, exposeUpstreamInfo),
+      };
     }
     return { rotate: true, kind: classification.kind };
   }
@@ -328,7 +357,11 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       if (!nativeObject) {
         recordUndeliveredUpstreamAttempt(c, node);
         const empty = classifyEmptyResponse();
-        recordOutcome(state, node, empty, c, { latencyMs, status: upstream.status, diagnostic: 'subscription wire response carried no meaningful output' });
+        recordOutcome(state, node, empty, c, {
+          latencyMs,
+          status: upstream.status,
+          diagnostic: 'subscription wire response carried no meaningful output',
+        });
         return { rotate: true, kind: empty.kind };
       }
       upstream = new Response(JSON.stringify(nativeObject), {
@@ -338,13 +371,15 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     }
   }
 
-  const successNode = effectiveModel === requestedModel
-    ? node
-    : { ...node, models: { ...node.models, [requestedModel]: upstreamModel } };
+  const successNode = effectiveModel === requestedModel ? node : { ...node, models: { ...node.models, [requestedModel]: upstreamModel } };
   const successContext = successNode === node ? c : { ...c, node: successNode };
 
   return handleSuccess({
-    upstream, c: successContext, targetUrl, latencyMs, detach,
+    upstream,
+    c: successContext,
+    targetUrl,
+    latencyMs,
+    detach,
     upstreamWasStreaming: isOpenAIStreamingResponse(upstream),
   });
 }

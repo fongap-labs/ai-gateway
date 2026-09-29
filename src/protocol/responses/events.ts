@@ -144,10 +144,17 @@ export class ResponsesEventBuilder {
 // ---- Error envelope --------------------------------------------------------
 
 export type ResponsesErrorType =
-  | 'invalid_request_error' | 'authentication_error' | 'permission_error'
-  | 'not_found_error' | 'request_too_large' | 'unsupported_media_type_error'
-  | 'rate_limit_error' | 'billing_error' | 'overloaded_error'
-  | 'timeout_error' | 'api_error';
+  | 'invalid_request_error'
+  | 'authentication_error'
+  | 'permission_error'
+  | 'not_found_error'
+  | 'request_too_large'
+  | 'unsupported_media_type_error'
+  | 'rate_limit_error'
+  | 'billing_error'
+  | 'overloaded_error'
+  | 'timeout_error'
+  | 'api_error';
 
 export function responsesErrorTypeForStatus(status: number): ResponsesErrorType {
   if (status === 400 || status === 422) return 'invalid_request_error';
@@ -166,7 +173,10 @@ export function responsesErrorTypeForStatus(status: number): ResponsesErrorType 
 // OpenAI-style error envelope used by /v1/responses responses. Keep `code`
 // nullable for strict Codex/OpenAI compatibility; gateway-specific diagnostic
 // classification is carried in response headers, never by mutating this body.
-export function buildResponsesError(message: unknown, errorType?: string | null): { error: { message: string, type: string, param: null, code: null } } {
+export function buildResponsesError(
+  message: unknown,
+  errorType?: string | null,
+): { error: { message: string; type: string; param: null; code: null } } {
   return {
     error: {
       message: String(message || 'Unknown gateway error.'),

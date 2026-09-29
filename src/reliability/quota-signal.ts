@@ -19,17 +19,17 @@ import type { Protocol } from '../types/protocol.ts';
 
 export type QuotaSignal = {
   /** Remaining requests in the current window, if the provider reported one. */
-  remainingRequests?: number,
+  remainingRequests?: number;
   /** Remaining tokens in the current window, if reported. */
-  remainingTokens?: number,
+  remainingTokens?: number;
   /** The window ceiling (requests), used to derive a remaining ratio. */
-  limitRequests?: number,
+  limitRequests?: number;
   /** The window ceiling (tokens), used to derive a remaining ratio. */
-  limitTokens?: number,
+  limitTokens?: number;
   /** Wall-clock instant (epoch ms) at which the window resets, if known. */
-  resetAtMs?: number,
+  resetAtMs?: number;
   /** Provenance label for diagnostics (e.g. 'openai-headers'). */
-  source?: string,
+  source?: string;
 };
 
 const OPENAI_REMAINING_REQUESTS = 'x-ratelimit-remaining-requests';

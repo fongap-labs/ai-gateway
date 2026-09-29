@@ -8,15 +8,15 @@
 import type { D1Database } from './cloudflare.ts';
 
 export type GatewayEnv = Record<string, unknown> & {
-  TOKEN_STATS_DB?: D1Database,
+  TOKEN_STATS_DB?: D1Database;
 };
 
 export type ExecutionContextLike = {
-  waitUntil?: (promise: Promise<unknown>) => void,
+  waitUntil?: (promise: Promise<unknown>) => void;
 };
 
 export type GatewayLogger = {
-  error: (...args: unknown[]) => void,
-  info: (...args: unknown[]) => void,
-  debug: (...args: unknown[]) => void,
+  error: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  debug: (...args: unknown[]) => void;
 };

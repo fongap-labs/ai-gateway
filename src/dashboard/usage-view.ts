@@ -2,18 +2,18 @@
 // Copyright (c) 2026 Fongap Labs
 
 import {
-  loadUpstreamSummary,
+  isoDayUtc8,
   loadUpstreamDaily,
   loadUpstreamModels,
+  loadUpstreamSummary,
   normalizeModelKey,
   utc8DayStartUtcMs,
-  isoDayUtc8,
 } from '../observability/token-usage-store.ts';
-import { escapeHtml, fmtTokens, fmtInt } from './format.ts';
-import { buildCalendarHeatmap } from './heatmap.ts';
-import { renderHeatmap } from './heatmap-view.ts';
+import { escapeHtml, fmtInt, fmtTokens } from './format.ts';
 import type { HeatmapDataEntry } from './heatmap.ts';
+import { buildCalendarHeatmap } from './heatmap.ts';
 import type { DailyCellData } from './heatmap-view.ts';
+import { renderHeatmap } from './heatmap-view.ts';
 import type { TtftEntry } from './model-status-view.ts';
 
 const DAY_MS = 86_400_000;
@@ -25,7 +25,11 @@ function modelShade(i: number): string {
   return BRAND_SHADES[index] ?? '#0f5d53';
 }
 
-export function buildHeatmap(daily: Map<string, DailyCellData> | null, now: number, coverage?: number | null): { cells: string[], labels: string[], ariaLabel: string, weekCount: number } {
+export function buildHeatmap(
+  daily: Map<string, DailyCellData> | null,
+  now: number,
+  coverage?: number | null,
+): { cells: string[]; labels: string[]; ariaLabel: string; weekCount: number } {
   const heatmap = buildCalendarHeatmap({
     mode: 'rolling-52-weeks',
     today: now,
@@ -58,9 +62,7 @@ function renderTokenComposition(cumulative: SummaryCumulative): string {
   const cachePct = pct(cumulative.cacheRead, totalActivity);
   const outputPct = pct(cumulative.output, totalActivity);
   const hasCacheRead = cumulative.cacheReadReports > 0;
-  const cachePercent = cumulative.cacheHitRatio == null
-    ? null
-    : Math.max(0, Math.min(100, cumulative.cacheHitRatio * 100));
+  const cachePercent = cumulative.cacheHitRatio == null ? null : Math.max(0, Math.min(100, cumulative.cacheHitRatio * 100));
   const cacheRatio = cachePercent == null ? '—' : `${cachePercent.toFixed(1)}%`;
   const cacheReadValue = hasCacheRead || cumulative.cacheRead > 0 ? fmtTokens(cumulative.cacheRead) : '—';
   const cacheTitle = '累计缓存读取 Token';
@@ -97,26 +99,28 @@ function renderTokenComposition(cumulative: SummaryCumulative): string {
   </div>`;
 }
 
-type ModelUsageRow = { model: string, total: number, requests: number };
+type ModelUsageRow = { model: string; total: number; requests: number };
 
 function renderBars(rows: ModelUsageRow[]): string {
   const total = rows.reduce((s, r) => s + r.total, 0);
-  const items = rows.map((r, i) => {
-    const share = total > 0 ? (r.total / total) * 100 : 0;
-    const width = total > 0 ? Math.max(2, share) : 0;
-    const exactTitle = `${r.model}\n${fmtTokens(r.total)} Token · ${fmtInt(r.requests)} 次请求 · ${share.toFixed(1)}%`;
-    return `<div class="model-rank-row" style="--c:${modelShade(i)};--w:${width.toFixed(1)}%" data-tooltip="${escapeHtml(exactTitle)}" tabindex="0" aria-label="${escapeHtml(exactTitle)}">
+  const items = rows
+    .map((r, i) => {
+      const share = total > 0 ? (r.total / total) * 100 : 0;
+      const width = total > 0 ? Math.max(2, share) : 0;
+      const exactTitle = `${r.model}\n${fmtTokens(r.total)} Token · ${fmtInt(r.requests)} 次请求 · ${share.toFixed(1)}%`;
+      return `<div class="model-rank-row" style="--c:${modelShade(i)};--w:${width.toFixed(1)}%" data-tooltip="${escapeHtml(exactTitle)}" tabindex="0" aria-label="${escapeHtml(exactTitle)}">
       <div class="model-rank-index">${i + 1}</div>
       <div class="model-rank-name">${escapeHtml(r.model)}</div>
       <div class="model-rank-bar"><i></i></div>
       <div class="model-rank-value">${fmtTokens(r.total)}</div>
       <div class="model-rank-share">${share.toFixed(1)}%</div>
     </div>`;
-  }).join('');
+    })
+    .join('');
   return `<div class="model-ranking">${items}</div>`;
 }
 
-type ModelUsageResult = { available?: boolean, rows?: ModelUsageRow[], error?: string };
+type ModelUsageResult = { available?: boolean; rows?: ModelUsageRow[]; error?: string };
 
 function dashboardModelAllowlist(raw: unknown): Map<string, string> | null {
   const configured = typeof raw === 'string' ? raw.trim() : '';
@@ -136,7 +140,7 @@ export function selectDashboardModelUsageRows(
   officialNames: Map<string, string> | null | undefined,
 ): ModelUsageRow[] {
   const allowlist = dashboardModelAllowlist(rawDashboardModels);
-  const eligible = new Map<string, { total: number, requests: number }>();
+  const eligible = new Map<string, { total: number; requests: number }>();
   let otherTotal = 0;
   let otherRequests = 0;
 
@@ -165,8 +169,7 @@ export function selectDashboardModelUsageRows(
     otherRequests += row.requests;
   }
 
-  const displayName = (key: string): string =>
-    (officialNames instanceof Map && officialNames.get(key)) || allowlist?.get(key) || key;
+  const displayName = (key: string): string => (officialNames instanceof Map && officialNames.get(key)) || allowlist?.get(key) || key;
   const result = ranked.slice(0, 3).map((row) => ({ ...row, model: displayName(row.model) }));
   if (otherTotal > 0 || otherRequests > 0) {
     result.push({ model: '其他', total: otherTotal, requests: otherRequests });
@@ -179,12 +182,8 @@ function renderModelUsage(
   officialNames: Map<string, string> | null | undefined,
   rawDashboardModels: unknown,
 ): string {
-  const rows = modelUsage?.available === false
-    ? []
-    : selectDashboardModelUsageRows(modelUsage?.rows, rawDashboardModels, officialNames);
-  const body = rows.length
-    ? renderBars(rows)
-    : `<div class="model-usage-empty">${modelUsage?.available === false ? '—' : '近 7 天暂无数据'}</div>`;
+  const rows = modelUsage?.available === false ? [] : selectDashboardModelUsageRows(modelUsage?.rows, rawDashboardModels, officialNames);
+  const body = rows.length ? renderBars(rows) : `<div class="model-usage-empty">${modelUsage?.available === false ? '—' : '近 7 天暂无数据'}</div>`;
 
   return `<div class="usage-panel model-panel">
     <div class="panel-head">
@@ -199,20 +198,29 @@ function renderModelUsage(
 function isSummaryAvailable(s: SummaryResult | null): s is Extract<SummaryResult, { available: true }> {
   return s != null && s.available === true;
 }
-function isSummaryError(s: SummaryResult | null): s is { available: false, error: string } {
+function isSummaryError(s: SummaryResult | null): s is { available: false; error: string } {
   return s != null && s.available === false;
 }
 function isDailyAvailable(d: DailyResult | null): d is Map<string, HeatmapDataEntry> {
   return d instanceof Map;
 }
-function isDailyError(d: DailyResult | null): d is { available: false, error: string } {
+function isDailyError(d: DailyResult | null): d is { available: false; error: string } {
   return d != null && !(d instanceof Map);
 }
-function dailyErrorMessage(d: DailyResult | null): string | undefined { return isDailyError(d) ? d.error : undefined; }
-function summaryErrorMessage(s: SummaryResult | null): string | undefined { return isSummaryError(s) ? s.error : undefined; }
+function dailyErrorMessage(d: DailyResult | null): string | undefined {
+  return isDailyError(d) ? d.error : undefined;
+}
+function summaryErrorMessage(s: SummaryResult | null): string | undefined {
+  return isSummaryError(s) ? s.error : undefined;
+}
 
-export async function usageSection(env: Record<string, unknown>, now: number = Date.now(), stats: DashboardStats | null = null, officialNames: Map<string, string> | null = null): Promise<string> {
-  const cache = stats || await getCachedDashboardStats(env, now);
+export async function usageSection(
+  env: Record<string, unknown>,
+  now: number = Date.now(),
+  stats: DashboardStats | null = null,
+  officialNames: Map<string, string> | null = null,
+): Promise<string> {
+  const cache = stats || (await getCachedDashboardStats(env, now));
   const { summary, daily, modelUsage } = cache;
   const summaryOk = isSummaryAvailable(summary);
   const dailyOk = isDailyAvailable(daily);
@@ -237,16 +245,24 @@ export async function usageSection(env: Record<string, unknown>, now: number = D
   if (isSummaryError(summary) && !summary.error) errors.push('summary unavailable');
   if (isDailyError(daily) && !daily.error) errors.push('daily unavailable');
   if (errors.length && env && env.AIG_LOG_LEVEL !== 'none') {
-    try { console.warn(`[dashboard D1 degraded] ${errors.join('; ')}`); } catch {}
+    try {
+      console.warn(`[dashboard D1 degraded] ${errors.join('; ')}`);
+    } catch {}
   }
 
   const activity = dailyMap
     ? (() => {
-        const { cells, labels, ariaLabel, weekCount } = buildHeatmap(dailyMap as Map<string, DailyCellData>, now, summaryOk ? summary.coverage : null);
+        const { cells, labels, ariaLabel, weekCount } = buildHeatmap(
+          dailyMap as Map<string, DailyCellData>,
+          now,
+          summaryOk ? summary.coverage : null,
+        );
         const weekTracks = `--week-count:${weekCount}`;
-        return `<div class="heatmap-wrap" tabindex="0" role="img" aria-label="${escapeHtml(ariaLabel)}">` +
+        return (
+          `<div class="heatmap-wrap" tabindex="0" role="img" aria-label="${escapeHtml(ariaLabel)}">` +
           `<div class="heatmap" style="${weekTracks}" aria-hidden="true">${cells.join('')}</div>` +
-          `<div class="months" style="${weekTracks}" aria-hidden="true">${labels.join('')}</div></div>`;
+          `<div class="months" style="${weekTracks}" aria-hidden="true">${labels.join('')}</div></div>`
+        );
       })()
     : `<div class="model-usage-empty">统计暂不可用</div>`;
 
@@ -273,39 +289,61 @@ export async function usageSection(env: Record<string, unknown>, now: number = D
 </section>`;
 }
 
-import { MODEL_STATUS_RECENT_WINDOW_MS, MODEL_STATUS_HISTORICAL_WINDOW_MS, queryAllModelsTtftPercentiles, queryRecentModelEvidence } from '../observability/token-usage-store.ts';
+import {
+  MODEL_STATUS_HISTORICAL_WINDOW_MS,
+  MODEL_STATUS_RECENT_WINDOW_MS,
+  queryAllModelsTtftPercentiles,
+  queryRecentModelEvidence,
+} from '../observability/token-usage-store.ts';
 
-type SummaryBucket = { total: number, requests: number };
-type SummaryH24 = SummaryBucket & { input: number, output: number, cacheRead: number, cacheReadReports: number, cacheHitRatio: number | null };
-type SummaryCumulative = SummaryBucket & { reports: number, missing: number, input: number, output: number, cacheRead: number, cacheReadReports: number, cacheHitRatio: number | null };
-type SummaryResult = ({
-  available: true,
-  today: SummaryBucket,
-  h24: SummaryH24,
-  d7: SummaryBucket,
-  cumulative: SummaryCumulative,
-  coverage: number | null,
-} | { available: false, error: string });
-type DailyResult = Map<string, HeatmapDataEntry> | { available: false, error: string };
+type SummaryBucket = { total: number; requests: number };
+type SummaryH24 = SummaryBucket & { input: number; output: number; cacheRead: number; cacheReadReports: number; cacheHitRatio: number | null };
+type SummaryCumulative = SummaryBucket & {
+  reports: number;
+  missing: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheReadReports: number;
+  cacheHitRatio: number | null;
+};
+type SummaryResult =
+  | {
+      available: true;
+      today: SummaryBucket;
+      h24: SummaryH24;
+      d7: SummaryBucket;
+      cumulative: SummaryCumulative;
+      coverage: number | null;
+    }
+  | { available: false; error: string };
+type DailyResult = Map<string, HeatmapDataEntry> | { available: false; error: string };
 
 export type DashboardStats = {
-  summary: SummaryResult | null,
-  daily: DailyResult | null,
-  modelUsage: ModelUsageResult | null,
-  recentEvidence: Set<string> | null,
-  historicalEvidence: Set<string> | null,
-  ttft: Map<string, TtftEntry> | null,
-  observedAt: string,
+  summary: SummaryResult | null;
+  daily: DailyResult | null;
+  modelUsage: ModelUsageResult | null;
+  recentEvidence: Set<string> | null;
+  historicalEvidence: Set<string> | null;
+  ttft: Map<string, TtftEntry> | null;
+  observedAt: string;
 };
 
 const DASHBOARD_CACHE_TTL_MS = 45_000;
-let dashboardCaches = new WeakMap<object, { expiresAt: number, inFlight: Promise<DashboardStats> | null, value: DashboardStats | null }>();
-let missingBindingCache: { expiresAt: number, inFlight: Promise<DashboardStats> | null, value: DashboardStats | null } = { expiresAt: 0, inFlight: null, value: null };
-type CacheEntry = { expiresAt: number, inFlight: Promise<DashboardStats> | null, value: DashboardStats | null };
-function newDashboardCacheEntry(): CacheEntry { return { expiresAt: 0, inFlight: null, value: null }; }
+let dashboardCaches = new WeakMap<object, { expiresAt: number; inFlight: Promise<DashboardStats> | null; value: DashboardStats | null }>();
+let missingBindingCache: { expiresAt: number; inFlight: Promise<DashboardStats> | null; value: DashboardStats | null } = {
+  expiresAt: 0,
+  inFlight: null,
+  value: null,
+};
+type CacheEntry = { expiresAt: number; inFlight: Promise<DashboardStats> | null; value: DashboardStats | null };
+function newDashboardCacheEntry(): CacheEntry {
+  return { expiresAt: 0, inFlight: null, value: null };
+}
 function dashboardCacheFor(env: Record<string, unknown> | null | undefined): CacheEntry {
   const d1 = env?.TOKEN_STATS_DB;
-  if (!d1 || (typeof d1 !== 'object' && typeof d1 !== 'function') || typeof (d1 as { prepare?: unknown }).prepare !== 'function') return missingBindingCache;
+  if (!d1 || (typeof d1 !== 'object' && typeof d1 !== 'function') || typeof (d1 as { prepare?: unknown }).prepare !== 'function')
+    return missingBindingCache;
   let entry = dashboardCaches.get(d1 as object);
   if (!entry) {
     entry = newDashboardCacheEntry();
@@ -321,7 +359,9 @@ export async function getCachedDashboardStats(env: Record<string, unknown>, now:
   if (cache.value && cache.expiresAt > nowMs) return cache.value;
   cache.expiresAt = nowMs + DASHBOARD_CACHE_TTL_MS;
   const task = loadDashboardStats(env, now);
-  const inFlight = task.finally(() => { if (cache.inFlight === inFlight) cache.inFlight = null; });
+  const inFlight = task.finally(() => {
+    if (cache.inFlight === inFlight) cache.inFlight = null;
+  });
   cache.inFlight = inFlight;
   try {
     cache.value = await cache.inFlight;

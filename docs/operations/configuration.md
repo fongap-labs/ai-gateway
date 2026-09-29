@@ -188,14 +188,16 @@ resolves the endpoint from the provider adapter):
 
 1. Put the JSON above into `AIG_TIER2_NODES_01` (a Cloudflare **Variable**,
    not a Secret).
-2. Open this URL in a browser (replace the host and key):
+2. Open this URL in a browser (replace the host):
 
    ```
-   https://<your-gateway-url>/oauth/start?provider=google&node=gemini&key=<your-access-key>
+   https://<your-gateway-url>/oauth/start?provider=google&node=gemini
    ```
 
-   The `?key=` query parameter carries the gateway access key so a browser
-   address bar can start onboarding (it cannot set Authorization headers).
+   The start page asks for your gateway access key and submits it through
+   the form body (never a URL), so the key stays out of access logs,
+   browser history, and `Referer` headers. Calling the route with an
+   `Authorization: Bearer <key>` header skips the paste page.
 3. Approve Google's consent screen. Google redirects to its own
    `codeassist.google.com/authcode` page (its OAuth client does not allow
    arbitrary gateway callback URLs) which displays the authorization code.
@@ -296,24 +298,24 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
 
 ### Reference: onboarding flow
 
-All onboarding routes accept `?key=<access-key>` as a query parameter so you
-can start the flow from a browser address bar (which cannot set
-Authorization headers). The header form (`Authorization: Bearer <key>`) also
-works.
+`/oauth/start` renders a paste page that submits your gateway access key
+through the POST body, so the key never appears in a URL (access logs,
+browser history, `Referer`). Requests carrying
+`Authorization: Bearer <key>` go straight to the provider redirect.
 
 **Claude / Codex (automatic)**:
 
 1. Open
-   `https://<your-gateway-url>/oauth/start?provider=anthropic&node=<node-id>&key=<access-key>`
-   (or `provider=openai`) in a browser.
+   `https://<your-gateway-url>/oauth/start?provider=anthropic&node=<node-id>`
+   (or `provider=openai`) in a browser and enter your gateway access key.
 2. Approve the consent screen; the provider redirects back to
    `/oauth/callback/<provider>` and the gateway completes the exchange.
 
 **Gemini (manual paste)**:
 
 1. Open
-   `https://<your-gateway-url>/oauth/start?provider=google&node=<node-id>&key=<access-key>`
-   in a browser.
+   `https://<your-gateway-url>/oauth/start?provider=google&node=<node-id>`
+   in a browser and enter your gateway access key.
 2. Approve the Google consent screen. Google redirects to its own
    `codeassist.google.com/authcode` page (its OAuth client does not allow
    arbitrary gateway callback URLs) which displays the authorization code.

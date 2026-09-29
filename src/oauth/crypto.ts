@@ -13,8 +13,8 @@ const KEY_BYTES = 32;
 const IV_BYTES = 12;
 
 export type EncryptedSecret = {
-  ciphertextB64: string,
-  ivB64: string,
+  ciphertextB64: string;
+  ivB64: string;
 };
 
 let cachedKeyMaterial: string | undefined;
@@ -35,8 +35,7 @@ function importKey(rawMaterial: string): Promise<CryptoKey | null> {
 // Resolve the AES-GCM key for this isolate. Returns null when the secret is
 // missing or malformed (fail-closed: callers refuse plaintext storage).
 export async function loadTokenKey(env: Record<string, unknown>): Promise<CryptoKey | null> {
-  const raw = typeof env?.AIG_TOKEN_ENCRYPTION_KEY === 'string'
-    ? (env.AIG_TOKEN_ENCRYPTION_KEY as string).trim() : '';
+  const raw = typeof env?.AIG_TOKEN_ENCRYPTION_KEY === 'string' ? (env.AIG_TOKEN_ENCRYPTION_KEY as string).trim() : '';
   if (cachedKeyMaterial === raw && cachedKeyPromise) return cachedKeyPromise;
   cachedKeyMaterial = raw;
   if (!raw) {
@@ -47,17 +46,13 @@ export async function loadTokenKey(env: Record<string, unknown>): Promise<Crypto
   return cachedKeyPromise;
 }
 
-export async function encryptSecret(
-  env: Record<string, unknown>,
-  plaintext: string,
-): Promise<EncryptedSecret | null> {
+export async function encryptSecret(env: Record<string, unknown>, plaintext: string): Promise<EncryptedSecret | null> {
   const key = await loadTokenKey(env);
   if (!key) return null;
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const encoded = new TextEncoder().encode(plaintext);
   try {
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as BufferSource }, key, encoded as BufferSource);
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, encoded as BufferSource);
     const cipherBytes = new Uint8Array(ciphertext);
     let cipherB64 = '';
     for (const byte of cipherBytes) cipherB64 += String.fromCharCode(byte);
@@ -69,10 +64,7 @@ export async function encryptSecret(
   }
 }
 
-export async function decryptSecret(
-  env: Record<string, unknown>,
-  secret: EncryptedSecret,
-): Promise<string | null> {
+export async function decryptSecret(env: Record<string, unknown>, secret: EncryptedSecret): Promise<string | null> {
   const key = await loadTokenKey(env);
   if (!key) return null;
   try {
@@ -83,8 +75,7 @@ export async function decryptSecret(
     if (ivBytes.length !== IV_BYTES) return null;
     const iv = new Uint8Array(IV_BYTES);
     for (let i = 0; i < IV_BYTES; i++) iv[i] = ivBytes.charCodeAt(i);
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv as BufferSource }, key, cipher as BufferSource);
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, cipher as BufferSource);
     return new TextDecoder().decode(plaintext);
   } catch {
     return null;
@@ -92,8 +83,7 @@ export async function decryptSecret(
 }
 
 export function hasTokenKey(env: Record<string, unknown>): boolean {
-  return typeof env?.AIG_TOKEN_ENCRYPTION_KEY === 'string'
-    && !!(env.AIG_TOKEN_ENCRYPTION_KEY as string).trim();
+  return typeof env?.AIG_TOKEN_ENCRYPTION_KEY === 'string' && !!(env.AIG_TOKEN_ENCRYPTION_KEY as string).trim();
 }
 
 export function __resetTokenKeyCacheForTests(): void {

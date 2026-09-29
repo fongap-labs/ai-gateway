@@ -11,11 +11,11 @@
 // provider with its own wire contract, OAuth defaults, or subscription
 // backend adds one module in src/providers/ plus one registry line.
 
-import { genericOpenAIProviderAdapter } from './generic-openai.ts';
-import { openAIProviderAdapter } from './openai.ts';
 import { anthropicProviderAdapter } from './anthropic.ts';
+import { genericOpenAIProviderAdapter } from './generic-openai.ts';
 import { googleProviderAdapter } from './google.ts';
-import type { ProviderAdapter, ProviderWire, OAuthProviderConfig } from './types.ts';
+import { openAIProviderAdapter } from './openai.ts';
+import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.freeze({
   openai: openAIProviderAdapter,
@@ -26,7 +26,9 @@ const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.free
 /** Resolve a provider name to its adapter. Unknown names resolve to the
  *  generic OpenAI-compatible adapter - never null. */
 export function getProviderAdapter(provider: string): ProviderAdapter {
-  const key = String(provider || '').trim().toLowerCase();
+  const key = String(provider || '')
+    .trim()
+    .toLowerCase();
   return PROVIDER_REGISTRY[key] ?? genericOpenAIProviderAdapter;
 }
 
@@ -57,16 +59,22 @@ export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfi
  *  Callers consult this only for effective chat_completions streams; the
  *  node's declared surfaces must still include chat_completions. */
 export function streamUsageEnabled(
-  node: { protocol?: string, surfaces?: ReadonlyArray<string>, provider?: string },
+  node: { protocol?: string; surfaces?: ReadonlyArray<string>; provider?: string },
   env: Record<string, unknown> = {},
 ): boolean {
-  const mode = String(env?.AIG_USAGE_INCLUDE_MODE ?? '').trim().toLowerCase();
+  const mode = String(env?.AIG_USAGE_INCLUDE_MODE ?? '')
+    .trim()
+    .toLowerCase();
   if (mode === 'off') return false;
   if (mode === 'on') return true;
   if (!getProviderAdapter(String(node?.provider ?? '')).streamUsage) return false;
   if (!Array.isArray(node?.surfaces) || !node.surfaces.includes('chat_completions')) return false;
   const offList = String(env?.AIG_USAGE_EXCLUDE_PROVIDERS ?? '')
-    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const provider = String(node?.provider ?? '').trim().toLowerCase();
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const provider = String(node?.provider ?? '')
+    .trim()
+    .toLowerCase();
   return !(provider && offList.includes(provider));
 }

@@ -21,70 +21,76 @@
 // TTFT percentile consumer (src/dashboard/pages.ts):
 //   queryAllModelsTtftPercentiles
 
-import {
-  TABLE, TABLE_MODEL, TABLE_TOTALS, TABLE_DAILY,
-  HOUR_MS, DAY_MS,
-  normalizeHour, normalizeModelKey, utc8DayStartUtcMs, isoDayUtc8,
-  DISPLAY_TIMEZONE_OFFSET_MS,
-  tokenStatsD1,
-} from './keys.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
-import { TTFT_BUCKET_BOUNDARIES_MS } from './keys.ts';
+import {
+  DAY_MS,
+  DISPLAY_TIMEZONE_OFFSET_MS,
+  HOUR_MS,
+  isoDayUtc8,
+  normalizeHour,
+  normalizeModelKey,
+  TABLE,
+  TABLE_DAILY,
+  TABLE_MODEL,
+  TABLE_TOTALS,
+  TTFT_BUCKET_BOUNDARIES_MS,
+  tokenStatsD1,
+  utc8DayStartUtcMs,
+} from './keys.ts';
 
-type DailyWindowRow = { total: number, requests: number, reports: number, missing: number };
-type TtftEntry = { available: true, p50: number | null, p95: number | null, sampleCount: number, p50Insufficient: boolean, p95Insufficient: boolean };
+type DailyWindowRow = { total: number; requests: number; reports: number; missing: number };
+type TtftEntry = { available: true; p50: number | null; p95: number | null; sampleCount: number; p50Insufficient: boolean; p95Insufficient: boolean };
 type NumericCell = number | null;
 type TotalsRow = {
-  total_tokens?: NumericCell,
-  requests?: NumericCell,
-  usage_reports?: NumericCell,
-  usage_missing?: NumericCell,
+  total_tokens?: NumericCell;
+  requests?: NumericCell;
+  usage_reports?: NumericCell;
+  usage_missing?: NumericCell;
 };
 type SummaryWindowRow = {
-  today_total?: NumericCell,
-  today_requests?: NumericCell,
-  h24_total?: NumericCell,
-  h24_requests?: NumericCell,
-  d7_total?: NumericCell,
-  d7_requests?: NumericCell,
+  today_total?: NumericCell;
+  today_requests?: NumericCell;
+  h24_total?: NumericCell;
+  h24_requests?: NumericCell;
+  d7_total?: NumericCell;
+  d7_requests?: NumericCell;
 };
-type SummaryFallbackRow = { t?: NumericCell, r?: NumericCell, rp?: NumericCell, rm?: NumericCell };
+type SummaryFallbackRow = { t?: NumericCell; r?: NumericCell; rp?: NumericCell; rm?: NumericCell };
 type DailyRow = {
-  day: string,
-  total_tokens?: NumericCell,
-  requests?: NumericCell,
-  usage_reports?: NumericCell,
-  usage_missing?: NumericCell,
+  day: string;
+  total_tokens?: NumericCell;
+  requests?: NumericCell;
+  usage_reports?: NumericCell;
+  usage_missing?: NumericCell;
 };
 type HourlyDailyRow = {
-  hour: string,
-  total?: NumericCell,
-  requests?: NumericCell,
-  reports?: NumericCell,
-  missing?: NumericCell,
+  hour: string;
+  total?: NumericCell;
+  requests?: NumericCell;
+  reports?: NumericCell;
+  missing?: NumericCell;
 };
-type ModelUsageRow = { model?: string | null, total?: NumericCell, requests?: NumericCell };
+type ModelUsageRow = { model?: string | null; total?: NumericCell; requests?: NumericCell };
 type ModelKeyRow = { model?: string | null };
 type TtftRow = {
-  model?: string | null,
-  total_ttft?: NumericCell,
-  b0?: NumericCell,
-  b1?: NumericCell,
-  b2?: NumericCell,
-  b3?: NumericCell,
-  b4?: NumericCell,
-  b5?: NumericCell,
-  b6?: NumericCell,
+  model?: string | null;
+  total_ttft?: NumericCell;
+  b0?: NumericCell;
+  b1?: NumericCell;
+  b2?: NumericCell;
+  b3?: NumericCell;
+  b4?: NumericCell;
+  b5?: NumericCell;
+  b6?: NumericCell;
 };
 type CoverageRow = {
-  model?: string | null,
-  requests?: NumericCell,
-  reports?: NumericCell,
-  missing?: NumericCell,
+  model?: string | null;
+  requests?: NumericCell;
+  reports?: NumericCell;
+  missing?: NumericCell;
 };
 
-const asMessage = (e: unknown): string =>
-  String((e as { message?: unknown } | null | undefined)?.message || e);
+const asMessage = (e: unknown): string => String((e as { message?: unknown } | null | undefined)?.message || e);
 
 // Aggregate summary for the public dashboard. Returns:
 //   {
@@ -96,14 +102,21 @@ const asMessage = (e: unknown): string =>
 //     coverage: <number|null>,           // reports / (reports + missing)
 //   }
 // or null when binding missing, or error object when query fails.
-export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now()): Promise<{
-  available: true,
-  today: { total: number, requests: number },
-  h24: { total: number, requests: number },
-  d7: { total: number, requests: number },
-  cumulative: { total: number, requests: number, reports: number, missing: number },
-  coverage: number | null,
-} | { available: false, error: string } | null> {
+export async function queryTokenSummary(
+  env: GatewayEnv,
+  now: number = Date.now(),
+): Promise<
+  | {
+      available: true;
+      today: { total: number; requests: number };
+      h24: { total: number; requests: number };
+      d7: { total: number; requests: number };
+      cumulative: { total: number; requests: number; reports: number; missing: number };
+      coverage: number | null;
+    }
+  | { available: false; error: string }
+  | null
+> {
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const todayStart = normalizeHour(utc8DayStartUtcMs(now));
@@ -115,10 +128,10 @@ export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now(
   try {
     const totalsStmt = d1.prepare(
       `SELECT input_tokens, output_tokens, total_tokens, requests, usage_reports, usage_missing
-       FROM ${TABLE_TOTALS} WHERE scope = 'global'`
+       FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
     );
     totalsRow = await totalsStmt.first<TotalsRow>();
-  } catch (e) {
+  } catch (_e) {
     // Totals table may not exist yet (migration pending). We'll fall back below.
   }
 
@@ -131,7 +144,7 @@ export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now(
        COALESCE(SUM(CASE WHEN hour >= ? THEN requests END), 0) AS h24_requests,
        COALESCE(SUM(CASE WHEN hour >= ? THEN total_tokens END), 0) AS d7_total,
        COALESCE(SUM(CASE WHEN hour >= ? THEN requests END), 0) AS d7_requests
-     FROM ${TABLE}`
+     FROM ${TABLE}`,
   );
   let hourlyRow: SummaryWindowRow | null | undefined;
   try {
@@ -154,7 +167,7 @@ export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now(
       const fallbackStmt = d1.prepare(
         `SELECT COALESCE(SUM(total_tokens),0) AS t, COALESCE(SUM(requests),0) AS r,
                 COALESCE(SUM(usage_reports),0) AS rp, COALESCE(SUM(usage_missing),0) AS rm
-         FROM ${TABLE}`
+         FROM ${TABLE}`,
       );
       const fb = await fallbackStmt.first<SummaryFallbackRow>();
       if (fb) {
@@ -165,7 +178,7 @@ export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now(
       } else {
         cum_total = cum_requests = cum_reports = cum_missing = 0;
       }
-    } catch (e) {
+    } catch (_e) {
       cum_total = cum_requests = cum_reports = cum_missing = 0;
     }
   }
@@ -209,30 +222,37 @@ export async function queryTokenSummary(env: GatewayEnv, now: number = Date.now(
 // calendar days is therefore safe at every time of day: the oldest overlaid
 // day still starts less than 7 * 24h before `now`. Never overlay the seventh
 // previous calendar day because its early hours may already have been pruned.
-export async function queryTokenDailySeries(env: GatewayEnv, startDayIso: string, now: number = Date.now()): Promise<Map<string, DailyWindowRow> | { available: false, error: string } | null> {
+export async function queryTokenDailySeries(
+  env: GatewayEnv,
+  startDayIso: string,
+  now: number = Date.now(),
+): Promise<Map<string, DailyWindowRow> | { available: false; error: string } | null> {
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const map = new Map<string, DailyWindowRow>();
   let dailyRows: DailyRow[] = [];
-  let dailyTableHasData = false;
+  let hasDailyTableData = false;
 
   // Materialized history first. Recent retained days are overlaid below from
   // hourly, so a stale cron snapshot can never make a just-finished day jump
   // backwards after midnight.
   try {
-    const res = await d1.prepare(
-      `SELECT day, input_tokens, output_tokens, total_tokens, requests, usage_reports, usage_missing
+    const res = await d1
+      .prepare(
+        `SELECT day, input_tokens, output_tokens, total_tokens, requests, usage_reports, usage_missing
        FROM ${TABLE_DAILY}
        WHERE day >= ?
-       ORDER BY day`
-    ).bind(startDayIso).all<DailyRow>();
+       ORDER BY day`,
+      )
+      .bind(startDayIso)
+      .all<DailyRow>();
     dailyRows = Array.isArray(res?.results) ? res.results : [];
-    dailyTableHasData = dailyRows.length > 0;
-  } catch (e) {
+    hasDailyTableData = dailyRows.length > 0;
+  } catch (_e) {
     // Table may not exist yet (migration pending). Hourly becomes the only
     // available source below.
     dailyRows = [];
-    dailyTableHasData = false;
+    hasDailyTableData = false;
   }
 
   for (const r of dailyRows) {
@@ -251,19 +271,20 @@ export async function queryTokenDailySeries(env: GatewayEnv, startDayIso: string
   // retention still contains.
   const recentStartMs = utc8DayStartUtcMs(now) - 6 * DAY_MS;
   const recentStartIso = isoDayUtc8(recentStartMs);
-  const hourlyStartDayIso = dailyTableHasData
-    ? (startDayIso > recentStartIso ? startDayIso : recentStartIso)
-    : startDayIso;
+  const hourlyStartDayIso = hasDailyTableData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
   const hourlyStartUtcMs = Date.parse(`${hourlyStartDayIso}T00:00:00Z`) - DISPLAY_TIMEZONE_OFFSET_MS;
   const hourlyStart = normalizeHour(hourlyStartUtcMs);
 
   try {
-    const res = await d1.prepare(
-      `SELECT hour, COALESCE(SUM(total_tokens),0) AS total, COALESCE(SUM(requests),0) AS requests, COALESCE(SUM(usage_reports),0) AS reports, COALESCE(SUM(usage_missing),0) AS missing
+    const res = await d1
+      .prepare(
+        `SELECT hour, COALESCE(SUM(total_tokens),0) AS total, COALESCE(SUM(requests),0) AS requests, COALESCE(SUM(usage_reports),0) AS reports, COALESCE(SUM(usage_missing),0) AS missing
        FROM ${TABLE}
        WHERE hour >= ?
-       GROUP BY hour`
-    ).bind(hourlyStart).all<HourlyDailyRow>();
+       GROUP BY hour`,
+      )
+      .bind(hourlyStart)
+      .all<HourlyDailyRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     const hourlyByDay = new Map<string, DailyWindowRow>();
 
@@ -289,7 +310,7 @@ export async function queryTokenDailySeries(env: GatewayEnv, startDayIso: string
     // With materialized history available, degrade to that snapshot rather
     // than failing the whole dashboard. Without daily history there is no
     // trustworthy source left, so preserve the existing fail-open contract.
-    if (!dailyTableHasData) {
+    if (!hasDailyTableData) {
       return { available: false, error: `queryTokenDailySeries: ${asMessage(e)}` };
     }
   }
@@ -304,20 +325,27 @@ export async function queryTokenDailySeries(env: GatewayEnv, startDayIso: string
 // stats dimension instead of splitting (or overwriting each other). The
 // writer already canonicalizes; the reader must not depend on that —
 // pre-normalization rows still exist in D1 until retention ages them out.
-export async function queryTokenModelUsage(env: GatewayEnv, days: number = 7, now: number = Date.now()): Promise<{ available: true, rows: Array<{ model: string, total: number, requests: number }> } | { available: false, error: string }> {
+export async function queryTokenModelUsage(
+  env: GatewayEnv,
+  days: number = 7,
+  now: number = Date.now(),
+): Promise<{ available: true; rows: Array<{ model: string; total: number; requests: number }> } | { available: false; error: string }> {
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);
   try {
-    const res = await d1.prepare(
-      `SELECT LOWER(TRIM(model)) AS model,
+    const res = await d1
+      .prepare(
+        `SELECT LOWER(TRIM(model)) AS model,
               COALESCE(SUM(total_tokens), 0) AS total,
               COALESCE(SUM(requests), 0) AS requests
        FROM ${TABLE_MODEL}
        WHERE hour >= ?
        GROUP BY LOWER(TRIM(model))
        ORDER BY total DESC`,
-    ).bind(startHour).all<ModelUsageRow>();
+      )
+      .bind(startHour)
+      .all<ModelUsageRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     return {
       available: true,
@@ -355,17 +383,24 @@ export const MODEL_STATUS_HISTORICAL_WINDOW_MS = 7 * DAY_MS;
 // normalizeModelKey() without case drift. Fail-open: missing binding →
 // empty Set, query failure → empty Set. NEVER fabricates evidence — an
 // empty Set is "no evidence", not "evidence of failure".
-export async function queryRecentModelEvidence(env: GatewayEnv, windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS, now: number = Date.now()): Promise<Set<string>> {
+export async function queryRecentModelEvidence(
+  env: GatewayEnv,
+  windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS,
+  now: number = Date.now(),
+): Promise<Set<string>> {
   const d1 = tokenStatsD1(env);
   if (!d1) return new Set();
   const startHour = normalizeHour(now - windowMs);
   try {
-    const res = await d1.prepare(
-      `SELECT LOWER(TRIM(model)) AS model
+    const res = await d1
+      .prepare(
+        `SELECT LOWER(TRIM(model)) AS model
        FROM ${TABLE_MODEL}
        WHERE hour >= ? AND requests > 0
        GROUP BY LOWER(TRIM(model))`,
-    ).bind(startHour).all<ModelKeyRow>();
+      )
+      .bind(startHour)
+      .all<ModelKeyRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     const out = new Set<string>();
     for (const r of rows) {
@@ -373,7 +408,7 @@ export async function queryRecentModelEvidence(env: GatewayEnv, windowMs: number
       if (key) out.add(key);
     }
     return out;
-  } catch (e) {
+  } catch (_e) {
     // Fail-open: no evidence. Public Model Status then falls back to
     // the runtime-only signal; a fresh isolate with no runtime state
     // reports `no_record`, never `down` for every model.
@@ -401,8 +436,9 @@ export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: n
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - windowMs);
   try {
-    const res = await d1.prepare(
-      `SELECT LOWER(TRIM(model)) AS model,
+    const res = await d1
+      .prepare(
+        `SELECT LOWER(TRIM(model)) AS model,
               COALESCE(SUM(successful_ttft_count), 0) AS total_ttft,
               COALESCE(SUM(ttft_b0), 0) AS b0,
               COALESCE(SUM(ttft_b1), 0) AS b1,
@@ -414,7 +450,9 @@ export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: n
        FROM ${TABLE_MODEL}
        WHERE hour >= ?
        GROUP BY LOWER(TRIM(model))`,
-    ).bind(startHour).all<TtftRow>();
+      )
+      .bind(startHour)
+      .all<TtftRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     const ttft = new Map<string, TtftEntry>();
     for (const row of rows) {
@@ -483,8 +521,9 @@ export async function queryModelUsageCoverage(env: GatewayEnv, days: number = 7,
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);
   try {
-    const res = await d1.prepare(
-      `SELECT LOWER(TRIM(model)) AS model,
+    const res = await d1
+      .prepare(
+        `SELECT LOWER(TRIM(model)) AS model,
               COALESCE(SUM(requests), 0) AS requests,
               COALESCE(SUM(usage_reports), 0) AS reports,
               COALESCE(SUM(usage_missing), 0) AS missing
@@ -492,7 +531,9 @@ export async function queryModelUsageCoverage(env: GatewayEnv, days: number = 7,
        WHERE hour >= ?
        GROUP BY LOWER(TRIM(model))
        ORDER BY requests DESC`,
-    ).bind(startHour).all<CoverageRow>();
+      )
+      .bind(startHour)
+      .all<CoverageRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     return {
       available: true,

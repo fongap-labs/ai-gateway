@@ -58,7 +58,8 @@ function mapToolChoice(toolChoice: unknown): Record<string, unknown> | string {
     // Non-streaming OpenAI shape { type: "function", function: { name } }
     if (toolChoice.type === 'function' && isRecord(toolChoice.function)) {
       assertFields(toolChoice.function, ['name'], 'tool_choice.function');
-      if (typeof toolChoice.function.name !== 'string' || !toolChoice.function.name) throw new ConversionError('conversion_not_supported: tool_choice.function.name is required');
+      if (typeof toolChoice.function.name !== 'string' || !toolChoice.function.name)
+        throw new ConversionError('conversion_not_supported: tool_choice.function.name is required');
       return { type: 'tool', name: toolChoice.function.name };
     }
     throw new ConversionError(`conversion_not_supported: tool_choice type "${String(toolChoice.type)}" is not supported`);
@@ -171,7 +172,11 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
   if (!isRecord(body)) {
     throw new ConversionError('conversion_not_supported: request body is not an object');
   }
-  assertFields(body, ['model', 'messages', 'system', 'developer', 'tools', 'tool_choice', 'temperature', 'top_p', 'max_tokens', 'stop', 'stream'], 'request');
+  assertFields(
+    body,
+    ['model', 'messages', 'system', 'developer', 'tools', 'tool_choice', 'temperature', 'top_p', 'max_tokens', 'stop', 'stream'],
+    'request',
+  );
   assertSampling(body);
   const out: Record<string, unknown> = {};
 
@@ -213,7 +218,7 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
       if (!isRecord(tool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
       if (tool.type !== 'function') throw new ConversionError('conversion_not_supported: only function tools are supported');
       const fn = isRecord(tool.function) ? tool.function : null;
-      if (!fn || !fn.name || typeof fn.name !== 'string') {
+      if (!fn?.name || typeof fn.name !== 'string') {
         throw new ConversionError('conversion_not_supported: tool.function.name is required');
       }
       const result: Record<string, unknown> = { name: fn.name };
@@ -221,7 +226,8 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
       assertFields(tool, ['type', 'function'], 'tool');
       assertFields(fn, ['name', 'description', 'parameters'], 'tool.function');
       const inputSchema = isRecord(fn.parameters) ? fn.parameters : {};
-      if (inputSchema.type !== undefined && inputSchema.type !== 'object') throw new ConversionError('conversion_not_supported: tool schema must describe an object');
+      if (inputSchema.type !== undefined && inputSchema.type !== 'object')
+        throw new ConversionError('conversion_not_supported: tool schema must describe an object');
       result.input_schema = { ...inputSchema, type: 'object' };
       tools.push(result);
     }

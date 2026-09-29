@@ -8,7 +8,7 @@
 
 import { codexSubscriptionAdapter } from '../subscription/openai.ts';
 import type { Surface } from '../types/protocol.ts';
-import type { ProviderAdapter, ProviderWire, OAuthProviderConfig } from './types.ts';
+import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const OPENAI_NATIVE_WIRE: ProviderWire = Object.freeze({
   protocol: 'openai',

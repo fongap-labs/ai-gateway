@@ -38,8 +38,8 @@
 // Only explicitly supported conversions are allowed. Unsupported conversions
 // produce blocking configuration errors (not warnings).
 
-import { readEnv } from './env.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
+import { readEnv } from './env.ts';
 
 const PROTOCOL_SURFACES = new Map<string, Set<string>>([
   ['openai', new Set(['chat_completions', 'responses'])],
@@ -74,7 +74,7 @@ const ROUTE_PROTOCOL_SURFACE: Readonly<Record<string, string>> = Object.freeze({
 });
 
 let cachedEnv: Record<string, unknown> | undefined;
-let cached: { config: Record<string, string[]>, errors: string[] } | undefined;
+let cached: { config: Record<string, string[]>; errors: string[] } | undefined;
 
 export function loadProtocolFallbacks(env: Record<string, unknown>): Record<string, string[]> {
   return analyzeProtocolFallbacks(env).config;
@@ -84,7 +84,7 @@ export function getProtocolFallbacksDiagnostics(env: Record<string, unknown>): s
   return analyzeProtocolFallbacks(env).errors;
 }
 
-function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Record<string, string[]>, errors: string[] } {
+function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Record<string, string[]>; errors: string[] } {
   if (cachedEnv === env && cached) return cached;
   cachedEnv = env;
   const raw = readEnv(env, 'AIG_PROTOCOL_FALLBACKS');
@@ -143,7 +143,9 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
         if (targets.length > 0) {
           const allowed = SUPPORTED_CONVERSIONS[parsedKey];
           if (!allowed) {
-            errors.push(`AIG_PROTOCOL_FALLBACKS: "${parsedKey}" is not a supported conversion source (supported: ${Object.keys(SUPPORTED_CONVERSIONS).join(', ')})`);
+            errors.push(
+              `AIG_PROTOCOL_FALLBACKS: "${parsedKey}" is not a supported conversion source (supported: ${Object.keys(SUPPORTED_CONVERSIONS).join(', ')})`,
+            );
           } else {
             for (const target of targets) {
               if (!allowed.includes(target)) {
@@ -192,7 +194,7 @@ function parseSurfaceKey(raw: string, errors: string[], parentKey: string): stri
 // Returns an array of { protocol, surface } objects (empty when no fallback
 // is configured for the route). The route must be one of the natively
 // supported routes (openai_chat / openai_responses / anthropic_messages).
-export function getFallbackChain(route: string, env: Record<string, unknown>): Array<{ protocol: Protocol, surface: Surface }> {
+export function getFallbackChain(route: string, env: Record<string, unknown>): Array<{ protocol: Protocol; surface: Surface }> {
   const key = ROUTE_PROTOCOL_SURFACE[route];
   if (!key) return [];
   const config = loadProtocolFallbacks(env);

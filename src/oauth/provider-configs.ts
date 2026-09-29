@@ -30,9 +30,9 @@
 //   }
 
 import { builtinOAuthProviderConfigs } from '../providers/registry.ts';
-import type { OAuthUpstreamHeaders, OAuthProviderConfig } from '../providers/types.ts';
+import type { OAuthProviderConfig, OAuthUpstreamHeaders } from '../providers/types.ts';
 
-export type { OAuthUpstreamHeaders, OAuthProviderConfig } from '../providers/types.ts';
+export type { OAuthProviderConfig, OAuthUpstreamHeaders } from '../providers/types.ts';
 
 export type OAuthProvidersConfig = Record<string, OAuthProviderConfig>;
 
@@ -65,15 +65,13 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
   }
   const authorizeUrl = normalizeHttpUrl(raw.authorize_url, 'authorize_url', provider, diagnostics);
   const tokenUrl = normalizeHttpUrl(raw.token_url, 'token_url', provider, diagnostics);
-  const clientId = typeof raw.client_id === 'string' && raw.client_id.trim()
-    ? raw.client_id.trim() : null;
+  const clientId = typeof raw.client_id === 'string' && raw.client_id.trim() ? raw.client_id.trim() : null;
   const scope = typeof raw.scope === 'string' ? raw.scope.trim() : null;
   if (!clientId) diagnostics.push(`AIG_OAUTH_PROVIDERS: provider "${provider}" is missing "client_id"`);
   if (!scope) diagnostics.push(`AIG_OAUTH_PROVIDERS: provider "${provider}" is missing "scope"`);
   if (!authorizeUrl || !tokenUrl || !clientId || !scope) return null;
 
-  const clientSecret = typeof raw.client_secret === 'string' && raw.client_secret.trim()
-    ? raw.client_secret.trim() : undefined;
+  const clientSecret = typeof raw.client_secret === 'string' && raw.client_secret.trim() ? raw.client_secret.trim() : undefined;
 
   let manualRedirectUrl: string | undefined;
   if (typeof raw.manual_redirect_url === 'string' && raw.manual_redirect_url.trim()) {
@@ -84,8 +82,6 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
     }
     manualRedirectUrl = murl;
   }
-
-
 
   let upstreamHeaders: OAuthUpstreamHeaders = {};
   if (raw.upstream_headers !== undefined) {
@@ -104,7 +100,10 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
     upstreamHeaders = Object.freeze(Object.fromEntries(headerEntries));
   }
   return Object.freeze({
-    authorizeUrl, tokenUrl, clientId, scope,
+    authorizeUrl,
+    tokenUrl,
+    clientId,
+    scope,
     ...(clientSecret ? { clientSecret } : {}),
     ...(manualRedirectUrl ? { manualRedirectUrl } : {}),
     upstreamHeaders,
@@ -115,12 +114,8 @@ function parseProvider(provider: string, raw: unknown, diagnostics: string[]): O
 // AIG_OAUTH_PROVIDERS entries override per-provider (wholesale
 // replacement, not field merge). Never returns null - defaults are always
 // available.
-export function loadOAuthProviders(
-  env: Record<string, unknown>,
-  diagnosticsOut?: string[],
-): OAuthProvidersConfig {
-  const raw = typeof env?.AIG_OAUTH_PROVIDERS === 'string'
-    ? (env.AIG_OAUTH_PROVIDERS as string).trim() : '';
+export function loadOAuthProviders(env: Record<string, unknown>, diagnosticsOut?: string[]): OAuthProvidersConfig {
+  const raw = typeof env?.AIG_OAUTH_PROVIDERS === 'string' ? (env.AIG_OAUTH_PROVIDERS as string).trim() : '';
   if (cachedRaw === raw && cachedParsed !== undefined) return cachedParsed;
   cachedRaw = raw;
 
@@ -161,10 +156,7 @@ export function loadOAuthProviders(
   return cachedParsed;
 }
 
-export function getOAuthProvider(
-  env: Record<string, unknown>,
-  provider: string,
-): OAuthProviderConfig | null {
+export function getOAuthProvider(env: Record<string, unknown>, provider: string): OAuthProviderConfig | null {
   const config = loadOAuthProviders(env);
   return config[provider] ?? null;
 }
@@ -178,11 +170,7 @@ export function isManualPasteProvider(provider: OAuthProviderConfig): boolean {
 // The redirect_uri to send to the authorize endpoint.
 // For manual-paste providers: the provider-hosted URL from config.
 // For automatic providers: the gateway callback URL derived from AIG_PUBLIC_URL.
-export function resolveRedirectUri(
-  provider: OAuthProviderConfig,
-  publicBaseUrl: string,
-  providerName: string,
-): string | null {
+export function resolveRedirectUri(provider: OAuthProviderConfig, publicBaseUrl: string, providerName: string): string | null {
   if (provider.manualRedirectUrl) return provider.manualRedirectUrl;
   if (!publicBaseUrl) return null;
   return `${publicBaseUrl.replace(/\/+$/, '')}/oauth/callback/${providerName}`;

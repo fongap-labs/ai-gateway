@@ -3,7 +3,8 @@
 //
 // Anthropic Messages request -> OpenAI Chat Completions request converter.
 
-import { ConversionError, isRecord, assertFields, assertSampling } from './validation.ts';
+import { assertFields, assertSampling, ConversionError, isRecord } from './validation.ts';
+
 export { ConversionError };
 
 function unsupportedBlock(type: unknown): never {
@@ -11,14 +12,7 @@ function unsupportedBlock(type: unknown): never {
 }
 
 const SAFELY_IGNORABLE_FIELDS = ['cache_control'];
-const TOOL_HINT_FIELDS = [
-  'cache_control',
-  'allowed_callers',
-  'defer_loading',
-  'strict',
-  'input_examples',
-  'eager_input_streaming',
-];
+const TOOL_HINT_FIELDS = ['cache_control', 'allowed_callers', 'defer_loading', 'strict', 'input_examples', 'eager_input_streaming'];
 const EFFORT_VALUES = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 function systemToOpenAI(system: unknown): Record<string, unknown> | null {
@@ -87,7 +81,8 @@ function convertAssistantContent(blocks: unknown[]): Record<string, unknown> {
       text += block.text;
     } else if (block.type === 'tool_use') {
       assertFields(block, ['type', 'id', 'name', 'input', 'caller', 'toolset_name', ...SAFELY_IGNORABLE_FIELDS], 'tool_use');
-      if (typeof block.id !== 'string' || !block.id || typeof block.name !== 'string' || !block.name || !isRecord(block.input)) unsupportedBlock('invalid tool_use');
+      if (typeof block.id !== 'string' || !block.id || typeof block.name !== 'string' || !block.name || !isRecord(block.input))
+        unsupportedBlock('invalid tool_use');
       toolCalls.push({ id: block.id, type: 'function', function: { name: block.name, arguments: JSON.stringify(block.input) } });
     } else if (block.type === 'thinking' || block.type === 'redacted_thinking') {
       assertDroppableThinkingBlock(block);
@@ -104,9 +99,13 @@ function convertUserContent(blocks: unknown): string | Record<string, unknown> |
   const parts: Array<Record<string, unknown>> = [];
   for (const block of blocks) {
     if (!isRecord(block)) unsupportedBlock('invalid');
-    assertFields(block, block.type === 'tool_result'
-      ? ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS]
-      : ['type', 'text', ...SAFELY_IGNORABLE_FIELDS], 'user content');
+    assertFields(
+      block,
+      block.type === 'tool_result'
+        ? ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS]
+        : ['type', 'text', ...SAFELY_IGNORABLE_FIELDS],
+      'user content',
+    );
     if (block.type === 'text') parts.push({ type: 'text', text: block.text || '' });
     else if (block.type === 'tool_result') {
       if (typeof block.tool_use_id !== 'string' || !block.tool_use_id) unsupportedBlock('invalid tool_result');
@@ -214,21 +213,34 @@ function isAdvisorTool(tool: Record<string, unknown>): boolean {
 }
 
 function assertDroppableAdvisorTool(tool: Record<string, unknown>): void {
-  assertFields(tool, [
-    'type', 'name', 'model', 'max_uses', 'max_tokens', 'caching',
-    ...TOOL_HINT_FIELDS,
-  ], 'advisor tool');
+  assertFields(tool, ['type', 'name', 'model', 'max_uses', 'max_tokens', 'caching', ...TOOL_HINT_FIELDS], 'advisor tool');
   if (tool.type !== 'advisor_20260301' || tool.name !== 'advisor' || typeof tool.model !== 'string' || !tool.model) {
     unsupportedBlock('invalid advisor tool');
   }
 }
 
 export function convertAnthropicToOpenAIRequest(body: Record<string, unknown>): Record<string, unknown> {
-  assertFields(body, [
-    'model', 'messages', 'system', 'max_tokens', 'temperature', 'top_p',
-    'stream', 'stop_sequences', 'tools', 'tool_choice', 'metadata', 'thinking',
-    'context_management', 'output_config', 'cache_control',
-  ], 'request');
+  assertFields(
+    body,
+    [
+      'model',
+      'messages',
+      'system',
+      'max_tokens',
+      'temperature',
+      'top_p',
+      'stream',
+      'stop_sequences',
+      'tools',
+      'tool_choice',
+      'metadata',
+      'thinking',
+      'context_management',
+      'output_config',
+      'cache_control',
+    ],
+    'request',
+  );
   assertDroppableThinkingConfig(body.thinking);
   assertDroppableContextManagementConfig(body.context_management);
   const structuredOutputSchema = parseTopLevelOutputConfig(body.output_config);
@@ -277,9 +289,15 @@ export function convertAnthropicToOpenAIRequest(body: Record<string, unknown>): 
         messages.push(converted);
       } else if (Array.isArray(converted)) {
         let parts: Record<string, unknown>[] = [];
-        const flush = () => { if (parts.length) messages.push({ role: 'user', content: parts }); parts = []; };
+        const flush = () => {
+          if (parts.length) messages.push({ role: 'user', content: parts });
+          parts = [];
+        };
         for (const part of converted) {
-          if (part.role === 'tool') { flush(); messages.push(part); } else parts.push(part);
+          if (part.role === 'tool') {
+            flush();
+            messages.push(part);
+          } else parts.push(part);
         }
         flush();
       } else {

@@ -16,15 +16,15 @@
 // with its own wire contract, OAuth onboarding, or subscription backend
 // means adding one module in src/providers/ plus its registry line.
 
-import type { Protocol, Surface } from '../types/protocol.ts';
 import type { SubscriptionAdapter } from '../subscription/types.ts';
+import type { Protocol, Surface } from '../types/protocol.ts';
 
 /** Structural wire contract: which protocol the provider speaks and which
  *  upstream surfaces are routable. This is provider knowledge, not
  *  per-account configuration; node records cannot override it. */
 export type ProviderWire = Readonly<{
-  protocol: Protocol,
-  surfaces: ReadonlyArray<Surface>,
+  protocol: Protocol;
+  surfaces: ReadonlyArray<Surface>;
 }>;
 
 /** Built-in OAuth onboarding defaults for one provider (public constants
@@ -34,39 +34,39 @@ export type ProviderWire = Readonly<{
 export type OAuthUpstreamHeaders = Readonly<Record<string, string>>;
 
 export type OAuthProviderConfig = {
-  authorizeUrl: string,
-  tokenUrl: string,
-  clientId: string,
-  scope: string,
-  clientSecret?: string,
+  authorizeUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  scope: string;
+  clientSecret?: string;
   /** When set, the authorize redirect goes to this URL (not the gateway
    *  callback) and the operator must paste the code at /oauth/paste.
    *  Required for providers whose OAuth client does not allow arbitrary
    *  redirect URIs (e.g., Google). */
-  manualRedirectUrl?: string,
-  upstreamHeaders: OAuthUpstreamHeaders,
+  manualRedirectUrl?: string;
+  upstreamHeaders: OAuthUpstreamHeaders;
 };
 
 export type ProviderAdapter = Readonly<{
   /** Registry key: the provider name used in node configuration. */
-  id: string,
-  wire: ProviderWire,
+  id: string;
+  wire: ProviderWire;
   /** Whether this provider's OpenAI chat_completions stream accepts the
    *  passive `stream_options.include_usage` hint in auto mode. Operator
    *  switches (AIG_USAGE_INCLUDE_MODE / AIG_USAGE_EXCLUDE_PROVIDERS) still
    *  apply on top of this declaration. */
-  streamUsage: boolean,
+  streamUsage: boolean;
   /** Built-in OAuth onboarding defaults; absent for providers without an
    *  OAuth subscription onboarding story. */
-  oauth?: OAuthProviderConfig,
+  oauth?: OAuthProviderConfig;
   /** Built-in upstream endpoint for Tier 2 `auth:"oauth"` subscription
    *  nodes. When an operator omits base_url on such a node, the config layer
    *  resolves base_url from here so onboarding needs only {id, provider,
    *  auth:"oauth", models}. Absent for providers whose subscription nodes
    *  require an explicit base_url. */
-  subscriptionEndpoint?: string,
+  subscriptionEndpoint?: string;
   /** Subscription dispatch semantics for Tier 2 auth:"oauth" nodes.
    *  Absent means the provider has no verified subscription backend and
    *  subscription dispatch fails closed (pre-dispatch rotation). */
-  subscription?: SubscriptionAdapter,
+  subscription?: SubscriptionAdapter;
 }>;

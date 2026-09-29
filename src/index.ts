@@ -3,11 +3,11 @@
 //
 // Worker entrypoint: request accounting, top-level error handling, and scheduled usage maintenance.
 
-import { handleRequest } from './request/handler.ts';
-import { isCountedRoute, gatewayStats, trackClientResponse } from './observability/gateway-stats.ts';
-import { normalizePath, detectRoute } from './request/router.ts';
 import { sanitizedInternalErrorForRoute } from './observability/diagnostic-endpoints.ts';
+import { gatewayStats, isCountedRoute, trackClientResponse } from './observability/gateway-stats.ts';
 import { maintainUsageStats } from './observability/token-usage-store.ts';
+import { handleRequest } from './request/handler.ts';
+import { detectRoute, normalizePath } from './request/router.ts';
 import type { ExecutionContextLike, GatewayEnv } from './types/runtime.ts';
 
 export default {

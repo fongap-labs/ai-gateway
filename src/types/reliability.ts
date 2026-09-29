@@ -8,35 +8,35 @@
 // see docs/governance/typescript-migration.md).
 
 export type ModelPerfEntry = {
-  avgTtftMs: number,
-  avgLatencyMs: number,
-  lastUsedAt: number,
-  ttftSamples: number,
-  passiveSamples: number,
-  probeSamples: number,
-  lastTtftAt: number,
-  lastProbeFailureAt: number,
+  avgTtftMs: number;
+  avgLatencyMs: number;
+  lastUsedAt: number;
+  ttftSamples: number;
+  passiveSamples: number;
+  probeSamples: number;
+  lastTtftAt: number;
+  lastProbeFailureAt: number;
 };
 
 export type CircuitState = 'closed' | 'open' | 'half-open';
 
 export type NodeState = {
-  activeRequests: number,
-  healthScore: number,
-  avgLatencyMs: number,
-  avgTtftMs: number,
-  cooldownUntil: number,
-  cooldownReason: string | null,
-  circuitState: CircuitState,
-  consecutiveFailures: number,
-  lastTransientFailureAt: number,
-  probeInFlight: boolean,
-  totalRequests: number,
-  totalSuccesses: number,
-  totalFailures: number,
-  lastUsedAt: number,
+  activeRequests: number;
+  healthScore: number;
+  avgLatencyMs: number;
+  avgTtftMs: number;
+  cooldownUntil: number;
+  cooldownReason: string | null;
+  circuitState: CircuitState;
+  consecutiveFailures: number;
+  lastTransientFailureAt: number;
+  probeInFlight: boolean;
+  totalRequests: number;
+  totalSuccesses: number;
+  totalFailures: number;
+  lastUsedAt: number;
   /** Per-logical-model model_missing cooldown deadline (ms epoch). */
-  modelCooldowns: Map<string, number>,
+  modelCooldowns: Map<string, number>;
   /** Per-logical-model performance EWMA, bounded LRU by lastUsedAt. */
-  modelPerf: Map<string, ModelPerfEntry>,
+  modelPerf: Map<string, ModelPerfEntry>;
 };

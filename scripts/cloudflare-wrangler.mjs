@@ -1,21 +1,20 @@
 // Stable local wrapper around the pinned Cloudflare Wrangler CLI.
 // Single source of truth for: Wrangler version, required KV binding,
 // D1 migration-before-deploy, and direct Worker CLI invocation.
+
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWindows = process.platform === 'win32';
 const npxCliCandidates = [
-  process.env.npm_execpath
-    ? path.join(path.dirname(process.env.npm_execpath), 'npx-cli.js')
-    : null,
+  process.env.npm_execpath ? path.join(path.dirname(process.env.npm_execpath), 'npx-cli.js') : null,
   path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'),
 ].filter(Boolean);
 const npxCli = isWindows ? npxCliCandidates.find((candidate) => fs.existsSync(candidate)) : null;
-const command = npxCli ? process.execPath : (isWindows ? 'npx.cmd' : 'npx');
+const command = npxCli ? process.execPath : isWindows ? 'npx.cmd' : 'npx';
 const commandPrefix = npxCli ? [npxCli] : [];
 const passthrough = process.argv.slice(2);
 const wranglerVersion = 'wrangler@4.114.0';
@@ -60,8 +59,7 @@ function databaseNameForBinding(configSource, binding) {
   if (!configSource) return null;
   try {
     const config = JSON.parse(configSource);
-    const entry = (config?.d1_databases || [])
-      .find((d) => d && d.binding === binding && d.database_name);
+    const entry = (config?.d1_databases || []).find((d) => d && d.binding === binding && d.database_name);
     return entry?.database_name || null;
   } catch {
     return null;
@@ -72,8 +70,9 @@ function checkAffinityKvBinding(configSource) {
   if (!configSource) return false;
   try {
     const config = JSON.parse(configSource);
-    return config?.kv_namespaces?.some((entry) =>
-      entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0) || false;
+    return (
+      config?.kv_namespaces?.some((entry) => entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0) || false
+    );
   } catch {
     return false;
   }
@@ -85,9 +84,7 @@ function checkAffinityKvBinding(configSource) {
 if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   const configPath = selectedConfigPath();
   const resolvedConfig = configPath && path.resolve(root, configPath);
-  const configSource = resolvedConfig && fs.existsSync(resolvedConfig)
-    ? fs.readFileSync(resolvedConfig, 'utf8')
-    : '';
+  const configSource = resolvedConfig && fs.existsSync(resolvedConfig) ? fs.readFileSync(resolvedConfig, 'utf8') : '';
   if (!checkAffinityKvBinding(configSource)) {
     console.error('Refusing deploy: configure the required TIER1_AFFINITY KV binding in wrangler.user.jsonc.');
     process.exitCode = 1;
@@ -95,11 +92,7 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   }
   const dbName = databaseNameForBinding(configSource, 'TOKEN_STATS_DB');
   if (dbName) {
-    const migrationArgs = [
-      '--yes', wranglerVersion,
-      'd1', 'migrations', 'apply', dbName, '--remote',
-      '-c', configPath,
-    ];
+    const migrationArgs = ['--yes', wranglerVersion, 'd1', 'migrations', 'apply', dbName, '--remote', '-c', configPath];
     const migrationStatus = runWrangler(migrationArgs);
     if (migrationStatus !== 0) {
       process.exitCode = migrationStatus;

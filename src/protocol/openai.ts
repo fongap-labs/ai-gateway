@@ -4,8 +4,8 @@
 // OpenAI Chat Completions surface: request validation, model-field
 // normalization, and completion->SSE synthesis for OpenAI-compatible clients.
 
-import { corsHeaders } from './http.ts';
 import { markSyntheticClientStreamHeaders } from '../stream/client-lifecycle.ts';
+import { corsHeaders } from './http.ts';
 
 export function validateOpenAIChatRequest(body: unknown): string | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Request body must be a JSON object.';
@@ -41,9 +41,7 @@ export function isOpenAIStreamingResponse(response: Response): boolean {
 // into a fresh object so the request stays valid.
 export function withUsageStreamOptions(body: Record<string, unknown>): Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
-  const existing = body.stream_options && typeof body.stream_options === 'object' && !Array.isArray(body.stream_options)
-    ? body.stream_options
-    : {};
+  const existing = body.stream_options && typeof body.stream_options === 'object' && !Array.isArray(body.stream_options) ? body.stream_options : {};
   const streamOptions: Record<string, unknown> = { ...existing };
   if (streamOptions.include_usage === undefined) streamOptions.include_usage = true;
   return { ...body, stream_options: streamOptions };
@@ -55,7 +53,12 @@ export function withUsageStreamOptions(body: Record<string, unknown>): Record<st
 // upstream stream. The internal lifecycle marker tells the outer request layer
 // that no node stream tracker owns this client stream; the marker is stripped
 // before the response leaves the gateway.
-export function synthesizeSseFromCompletion(data: Record<string, unknown> | null | undefined, env: Record<string, unknown>, request: Request, extraHeaders?: Record<string, string>): Response {
+export function synthesizeSseFromCompletion(
+  data: Record<string, unknown> | null | undefined,
+  env: Record<string, unknown>,
+  request: Request,
+  extraHeaders?: Record<string, string>,
+): Response {
   const encoder = new TextEncoder();
   const choices = Array.isArray(data?.choices) ? data.choices : [];
   const base = {

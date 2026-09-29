@@ -3,23 +3,28 @@
 
 import { escapeHtml } from './format.ts';
 
-function snippetPane({ id, active, code }: { id: string, active: boolean, code: string }): string {
-  return `<div class="pane${active ? ' active' : ''}" id="pane-${id}" role="tabpanel" ` +
+function snippetPane({ id, active, code }: { id: string; active: boolean; code: string }): string {
+  return (
+    `<div class="pane${active ? ' active' : ''}" id="pane-${id}" role="tabpanel" ` +
     `aria-labelledby="tab-${id}"${active ? '' : ' hidden'}>
     <div class="code-card">
-      <div id="code-${id}">${code.split('\n').map((line) => {
-        const eq = line.indexOf('=');
-        if (eq < 0) return `<div class="code-line">${escapeHtml(line)}</div>`;
-        const key = escapeHtml(line.slice(0, eq));
-        const val = escapeHtml(line.slice(eq + 1));
-        return `<div class="code-line"><span class="code-key">${key}</span>=<span class="code-value">${val}</span></div>`;
-      }).join('')}</div>
+      <div id="code-${id}">${code
+        .split('\n')
+        .map((line) => {
+          const eq = line.indexOf('=');
+          if (eq < 0) return `<div class="code-line">${escapeHtml(line)}</div>`;
+          const key = escapeHtml(line.slice(0, eq));
+          const val = escapeHtml(line.slice(eq + 1));
+          return `<div class="code-line"><span class="code-key">${key}</span>=<span class="code-value">${val}</span></div>`;
+        })
+        .join('')}</div>
       <button class="copy" type="button" data-copy="#code-${id}" aria-label="复制" aria-live="polite">复制</button>
     </div>
-  </div>`;
+  </div>`
+  );
 }
 
-export function quickStartSection({ apiBase, accessGroups }: { apiBase: string, accessGroups: readonly string[] }): string {
+export function quickStartSection({ apiBase, accessGroups }: { apiBase: string; accessGroups: readonly string[] }): string {
   const origin = new URL(apiBase).origin;
   const groups = accessGroups.length > 0 ? accessGroups.join(' / ') : '未配置';
   const openai = `# Key 组：${groups}\nOPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=<YOUR_GATEWAY_KEY>`;
@@ -27,13 +32,17 @@ export function quickStartSection({ apiBase, accessGroups }: { apiBase: string, 
   const tabs = [
     { id: 'openai', label: 'OpenAI 协议' },
     { id: 'anthropic', label: 'Anthropic 协议' },
-  ].map((t, i) => `<button class="tab${i === 0 ? ' active' : ''}" id="tab-${t.id}" ` +
-    `type="button" role="tab" aria-controls="pane-${t.id}" aria-selected="${i === 0}" ` +
-    `tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}">${t.label}</button>`).join('');
-  const panes = [
-    snippetPane({ id: 'openai', active: true, code: openai }),
-    snippetPane({ id: 'anthropic', active: false, code: anthropic }),
-  ].join('\n');
+  ]
+    .map(
+      (t, i) =>
+        `<button class="tab${i === 0 ? ' active' : ''}" id="tab-${t.id}" ` +
+        `type="button" role="tab" aria-controls="pane-${t.id}" aria-selected="${i === 0}" ` +
+        `tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}">${t.label}</button>`,
+    )
+    .join('');
+  const panes = [snippetPane({ id: 'openai', active: true, code: openai }), snippetPane({ id: 'anthropic', active: false, code: anthropic })].join(
+    '\n',
+  );
   return `<section id="quickstart">
   <div class="wrap">
     <div class="section-head"><span class="section-title">快速开始</span></div>

@@ -4,11 +4,21 @@
 export const TIER_ORDER: readonly [1, 2, 3] = [1, 2, 3];
 
 export type DetectedRoute =
-  | 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'anthropic_count_tokens'
-  | 'health' | 'metrics' | 'models' | 'other';
+  | 'openai_chat'
+  | 'openai_responses'
+  | 'anthropic_messages'
+  | 'anthropic_count_tokens'
+  | 'health'
+  | 'metrics'
+  | 'models'
+  | 'other';
 
 export function normalizePath(pathname: string | undefined): string {
-  return String(pathname || '/').replace(/\/+$/, '').toLowerCase() || '/';
+  return (
+    String(pathname || '/')
+      .replace(/\/+$/, '')
+      .toLowerCase() || '/'
+  );
 }
 
 export function detectRoute(method: string, pathname: string): DetectedRoute {

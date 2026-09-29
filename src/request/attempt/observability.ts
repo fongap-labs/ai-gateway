@@ -9,29 +9,26 @@
 // successful model-status evidence, but it still belongs in upstream cost
 // accounting when usage is reported.
 
-import {
-  recordSuccess, recordNeutralEnd, applyHealthPenalty,
-  bumpNodeCounters, recordFailure,
-} from '../../reliability/node-state.ts';
-import {
-  releaseTier1Slot,
-  settleTier1Quota,
-  recordTier1Ttft, recordTier1Success, applyTier1Outcome, classifyTier1Failure,
-  getTier1Account,
-} from '../../reliability/tier1-state.ts';
-import { recordTier1ProviderModelSuccess } from '../../reliability/tier1-heat.ts';
+import { gatewayStats, recordStreamCompleted, recordStreamInterrupted, recordStreamStart } from '../../observability/gateway-stats.ts';
+import { mergeReportedUsage, normalizeTokenUsage, recordTokenUsage } from '../../observability/token-usage.ts';
+import { persistTokenUsage, persistUpstreamAttemptUsage } from '../../observability/token-usage-store.ts';
 import { clearAdaptive429State } from '../../reliability/adaptive-429.ts';
 import { classifyStreamInterrupted } from '../../reliability/classify.ts';
-import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
+import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordNeutralEnd, recordSuccess } from '../../reliability/node-state.ts';
+import { recordTier1ProviderModelSuccess } from '../../reliability/tier1-heat.ts';
 import {
-  recordStreamStart, recordStreamCompleted, recordStreamInterrupted,
-  gatewayStats,
-} from '../../observability/gateway-stats.ts';
-import { recordTokenUsage, mergeReportedUsage, normalizeTokenUsage } from '../../observability/token-usage.ts';
-import { persistTokenUsage, persistUpstreamAttemptUsage } from '../../observability/token-usage-store.ts';
-import { upstreamModelOf } from '../response-helpers.ts';
-import type { AttemptContext } from '../../types/request.ts';
+  applyTier1Outcome,
+  classifyTier1Failure,
+  getTier1Account,
+  recordTier1Success,
+  recordTier1Ttft,
+  releaseTier1Slot,
+  settleTier1Quota,
+} from '../../reliability/tier1-state.ts';
+import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../types/node.ts';
+import type { AttemptContext } from '../../types/request.ts';
+import { upstreamModelOf } from '../response-helpers.ts';
 
 const observedAttemptUsage = new WeakMap<object, unknown>();
 const settledAttemptUsage = new WeakSet<object>();
@@ -78,7 +75,11 @@ export function recordUndeliveredUpstreamAttempt(c: AttemptContext, node: Runtim
   const logicalModel = logicalModelOf(c);
   const task = persistUpstreamAttemptUsage(c.env, observed, Date.now(), logicalModel).catch((err) => {
     const scope = String(err?.scope || '').includes('model') ? 'upstream-model' : 'upstream-global';
-    try { c.logger?.error?.(`upstream token-stats D1 ${scope} persist failed: ${err?.message || err}`); } catch { /* fail-open */ }
+    try {
+      c.logger?.error?.(`upstream token-stats D1 ${scope} persist failed: ${err?.message || err}`);
+    } catch {
+      /* fail-open */
+    }
   });
   scheduleBackground(c, task);
 }
@@ -87,7 +88,11 @@ function scheduleD1TokenPersist(c: AttemptContext, usage: unknown, logicalModel?
   const modelForPersist = logicalModel ?? logicalModelOf(c);
   const task = persistTokenUsage(c.env, usage, Date.now(), modelForPersist, c.ttftMs ?? null).catch((err) => {
     const scope = err?.scope === 'per-model' ? 'per-model' : 'global';
-    try { c.logger?.error?.(`token-stats D1 ${scope} persist failed: ${err?.message || err}`); } catch { /* never throw */ }
+    try {
+      c.logger?.error?.(`token-stats D1 ${scope} persist failed: ${err?.message || err}`);
+    } catch {
+      /* never throw */
+    }
   });
   scheduleBackground(c, task);
 }
@@ -95,7 +100,11 @@ function scheduleD1TokenPersist(c: AttemptContext, usage: unknown, logicalModel?
 function scheduleBackground(c: AttemptContext, task: Promise<unknown>): void {
   const ctx = c.ctx;
   if (ctx && typeof ctx.waitUntil === 'function') {
-    try { ctx.waitUntil(task); } catch { task.catch(() => {}); }
+    try {
+      ctx.waitUntil(task);
+    } catch {
+      task.catch(() => {});
+    }
   } else {
     task.catch(() => {});
   }
@@ -152,24 +161,29 @@ export function makeNodeStreamTrack(
       gatewayStats.cancellations++;
     },
     onStreamStart: () => recordStreamStart(),
-    onStreamEnd: (outcome: string, d: { reason: string | null, durationMs: number, chunkCount: number, receivedBytes: number, completionMarkerSeen: boolean }) => {
-      if (outcome === 'completed') { recordStreamCompleted(); return; }
+    onStreamEnd: (
+      outcome: string,
+      d: { reason: string | null; durationMs: number; chunkCount: number; receivedBytes: number; completionMarkerSeen: boolean },
+    ) => {
+      if (outcome === 'completed') {
+        recordStreamCompleted();
+        return;
+      }
       if (outcome !== 'interrupted') return;
       recordStreamInterrupted(d.reason);
       if (tier1) {
-        applyTier1Outcome(node.id, c.state?.requestedModel,
-          classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }));
+        applyTier1Outcome(node.id, c.state?.requestedModel, classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }));
         releaseTier1Slot(node.id, c.tier1ReleaseToken);
         bumpNodeCounters(node.id, { requests: 1, failures: 1 });
       } else {
         applyHealthPenalty(node.id, 'stream');
       }
       c.logger.info(
-        `[stream-interrupted] node=${node.id} provider=${node.provider}`
-        + ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? node.surfaces?.[0] ?? ''}`
-        + ` model=${c.requestedModel}->${upstreamModelOf(node, c.requestedModel)}`
-        + ` reason=${d.reason} duration_ms=${d.durationMs} chunks=${d.chunkCount}`
-        + ` received_bytes=${d.receivedBytes} completion_marker=${d.completionMarkerSeen}`,
+        `[stream-interrupted] node=${node.id} provider=${node.provider}` +
+          ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? node.surfaces?.[0] ?? ''}` +
+          ` model=${c.requestedModel}->${upstreamModelOf(node, c.requestedModel)}` +
+          ` reason=${d.reason} duration_ms=${d.durationMs} chunks=${d.chunkCount}` +
+          ` received_bytes=${d.receivedBytes} completion_marker=${d.completionMarkerSeen}`,
       );
     },
   };

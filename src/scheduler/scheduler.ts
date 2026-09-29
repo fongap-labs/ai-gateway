@@ -33,11 +33,11 @@
 // explicit request descriptor; no scheduler call ever crosses the boundary
 // on its own.
 
-import { peekAvailability, acquireSlot, getNodeState, isModelCooling, getModelPerf } from '../reliability/node-state.ts';
 import { servesModel } from '../config/registry.ts';
+import { acquireSlot, getModelPerf, getNodeState, isModelCooling, peekAvailability } from '../reliability/node-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { RoutableRequest, PickedCandidate } from '../types/scheduler.ts';
-import type { NodeState, ModelPerfEntry } from '../types/reliability.ts';
+import type { ModelPerfEntry, NodeState } from '../types/reliability.ts';
+import type { PickedCandidate, RoutableRequest } from '../types/scheduler.ts';
 
 // A request descriptor: { model, protocol, surface }. Every selection helper
 // below filters candidates through ALL THREE dimensions — a node is eligible
@@ -67,7 +67,15 @@ export function supportsRequest(node: RuntimeNode, req: RoutableRequest, knownMo
 //   knownModels (optional) is the Known Model Catalog; it bounds wildcard
 //   nodes so an empty-models node only serves catalog models. The request path
 //   always passes it (defense in depth on top of the preflight authz gate).
-export function pickCandidate(tierNodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), excludeId: string | null = null, knownModels?: ReadonlySet<string> | null, excludeIds?: ReadonlySet<string> | null): PickedCandidate | null {
+export function pickCandidate(
+  tierNodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  excludeId: string | null = null,
+  knownModels?: ReadonlySet<string> | null,
+  excludeIds?: ReadonlySet<string> | null,
+): PickedCandidate | null {
   let best: RuntimeNode | null = null;
   let bestState: NodeState | null = null;
 
@@ -102,13 +110,25 @@ export function pickCandidate(tierNodes: ReadonlyArray<RuntimeNode>, req: Routab
 // True when this tier has a candidate that passes the same hard eligibility
 // gates used by pickCandidate. Active request count remains a soft ranking
 // signal and does not remove a node from this set.
-export function tierHasDispatchableNode(tierNodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), knownModels?: ReadonlySet<string> | null): boolean {
+export function tierHasDispatchableNode(
+  tierNodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+): boolean {
   return countDispatchableNodes(tierNodes, req, attempted, now, knownModels) > 0;
 }
 
 // Count candidates that pickCandidate could dispatch right now without
 // claiming their circuit/active-request state.
-export function countDispatchableNodes(tierNodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, now: number = Date.now(), knownModels?: ReadonlySet<string> | null): number {
+export function countDispatchableNodes(
+  tierNodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string> | null,
+): number {
   let count = 0;
   for (const node of tierNodes) {
     if (attempted.has(node.id)) continue;
@@ -184,10 +204,8 @@ function betterThan(a: NodeState, aNode: RuntimeNode, b: NodeState, bNode: Runti
   // One real timeout / network / 5xx is enough to move traffic to a healthy
   // peer immediately. Unlike a cooldown this is only a ranking preference:
   // a sole node remains eligible for recovery and for circuit probing.
-  const aRecentlyFailed = a.lastTransientFailureAt > 0
-    && now - a.lastTransientFailureAt < TRANSIENT_FAILURE_PREFERENCE_MS;
-  const bRecentlyFailed = b.lastTransientFailureAt > 0
-    && now - b.lastTransientFailureAt < TRANSIENT_FAILURE_PREFERENCE_MS;
+  const aRecentlyFailed = a.lastTransientFailureAt > 0 && now - a.lastTransientFailureAt < TRANSIENT_FAILURE_PREFERENCE_MS;
+  const bRecentlyFailed = b.lastTransientFailureAt > 0 && now - b.lastTransientFailureAt < TRANSIENT_FAILURE_PREFERENCE_MS;
   if (aRecentlyFailed !== bRecentlyFailed) return !aRecentlyFailed;
   if (aNode.priority !== bNode.priority) return aNode.priority < bNode.priority;
   if (a.activeRequests !== b.activeRequests) return a.activeRequests < b.activeRequests;

@@ -9,10 +9,7 @@
 //         { vars, secrets, deleteVars, deleteSecrets, tierSummary }
 //       Full values are written to --out only; stdout prints a safe summary.
 import fs from 'node:fs';
-import {
-  parseJsonFile, buildPlan,
-  MANAGED_VAR_PATTERN, MANAGED_SECRET_PATTERN,
-} from './node-config-shards.mjs';
+import { buildPlan, MANAGED_SECRET_PATTERN, MANAGED_VAR_PATTERN, parseJsonFile } from './node-config-shards.mjs';
 
 function fail(message) {
   console.error(`error: ${message}`);

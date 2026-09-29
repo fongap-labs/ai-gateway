@@ -48,9 +48,14 @@ export function jsonResponse(status: number, data: unknown, env: GatewayEnv, req
 // when a transparent failover is no longer safe. The shape is route-specific:
 // Responses uses event: error + type/error, Anthropic uses event: error +
 // type/error nested under .error, and OpenAI Chat uses a plain data: payload.
-export function streamInterruptionChunk(route: string, requestId: string, reason: string | null, { nextSequenceNumber = 0 }: { nextSequenceNumber?: number } = {}): Uint8Array {
+export function streamInterruptionChunk(
+  route: string,
+  requestId: string,
+  reason: string | null,
+  { nextSequenceNumber = 0 }: { nextSequenceNumber?: number } = {},
+): Uint8Array {
   const message = `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
-  let event;
+  let event: string;
   if (route === 'openai_responses') {
     event = `event: error\ndata: ${JSON.stringify({ type: 'error', code: 'stream_interrupted', message, param: null, sequence_number: nextSequenceNumber })}\n\n`;
   } else if (route === 'anthropic_messages') {

@@ -23,12 +23,8 @@
 //
 // Hot-path cost: one Map lookup per node, no allocation in the steady state.
 
-import { peekAvailability, hasBeenObserved } from '../reliability/node-state.ts';
-import {
-  isTier1Eligible,
-  getTier1ModelPerf,
-  TIER1_FAILURE_STATES,
-} from '../reliability/tier1-state.ts';
+import { hasBeenObserved, peekAvailability } from '../reliability/node-state.ts';
+import { getTier1ModelPerf, isTier1Eligible, TIER1_FAILURE_STATES } from '../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
 
 export type RuntimeAvailability = 'available' | 'unobserved' | 'unavailable';

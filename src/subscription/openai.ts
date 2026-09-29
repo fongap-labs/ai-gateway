@@ -14,9 +14,9 @@
 //     first-party client always sends one (empty when none). Client-provided
 //     instructions pass through verbatim.
 
-import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
 import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
-import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
+import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsHeaders } from './quota-hints.ts';
+import type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionFailureView, SubscriptionPreparedRequest } from './types.ts';
 
 const CODEX_ORIGINATOR = 'codex-tui';
 
@@ -42,8 +42,7 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
     // Responses-surface only: ensure the `instructions` field exists. The
     // chat_completions wire shape has no instructions field and is untouched.
     let body: Record<string, unknown> | null = null;
-    if (surface === 'responses'
-      && (ctx.body.instructions === undefined || ctx.body.instructions === null)) {
+    if (surface === 'responses' && (ctx.body.instructions === undefined || ctx.body.instructions === null)) {
       body = { ...ctx.body, instructions: '' };
     }
     return { headers, body, upstreamUrl: null };
@@ -51,8 +50,7 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
 
   quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {
     if (failure.status !== 429) return null;
-    const resetAt = hintFromResetHeaders(failure.headers, CODEX_RESET_HEADERS, now)
-      ?? hintFromResetBody(failure.body, CODEX_RESET_BODY_FIELDS);
+    const resetAt = hintFromResetHeaders(failure.headers, CODEX_RESET_HEADERS, now) ?? hintFromResetBody(failure.body, CODEX_RESET_BODY_FIELDS);
     const relative = hintFromSecondsHeaders(failure.headers, CODEX_RESET_HEADERS);
     return capHint(resetAt, relative, now);
   },
@@ -76,11 +74,9 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
     }
     if (!response.ok) return null;
     try {
-      const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+      const payload = (await response.json()) as { data?: Array<{ id?: unknown }> };
       if (!Array.isArray(payload.data)) return null;
-      const ids = payload.data
-        .map((entry) => typeof entry?.id === 'string' ? entry.id : null)
-        .filter((id): id is string => !!id);
+      const ids = payload.data.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)).filter((id): id is string => !!id);
       return Object.freeze(ids.sort());
     } catch {
       return null;

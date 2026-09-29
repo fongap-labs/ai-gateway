@@ -11,20 +11,20 @@
 // details stay hidden. Both are exposed only when the caller passes
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
-import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../protocol/http.ts';
 import { anthropicErrorTypeForStatus } from '../protocol/anthropic.ts';
+import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../protocol/http.ts';
 import { responsesErrorResponse } from '../protocol/responses/index.ts';
-import { getCooldownRemainingMs, getModelCooldownRemainingMs } from '../reliability/node-state.ts';
-import { tier1BlockingWaitMs, tier1HasDeferredCapacity } from '../reliability/tier1-state.ts';
-import { supportsRequest } from '../scheduler/scheduler.ts';
-import { TIER_ORDER } from './router.ts';
-import { modelFallbackCandidates } from './model-fallback.ts';
-import type { RequestDescriptor, LoopState } from '../types/request.ts';
-import type { TierMap } from '../types/scheduler.ts';
-import type { GatewayEnv } from '../types/runtime.ts';
-import { KIND as FAILURE_KIND } from '../reliability/classify.ts';
 import type { FailureKind } from '../reliability/classify.ts';
+import { KIND as FAILURE_KIND } from '../reliability/classify.ts';
+import { getCooldownRemainingMs, getModelCooldownRemainingMs } from '../reliability/node-state.ts';
+import { tier1BlockingWaitMs } from '../reliability/tier1-state.ts';
+import { supportsRequest } from '../scheduler/scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
+import type { LoopState, RequestDescriptor } from '../types/request.ts';
+import type { GatewayEnv } from '../types/runtime.ts';
+import type { TierMap } from '../types/scheduler.ts';
+import { modelFallbackCandidates } from './model-fallback.ts';
+import { TIER_ORDER } from './router.ts';
 
 const GATEWAY_ERROR_CODE = Object.freeze({
   FAILOVER_BUDGET_EXHAUSTED: 'gateway_failover_budget_exhausted',
@@ -33,10 +33,7 @@ const GATEWAY_ERROR_CODE = Object.freeze({
   UPSTREAM_EXHAUSTED: 'gateway_upstream_exhausted',
 });
 
-function responsesDiagnosticHeaders(
-  details?: Record<string, unknown>,
-  extraHeaders?: Record<string, string>,
-): Record<string, string> | undefined {
+function responsesDiagnosticHeaders(details?: Record<string, unknown>, extraHeaders?: Record<string, string>): Record<string, string> | undefined {
   const headers: Record<string, string> = { ...(extraHeaders || {}) };
   if (details) {
     for (const [field, header] of [
@@ -83,32 +80,27 @@ export function gatewayError(
   gatewayCode: string | null = null,
 ): Response {
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
-    return new Response(JSON.stringify({
-      type: 'error',
-      error: { type: anthropicErrorTypeForStatus(status), message, ...(details ? { details } : {}) },
-    }), {
-      status,
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-        'cache-control': 'no-store',
-        'request-id': requestId || '',
-        'x-request-id': requestId || '',
-        ...(extraHeaders || {}),
-        ...shouldNotRetryHeaders(status),
-        ...corsHeaders(request, env),
+    return new Response(
+      JSON.stringify({
+        type: 'error',
+        error: { type: anthropicErrorTypeForStatus(status), message, ...(details ? { details } : {}) },
+      }),
+      {
+        status,
+        headers: {
+          'content-type': 'application/json;charset=UTF-8',
+          'cache-control': 'no-store',
+          'request-id': requestId || '',
+          'x-request-id': requestId || '',
+          ...(extraHeaders || {}),
+          ...shouldNotRetryHeaders(status),
+          ...corsHeaders(request, env),
+        },
       },
-    });
+    );
   }
   if (route === 'openai_responses') {
-    return responsesErrorResponse(
-      request,
-      env,
-      status,
-      message,
-      requestId,
-      responsesDiagnosticHeaders(details, extraHeaders),
-      gatewayCode,
-    );
+    return responsesErrorResponse(request, env, status, message, requestId, responsesDiagnosticHeaders(details, extraHeaders), gatewayCode);
   }
   return new Response(JSON.stringify({ error: { message, ...(details ? { details } : {}) } }), {
     status,
@@ -123,17 +115,23 @@ export function gatewayError(
   });
 }
 
-export function buildBudgetExhaustedResponse(request: Request, env: GatewayEnv, route: string, requestId: string, requestedModel: string, state: LoopState, exposeUpstreamInfo: boolean): Response {
+export function buildBudgetExhaustedResponse(
+  request: Request,
+  env: GatewayEnv,
+  route: string,
+  requestId: string,
+  requestedModel: string,
+  state: LoopState,
+  shouldExposeUpstreamInfo: boolean,
+): Response {
   const status = 504;
   const details = {
     requested_model: requestedModel,
     attempts: state.logicalAttempts,
     dispatches: state.dispatches,
     hedges: state.hedges,
-    ...(state.failureKinds && Object.keys(state.failureKinds).length
-      ? { failure_kinds: state.failureKinds }
-      : {}),
-    ...(exposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
+    ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
     request,
@@ -156,10 +154,10 @@ export function buildExhaustedResponse(
   requestedModel: string,
   state: LoopState,
   tiers: TierMap<RuntimeNode[]>,
-  exposeUpstreamInfo: boolean,
+  shouldExposeUpstreamInfo: boolean,
   reqDescriptor: RequestDescriptor,
   knownModels?: ReadonlySet<string>,
-  retryableFamilyExhaustion: boolean = false,
+  isRetryableFamilyExhaustion: boolean = false,
 ): Response {
   const last = state.attempts[state.attempts.length - 1];
   const nothingAttempted = state.attempts.length === 0;
@@ -179,14 +177,13 @@ export function buildExhaustedResponse(
     status = terminalStatus(state.failureKinds) ?? (last?.status === 429 ? 429 : 502);
     message = `All attempted nodes failed for model "${requestedModel}".`;
 
-    if (retryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
+    if (isRetryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
       const originalStatus = status;
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
       message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry shortly.`;
-      retryAfterSec = originalStatus === 429
-        ? earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, knownModels_) ?? 1
-        : 1;
+      retryAfterSec =
+        originalStatus === 429 ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, knownModels_) ?? 1) : 1;
       state.logger.info('model-family failover plan exhausted by transient failures', {
         request_id: requestId,
         requested_model: requestedModel,
@@ -207,10 +204,8 @@ export function buildExhaustedResponse(
     attempts: state.logicalAttempts,
     dispatches: state.dispatches,
     hedges: state.hedges,
-    ...(state.failureKinds && Object.keys(state.failureKinds).length
-      ? { failure_kinds: state.failureKinds }
-      : {}),
-    ...(exposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
+    ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
     request,
@@ -225,7 +220,12 @@ export function buildExhaustedResponse(
   );
 }
 
-function earliestBlockingRetryAfterSec(tiers: TierMap<RuntimeNode[]>, reqDescriptor: RequestDescriptor, now: number = Date.now(), knownModels?: ReadonlySet<string>): number | undefined {
+function earliestBlockingRetryAfterSec(
+  tiers: TierMap<RuntimeNode[]>,
+  reqDescriptor: RequestDescriptor,
+  now: number = Date.now(),
+  knownModels?: ReadonlySet<string>,
+): number | undefined {
   let minMs = Infinity;
   for (const t of TIER_ORDER) {
     for (const node of tiers[t] ?? []) {
@@ -245,9 +245,7 @@ function earliestFamilyBlockingRetryAfterSec(
   now: number,
   knownModels?: ReadonlySet<string>,
 ): number | undefined {
-  const models = knownModels
-    ? modelFallbackCandidates(requestedModel, knownModels)
-    : [requestedModel];
+  const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels) : [requestedModel];
   let minSec = Infinity;
   for (const model of models) {
     const wait = earliestBlockingRetryAfterSec(tiers, { ...reqDescriptor, model }, now, knownModels);
@@ -265,27 +263,38 @@ function blockingWaitMs(node: RuntimeNode, requestedModel: string, now: number):
   return Infinity;
 }
 
-export function buildClientErrorResponse(request: Request, env: GatewayEnv, route: string, requestId: string, requestedModel: string, status: number, errorText: string | Uint8Array, state: LoopState, exposeUpstreamInfo: boolean): Response {
+export function buildClientErrorResponse(
+  request: Request,
+  env: GatewayEnv,
+  route: string,
+  requestId: string,
+  requestedModel: string,
+  status: number,
+  errorText: string | Uint8Array,
+  state: LoopState,
+  shouldExposeUpstreamInfo: boolean,
+): Response {
   const genericDetail = `Upstream rejected the request with HTTP ${status}.`;
-  const detail = exposeUpstreamInfo ? (extractErrorMessage(errorText) || genericDetail) : genericDetail;
-  const attemptsDetail = exposeUpstreamInfo && state.attempts.length
-    ? { attempts_detail: state.attempts.slice(-1) }
-    : {};
+  const detail = shouldExposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
+  const attemptsDetail = shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {};
   if (route === 'anthropic_messages') {
-    return new Response(JSON.stringify({
-      type: 'error',
-      error: { type: anthropicErrorTypeForStatus(status), message: detail },
-    }), {
-      status,
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-        'cache-control': 'no-store',
-        'request-id': requestId,
-        'x-request-id': requestId,
-        ...shouldNotRetryHeaders(status),
-        ...corsHeaders(request, env),
+    return new Response(
+      JSON.stringify({
+        type: 'error',
+        error: { type: anthropicErrorTypeForStatus(status), message: detail },
+      }),
+      {
+        status,
+        headers: {
+          'content-type': 'application/json;charset=UTF-8',
+          'cache-control': 'no-store',
+          'request-id': requestId,
+          'x-request-id': requestId,
+          ...shouldNotRetryHeaders(status),
+          ...corsHeaders(request, env),
+        },
       },
-    });
+    );
   }
   if (route === 'openai_responses') {
     return responsesErrorResponse(
@@ -302,21 +311,30 @@ export function buildClientErrorResponse(request: Request, env: GatewayEnv, rout
       }),
     );
   }
-  return new Response(JSON.stringify({
-    error: {
-      message: detail,
-      details: { requested_model: requestedModel, attempts: state.logicalAttempts, dispatches: state.dispatches, hedges: state.hedges, ...attemptsDetail },
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: detail,
+        details: {
+          requested_model: requestedModel,
+          attempts: state.logicalAttempts,
+          dispatches: state.dispatches,
+          hedges: state.hedges,
+          ...attemptsDetail,
+        },
+      },
+    }),
+    {
+      status,
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+        ...shouldNotRetryHeaders(status),
+        ...corsHeaders(request, env),
+      },
     },
-  }), {
-    status,
-    headers: {
-      'content-type': 'application/json;charset=UTF-8',
-      'cache-control': 'no-store',
-      'x-request-id': requestId,
-      ...shouldNotRetryHeaders(status),
-      ...corsHeaders(request, env),
-    },
-  });
+  );
 }
 
 function extractErrorMessage(text: string | Uint8Array | null | undefined): string {
@@ -365,9 +383,7 @@ function terminalStatusForKind(kind: string): 429 | 502 | 504 {
 export function terminalStatus(failureKinds?: Partial<Record<FailureKind, number>>): number | null {
   const counts: Record<429 | 502 | 504, number> = { 429: 0, 502: 0, 504: 0 };
   for (const [kind, rawCount] of Object.entries(failureKinds || {})) {
-    const count = typeof rawCount === 'number' && Number.isFinite(rawCount)
-      ? Math.max(0, Math.trunc(rawCount))
-      : 0;
+    const count = typeof rawCount === 'number' && Number.isFinite(rawCount) ? Math.max(0, Math.trunc(rawCount)) : 0;
     if (count === 0) continue;
     counts[terminalStatusForKind(kind)] += count;
   }

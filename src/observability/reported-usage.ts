@@ -5,9 +5,11 @@
 // They do NOT normalize or estimate token counts. The only supported shapes are
 // the native wire locations already consumed elsewhere in the gateway.
 
+type UsageContainer = { usage?: unknown };
+
 export function reportedUsageFromPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const data = payload as Record<string, any>;
+  const data = payload as { response?: UsageContainer | null; message?: UsageContainer | null; usage?: unknown };
   if (data.response && typeof data.response === 'object' && data.response.usage !== undefined) {
     return data.response.usage;
   }

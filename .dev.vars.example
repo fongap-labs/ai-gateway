@@ -45,7 +45,8 @@ AIG_TIER1_NODES_01='[
 # ============ Tier 2 subscription nodes (optional) ============
 # auth:"oauth" nodes resolve their credential from the OAuth token store, not
 # from AIG_TIER2_CREDENTIALS. base_url is optional (the provider adapter owns
-# the endpoint). Onboard at /oauth/start?provider=...&node=...&key=<access-key>.
+# the endpoint). Onboard at /oauth/start?provider=...&node=... and enter the
+# gateway access key on the paste page (POST body — never a URL).
 # AIG_TIER2_NODES_01='[
 #   {"id":"gemini","provider":"google","auth":"oauth","models":{"Code-Max":"gemini-2.5-pro"}},
 #   {"id":"claude","provider":"anthropic","auth":"oauth","models":{"Code-Max":"claude-sonnet-4-5"}},

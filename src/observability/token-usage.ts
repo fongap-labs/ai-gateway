@@ -44,37 +44,46 @@ const DAYS_7 = 7;
 // Cached tokens in OpenAI are already PART of prompt_tokens — do NOT add again.
 // Anthropic cache tokens are ADDITIONAL to input_tokens — they represent extra input activity.
 export type NormalizedTokenUsage = {
-  input: number,              // ordinary input tokens (prompt_tokens / input_tokens)
-  output: number,             // output tokens (completion_tokens / output_tokens)
-  cacheCreation: number,      // cache_creation_input_tokens (Anthropic only)
-  cacheRead: number,          // reported cache-read tokens (additive or input subset, protocol-dependent)
-  effectiveInput: number,     // total input activity without double-counting cached-token subsets
-  total: number,              // effectiveInput + output
+  input: number; // ordinary input tokens (prompt_tokens / input_tokens)
+  output: number; // output tokens (completion_tokens / output_tokens)
+  cacheCreation: number; // cache_creation_input_tokens (Anthropic only)
+  cacheRead: number; // reported cache-read tokens (additive or input subset, protocol-dependent)
+  effectiveInput: number; // total input activity without double-counting cached-token subsets
+  total: number; // effectiveInput + output
 };
 
 export type TokenUsageBucket = {
-  model: string,
-  tier: string,
-  provider: string,
-  nodeId: string,
-  input: number,
-  output: number,
-  cacheCreation: number,
-  cacheRead: number,
-  effectiveInput: number,
-  total: number,
-  reports: number,
-  missing: number,
+  model: string;
+  tier: string;
+  provider: string;
+  nodeId: string;
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+  effectiveInput: number;
+  total: number;
+  reports: number;
+  missing: number;
 };
 
-export type RollingWindowBucket = { total: number, reports: number };
+export type RollingWindowBucket = { total: number; reports: number };
 
 export const tokenStats: {
-  startedAt: number,
-  totals: { input: number, output: number, cacheCreation: number, cacheRead: number, effectiveInput: number, total: number, reports: number, missing: number },
-  buckets: Map<string, TokenUsageBucket>, // "<model>|<tier>|<provider>|<nodeId>" -> bucket
-  hourBuckets: Map<number, RollingWindowBucket>, // hourStartMs -> { total, reports }  (rolling 24h)
-  dayBuckets: Map<number, RollingWindowBucket>, // dayStartMs  -> { total, reports }  (rolling 7d)
+  startedAt: number;
+  totals: {
+    input: number;
+    output: number;
+    cacheCreation: number;
+    cacheRead: number;
+    effectiveInput: number;
+    total: number;
+    reports: number;
+    missing: number;
+  };
+  buckets: Map<string, TokenUsageBucket>; // "<model>|<tier>|<provider>|<nodeId>" -> bucket
+  hourBuckets: Map<number, RollingWindowBucket>; // hourStartMs -> { total, reports }  (rolling 24h)
+  dayBuckets: Map<number, RollingWindowBucket>; // dayStartMs  -> { total, reports }  (rolling 7d)
 } = {
   startedAt: Date.now(),
   totals: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, effectiveInput: 0, total: 0, reports: 0, missing: 0 },
@@ -133,24 +142,22 @@ export function mergeReportedUsage(previous: unknown, next: unknown): unknown {
 // opposite case — partial data beats nothing (`{ prompt_tokens: 2 }` with no
 // completion side is still a usable report).
 type UsageReport = {
-  usage: NormalizedTokenUsage,
-  hasCacheRead: boolean,
-  observedCacheInput: number,
-  observedCacheRead: number,
+  usage: NormalizedTokenUsage;
+  hasCacheRead: boolean;
+  observedCacheInput: number;
+  observedCacheRead: number;
 };
 
 function hasOwn(obj: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(obj, key);
+  return Object.hasOwn(obj, key);
 }
 
-function nestedCachedToken(container: unknown): { provided: boolean, raw: unknown } {
+function nestedCachedToken(container: unknown): { provided: boolean; raw: unknown } {
   if (!container || typeof container !== 'object' || Array.isArray(container)) {
     return { provided: false, raw: undefined };
   }
   const details = container as Record<string, unknown>;
-  return hasOwn(details, 'cached_tokens')
-    ? { provided: true, raw: details.cached_tokens }
-    : { provided: false, raw: undefined };
+  return hasOwn(details, 'cached_tokens') ? { provided: true, raw: details.cached_tokens } : { provided: false, raw: undefined };
 }
 
 // Detailed normalizer used by durable accounting. The public normalizeTokenUsage()
@@ -202,9 +209,7 @@ export function normalizeUsageReport(usage: unknown): UsageReport | null {
     // Prefer the details object matching the provider's primary input alias,
     // then fall back to the other standardized details shape and finally the
     // common OpenAI-compatible prompt_cache_hit_tokens extension.
-    const candidates = report.prompt_tokens !== undefined
-      ? [promptDetails, inputDetails]
-      : [inputDetails, promptDetails];
+    const candidates = report.prompt_tokens !== undefined ? [promptDetails, inputDetails] : [inputDetails, promptDetails];
     const detail = candidates.find((candidate) => candidate.provided);
     if (detail) {
       cacheRead = validTokenCount(detail.raw) ?? 0;
@@ -222,12 +227,7 @@ export function normalizeUsageReport(usage: unknown): UsageReport | null {
   // rather than silently fabricating a negative uncached portion.
   if (isCacheSubset && inputRaw !== undefined && cacheRead > input) return null;
 
-  if (
-    inputRaw === undefined
-    && outputRaw === undefined
-    && cacheCreationRaw === undefined
-    && !hasCacheRead
-  ) {
+  if (inputRaw === undefined && outputRaw === undefined && cacheCreationRaw === undefined && !hasCacheRead) {
     return null;
   }
 
@@ -236,7 +236,9 @@ export function normalizeUsageReport(usage: unknown): UsageReport | null {
   // reports a cached subset without the parent input count, retain that known
   // cached activity as a lower bound rather than dropping it entirely.
   const effectiveInput = isCacheSubset
-    ? (inputRaw === undefined ? cacheRead + cacheCreation : input + cacheCreation)
+    ? inputRaw === undefined
+      ? cacheRead + cacheCreation
+      : input + cacheCreation
     : input + cacheCreation + cacheRead;
 
   let total: number;
@@ -293,7 +295,7 @@ function bumpWindow(map: Map<number, RollingWindowBucket>, now: number, unitMs: 
 
 // Sum every surviving bucket in a rolling window. The dashboard shows the
 // rolling total; reports are exposed too so the window can be audited.
-function sumWindow(map: Map<number, RollingWindowBucket>): { total: number, reports: number } {
+function sumWindow(map: Map<number, RollingWindowBucket>): { total: number; reports: number } {
   let total = 0;
   let reports = 0;
   for (const b of map.values()) {
@@ -311,13 +313,20 @@ function sumWindow(map: Map<number, RollingWindowBucket>): { total: number, repo
 // missing and coverage stay accurate, not just the isolate-wide totals.
 // The rolling time windows only advance on a real report — a missing-usage
 // response carries no tokens to attribute to any hour/day.
-export function recordTokenUsage({ model, tier, provider, nodeId, usage, now = Date.now() }: {
-  model: unknown,
-  tier: unknown,
-  provider: unknown,
-  nodeId: unknown,
-  usage: unknown,
-  now?: number,
+export function recordTokenUsage({
+  model,
+  tier,
+  provider,
+  nodeId,
+  usage,
+  now = Date.now(),
+}: {
+  model: unknown;
+  tier: unknown;
+  provider: unknown;
+  nodeId: unknown;
+  usage: unknown;
+  now?: number;
 }): void {
   const dims = {
     model: sanitizeDimension(model),
@@ -363,7 +372,7 @@ export function recordTokenUsage({ model, tier, provider, nodeId, usage, now = D
 }
 
 type DimensionName = 'model' | 'provider' | 'tier' | 'nodeId';
-type DimensionRow = { name: string, input: number, output: number, total: number, reports: number, missing: number };
+type DimensionRow = { name: string; input: number; output: number; total: number; reports: number; missing: number };
 
 function aggregateBy(dimension: DimensionName): DimensionRow[] {
   const rows = new Map<string, DimensionRow>();

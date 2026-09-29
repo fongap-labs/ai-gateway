@@ -19,17 +19,23 @@
 // endpoint; the node's static models mapping stays the routing authority, so
 // discovery is not supported (returns null).
 
-import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter, SubscriptionWire } from './types.ts';
 import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
 import {
-  GEMINI_CODE_ASSIST_ENDPOINT,
-  GEMINI_CLI_USER_AGENT,
   CODE_ASSIST_PATH,
-  openAIChatToCodeAssistEnvelope,
   codeAssistObjectToOpenAIChat,
   createOpenAIChatStreamFromCodeAssist,
+  GEMINI_CLI_USER_AGENT,
+  GEMINI_CODE_ASSIST_ENDPOINT,
+  openAIChatToCodeAssistEnvelope,
 } from './google-wire.ts';
-import { hintFromRetryAfterHeader, hintFromRetryDelayBody, capHint } from './quota-hints.ts';
+import { capHint, hintFromRetryAfterHeader, hintFromRetryDelayBody } from './quota-hints.ts';
+import type {
+  SubscriptionAdapter,
+  SubscriptionDispatchContext,
+  SubscriptionFailureView,
+  SubscriptionPreparedRequest,
+  SubscriptionWire,
+} from './types.ts';
 
 const GEMINI_WIRE: SubscriptionWire = {
   streamToNative(body, options) {

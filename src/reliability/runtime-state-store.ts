@@ -15,23 +15,21 @@
 // has no numeric health score or endpoint-level circuit; Tier 2/3 node state
 // has no per-account auth/quota concept.
 
-import type {
-  RuntimeStateStore, EndpointState, AccountState, ModelState, QuotaRuntimeState,
-} from '../types/runtime-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import {
-  getTier1Account, getTier1ModelPerf, tier1QuotaState,
-} from './tier1-state.ts';
-import {
-  peekAvailability, getNodeState, getCooldownRemainingMs, getModelCooldownRemainingMs, getModelPerf,
-} from './node-state.ts';
+import type { EndpointState, QuotaRuntimeState, RuntimeStateStore } from '../types/runtime-state.ts';
+import { getCooldownRemainingMs, getModelCooldownRemainingMs, getModelPerf, getNodeState, peekAvailability } from './node-state.ts';
+import { getTier1Account, getTier1ModelPerf, tier1QuotaState } from './tier1-state.ts';
 
 function remainingMs(until: number, now: number): number {
   return until > now ? until - now : 0;
 }
 
 const UNKNOWN_QUOTA: QuotaRuntimeState = Object.freeze({
-  state: 'unknown', resetAtMs: 0, remainingRequests: null, remainingTokens: null, source: null,
+  state: 'unknown',
+  resetAtMs: 0,
+  remainingRequests: null,
+  remainingTokens: null,
+  source: null,
 });
 
 // ---- Tier 1 adaptive runtime projection --------------------------------------

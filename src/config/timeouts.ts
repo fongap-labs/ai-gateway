@@ -4,16 +4,17 @@
 // Single source of truth for every timeout / cooldown value.
 // Do not hardcode timeout defaults anywhere else.
 
-import { readEnv, clampInt } from './env.ts';
-import { RUNTIME_TUNABLES } from './runtime-vars.ts';
+import { clampInt, readEnv } from './env.ts';
 import type { RuntimeTunableName } from './runtime-vars.ts';
+import { RUNTIME_TUNABLES } from './runtime-vars.ts';
 
 // Derived from the single source of truth in runtime-vars.ts. Do not add
 // tunable definitions here — add them there so the deployment bridge, docs
 // and example configs stay in sync automatically.
-const LIMITS = Object.fromEntries(
-  RUNTIME_TUNABLES.map((v) => [v.name, { min: v.min, max: v.max, def: v.def }]),
-) as Record<RuntimeTunableName, { min: number, max: number, def: number }>;
+const LIMITS = Object.fromEntries(RUNTIME_TUNABLES.map((v) => [v.name, { min: v.min, max: v.max, def: v.def }])) as Record<
+  RuntimeTunableName,
+  { min: number; max: number; def: number }
+>;
 
 // Retry-After is always clamped into this window so a hostile or broken
 // upstream cannot park a node for hours via one header.
@@ -33,18 +34,18 @@ export const MIN_ATTEMPT_FIRST_EVENT_MS = 5_000;
 export const MIN_FAILOVER_RESERVE_MS = 5_000;
 
 export type Limits = {
-  headersTimeoutMs: number,
-  firstEventTimeoutMs: number,
-  streamIdleTimeoutMs: number,
-  rateLimitCooldownMs: number,
-  authFailCooldownMs: number,
-  maxBodyBytes: number,
-  failoverBudgetMs: number,
-  hedgeDelayMs: number,
-  maxHedgesPerRequest: number,
-  gatewayKeyRpm: number,
-  edgeCacheTtlSec: number,
-}
+  headersTimeoutMs: number;
+  firstEventTimeoutMs: number;
+  streamIdleTimeoutMs: number;
+  rateLimitCooldownMs: number;
+  authFailCooldownMs: number;
+  maxBodyBytes: number;
+  failoverBudgetMs: number;
+  hedgeDelayMs: number;
+  maxHedgesPerRequest: number;
+  gatewayKeyRpm: number;
+  edgeCacheTtlSec: number;
+};
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
 // isolated callers intentionally reason about an even split. The live request
@@ -85,11 +86,7 @@ function fairShareTimeoutMs(configuredTimeoutMs: number, remainingBudgetMs: numb
   const attempts = Math.max(1, Math.trunc(remainingAttempts) || 1);
   const budget = Math.max(0, remainingBudgetMs);
   const share = Math.floor(budget / attempts);
-  const wait = Math.min(
-    configuredTimeoutMs,
-    budget,
-    Math.max(floorMs, share),
-  );
+  const wait = Math.min(configuredTimeoutMs, budget, Math.max(floorMs, share));
   return Math.max(1, wait);
 }
 
@@ -98,18 +95,14 @@ function fairShareTimeoutMs(configuredTimeoutMs: number, remainingBudgetMs: numb
 // the absolute attempt/request budget is tighter. The multi-attempt form is
 // retained for isolated callers/tests.
 export function attemptHeadersTimeoutMs(headersTimeoutMs: number, remainingBudgetMs: number, remainingAttempts: number): number {
-  return fairShareTimeoutMs(
-    headersTimeoutMs, remainingBudgetMs, remainingAttempts, MIN_ATTEMPT_HEADERS_MS,
-  );
+  return fairShareTimeoutMs(headersTimeoutMs, remainingBudgetMs, remainingAttempts, MIN_ATTEMPT_HEADERS_MS);
 }
 
 // Phase-local first-event guard. It consumes only the time left in the same
 // absolute attempt window after headers, and never exceeds the configured
 // first-event timeout. Primary and hedge twin share that same deadline.
 export function attemptFirstEventTimeoutMs(firstEventTimeoutMs: number, remainingBudgetMs: number, remainingAttempts: number): number {
-  return fairShareTimeoutMs(
-    firstEventTimeoutMs, remainingBudgetMs, remainingAttempts, MIN_ATTEMPT_FIRST_EVENT_MS,
-  );
+  return fairShareTimeoutMs(firstEventTimeoutMs, remainingBudgetMs, remainingAttempts, MIN_ATTEMPT_FIRST_EVENT_MS);
 }
 
 const cache = new WeakMap<object, Limits>();
@@ -118,17 +111,72 @@ export function getLimits(env: Record<string, unknown>): Limits {
   let cached = cache.get(env);
   if (cached) return cached;
   cached = {
-    headersTimeoutMs: clampInt(readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS'), LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.min, LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.max, LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.def),
-    firstEventTimeoutMs: clampInt(readEnv(env, 'AIG_FIRST_EVENT_TIMEOUT_MS'), LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.min, LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.max, LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.def),
-    streamIdleTimeoutMs: clampInt(readEnv(env, 'AIG_STREAM_IDLE_TIMEOUT_MS'), LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.min, LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.max, LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.def),
-    rateLimitCooldownMs: clampInt(readEnv(env, 'AIG_RATE_LIMIT_COOLDOWN_MS'), LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.min, LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.max, LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.def),
-    authFailCooldownMs: clampInt(readEnv(env, 'AIG_AUTH_FAILURE_COOLDOWN_MS'), LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.min, LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.max, LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.def),
-    maxBodyBytes: clampInt(readEnv(env, 'AIG_REQUEST_BODY_MAX_BYTES'), LIMITS.AIG_REQUEST_BODY_MAX_BYTES.min, LIMITS.AIG_REQUEST_BODY_MAX_BYTES.max, LIMITS.AIG_REQUEST_BODY_MAX_BYTES.def),
-    failoverBudgetMs: clampInt(readEnv(env, 'AIG_FAILOVER_BUDGET_MS'), LIMITS.AIG_FAILOVER_BUDGET_MS.min, LIMITS.AIG_FAILOVER_BUDGET_MS.max, LIMITS.AIG_FAILOVER_BUDGET_MS.def),
-    hedgeDelayMs: clampInt(readEnv(env, 'AIG_HEDGE_DELAY_MS'), LIMITS.AIG_HEDGE_DELAY_MS.min, LIMITS.AIG_HEDGE_DELAY_MS.max, LIMITS.AIG_HEDGE_DELAY_MS.def),
-    maxHedgesPerRequest: clampInt(readEnv(env, 'AIG_REQUEST_HEDGE_MAX'), LIMITS.AIG_REQUEST_HEDGE_MAX.min, LIMITS.AIG_REQUEST_HEDGE_MAX.max, LIMITS.AIG_REQUEST_HEDGE_MAX.def),
-    gatewayKeyRpm: clampInt(readEnv(env, 'AIG_ACCESS_KEY_RPM'), LIMITS.AIG_ACCESS_KEY_RPM.min, LIMITS.AIG_ACCESS_KEY_RPM.max, LIMITS.AIG_ACCESS_KEY_RPM.def),
-    edgeCacheTtlSec: clampInt(readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC'), LIMITS.AIG_EDGE_CACHE_TTL_SEC.min, LIMITS.AIG_EDGE_CACHE_TTL_SEC.max, LIMITS.AIG_EDGE_CACHE_TTL_SEC.def),
+    headersTimeoutMs: clampInt(
+      readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS'),
+      LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.min,
+      LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.max,
+      LIMITS.AIG_UPSTREAM_HEADER_TIMEOUT_MS.def,
+    ),
+    firstEventTimeoutMs: clampInt(
+      readEnv(env, 'AIG_FIRST_EVENT_TIMEOUT_MS'),
+      LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.min,
+      LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.max,
+      LIMITS.AIG_FIRST_EVENT_TIMEOUT_MS.def,
+    ),
+    streamIdleTimeoutMs: clampInt(
+      readEnv(env, 'AIG_STREAM_IDLE_TIMEOUT_MS'),
+      LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.min,
+      LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.max,
+      LIMITS.AIG_STREAM_IDLE_TIMEOUT_MS.def,
+    ),
+    rateLimitCooldownMs: clampInt(
+      readEnv(env, 'AIG_RATE_LIMIT_COOLDOWN_MS'),
+      LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.min,
+      LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.max,
+      LIMITS.AIG_RATE_LIMIT_COOLDOWN_MS.def,
+    ),
+    authFailCooldownMs: clampInt(
+      readEnv(env, 'AIG_AUTH_FAILURE_COOLDOWN_MS'),
+      LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.min,
+      LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.max,
+      LIMITS.AIG_AUTH_FAILURE_COOLDOWN_MS.def,
+    ),
+    maxBodyBytes: clampInt(
+      readEnv(env, 'AIG_REQUEST_BODY_MAX_BYTES'),
+      LIMITS.AIG_REQUEST_BODY_MAX_BYTES.min,
+      LIMITS.AIG_REQUEST_BODY_MAX_BYTES.max,
+      LIMITS.AIG_REQUEST_BODY_MAX_BYTES.def,
+    ),
+    failoverBudgetMs: clampInt(
+      readEnv(env, 'AIG_FAILOVER_BUDGET_MS'),
+      LIMITS.AIG_FAILOVER_BUDGET_MS.min,
+      LIMITS.AIG_FAILOVER_BUDGET_MS.max,
+      LIMITS.AIG_FAILOVER_BUDGET_MS.def,
+    ),
+    hedgeDelayMs: clampInt(
+      readEnv(env, 'AIG_HEDGE_DELAY_MS'),
+      LIMITS.AIG_HEDGE_DELAY_MS.min,
+      LIMITS.AIG_HEDGE_DELAY_MS.max,
+      LIMITS.AIG_HEDGE_DELAY_MS.def,
+    ),
+    maxHedgesPerRequest: clampInt(
+      readEnv(env, 'AIG_REQUEST_HEDGE_MAX'),
+      LIMITS.AIG_REQUEST_HEDGE_MAX.min,
+      LIMITS.AIG_REQUEST_HEDGE_MAX.max,
+      LIMITS.AIG_REQUEST_HEDGE_MAX.def,
+    ),
+    gatewayKeyRpm: clampInt(
+      readEnv(env, 'AIG_ACCESS_KEY_RPM'),
+      LIMITS.AIG_ACCESS_KEY_RPM.min,
+      LIMITS.AIG_ACCESS_KEY_RPM.max,
+      LIMITS.AIG_ACCESS_KEY_RPM.def,
+    ),
+    edgeCacheTtlSec: clampInt(
+      readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC'),
+      LIMITS.AIG_EDGE_CACHE_TTL_SEC.min,
+      LIMITS.AIG_EDGE_CACHE_TTL_SEC.max,
+      LIMITS.AIG_EDGE_CACHE_TTL_SEC.def,
+    ),
   };
   cache.set(env, cached);
   return cached;

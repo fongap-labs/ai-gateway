@@ -11,8 +11,14 @@ export function getLogger(env: GatewayEnv): GatewayLogger {
   const levelKey = String(env?.AIG_LOG_LEVEL || 'info').toLowerCase();
   const level = LEVELS[levelKey] ?? 2;
   return {
-    error: (...args: unknown[]) => { if (level >= 1) console.error(...args); },
-    info: (...args: unknown[]) => { if (level >= 2) console.log(...args); },
-    debug: (...args: unknown[]) => { if (level >= 3) console.debug(...args); },
+    error: (...args: unknown[]) => {
+      if (level >= 1) console.error(...args);
+    },
+    info: (...args: unknown[]) => {
+      if (level >= 2) console.log(...args);
+    },
+    debug: (...args: unknown[]) => {
+      if (level >= 3) console.debug(...args);
+    },
   };
 }

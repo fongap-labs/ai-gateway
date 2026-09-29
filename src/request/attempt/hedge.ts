@@ -21,13 +21,13 @@
 // The default and stable built-ins hedge Tier 1 only, while fast and
 // long-reasoning explicitly disable it.
 
+import { classifyHedgeUnknown } from '../../reliability/classify.ts';
 import { pickCandidate } from '../../scheduler/scheduler.ts';
 import { pickTier1Candidate } from '../../scheduler/tier1-scheduler.ts';
-import { attemptNode } from './dispatch.ts';
-import { classifyHedgeUnknown } from '../../reliability/classify.ts';
-import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import type { RuntimeNode } from '../../types/node.ts';
+import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import type { PickedCandidate } from '../../types/scheduler.ts';
+import { attemptNode } from './dispatch.ts';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -67,7 +67,10 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   const primaryArgs = { ...args, hedgeAbort: new AbortController() };
   const primary = attemptNode(primaryArgs);
   const verdict = await Promise.race([
-    primary.then(() => 'settled', () => 'settled'),
+    primary.then(
+      () => 'settled',
+      () => 'settled',
+    ),
     sleepMs(hedgeDelayMs).then(() => 'hedge'),
   ]);
   if (verdict === 'settled') return primary;
@@ -99,21 +102,21 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   // pickCandidate returns PickedCandidate | null (same
   // shape as pickTier1Candidate). The Tier 2/3 twin path no longer wraps
   // a bare RuntimeNode — it passes the PickedCandidate through directly.
-  const legacyTwin = args.tierNumber === 1
-    ? null : pickCandidate(tierNodes, args.reqDescriptor, args.state.attempted, Date.now(), args.node.id);
-  const twinPick: PickedCandidate | null = args.tierNumber === 1
-    ? pickTier1Candidate(tierNodes, args.reqDescriptor, args.state.attempted, {
-      excludeId: args.node.id,
-      now: Date.now(),
-      rng: args.rng ?? Math.random,
-      affinityAccountId: args.tier1AffinityAccountId,
-      evaluateAffinity: args.tier1EvaluateAffinity,
-      // A hedge is still a real Tier 1 dispatch. Preserve the same explicit
-      // operator admission ceiling as the primary instead of silently falling
-      // back to the picker's unlimited default.
-      maxInFlight: args.policy?.maxInFlight ?? null,
-    })
-    : legacyTwin;
+  const legacyTwin = args.tierNumber === 1 ? null : pickCandidate(tierNodes, args.reqDescriptor, args.state.attempted, Date.now(), args.node.id);
+  const twinPick: PickedCandidate | null =
+    args.tierNumber === 1
+      ? pickTier1Candidate(tierNodes, args.reqDescriptor, args.state.attempted, {
+          excludeId: args.node.id,
+          now: Date.now(),
+          rng: args.rng ?? Math.random,
+          affinityAccountId: args.tier1AffinityAccountId,
+          evaluateAffinity: args.tier1EvaluateAffinity,
+          // A hedge is still a real Tier 1 dispatch. Preserve the same explicit
+          // operator admission ceiling as the primary instead of silently falling
+          // back to the picker's unlimited default.
+          maxInFlight: args.policy?.maxInFlight ?? null,
+        })
+      : legacyTwin;
   if (!twinPick || twinPick.raceLost) return primary;
   // The raceLost guard above is exactly the "no node picked" case, so node is
   // defined here by the picker's contract.
@@ -123,15 +126,18 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   primaryArgs.hedgedWithTwin = true;
   const logicalAttemptNo = args.state.logicalAttempts + 1;
   args.logger.info(
-    `hedge: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
-    + ` primary=${args.node.id} twin=${twinNode.id} delay_ms=${hedgeDelayMs}`
-    + ` deadline_remaining_ms=${deadlineRemainingMs}`,
+    `hedge: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}` +
+      ` primary=${args.node.id} twin=${twinNode.id} delay_ms=${hedgeDelayMs}` +
+      ` deadline_remaining_ms=${deadlineRemainingMs}`,
   );
 
   // Both sides get an external abort handle up front so the loser can be
   // cancelled no matter which one wins the race.
   const twinArgs: AttemptContext = {
-    ...args, node: twinNode, hedgeAbort: new AbortController(), hedgedAttempt: true,
+    ...args,
+    node: twinNode,
+    hedgeAbort: new AbortController(),
+    hedgedAttempt: true,
     // THE shared logical attempt deadline (absolute; not re-sliced). The
     // in-flight primary has set it by the time the twin launches.
     attemptDeadlineMs: primaryArgs.attemptDeadlineMs as number,
@@ -158,21 +164,26 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
       if (isResolved) {
         // Lost after the winner was chosen: drop any committed stream so no
         // upstream keeps streaming into the void.
-        try { outcome.response?.body?.cancel(); } catch { /* already closed */ }
+        try {
+          outcome.response?.body?.cancel();
+        } catch {
+          /* already closed */
+        }
         return;
       }
       isResolved = true;
       loserAbort?.abort('Hedge lost');
       args.logger.info(
-        `hedge winner: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
-        + ` winner=${winnerArgs.node.id} loser=${(winnerArgs === primaryArgs ? twinNode : args.node).id}`
-        + ` winner_ttft_ms=${winnerArgs.ttftMs ?? -1}`,
+        `hedge winner: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}` +
+          ` winner=${winnerArgs.node.id} loser=${(winnerArgs === primaryArgs ? twinNode : args.node).id}` +
+          ` winner_ttft_ms=${winnerArgs.ttftMs ?? -1}`,
       );
       resolve(outcome);
     };
     const onSettled = (outcome: AttemptOutcome, isPrimary: boolean, loserAbort: AbortController | null | undefined) => {
       settled++;
-      if (isPrimary) primaryOutcome = outcome; else twinOutcome = outcome;
+      if (isPrimary) primaryOutcome = outcome;
+      else twinOutcome = outcome;
       if (outcome.response) win(outcome, isPrimary ? primaryArgs : twinArgs, loserAbort);
       else {
         if (!firstFailure || isPrimary) firstFailure = outcome;
@@ -182,9 +193,9 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
         // line with kind=unknown for the successful winner.
         if (settled >= 2 && !isResolved) {
           args.logger.info(
-            `hedge failed: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}`
-            + ` primary=${args.node.id} twin=${twinNode.id}`
-            + ` primary_kind=${primaryOutcome?.kind || 'unknown'} twin_kind=${twinOutcome?.kind || 'unknown'}`,
+            `hedge failed: request=${args.requestId} logical_attempt=${logicalAttemptNo}/${args.state.maxAttempts}` +
+              ` primary=${args.node.id} twin=${twinNode.id}` +
+              ` primary_kind=${primaryOutcome?.kind || 'unknown'} twin_kind=${twinOutcome?.kind || 'unknown'}`,
           );
           resolve({ ...firstFailure });
         }

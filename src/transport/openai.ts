@@ -46,7 +46,12 @@ export function resolveOpenAIPath(surface: Surface): string {
 // credential. See buildUpstreamHeadersFor (transport/index.ts) for the
 // protocol dispatch. `extraHeaders` carries deployment-owned subscription
 // headers resolved by the request layer (never client-supplied values).
-export function buildOpenAIHeaders(request: Request, credential: string, requestId: string, extraHeaders?: Readonly<Record<string, string>>): Headers {
+export function buildOpenAIHeaders(
+  request: Request,
+  credential: string,
+  requestId: string,
+  extraHeaders?: Readonly<Record<string, string>>,
+): Headers {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${credential}`);
   headers.set('Content-Type', request.headers.get('content-type') || 'application/json');
@@ -90,15 +95,7 @@ export function isResponsesRealOutput(json: unknown): boolean {
 // keep the original lax boundary. Real output = non-empty text, a reasoning
 // increment, or a tool-call increment; role-only / empty / usage-only deltas do
 // NOT commit, so a node that announces itself and then dies can still rotate.
-// OpenAI Chat meaningful-output predicate for the Tier 1 first-event guard.
-  // The original Chat guard committed on ANY parseable non-error event - a bare
-  // role-only delta ({"delta":{"role":"assistant"}}) closed the failover
-  // boundary and was recorded as TTFT, even though no real token had flowed. For Tier 1's
-  // passive TTFT learning this is only used when the node is tier-1, so Tier 2/3
-  // keep the original lax boundary. Real output = non-empty text, a reasoning
-  // increment, or a tool-call increment; role-only / empty / usage-only deltas do
-  // NOT commit, so a node that announces itself and then dies can still rotate.
-  export function isOpenAIChatRealOutput(json: unknown): boolean {
+export function isOpenAIChatRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   const choices = json?.choices;
   if (!Array.isArray(choices) || choices.length === 0) return false;
@@ -117,10 +114,9 @@ function isMeaningfulToolCall(call: unknown): boolean {
   if (!isRecord(call)) return false;
   if (typeof call.id === 'string' && call.id.trim().length > 0) return true;
   const fn = isRecord(call.function) ? call.function : null;
-  return Boolean(fn && (
-    (typeof fn.name === 'string' && fn.name.trim().length > 0)
-    || (typeof fn.arguments === 'string' && fn.arguments.trim().length > 0)
-  ));
+  return Boolean(
+    fn && ((typeof fn.name === 'string' && fn.name.trim().length > 0) || (typeof fn.arguments === 'string' && fn.arguments.trim().length > 0)),
+  );
 }
 
 // Conversion-aware predicate for cross-protocol O->A streaming (OpenAI upstream,
@@ -162,10 +158,11 @@ export function isOpenAIChatCompletionMeaningful(json: unknown): boolean {
 export function isOpenAIResponsesObjectMeaningful(json: unknown): boolean {
   if (!isRecord(json)) return false;
   for (const item of Array.isArray(json.output) ? json.output : []) {
-    if (item?.type === 'function_call' && (
-      (typeof item.name === 'string' && item.name.trim().length > 0)
-      || (typeof item.arguments === 'string' && item.arguments.trim().length > 0)
-    )) return true;
+    if (
+      item?.type === 'function_call' &&
+      ((typeof item.name === 'string' && item.name.trim().length > 0) || (typeof item.arguments === 'string' && item.arguments.trim().length > 0))
+    )
+      return true;
     // Legitimate refusal: the model declined to answer. Valid output, not empty.
     if (item?.type === 'refusal' && typeof item.refusal === 'string' && item.refusal.trim().length > 0) return true;
     for (const part of [...(item?.content ?? []), ...(item?.summary ?? [])]) {

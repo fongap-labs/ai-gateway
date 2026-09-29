@@ -19,16 +19,25 @@
 //   * If no AIG_ACCESS_KEY_<GROUP> is configured, no gateway credential
 //     is accepted.
 
+import type { RuntimeNode } from '../types/node.ts';
+import type { GatewayEnv } from '../types/runtime.ts';
 import { readEnv } from './env.ts';
 import { loadGatewayConfig } from './nodes.ts';
 import { collectKnownModels } from './registry.ts';
-import type { RuntimeNode } from '../types/node.ts';
-import type { GatewayEnv } from '../types/runtime.ts';
 
 export const KEY_GROUPS: readonly string[] = Object.freeze(['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT']);
 
-function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<string> | null): { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] } {
-  const out: { allowAll: boolean, allowlist: Set<string>, warnings: string[], errors: string[] } = { allowAll: false, allowlist: new Set(), warnings: [], errors: [] };
+function parseModelsField(
+  raw: unknown,
+  group: string,
+  knownModels: ReadonlySet<string> | null,
+): { allowAll: boolean; allowlist: Set<string>; warnings: string[]; errors: string[] } {
+  const out: { allowAll: boolean; allowlist: Set<string>; warnings: string[]; errors: string[] } = {
+    allowAll: false,
+    allowlist: new Set(),
+    warnings: [],
+    errors: [],
+  };
   if (raw === undefined || raw === null) return out;
   if (typeof raw !== 'string') {
     out.errors.push(`AIG_ACCESS_MODELS_${group} must be a CSV string ("Model1,Model2" or "*")`);
@@ -40,11 +49,17 @@ function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<
     out.allowAll = true;
     return out;
   }
-  for (const p of trimmed.split(',').map((s) => s.trim()).filter(Boolean)) out.allowlist.add(p);
+  for (const p of trimmed
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean))
+    out.allowlist.add(p);
   if (knownModels) {
     for (const m of out.allowlist) {
       if (!knownModels.has(m)) {
-        out.warnings.push(`AIG_ACCESS_MODELS_${group} references model "${m}" which is not in the Known Model Catalog (node models or AIG_MODELS_CONFIG)`);
+        out.warnings.push(
+          `AIG_ACCESS_MODELS_${group} references model "${m}" which is not in the Known Model Catalog (node models or AIG_MODELS_CONFIG)`,
+        );
       }
     }
   }
@@ -55,17 +70,17 @@ function parseModelsField(raw: unknown, group: string, knownModels: ReadonlySet<
 // registry.ts directly rather than through compatibility re-exports.
 export { collectKnownModels } from './registry.ts';
 
-type AccessKeyEntry = { group: string, secret: string, allowAll: boolean, allowlist: Set<string> };
+type AccessKeyEntry = { group: string; secret: string; allowAll: boolean; allowlist: Set<string> };
 type AccessKeysAnalysis = {
-  config: { keys: AccessKeyEntry[], diagnostics: string[] },
-  keys: AccessKeyEntry[],
-  diagnostics: string[],
+  config: { keys: AccessKeyEntry[]; diagnostics: string[] };
+  keys: AccessKeyEntry[];
+  diagnostics: string[];
 };
 
 let cachedEnv: GatewayEnv | null | undefined;
 let cachedConfig: AccessKeysAnalysis | null | undefined;
 
-export function loadAccessKeysConfig(env: GatewayEnv): { keys: AccessKeyEntry[], diagnostics: string[] } {
+export function loadAccessKeysConfig(env: GatewayEnv): { keys: AccessKeyEntry[]; diagnostics: string[] } {
   return analyzeAccessKeys(env).config;
 }
 
@@ -98,7 +113,11 @@ function analyzeAccessKeys(env: GatewayEnv): AccessKeysAnalysis {
   return cachedConfig;
 }
 
-export function keyAllowsModel(keyEntry: { allowAll: boolean, allowlist: Set<string> } | null | undefined, model: string, configuredModels: ReadonlySet<string> | null | undefined): boolean {
+export function keyAllowsModel(
+  keyEntry: { allowAll: boolean; allowlist: Set<string> } | null | undefined,
+  model: string,
+  configuredModels: ReadonlySet<string> | null | undefined,
+): boolean {
   if (!keyEntry) return false;
   if (keyEntry.allowAll) {
     if (!configuredModels) return true;
@@ -107,7 +126,10 @@ export function keyAllowsModel(keyEntry: { allowAll: boolean, allowlist: Set<str
   return keyEntry.allowlist.has(model);
 }
 
-export function filterVisibleModels(keyEntry: { allowAll?: boolean, allowlist?: ReadonlySet<string> } | null | undefined, configuredModels: ReadonlySet<string> | null | undefined): string[] {
+export function filterVisibleModels(
+  keyEntry: { allowAll?: boolean; allowlist?: ReadonlySet<string> } | null | undefined,
+  configuredModels: ReadonlySet<string> | null | undefined,
+): string[] {
   if (!configuredModels) return [];
   if (keyEntry?.allowAll) return [...configuredModels].sort();
   if (!keyEntry?.allowlist) return [];

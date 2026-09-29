@@ -71,7 +71,9 @@ export function assertNodesArray(nodes, label = 'nodes config') {
 
     const forbidden = FORBIDDEN_NODE_FIELDS.filter((field) => field in node);
     if (forbidden.length > 0) {
-      throw new Error(`${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in AIG_TIER{1,2,3}_CREDENTIALS_*.`);
+      throw new Error(
+        `${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in AIG_TIER{1,2,3}_CREDENTIALS_*.`,
+      );
     }
     if ('tier' in node) {
       throw new Error(`${label}: node "${id}" must not declare "tier"; the tier comes from the variable name`);
@@ -102,15 +104,14 @@ export function assertNodesArray(nodes, label = 'nodes config') {
       throw new Error(`${label}: node "${id}" base_url must not contain username/password`);
     }
 
-    if (node.priority !== undefined
-      && (typeof node.priority !== 'number'
-        || !Number.isInteger(node.priority)
-        || node.priority < 0)) {
+    if (node.priority !== undefined && (typeof node.priority !== 'number' || !Number.isInteger(node.priority) || node.priority < 0)) {
       throw new Error(`${label}: node "${id}" priority must be a non-negative integer number`);
     }
 
     if (!node.models || typeof node.models !== 'object' || Array.isArray(node.models)) {
-      throw new Error(`${label}: node "${id}" models is required and must be an object { logical: upstream }; use {} only for an intentional catalog-bounded wildcard`);
+      throw new Error(
+        `${label}: node "${id}" models is required and must be an object { logical: upstream }; use {} only for an intentional catalog-bounded wildcard`,
+      );
     }
     for (const [logical, upstream] of Object.entries(node.models)) {
       if (!logical.trim()) {
@@ -163,13 +164,7 @@ function nodesToEntries(nodes) {
   });
 }
 
-export function buildPlan({
-  tiers,
-  secretsMap,
-  existingVarNames = [],
-  existingSecretNames = [],
-  maxBytes = SHARD_MAX_BYTES,
-}) {
+export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSecretNames = [], maxBytes = SHARD_MAX_BYTES }) {
   const globalNodeIds = new Map();
   for (const tierNumber of [1, 2, 3]) {
     const nodes = tiers[tierNumber];
@@ -250,13 +245,9 @@ export function buildPlan({
   }
 
   const plannedVarSet = new Set(plannedVars);
-  const deleteVars = [...new Set(existingVarNames)]
-    .filter((name) => MANAGED_VAR_PATTERN.test(name) && !plannedVarSet.has(name))
-    .sort();
+  const deleteVars = [...new Set(existingVarNames)].filter((name) => MANAGED_VAR_PATTERN.test(name) && !plannedVarSet.has(name)).sort();
   const plannedSecretSet = new Set(plannedSecrets);
-  const deleteSecrets = [...new Set(existingSecretNames)]
-    .filter((name) => MANAGED_SECRET_PATTERN.test(name) && !plannedSecretSet.has(name))
-    .sort();
+  const deleteSecrets = [...new Set(existingSecretNames)].filter((name) => MANAGED_SECRET_PATTERN.test(name) && !plannedSecretSet.has(name)).sort();
 
   return {
     vars,

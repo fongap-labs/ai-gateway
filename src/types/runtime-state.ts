@@ -18,48 +18,48 @@ export type RuntimeAvailability = 'available' | 'cooling' | 'probing' | 'unavail
 
 /** Per-endpoint (per-node) runtime state view. */
 export type EndpointState = Readonly<{
-  availability: RuntimeAvailability,
-  inFlight: number,
-  cooldownRemainingMs: number,
-  cooldownReason: string | null,
-  circuit: 'closed' | 'half_open' | 'open' | null,
+  availability: RuntimeAvailability;
+  inFlight: number;
+  cooldownRemainingMs: number;
+  cooldownReason: string | null;
+  circuit: 'closed' | 'half_open' | 'open' | null;
   /** Numeric health score when the backend tracks one, else null. */
-  health: number | null,
-  ttftEwmaMs: number | null,
-  latencyEwmaMs: number | null,
-  lastUsedAt: number,
+  health: number | null;
+  ttftEwmaMs: number | null;
+  latencyEwmaMs: number | null;
+  lastUsedAt: number;
 }>;
 
 /** Per-(node, logical-model) runtime state view. `null` when the backend has
  *  no entry for the pair (never observed / not served). */
 export type ModelState = Readonly<{
-  supported: boolean,
-  cooldownRemainingMs: number,
-  failureState: string,
-  ttftEwmaMs: number | null,
-  latencyEwmaMs: number | null,
-  sampleCount: number,
+  supported: boolean;
+  cooldownRemainingMs: number;
+  failureState: string;
+  ttftEwmaMs: number | null;
+  latencyEwmaMs: number | null;
+  sampleCount: number;
 }>;
 
 /** Quota window view over the directive vocabulary: unknown / healthy /
  *  near_limit / exhausted. `unknown` means the provider reports no quota and
  *  the reactive adaptive-429 + cooldown path governs admission. */
 export type QuotaRuntimeState = Readonly<{
-  state: 'unknown' | 'healthy' | 'near_limit' | 'exhausted',
-  resetAtMs: number,
-  remainingRequests: number | null,
-  remainingTokens: number | null,
-  source: string | null,
+  state: 'unknown' | 'healthy' | 'near_limit' | 'exhausted';
+  resetAtMs: number;
+  remainingRequests: number | null;
+  remainingTokens: number | null;
+  source: string | null;
 }>;
 
 /** Per-account (credential/key-slot) runtime state view. Tier 2/3 nodes are
  *  their own account identity; auth-disabled and quota windows are Tier 1
  *  subscription/adaptive concepts and surface as neutral defaults there. */
 export type AccountState = Readonly<{
-  disabled: boolean,
-  cooldownRemainingMs: number,
-  quota: QuotaRuntimeState,
-  inFlight: number,
+  disabled: boolean;
+  cooldownRemainingMs: number;
+  quota: QuotaRuntimeState;
+  inFlight: number;
 }>;
 
 /** The single read interface over both runtime-state backends. Read-only:

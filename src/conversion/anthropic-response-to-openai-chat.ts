@@ -67,11 +67,11 @@ function stringifyToolInput(input: unknown): string {
 function buildAssistantMessage(content: Array<Record<string, unknown>>): {
   content: string;
   reasoning_content?: string;
-  tool_calls?: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }>;
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
 } {
   let text = '';
   let reasoning = '';
-  const toolCalls: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }> = [];
+  const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
   for (const block of content) {
     const type = block?.type;
     if (type === 'text') {
@@ -103,7 +103,7 @@ function buildAssistantMessage(content: Array<Record<string, unknown>>): {
   const msg: {
     content: string;
     reasoning_content?: string;
-    tool_calls?: Array<{ id: string, type: 'function', function: { name: string, arguments: string } }>;
+    tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   } = { content: text };
   if (reasoning) msg.reasoning_content = reasoning;
   if (toolCalls.length > 0) msg.tool_calls = toolCalls;
@@ -114,11 +114,11 @@ function buildAssistantMessage(content: Array<Record<string, unknown>>): {
 //   input_tokens  -> prompt_tokens
 //   output_tokens -> completion_tokens
 //   total_tokens  -> input_tokens + output_tokens  (computed when missing)
-function mapUsage(usage: unknown): { prompt_tokens: number, completion_tokens: number, total_tokens: number } {
+function mapUsage(usage: unknown): { prompt_tokens: number; completion_tokens: number; total_tokens: number } {
   const u = isRecord(usage) ? usage : {};
   const input = Number((u as Record<string, unknown>).input_tokens ?? 0) || 0;
   const output = Number((u as Record<string, unknown>).output_tokens ?? 0) || 0;
-  const total = Number((u as Record<string, unknown>).total_tokens ?? (input + output)) || (input + output);
+  const total = Number((u as Record<string, unknown>).total_tokens ?? input + output) || input + output;
   return { prompt_tokens: input, completion_tokens: output, total_tokens: total };
 }
 
@@ -140,11 +140,13 @@ export function convertAnthropicResponseToOpenAIChat(data: unknown): Record<stri
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model,
-    choices: [{
-      index: 0,
-      message: { role: 'assistant', ...message },
-      finish_reason: mapStopReason(stopReason),
-    }],
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', ...message },
+        finish_reason: mapStopReason(stopReason),
+      },
+    ],
     usage: mapUsage((data as Record<string, unknown>).usage),
   };
 }

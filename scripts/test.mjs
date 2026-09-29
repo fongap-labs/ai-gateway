@@ -27,9 +27,5 @@ if (!workerRoot) {
   git('-C', workerRoot, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
 }
 
-const result = spawnSync(
-  process.execPath,
-  [join(workerRoot, 'tests', 'run-pack.mjs'), config.pack, root, tier],
-  { stdio: 'inherit' },
-);
+const result = spawnSync(process.execPath, [join(workerRoot, 'tests', 'run-pack.mjs'), config.pack, root, tier], { stdio: 'inherit' });
 process.exit(result.status ?? 1);

@@ -32,7 +32,16 @@
 import { readEnv } from './env.ts';
 
 const CAPABILITY_KEYS = ['tools', 'reasoning', 'vision', 'stream', 'ocr'];
-const ALLOWED_ENTRY_FIELDS = new Set(['policy', 'capabilities', 'reasoning_efforts', 'modalities', 'visibility', 'display_order', 'group', 'ui_visible']);
+const ALLOWED_ENTRY_FIELDS = new Set([
+  'policy',
+  'capabilities',
+  'reasoning_efforts',
+  'modalities',
+  'visibility',
+  'display_order',
+  'group',
+  'ui_visible',
+]);
 // Closed modality vocabulary for the Omni-phase schema reservation. Extending
 // this list is the ONLY way to introduce a new modality token — free-form
 // strings never enter the registry.
@@ -49,9 +58,9 @@ const DEFAULT_UI_VISIBLE = true;
  * explicitly configured; the registry applies defaults on read.
  */
 export type ModelCatalogFacts = {
-  capabilities?: Record<string, boolean>,
-  reasoning_efforts?: string[],
-  modalities?: { input: string[], output: string[] },
+  capabilities?: Record<string, boolean>;
+  reasoning_efforts?: string[];
+  modalities?: { input: string[]; output: string[] };
 };
 
 /**
@@ -60,11 +69,11 @@ export type ModelCatalogFacts = {
  * Never capability knowledge.
  */
 export type ModelRuntimePolicy = {
-  policy?: string,
-  visibility: string,
-  ui_visible: boolean,
-  display_order: number,
-  group: string,
+  policy?: string;
+  visibility: string;
+  ui_visible: boolean;
+  display_order: number;
+  group: string;
 };
 
 /**
@@ -72,12 +81,12 @@ export type ModelRuntimePolicy = {
  * distinct concepts and never share one flat record.
  */
 export type ModelEntry = {
-  catalog: ModelCatalogFacts,
-  policy: ModelRuntimePolicy,
+  catalog: ModelCatalogFacts;
+  policy: ModelRuntimePolicy;
 };
 
 let cachedEnv: Record<string, unknown> | undefined;
-let cached: { models: Record<string, ModelEntry>, errors: string[] } | undefined;
+let cached: { models: Record<string, ModelEntry>; errors: string[] } | undefined;
 
 export function loadModelsConfig(env: Record<string, unknown>): Record<string, ModelEntry> {
   return analyzeModels(env).models;
@@ -87,7 +96,7 @@ export function getModelsConfigDiagnostics(env: Record<string, unknown>): string
   return analyzeModels(env).errors;
 }
 
-function analyzeModels(env: Record<string, unknown>): { models: Record<string, ModelEntry>, errors: string[] } {
+function analyzeModels(env: Record<string, unknown>): { models: Record<string, ModelEntry>; errors: string[] } {
   if (cachedEnv === env && cached) return cached;
   cachedEnv = env;
   const raw = readEnv(env, 'AIG_MODELS_CONFIG');
@@ -107,7 +116,10 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
       errors.push('AIG_MODELS_CONFIG must be a JSON object { model: { policy, capabilities, reasoning_efforts } }');
     } else {
       for (const [name, config] of Object.entries(parsed as Record<string, unknown>)) {
-        if (!name.trim()) { errors.push('AIG_MODELS_CONFIG: empty model name (keys must be non-empty strings)'); continue; }
+        if (!name.trim()) {
+          errors.push('AIG_MODELS_CONFIG: empty model name (keys must be non-empty strings)');
+          continue;
+        }
         if (!config || typeof config !== 'object' || Array.isArray(config)) {
           errors.push(`AIG_MODELS_CONFIG: "${name}" must be an object`);
           continue;
@@ -176,7 +188,9 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             let hasValidCapability = false;
             for (const [key, val] of Object.entries(capRec)) {
               if (!CAPABILITY_KEYS.includes(key)) {
-                errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} is not a supported capability (allowed: ${CAPABILITY_KEYS.join(', ')})`);
+                errors.push(
+                  `AIG_MODELS_CONFIG: "${name}" capabilities.${key} is not a supported capability (allowed: ${CAPABILITY_KEYS.join(', ')})`,
+                );
               } else if (typeof val !== 'boolean') {
                 errors.push(`AIG_MODELS_CONFIG: "${name}" capabilities.${key} must be a boolean`);
               } else {
@@ -207,12 +221,14 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             errors.push(`AIG_MODELS_CONFIG: "${name}" modalities must be an object { input, output }`);
           } else {
             const modRec = mods as Record<string, unknown>;
-            const sides: { input: string[], output: string[] } = { input: [], output: [] };
+            const sides: { input: string[]; output: string[] } = { input: [], output: [] };
             let isValidModality = true;
             for (const side of ['input', 'output'] as const) {
               const list = modRec[side];
               if (!Array.isArray(list) || !list.every((t) => typeof t === 'string' && MODALITY_TOKENS.has(t.trim()))) {
-                errors.push(`AIG_MODELS_CONFIG: "${name}" modalities.${side} must be an array over the closed vocabulary [${[...MODALITY_TOKENS].join(', ')}]`);
+                errors.push(
+                  `AIG_MODELS_CONFIG: "${name}" modalities.${side} must be an array over the closed vocabulary [${[...MODALITY_TOKENS].join(', ')}]`,
+                );
                 isValidModality = false;
               } else {
                 sides[side] = [...new Set(list.map((t) => t.trim()))];
@@ -232,7 +248,9 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
           errors.push(`AIG_MODELS_CONFIG: model "${name}": capabilities.ocr=true conflicts with capabilities.vision=false`);
         }
         if (catalog.capabilities?.vision === true && catalog.modalities && !catalog.modalities.input.includes('image')) {
-          errors.push(`AIG_MODELS_CONFIG: model "${name}": capabilities.vision=true requires modalities.input to include "image" when modalities is declared`);
+          errors.push(
+            `AIG_MODELS_CONFIG: model "${name}": capabilities.vision=true requires modalities.input to include "image" when modalities is declared`,
+          );
         }
         models[name.trim()] = { catalog, policy };
       }

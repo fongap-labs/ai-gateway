@@ -8,34 +8,27 @@
 // client-side `PAGE_SCRIPT` in pages.ts attaches the floating tooltip
 // element); level 0/1/2/3/4 are CSS-driven via the `data-level` attribute.
 
-import { escapeHtml, fmtTokens, fmtInt, fmtTooltipDate } from './format.ts';
+import { escapeHtml, fmtInt, fmtTokens, fmtTooltipDate } from './format.ts';
 import type { HeatmapResult } from './heatmap.ts';
 
 const MONTH_NAMES_CN = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
-export type DailyCellData = { total: number, requests: number, reports: number, missing: number };
+export type DailyCellData = { total: number; requests: number; reports: number; missing: number };
 
 export function renderHeatmap(
   heatmap: HeatmapResult,
   opts: {
-    valueKey?: 'total' | 'requests',
-    data?: Map<string, DailyCellData> | null,
-    ariaLabel?: string,
-    unit?: string,
-    showMonthLabels?: boolean,
-    colsCount?: number,
-    coverage?: number | null,
-    countLabel?: string,
+    valueKey?: 'total' | 'requests';
+    data?: Map<string, DailyCellData> | null;
+    ariaLabel?: string;
+    unit?: string;
+    showMonthLabels?: boolean;
+    colsCount?: number;
+    coverage?: number | null;
+    countLabel?: string;
   } = {},
-): { cells: string[], labels: string[], ariaLabel: string } {
-  const {
-    data = null,
-    ariaLabel,
-    unit = 'Token',
-    showMonthLabels = true,
-    coverage = null,
-    countLabel = '次请求',
-  } = opts;
+): { cells: string[]; labels: string[]; ariaLabel: string } {
+  const { data = null, ariaLabel, unit = 'Token', showMonthLabels = true, coverage = null, countLabel = '次请求' } = opts;
   const valueLabel = unit;
   const weeks = heatmap.weeks;
 
@@ -60,7 +53,7 @@ export function renderHeatmap(
         tip = iso;
       } else {
         const v = value ?? 0;
-        const dayEntry = data && data.get(iso);
+        const dayEntry = data?.get(iso);
         const requests = dayEntry ? dayEntry.requests : 0;
         if (v > 0 && max > 0) {
           level = Math.min(4, Math.max(1, Math.ceil((v / max) * 4)));
@@ -90,7 +83,7 @@ export function renderHeatmap(
   };
 }
 
-function defaultAriaLabel(heatmap: { mode: string, rangeStart: string }, coverage?: number | null): string {
+function defaultAriaLabel(heatmap: { mode: string; rangeStart: string }, coverage?: number | null): string {
   if (heatmap.mode === 'rolling-52-weeks') {
     const base = '近 52 周 Token 活动热力图';
     if (coverage !== null && coverage !== undefined) {
