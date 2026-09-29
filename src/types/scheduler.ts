@@ -24,6 +24,9 @@ export type RoutableRequest = {
   model: string;
   protocol: Protocol;
   surface: Surface;
+  /** Size of the client request body in characters, when known. Lets Tier 1 skip a
+   *  node that recently rejected a request this large. */
+  bodyChars?: number;
 };
 
 /**

@@ -8,7 +8,7 @@
 // Rules of scope: every failure here is NODE-local. Never punish a provider,
 // tier, or the whole gateway for one node's 429/401.
 
-import { getLimits, parseRetryAfterMs } from '../config/timeouts.ts';
+import { clampRetryAfterMs, getLimits, parseRetryAfterMs } from '../config/timeouts.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingErrorCode } from '../types/upstream-processing.ts';
 
@@ -42,13 +42,60 @@ export type FailureClassification = {
   retryAfterMs?: number;
   modelScoped?: boolean;
   explicitRetryAfter?: boolean;
+  /** The upstream said this request is larger than the model accepts (413). */
+  requestTooLarge?: boolean;
+  /**
+   * What kind of allowance a 429 ran into, judged from the response text alone:
+   * 'window' = a short per-minute style limit, 'quota' = a long-lived allowance
+   * (daily, hourly plan, credits). Absent when the text does not say.
+   */
+  rateLimitWindow?: 'window' | 'quota';
 };
 
 const CLIENT_STOP_STATUSES = new Set([413, 415, 422]);
 
-function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number): FailureClassification {
+// "Please try again in 7.66s", "try again in 12m3.5s", "resets in 2 hours": many
+// providers state the wait in the error text when they send no Retry-After header.
+const BODY_RETRY_HINT =
+  /(?:try again|retry|resets?|available again)\s*(?:in|after)\s+((?:\d+(?:\.\d+)?\s*(?:ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])\s*)+)/i;
+const BODY_RETRY_UNIT = /(\d+(?:\.\d+)?)\s*(ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])/gi;
+
+export function retryHintFromBody(body: unknown): number {
+  const match = BODY_RETRY_HINT.exec(String(body || ''));
+  if (!match?.[1]) return 0;
+  let total = 0;
+  for (const part of match[1].matchAll(BODY_RETRY_UNIT)) {
+    const value = Number(part[1]);
+    const unit = String(part[2]).toLowerCase();
+    if (!Number.isFinite(value)) return 0;
+    if (unit === 'ms') total += value;
+    else if (unit.startsWith('h')) total += value * 3_600_000;
+    else if (unit.startsWith('m')) total += value * 60_000;
+    else total += value * 1_000;
+  }
+  return total > 0 ? clampRetryAfterMs(total) : 0;
+}
+
+// Long-lived allowances (daily / plan window / credits) versus short per-minute
+// limits, from wording alone. Deliberately conservative: text that says neither
+// stays unclassified and keeps the default ladder. Chinese wording is matched by
+// code point escapes so the source stays English-only.
+const QUOTA_WORDING =
+  /\b(?:quota|daily|per[ -]day|credits?|balance|billing|usage limit|plan limit|exhausted)\b|\u989d\u5ea6|\u914d\u989d|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\s*\d+\s*\u5c0f\u65f6|\u4f59\u989d|\u6b20\u8d39/i;
+const WINDOW_WORDING = /\b(?:per[ -]minute|per[ -]second|rpm|tpm|itpm|otpm|too many requests|concurren\w*)\b/i;
+
+export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined {
+  const text = String(body || '');
+  if (!text) return undefined;
+  if (QUOTA_WORDING.test(text)) return 'quota';
+  if (WINDOW_WORDING.test(text)) return 'window';
+  return undefined;
+}
+
+function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number, body: unknown = ''): FailureClassification {
   const limits = getLimits(env);
-  const retryAfterMs = parseRetryAfterMs(headers, now);
+  const retryAfterMs = parseRetryAfterMs(headers, now) || retryHintFromBody(body);
+  const rateLimitWindow = rateLimitWindowOf(body);
   return {
     kind: KIND.RATE_LIMIT,
     action: 'rotate',
@@ -56,10 +103,14 @@ function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number)
     retryAfterMs,
     counted: false,
     explicitRetryAfter: retryAfterMs > 0,
+    ...(rateLimitWindow ? { rateLimitWindow } : {}),
   };
 }
 
-function looksLikeProviderRateLimit(body: unknown): boolean {
+// A 413 that quotes a token-per-minute ceiling is about THIS request being larger
+// than the model accepts (Groq: "Request too large ... tokens per minute (TPM)"),
+// not about the key being throttled: smaller requests to the same key still work.
+function looksLikeTokenCeiling(body: unknown): boolean {
   const text = String(body || '').toLowerCase();
   if (!text) return false;
   if (/\b(?:itpm|tpm|rpm)\b/.test(text)) return true;
@@ -77,8 +128,15 @@ export function classifyUpstreamStatus(
   body: unknown = '',
 ): FailureClassification {
   const limits = getLimits(env);
-  if (status === 429) return rateLimitClassification(headers, env, now);
-  if (status === 413 && looksLikeProviderRateLimit(body)) return rateLimitClassification(headers, env, now);
+  if (status === 429) return rateLimitClassification(headers, env, now, body);
+  // Request-local, like a 400: this node cannot take this request, so routing
+  // continues elsewhere, but the key is not put on a cooldown ladder and stays
+  // available for requests that fit. A Retry-After header says the refusal is
+  // time based (a real throttle), so that case stays a rate limit.
+  if (status === 413 && looksLikeTokenCeiling(body)) {
+    if (parseRetryAfterMs(headers, now) > 0) return rateLimitClassification(headers, env, now, body);
+    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, requestTooLarge: true };
+  }
   if (status === 401 || status === 403) {
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false };
   }
@@ -112,6 +170,8 @@ export function classifyUpstreamStatus(
 
 function looksLikeModelMissing(body: unknown): boolean {
   const text = String(body || '').toLowerCase();
+  // "No endpoints found for <model>" (a router with no provider for that model).
+  if (/\bno endpoints? found\b/.test(text)) return true;
   if (!text.includes('model')) return false;
   return /(not found|does not exist|unknown|no such|not supported|invalid model)/.test(text);
 }

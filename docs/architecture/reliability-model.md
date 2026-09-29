@@ -8,8 +8,8 @@ Tier 1 state is isolate-local and deliberately scoped:
 
 - **Account scope** — in-flight count, account cooldown, rate-limit recovery state, and account health.
 - **Model scope** — TTFT EWMA, failure/cooldown/half-open state, and recovery state.
-- **Upstream-model scope** — short cooldown for provider-facing model-missing responses so a logical alias remap does not inherit stale 404 state.
-- **Provider + key-slot scope** — adaptive 429 cooldown for one configured credential. The runtime node id is the non-secret key-slot identity; raw credentials are never stored in the adaptive state key.
+- **Upstream-model scope** — cooldown ladder (5s, 20s, 80s, 5m, 20m, 30m) for provider-facing model-missing responses so a logical alias remap does not inherit stale 404 state; a model id that keeps answering "not found" (including "no endpoints found for ...") is retried less and less often and forgiven by its first success.
+- **Provider + key-slot scope** — adaptive 429 cooldown for one configured credential, kept per model (default) or for the whole key (once a second model on it is limited). The runtime node id is the non-secret key-slot identity; raw credentials are never stored in the adaptive state key.
 - **Provider + upstream-model scope** — short-lived distinct-key 429 evidence used only as a soft ranking signal when several independent credentials hit the same provider-facing model at once.
 
 An isolate restart clears this adaptive state. The gateway does not claim provider-wide state consistency.
@@ -61,6 +61,10 @@ claim (acquire+reserve) -> execute -> settle(actual usage) -> release
 - **Hedges** are real upstream dispatches: each twin claims and reserves its own slot, and a losing twin releases its reservation back.
 - Quota state is isolate-local best-effort like all Tier 1 reliability state; `recordTier1QuotaReport` is the production writer and reconciliation subtracts reservations already outstanding in the isolate from a fresh provider report.
 
+## 413 handling
+
+A `413` that quotes a token ceiling ("Request too large ... tokens per minute (TPM): Limit 6000, Requested 9000") is a verdict on **that request**, not on the key: smaller requests to the same key still work. It rotates to another node like a `400`, puts no cooldown on the key, and is remembered per `(key, logical model)` as the smallest request size (body characters) refused. For the next ten minutes larger requests skip that key instead of paying a guaranteed refusal, while smaller ones keep using it; afterwards one request probes again so a raised limit is noticed. A `413` that carries `Retry-After` is a time-based throttle and stays a rate limit; a plain payload-size `413` still stops the request.
+
 ## 429 handling
 
 429 is a temporary capacity signal. Tier 1 keeps the remaining credential pool available while the affected key learns its own recovery interval.
@@ -68,15 +72,20 @@ claim (acquire+reserve) -> execute -> settle(actual usage) -> release
 For a `(provider, key-slot)` without a stronger explicit recovery signal, the adaptive ladder is:
 
 ```text
-15s -> 30s -> 1m -> 2m -> 5m -> 15m -> 30m -> 60m
+15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m
 ```
+
+The top step is deliberately 30 minutes: a key that has recovered is back in the pool within half an hour at worst, while a long outage costs about one probe per 30 minutes. The ladder can be replaced with `AIG_RATE_LIMIT_STEPS_MS` (comma separated milliseconds, for example `15000,30000,60000,300000`); a missing or malformed value keeps the default.
 
 Tier 1 behavior:
 
-- adaptive cooldown is scoped strictly to `(provider, key-slot)`; one key never cools an entire Provider or logical model;
+- adaptive cooldown is scoped to `(provider, key-slot)`; one key never cools an entire Provider or logical model;
+- **a 429 is blamed on the model that received it.** The other models served by the same key stay in the pool. Only when a second distinct model on the same key is limited within 60 seconds (or the key is already on the account ladder) does the cooldown widen to the whole key. Each scope keeps its own ladder;
 - escalation occurs only when a recovery request still receives 429 after the previous cooldown expired;
 - extra 429 responses from requests already in flight during the same cooldown do not advance the stage or restart the timer;
-- an explicit upstream `Retry-After` is a minimum floor: it may extend the current cooldown but never shorten the learned adaptive stage;
+- a provider's own wait (`Retry-After` header, else a wait stated in the error text such as "try again in 7s") is trusted as-is for the first two failures, because the provider knows its window better than a blind ladder; from the third failure on it only raises the ladder floor, so a provider that keeps advertising "1s" while staying exhausted still backs off;
+- a 429 whose text names a long-lived allowance (quota, daily limit, credits, plan window) starts the ladder at 5 minutes instead of 15 seconds, because it will not clear in seconds; text that names a per-minute limit, or says nothing, keeps the short first steps;
+- when one key of a provider recovers, its sibling keys that are still cooling for more than a minute are let back in early (same plan, usually the same window); each is still admitted through the normal single recovery probe, and a failed probe returns it to its previous schedule without escalating;
 - a 429 does not create a logical-model-wide cooldown; other keys serving the same logical model remain eligible;
 - one or two distinct keys hitting 429 do not change provider-model ranking;
 - three or more distinct keys hitting 429 for the same `(provider, upstream model)` within the evidence window add only a soft cohort penalty; remaining keys stay eligible;

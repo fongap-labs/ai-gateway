@@ -183,6 +183,11 @@ export function getLimits(env: Record<string, unknown>): Limits {
 }
 
 // Parse a Retry-After header. Supports delay-seconds and HTTP-date forms.
+/** Clamp a provider-suggested wait into the window every Retry-After style hint obeys. */
+export function clampRetryAfterMs(ms: number): number {
+  return Math.min(Math.max(Math.round(ms), RETRY_AFTER_MIN_MS), RETRY_AFTER_MAX_MS);
+}
+
 // Returns milliseconds clamped to [RETRY_AFTER_MIN_MS, RETRY_AFTER_MAX_MS], or 0 when absent/invalid.
 export function parseRetryAfterMs(headers: Headers, now: number = Date.now()): number {
   const value = headers?.get('retry-after');
