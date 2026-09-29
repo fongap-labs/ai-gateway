@@ -20,10 +20,13 @@ import {
   applyTier1Outcome,
   classifyTier1Failure,
   getTier1Account,
+  getTier1ModelPerf,
   recordTier1Success,
   recordTier1Ttft,
+  recordTier1UpstreamModelServed,
   releaseTier1Slot,
   settleTier1Quota,
+  wakeTier1ProviderSiblings,
 } from '../../reliability/tier1-state.ts';
 import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../types/node.ts';
@@ -113,9 +116,18 @@ function scheduleBackground(c: AttemptContext, task: Promise<unknown>): void {
 export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {
   if (node.tier === 'tier-1') {
     const logicalModel = c.state.requestedModel;
+    const rateLimited = () =>
+      getTier1Account(node.id).consecutiveRateLimits > 0 || (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits ?? 0) > 0;
+    const wasRateLimited = rateLimited();
     recordTier1Success(node.id, logicalModel);
+    if (wasRateLimited && !rateLimited()) {
+      const woken = wakeTier1ProviderSiblings(node.provider, node.id, logicalModel);
+      if (woken.length) c.state.logger.info(`rate-limit recovery: node=${node.id} provider=${node.provider} woke_siblings=${woken.join(',')}`);
+    }
     if (getTier1Account(node.id).consecutiveRateLimits === 0) clearAdaptive429State(node.provider, node.id);
+    if (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits === 0) clearAdaptive429State(node.provider, node.id, logicalModel);
     recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), node.id);
+    recordTier1UpstreamModelServed(node.id, upstreamModelOf(node, logicalModel));
     // Confirm the quota lease with actual delivered usage before release; a
     // settled lease is not restored, so the request reservation is consumed.
     const observed = observedAttemptUsage.get(c as object);

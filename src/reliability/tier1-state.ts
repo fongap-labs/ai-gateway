@@ -31,6 +31,20 @@ const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.na
 // stores the supplied deadline and controls the post-cooldown recovery probe;
 // it must never invent a second rate-limit ladder.
 export const TIER1_429_PROBE_GATE_MS = 5_000;
+// A 429 is blamed on the model that received it. Only when a second distinct model
+// on the same account is limited inside this window does the cooldown widen to the
+// whole account (an account-wide quota looks exactly like that).
+export const TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS = 60_000;
+export const TIER1_429_ACCOUNT_ESCALATION_MODELS = 2;
+// A model id the upstream keeps answering "not found" for is not coming back in
+// seconds: 5s, 20s, 80s, 5m, 20m, 30m (cleared by the first success).
+export const TIER1_MODEL_MISSING_LADDER_MS = Object.freeze([5_000, 20_000, 80_000, 300_000, 1_200_000, 1_800_000] as const);
+// Sibling keys of one provider usually share a quota window. When one recovers,
+// siblings still cooling down for at least this long are let back in early.
+export const TIER1_SIBLING_WAKE_MIN_REMAINING_MS = 60_000;
+// How long a "this request was too large" observation keeps large requests away.
+// After it lapses one request probes again, so a raised provider limit is noticed.
+export const TIER1_OVERSIZE_MEMORY_MS = 10 * 60_000;
 
 const FAILURE_STATE = Object.freeze({
   NORMAL: 'normal',
@@ -63,6 +77,9 @@ export type Tier1QuotaState = 'normal' | 'near_limit' | 'exhausted_until';
 
 export type Tier1AccountRuntime = {
   accountId: string;
+  // Provider this account belongs to, learned when it is first claimed. Used to
+  // wake sibling keys of the same provider when one of them recovers.
+  provider: string | null;
   inFlight: number;
   accountDisabled: boolean;
   accountCooldownUntil: number;
@@ -72,6 +89,17 @@ export type Tier1AccountRuntime = {
   scopeAmbiguous429: boolean;
   rateLimitRecoveryPending: boolean;
   rateLimitRecoveryUntil: number;
+  // Logical models that recently took a 429 on this account (model -> last time).
+  // Two distinct models limited inside the window is the evidence that the limit
+  // belongs to the whole account, not to one upstream model.
+  recentRateLimitedModels: Map<string, number>;
+  // Smallest request (in body characters) each logical model recently refused as
+  // too large, with the time the memory lapses. Requests at least that large skip
+  // this account instead of paying a guaranteed 413 round trip.
+  oversizeCeilings: Map<string, { chars: number; until: number }>;
+  // How many times in a row an upstream model id answered "not found". Drives the
+  // model_missing ladder; cleared when that upstream model serves a request.
+  upstreamModelMisses: Map<string, number>;
   quotaState: Tier1QuotaState;
   quotaResetAt: number;
   // Provider-reported quota, isolate-local. `null` = unknown: the gateway never
@@ -145,6 +173,7 @@ function newModelRuntime(): Tier1ModelRuntime {
 function newAccountRuntime(accountId: string): Tier1AccountRuntime {
   return {
     accountId,
+    provider: null,
     inFlight: 0,
     accountDisabled: false,
     accountCooldownUntil: 0,
@@ -154,6 +183,9 @@ function newAccountRuntime(accountId: string): Tier1AccountRuntime {
     scopeAmbiguous429: false,
     rateLimitRecoveryPending: false,
     rateLimitRecoveryUntil: 0,
+    recentRateLimitedModels: new Map(),
+    oversizeCeilings: new Map(),
+    upstreamModelMisses: new Map(),
     quotaState: 'normal',
     quotaResetAt: 0,
     quotaRemainingRequests: null,
@@ -233,6 +265,7 @@ export function claimTier1Slot(
   maxInFlight: number | null = null,
 ): boolean {
   const account = getTier1Account(node.id);
+  account.provider = node.provider;
   normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
   const model = modelId ? account.models.get(modelId) : null;
@@ -329,6 +362,7 @@ export function isTier1Eligible(
   const model = account.models.get(req.model);
   if (modelBlocked(model, now) || (model?.rateLimitRecoveryUntil ?? 0) > now) return false;
   if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return false;
+  if (exceedsOversizeCeiling(account, req.model, req.bodyChars, now)) return false;
   if (account.quotaState === 'exhausted_until' && account.quotaResetAt > now) return false;
   // A provider-reported window tail at zero also gates eligibility: the pool
   // must not even sample a node whose known quota is spent. Unknown quota
@@ -461,12 +495,87 @@ function modelCooldownMs(model: Tier1ModelRuntime, outcome: Tier1Outcome): numbe
   return jittered(exponential(TIER1_COOLDOWN_DEFAULT_MS, TIER1_COOLDOWN_MAX_MS, model.consecutiveFailures));
 }
 
+/**
+ * A key of `provider` just recovered from a rate limit (on the account, or on `modelId`).
+ * Its siblings usually hit the same window (same plan, same reset), so any that are still
+ * cooling down for more than TIER1_SIBLING_WAKE_MIN_REMAINING_MS become eligible now. Each one is still
+ * admitted through the normal single recovery probe, and a failed probe puts it back
+ * on its previous schedule without escalating its ladder. Returns the woken ids.
+ */
+export function wakeTier1ProviderSiblings(provider: string, recoveredAccountId: string, modelId: string, now: number = Date.now()): string[] {
+  const woken: string[] = [];
+  for (const [id, account] of accounts) {
+    if (id === recoveredAccountId || account.provider !== provider || account.accountDisabled) continue;
+    if (account.accountCooldownReason === 'rate_limit' && account.accountCooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS) {
+      account.accountCooldownUntil = now;
+      woken.push(id);
+    }
+    const model = account.models.get(modelId);
+    if (model?.cooldownReason === 'rate_limit' && model.cooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS) {
+      model.cooldownUntil = now;
+      if (!woken.includes(id)) woken.push(id);
+    }
+  }
+  return woken;
+}
+
+/** An upstream model id answered a request: forget its "not found" streak. */
+export function recordTier1UpstreamModelServed(accountId: string, upstreamModel: string): void {
+  accounts.get(accountId)?.upstreamModelMisses.delete(upstreamModel);
+}
+
+/** Remember that `modelId` on this account refused a request of `requestChars`. */
+export function recordTier1Oversize(accountId: string, modelId: string, requestChars: number, now: number = Date.now()): void {
+  if (!Number.isFinite(requestChars) || requestChars <= 0) return;
+  const account = getTier1Account(accountId);
+  const known = account.oversizeCeilings.get(modelId);
+  const chars = known && known.until > now ? Math.min(known.chars, requestChars) : requestChars;
+  account.oversizeCeilings.set(modelId, { chars, until: now + TIER1_OVERSIZE_MEMORY_MS });
+}
+
+function exceedsOversizeCeiling(account: Tier1AccountRuntime, modelId: string, requestChars: number | undefined, now: number): boolean {
+  if (!requestChars || account.oversizeCeilings.size === 0) return false;
+  const ceiling = account.oversizeCeilings.get(modelId);
+  if (!ceiling) return false;
+  if (ceiling.until <= now) {
+    account.oversizeCeilings.delete(modelId);
+    return false;
+  }
+  return requestChars >= ceiling.chars;
+}
+
+/**
+ * Decide whom a 429 belongs to: the model that received it, or the whole account.
+ *
+ * Default is the model, so one limited upstream model does not take the healthy
+ * models of the same key out of the pool. The account is blamed when it is
+ * already on the account-wide ladder, or when a second distinct model on it is
+ * rate limited within TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS. Records the
+ * observation; call it exactly once per 429.
+ */
+export function decideTier1RateLimitScope(accountId: string, modelId: string, now: number = Date.now()): 'model' | 'account' {
+  const account = getTier1Account(accountId);
+  const cutoff = now - TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS;
+  for (const [id, at] of account.recentRateLimitedModels) {
+    if (at <= cutoff) account.recentRateLimitedModels.delete(id);
+  }
+  account.recentRateLimitedModels.set(modelId, now);
+  if (account.consecutiveRateLimits > 0 || account.accountCooldownUntil > now) return 'account';
+  return account.recentRateLimitedModels.size >= TIER1_429_ACCOUNT_ESCALATION_MODELS ? 'account' : 'model';
+}
+
 export function applyTier1Outcome(accountId: string, modelId: string, outcome: Tier1Outcome | null | undefined, now: number = Date.now()): void {
   if (!outcome || outcome.action === 'neutral' || outcome.scope === 'none') return;
   const account = getTier1Account(accountId);
 
   if (outcome.scope === 'upstream_model') {
-    const cooldownMs = Math.min(Math.max(0, outcome.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
+    // Escalate only when the previous cooldown had lapsed (a real retry failed), not
+    // for sibling requests that were already in flight during the same cooldown.
+    const lapsed = (account.upstreamModelCooldowns.get(modelId) ?? 0) <= now;
+    const misses = (account.upstreamModelMisses.get(modelId) ?? 0) + (lapsed ? 1 : 0);
+    account.upstreamModelMisses.set(modelId, Math.max(1, misses));
+    const ladderMs = TIER1_MODEL_MISSING_LADDER_MS[Math.min(Math.max(1, misses), TIER1_MODEL_MISSING_LADDER_MS.length) - 1] ?? 0;
+    const cooldownMs = Math.min(Math.max(0, outcome.cooldownMs ?? 0, ladderMs), TIER1_COOLDOWN_MAX_MS);
     if (cooldownMs > 0) {
       const until = now + cooldownMs;
       account.upstreamModelCooldowns.set(modelId, Math.max(account.upstreamModelCooldowns.get(modelId) ?? 0, until));
@@ -564,6 +673,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   }
 
   model.consecutiveFailures = 0;
+  account.recentRateLimitedModels.delete(modelId);
   const modelRecoveryProbe =
     model.cooldownReason === 'rate_limit' && model.cooldownUntil <= now && !model.rateLimitRecoveryPending && model.rateLimitRecoveryUntil > 0;
   if (modelRecoveryProbe) {
