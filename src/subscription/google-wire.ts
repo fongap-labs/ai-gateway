@@ -56,7 +56,10 @@ function extractText(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   let out = '';
   for (const part of content) {
-    if (typeof part === 'string') { out += part; continue; }
+    if (typeof part === 'string') {
+      out += part;
+      continue;
+    }
     if (!isRecord(part)) return null;
     if (part.type === 'text' || part.type === 'output_text') {
       if (typeof part.text !== 'string') return null;
@@ -99,7 +102,7 @@ function buildGenerationConfig(body: Record<string, unknown>): Record<string, un
  *  - unsupported (non-function tool, malformed function) -> {unsupported: true}
  *  Unsupported tools refuse the whole request (fail-closed) instead of being
  *  silently dropped, because the client expects them to be callable. */
-function buildTools(tools: unknown): { tools: Record<string, unknown>[] | null, unsupported?: false } | { unsupported: true } {
+function buildTools(tools: unknown): { tools: Record<string, unknown>[] | null; unsupported?: false } | { unsupported: true } {
   if (tools === undefined || tools === null) return { tools: null };
   if (!Array.isArray(tools) || tools.length === 0) return { tools: null };
   const declarations: Record<string, unknown>[] = [];
@@ -135,7 +138,7 @@ function buildToolConfig(toolChoice: unknown): Record<string, unknown> | null | 
   return false;
 }
 
-function parseDataImageUrl(url: string): { mimeType: string, data: string } | null {
+function parseDataImageUrl(url: string): { mimeType: string; data: string } | null {
   const m = /^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(url);
   if (!m || m[1] === undefined || m[2] === undefined) return null;
   return { mimeType: m[1], data: m[2] };
@@ -144,14 +147,18 @@ function parseDataImageUrl(url: string): { mimeType: string, data: string } | nu
 function parseJsonArgs(args: string): unknown | null {
   if (args === '' || args === undefined) return {};
   if (typeof args !== 'string') return null;
-  try { return JSON.parse(args); } catch { return null; }
+  try {
+    return JSON.parse(args);
+  } catch {
+    return null;
+  }
 }
 
 type MessageResult =
-  | { tag: 'system', text: string }
-  | { tag: 'content', content: Record<string, unknown> }
+  | { tag: 'system'; text: string }
+  | { tag: 'content'; content: Record<string, unknown> }
   | { tag: 'skip' }
-  | { tag: 'unsupported', reason: string };
+  | { tag: 'unsupported'; reason: string };
 
 function convertMessage(message: unknown, toolCallNames: Map<string, string>): MessageResult {
   if (!isRecord(message)) return { tag: 'unsupported', reason: 'message is not an object' };
@@ -194,7 +201,11 @@ function convertMessage(message: unknown, toolCallNames: Map<string, string>): M
     const raw = extractText(message.content);
     if (raw === null) return { tag: 'unsupported', reason: 'tool content' };
     let response: unknown;
-    try { response = JSON.parse(raw); } catch { response = { output: raw }; }
+    try {
+      response = JSON.parse(raw);
+    } catch {
+      response = { output: raw };
+    }
     return { tag: 'content', content: { role: 'user', parts: [{ functionResponse: { name, response } }] } };
   }
   return { tag: 'unsupported', reason: `unknown role ${String(role)}` };
@@ -205,7 +216,10 @@ function buildUserParts(content: unknown): Record<string, unknown>[] | null {
   if (!Array.isArray(content)) return null;
   const parts: Record<string, unknown>[] = [];
   for (const part of content) {
-    if (typeof part === 'string') { if (part) parts.push({ text: part }); continue; }
+    if (typeof part === 'string') {
+      if (part) parts.push({ text: part });
+      continue;
+    }
     if (!isRecord(part)) return null;
     if (part.type === 'text' || part.type === 'output_text') {
       if (typeof part.text !== 'string') return null;
@@ -223,7 +237,7 @@ function buildUserParts(content: unknown): Record<string, unknown>[] | null {
   return parts;
 }
 
-export type CodeAssistEnvelope = { envelope: Record<string, unknown>, streaming: boolean };
+export type CodeAssistEnvelope = { envelope: Record<string, unknown>; streaming: boolean };
 
 /** Build the Code Assist request envelope from an OpenAI Chat body, or null
  *  when the body cannot be converted (fail-closed). `stream` is read from the
@@ -289,7 +303,7 @@ function convertUsageMetadata(usage: unknown): Record<string, unknown> | null {
   if (!isRecord(usage)) return null;
   const prompt = asNonNegativeInt(usage.promptTokenCount);
   const completion = asNonNegativeInt(usage.candidatesTokenCount) ?? asNonNegativeInt(usage.totalTokenCount) ?? 0;
-  const total = asNonNegativeInt(usage.totalTokenCount) ?? ((prompt ?? 0) + completion);
+  const total = asNonNegativeInt(usage.totalTokenCount) ?? (prompt ?? 0) + completion;
   if (prompt === null && total === null) return null;
   const out: Record<string, unknown> = {
     prompt_tokens: prompt ?? 0,
@@ -363,13 +377,13 @@ export function codeAssistObjectToOpenAIChat(data: unknown): Record<string, unkn
 // ---- Response: Code Assist SSE -> OpenAI Chat SSE -----------------------------
 
 type StreamState = {
-  messageId: string,
-  model: string,
-  roleEmitted: boolean,
-  finishReason: string | null,
-  toolCallIndex: number,
-  emittedAny: boolean,
-  closed: boolean,
+  messageId: string;
+  model: string;
+  roleEmitted: boolean;
+  finishReason: string | null;
+  toolCallIndex: number;
+  emittedAny: boolean;
+  closed: boolean;
 };
 
 function createState(messageId: string, model: string): StreamState {
@@ -401,11 +415,7 @@ function emitRoleHeader(state: StreamState, controller: ReadableStreamDefaultCon
   });
 }
 
-function processCodeAssistChunk(
-  state: StreamState,
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  chunk: unknown,
-): void {
+function processCodeAssistChunk(state: StreamState, controller: ReadableStreamDefaultController<Uint8Array>, chunk: unknown): void {
   if (state.closed) return;
   if (!isRecord(chunk)) return;
   const candidates = chunk.candidates;
@@ -436,21 +446,25 @@ function processCodeAssistChunk(
             object: 'chat.completion.chunk',
             created: Math.floor(Date.now() / 1000),
             model: state.model,
-            choices: [{
-              index: 0,
-              delta: {
-                tool_calls: [{
-                  index: state.toolCallIndex - 1,
-                  id,
-                  type: 'function',
-                  function: {
-                    name: part.functionCall.name,
-                    arguments: args === undefined ? '{}' : JSON.stringify(args),
-                  },
-                }],
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      index: state.toolCallIndex - 1,
+                      id,
+                      type: 'function',
+                      function: {
+                        name: part.functionCall.name,
+                        arguments: args === undefined ? '{}' : JSON.stringify(args),
+                      },
+                    },
+                  ],
+                },
+                finish_reason: null,
               },
-              finish_reason: null,
-            }],
+            ],
           });
         }
       }
@@ -491,7 +505,7 @@ function emitFinishAndDone(state: StreamState, controller: ReadableStreamDefault
  *  usage + `[DONE]`) when the upstream body ends cleanly. */
 export function createOpenAIChatStreamFromCodeAssist(
   body: ReadableStream<Uint8Array> | null | undefined,
-  options: { messageId: string, model: string },
+  options: { messageId: string; model: string },
 ): ReadableStream<Uint8Array> {
   const state = createState(options.messageId || `chatcmpl-${Date.now().toString(36)}`, options.model || '');
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -499,7 +513,10 @@ export function createOpenAIChatStreamFromCodeAssist(
   let lastUsage: unknown = null;
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      if (!body) { controller.error(new Error('Upstream stream body is not readable')); return; }
+      if (!body) {
+        controller.error(new Error('Upstream stream body is not readable'));
+        return;
+      }
       reader = body.getReader();
       const upstream = reader;
       const decoder = new TextDecoder();
@@ -507,7 +524,11 @@ export function createOpenAIChatStreamFromCodeAssist(
         if (cancelled || state.closed) return;
         if (!data) return;
         let event: unknown;
-        try { event = JSON.parse(data); } catch { return; }
+        try {
+          event = JSON.parse(data);
+        } catch {
+          return;
+        }
         if (isRecord(event) && isRecord(event.usageMetadata)) lastUsage = event.usageMetadata;
         processCodeAssistChunk(state, controller, event);
       });
@@ -516,7 +537,11 @@ export function createOpenAIChatStreamFromCodeAssist(
           while (!cancelled && !state.closed) {
             const { done, value } = await upstream.read();
             if (cancelled) return;
-            if (done) { scanner.push(decoder.decode()); scanner.flush(); break; }
+            if (done) {
+              scanner.push(decoder.decode());
+              scanner.flush();
+              break;
+            }
             scanner.push(decoder.decode(value, { stream: true }));
           }
           if (cancelled) return;

@@ -8,8 +8,8 @@
 // and never mixes them into one flat record. Runtime Nodes own only
 // logical -> upstream mappings.
 
-import { loadModelsConfig } from './models.ts';
 import type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
+import { loadModelsConfig } from './models.ts';
 
 export type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
 
@@ -23,23 +23,23 @@ const DEFAULT_UI_VISIBLE = true;
 
 /** Resolved catalog facts: declared values with registry defaults applied. */
 export type ResolvedModelCatalog = {
-  capabilities: Record<string, boolean>,
-  reasoning_efforts: string[],
-  modalities?: { input: string[], output: string[] },
+  capabilities: Record<string, boolean>;
+  reasoning_efforts: string[];
+  modalities?: { input: string[]; output: string[] };
 };
 
 /** Resolved runtime policy: declared values with registry defaults applied. */
 export type ResolvedModelPolicy = {
-  policy: string,
-  visibility: string,
-  display_order: number,
-  group: string,
-  ui_visible: boolean,
+  policy: string;
+  visibility: string;
+  display_order: number;
+  group: string;
+  ui_visible: boolean;
 };
 
 export type RegistryEntry = {
-  catalog: ResolvedModelCatalog,
-  policy: ResolvedModelPolicy,
+  catalog: ResolvedModelCatalog;
+  policy: ResolvedModelPolicy;
 };
 
 let cachedEnv: Record<string, unknown> | undefined;
@@ -48,9 +48,8 @@ let cachedRegistry: Record<string, RegistryEntry> | undefined;
 function resolveCatalog(facts: ModelCatalogFacts): ResolvedModelCatalog {
   return {
     capabilities: { ...DEFAULT_CAPABILITIES, ...(facts.capabilities || {}) },
-    reasoning_efforts: Array.isArray(facts.reasoning_efforts) && facts.reasoning_efforts.length
-      ? facts.reasoning_efforts
-      : [...DEFAULT_REASONING_EFFORTS],
+    reasoning_efforts:
+      Array.isArray(facts.reasoning_efforts) && facts.reasoning_efforts.length ? facts.reasoning_efforts : [...DEFAULT_REASONING_EFFORTS],
     ...(facts.modalities ? { modalities: facts.modalities } : {}),
   };
 }
@@ -82,19 +81,21 @@ export function loadModelRegistry(env: Record<string, unknown>): Record<string, 
 
 export function modelRegistryEntry(env: Record<string, unknown>, model: string): RegistryEntry {
   const registry = loadModelRegistry(env);
-  return registry[model] || {
-    catalog: {
-      capabilities: { ...DEFAULT_CAPABILITIES },
-      reasoning_efforts: [...DEFAULT_REASONING_EFFORTS],
-    },
-    policy: {
-      policy: DEFAULT_POLICY,
-      visibility: DEFAULT_VISIBILITY,
-      display_order: DEFAULT_DISPLAY_ORDER,
-      group: DEFAULT_GROUP,
-      ui_visible: DEFAULT_UI_VISIBLE,
-    },
-  };
+  return (
+    registry[model] || {
+      catalog: {
+        capabilities: { ...DEFAULT_CAPABILITIES },
+        reasoning_efforts: [...DEFAULT_REASONING_EFFORTS],
+      },
+      policy: {
+        policy: DEFAULT_POLICY,
+        visibility: DEFAULT_VISIBILITY,
+        display_order: DEFAULT_DISPLAY_ORDER,
+        group: DEFAULT_GROUP,
+        ui_visible: DEFAULT_UI_VISIBLE,
+      },
+    }
+  );
 }
 
 export function listRegistryModels(env: Record<string, unknown>): string[] {
@@ -108,11 +109,7 @@ export function isWildcardNode(node: { models: Record<string, string> }): boolea
 // Empty `models:{}` is an intentional wildcard ONLY inside the known logical
 // model catalog. Without that catalog, wildcard routing fails closed; callers
 // no longer receive an old permissive fallback.
-export function servesModel(
-  node: { models: Record<string, string> },
-  model: string,
-  knownModels?: ReadonlySet<string> | null,
-): boolean {
+export function servesModel(node: { models: Record<string, string> }, model: string, knownModels?: ReadonlySet<string> | null): boolean {
   if (isWildcardNode(node)) return !!knownModels?.has(model);
   return Object.hasOwn(node.models, model);
 }
@@ -130,7 +127,9 @@ export function collectKnownModels(
     try {
       const models = loadModelsConfig(env);
       for (const name of Object.keys(models)) set.add(name);
-    } catch { /* config diagnostics own malformed MODELS_CONFIG */ }
+    } catch {
+      /* config diagnostics own malformed MODELS_CONFIG */
+    }
   }
   return set;
 }

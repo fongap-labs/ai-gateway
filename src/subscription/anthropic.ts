@@ -15,9 +15,9 @@
 // CCH billing-block signing (CLIProxyAPI's extra-paranoid layer) is NOT part
 // of the mainstream shape and is not implemented here.
 
-import type { SubscriptionDispatchContext, SubscriptionPreparedRequest, SubscriptionFailureView, SubscriptionAdapter } from './types.ts';
 import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
-import { hintFromResetHeaders, hintFromSecondsHeaders, hintFromResetBody, capHint } from './quota-hints.ts';
+import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsHeaders } from './quota-hints.ts';
+import type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionFailureView, SubscriptionPreparedRequest } from './types.ts';
 
 export const CLAUDE_OAUTH_REQUIRED_BETAS: readonly string[] = Object.freeze([
   'claude-code-20250219',
@@ -44,12 +44,11 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
     if (!credential.ok) return null;
 
     const clientBeta = (request.headers.get('anthropic-beta') || '')
-      .split(',').map((part) => part.trim()).filter(Boolean);
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
     const seen = new Set(clientBeta);
-    const mergedBeta = [
-      ...clientBeta,
-      ...CLAUDE_OAUTH_REQUIRED_BETAS.filter((beta) => !seen.has(beta)),
-    ].join(',');
+    const mergedBeta = [...clientBeta, ...CLAUDE_OAUTH_REQUIRED_BETAS.filter((beta) => !seen.has(beta))].join(',');
 
     return {
       headers: {
@@ -91,11 +90,9 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
     }
     if (!response.ok) return null;
     try {
-      const payload = await response.json() as { data?: Array<{ id?: unknown }> };
+      const payload = (await response.json()) as { data?: Array<{ id?: unknown }> };
       if (!Array.isArray(payload.data)) return null;
-      const ids = payload.data
-        .map((entry) => typeof entry?.id === 'string' ? entry.id : null)
-        .filter((id): id is string => !!id);
+      const ids = payload.data.map((entry) => (typeof entry?.id === 'string' ? entry.id : null)).filter((id): id is string => !!id);
       return Object.freeze(ids.sort());
     } catch {
       return null;

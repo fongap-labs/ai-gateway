@@ -9,57 +9,81 @@
 //   upstream_*       = physical upstream attempts
 // This keeps retention/query behavior aligned without duplicating tables.
 
-import { getUtcWeekStartUtcMs } from '../time-buckets.ts';
-import {
-  TABLE, TABLE_DAILY, TABLE_WEEKLY,
-  isoDayUtc8, tokenStatsD1,
-} from './keys.ts';
 import type { D1PreparedStatement } from '../../types/cloudflare.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
+import { getUtcWeekStartUtcMs } from '../time-buckets.ts';
+import { isoDayUtc8, TABLE, TABLE_DAILY, TABLE_WEEKLY, tokenStatsD1 } from './keys.ts';
 
 type AggregateRow = {
-  input: number, output: number, cacheCreation: number, cacheRead: number, total: number,
-  requests: number, reports: number, missing: number,
-  upstreamInput: number, upstreamOutput: number, upstreamCacheCreation: number, upstreamCacheRead: number,
-  upstreamEffectiveInput: number, upstreamObservedRead: number,
-  upstreamObservedInput: number, upstreamReadReports: number,
-  upstreamTotal: number, upstreamAttempts: number, upstreamReports: number, upstreamMissing: number,
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+  total: number;
+  requests: number;
+  reports: number;
+  missing: number;
+  upstreamInput: number;
+  upstreamOutput: number;
+  upstreamCacheCreation: number;
+  upstreamCacheRead: number;
+  upstreamEffectiveInput: number;
+  upstreamObservedRead: number;
+  upstreamObservedInput: number;
+  upstreamReadReports: number;
+  upstreamTotal: number;
+  upstreamAttempts: number;
+  upstreamReports: number;
+  upstreamMissing: number;
 };
 
-
 type AggregateSourceRow = {
-  hour?: string,
-  day?: string,
-  input_tokens?: number | null,
-  output_tokens?: number | null,
-  cache_creation_input_tokens?: number | null,
-  cache_read_input_tokens?: number | null,
-  total_tokens?: number | null,
-  requests?: number | null,
-  usage_reports?: number | null,
-  usage_missing?: number | null,
-  upstream_input_tokens?: number | null,
-  upstream_output_tokens?: number | null,
-  upstream_cache_creation_input_tokens?: number | null,
-  upstream_cache_read_input_tokens?: number | null,
-  upstream_effective_input_tokens?: number | null,
-  upstream_cache_observed_read_tokens?: number | null,
-  upstream_cache_observed_input_tokens?: number | null,
-  upstream_cache_read_reports?: number | null,
-  upstream_total_tokens?: number | null,
-  upstream_attempts?: number | null,
-  upstream_usage_reports?: number | null,
-  upstream_usage_missing?: number | null,
+  hour?: string;
+  day?: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+  total_tokens?: number | null;
+  requests?: number | null;
+  usage_reports?: number | null;
+  usage_missing?: number | null;
+  upstream_input_tokens?: number | null;
+  upstream_output_tokens?: number | null;
+  upstream_cache_creation_input_tokens?: number | null;
+  upstream_cache_read_input_tokens?: number | null;
+  upstream_effective_input_tokens?: number | null;
+  upstream_cache_observed_read_tokens?: number | null;
+  upstream_cache_observed_input_tokens?: number | null;
+  upstream_cache_read_reports?: number | null;
+  upstream_total_tokens?: number | null;
+  upstream_attempts?: number | null;
+  upstream_usage_reports?: number | null;
+  upstream_usage_missing?: number | null;
 };
 
 function emptyAggregate(): AggregateRow {
   return {
-    input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0,
-    requests: 0, reports: 0, missing: 0,
-    upstreamInput: 0, upstreamOutput: 0, upstreamCacheCreation: 0, upstreamCacheRead: 0,
-    upstreamEffectiveInput: 0, upstreamObservedRead: 0,
-    upstreamObservedInput: 0, upstreamReadReports: 0,
-    upstreamTotal: 0, upstreamAttempts: 0, upstreamReports: 0, upstreamMissing: 0,
+    input: 0,
+    output: 0,
+    cacheCreation: 0,
+    cacheRead: 0,
+    total: 0,
+    requests: 0,
+    reports: 0,
+    missing: 0,
+    upstreamInput: 0,
+    upstreamOutput: 0,
+    upstreamCacheCreation: 0,
+    upstreamCacheRead: 0,
+    upstreamEffectiveInput: 0,
+    upstreamObservedRead: 0,
+    upstreamObservedInput: 0,
+    upstreamReadReports: 0,
+    upstreamTotal: 0,
+    upstreamAttempts: 0,
+    upstreamReports: 0,
+    upstreamMissing: 0,
   };
 }
 
@@ -92,8 +116,9 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
   const d1 = tokenStatsD1(env);
   if (!d1) return { skipped: true, reason: 'TOKEN_STATS_DB binding missing' };
   try {
-    const result = await d1.prepare(
-      `SELECT hour,
+    const result = await d1
+      .prepare(
+        `SELECT hour,
         input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
         requests, usage_reports, usage_missing,
         upstream_input_tokens, upstream_output_tokens,
@@ -101,8 +126,9 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
         upstream_attempts, upstream_usage_reports, upstream_usage_missing,
         upstream_effective_input_tokens, upstream_cache_observed_read_tokens,
         upstream_cache_observed_input_tokens, upstream_cache_read_reports
-       FROM ${TABLE}`
-    ).all<AggregateSourceRow>();
+       FROM ${TABLE}`,
+      )
+      .all<AggregateSourceRow>();
     const rows = Array.isArray(result?.results) ? result.results : [];
 
     const byDay = new Map<string, AggregateRow>();
@@ -145,17 +171,35 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
          upstream_effective_input_tokens = excluded.upstream_effective_input_tokens,
          upstream_cache_observed_read_tokens = excluded.upstream_cache_observed_read_tokens,
          upstream_cache_observed_input_tokens = excluded.upstream_cache_observed_input_tokens,
-         upstream_cache_read_reports = excluded.upstream_cache_read_reports`
+         upstream_cache_read_reports = excluded.upstream_cache_read_reports`,
     );
     const batch: D1PreparedStatement[] = [];
     for (const [day, aggregate] of byDay) {
-      batch.push(upsertStmt.bind(
-        day,
-        aggregate.input, aggregate.output, aggregate.cacheCreation, aggregate.cacheRead, aggregate.total, aggregate.requests, aggregate.reports, aggregate.missing,
-        aggregate.upstreamInput, aggregate.upstreamOutput, aggregate.upstreamCacheCreation, aggregate.upstreamCacheRead, aggregate.upstreamTotal,
-        aggregate.upstreamAttempts, aggregate.upstreamReports, aggregate.upstreamMissing,
-        aggregate.upstreamEffectiveInput, aggregate.upstreamObservedRead, aggregate.upstreamObservedInput, aggregate.upstreamReadReports,
-      ));
+      batch.push(
+        upsertStmt.bind(
+          day,
+          aggregate.input,
+          aggregate.output,
+          aggregate.cacheCreation,
+          aggregate.cacheRead,
+          aggregate.total,
+          aggregate.requests,
+          aggregate.reports,
+          aggregate.missing,
+          aggregate.upstreamInput,
+          aggregate.upstreamOutput,
+          aggregate.upstreamCacheCreation,
+          aggregate.upstreamCacheRead,
+          aggregate.upstreamTotal,
+          aggregate.upstreamAttempts,
+          aggregate.upstreamReports,
+          aggregate.upstreamMissing,
+          aggregate.upstreamEffectiveInput,
+          aggregate.upstreamObservedRead,
+          aggregate.upstreamObservedInput,
+          aggregate.upstreamReadReports,
+        ),
+      );
     }
     if (batch.length) await d1.batch(batch);
     return { aggregatedDays: batch.length };
@@ -169,8 +213,9 @@ export async function aggregateDailyToWeekly(env: GatewayEnv, now: number = Date
   const d1 = tokenStatsD1(env);
   if (!d1) return { skipped: true, reason: 'TOKEN_STATS_DB binding missing' };
   try {
-    const result = await d1.prepare(
-      `SELECT day,
+    const result = await d1
+      .prepare(
+        `SELECT day,
         input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
         requests, usage_reports, usage_missing,
         upstream_input_tokens, upstream_output_tokens,
@@ -178,14 +223,15 @@ export async function aggregateDailyToWeekly(env: GatewayEnv, now: number = Date
         upstream_attempts, upstream_usage_reports, upstream_usage_missing,
         upstream_effective_input_tokens, upstream_cache_observed_read_tokens,
         upstream_cache_observed_input_tokens, upstream_cache_read_reports
-       FROM ${TABLE_DAILY}`
-    ).all<AggregateSourceRow>();
+       FROM ${TABLE_DAILY}`,
+      )
+      .all<AggregateSourceRow>();
     const rows = Array.isArray(result?.results) ? result.results : [];
 
     const byWeek = new Map<string, AggregateRow>();
     for (const row of rows) {
       if (!row || typeof row.day !== 'string') continue;
-      const dayTime = Date.parse(row.day + 'T12:00:00Z');
+      const dayTime = Date.parse(`${row.day}T12:00:00Z`);
       if (!Number.isFinite(dayTime)) continue;
       const weekStart = new Date(getUtcWeekStartUtcMs(dayTime)).toISOString().slice(0, 10);
       byWeek.set(weekStart, addRow(byWeek.get(weekStart) || emptyAggregate(), row));
@@ -222,17 +268,35 @@ export async function aggregateDailyToWeekly(env: GatewayEnv, now: number = Date
          upstream_effective_input_tokens = excluded.upstream_effective_input_tokens,
          upstream_cache_observed_read_tokens = excluded.upstream_cache_observed_read_tokens,
          upstream_cache_observed_input_tokens = excluded.upstream_cache_observed_input_tokens,
-         upstream_cache_read_reports = excluded.upstream_cache_read_reports`
+         upstream_cache_read_reports = excluded.upstream_cache_read_reports`,
     );
     const batch: D1PreparedStatement[] = [];
     for (const [weekStart, aggregate] of byWeek) {
-      batch.push(upsertStmt.bind(
-        weekStart,
-        aggregate.input, aggregate.output, aggregate.cacheCreation, aggregate.cacheRead, aggregate.total, aggregate.requests, aggregate.reports, aggregate.missing,
-        aggregate.upstreamInput, aggregate.upstreamOutput, aggregate.upstreamCacheCreation, aggregate.upstreamCacheRead, aggregate.upstreamTotal,
-        aggregate.upstreamAttempts, aggregate.upstreamReports, aggregate.upstreamMissing,
-        aggregate.upstreamEffectiveInput, aggregate.upstreamObservedRead, aggregate.upstreamObservedInput, aggregate.upstreamReadReports,
-      ));
+      batch.push(
+        upsertStmt.bind(
+          weekStart,
+          aggregate.input,
+          aggregate.output,
+          aggregate.cacheCreation,
+          aggregate.cacheRead,
+          aggregate.total,
+          aggregate.requests,
+          aggregate.reports,
+          aggregate.missing,
+          aggregate.upstreamInput,
+          aggregate.upstreamOutput,
+          aggregate.upstreamCacheCreation,
+          aggregate.upstreamCacheRead,
+          aggregate.upstreamTotal,
+          aggregate.upstreamAttempts,
+          aggregate.upstreamReports,
+          aggregate.upstreamMissing,
+          aggregate.upstreamEffectiveInput,
+          aggregate.upstreamObservedRead,
+          aggregate.upstreamObservedInput,
+          aggregate.upstreamReadReports,
+        ),
+      );
     }
     if (batch.length) await d1.batch(batch);
     return { aggregatedWeeks: batch.length };

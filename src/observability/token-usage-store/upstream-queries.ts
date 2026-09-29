@@ -5,115 +5,145 @@
 // The activity-series request count uses delivered responses so retries,
 // fallback and hedge attempts do not inflate the public "requests" metric.
 
-import {
-  TABLE, TABLE_MODEL, TABLE_TOTALS, TABLE_DAILY,
-  HOUR_MS, DAY_MS,
-  normalizeHour, normalizeModelKey, utc8DayStartUtcMs, isoDayUtc8,
-  DISPLAY_TIMEZONE_OFFSET_MS,
-  tokenStatsD1,
-} from './keys.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
+import {
+  DAY_MS,
+  DISPLAY_TIMEZONE_OFFSET_MS,
+  HOUR_MS,
+  isoDayUtc8,
+  normalizeHour,
+  normalizeModelKey,
+  TABLE,
+  TABLE_DAILY,
+  TABLE_MODEL,
+  TABLE_TOTALS,
+  tokenStatsD1,
+  utc8DayStartUtcMs,
+} from './keys.ts';
 
-export type UpstreamDailyWindowRow = { total: number, requests: number, reports: number, missing: number };
-
+export type UpstreamDailyWindowRow = { total: number; requests: number; reports: number; missing: number };
 
 type NumericCell = number | null;
 
 type UpstreamTotalsRow = {
-  upstream_effective_input_tokens?: NumericCell,
-  upstream_input_tokens?: NumericCell,
-  upstream_output_tokens?: NumericCell,
-  upstream_cache_creation_input_tokens?: NumericCell,
-  upstream_cache_read_input_tokens?: NumericCell,
-  upstream_cache_observed_read_tokens?: NumericCell,
-  upstream_cache_observed_input_tokens?: NumericCell,
-  upstream_cache_read_reports?: NumericCell,
-  upstream_total_tokens?: NumericCell,
-  upstream_attempts?: NumericCell,
-  upstream_usage_reports?: NumericCell,
-  upstream_usage_missing?: NumericCell,
+  upstream_effective_input_tokens?: NumericCell;
+  upstream_input_tokens?: NumericCell;
+  upstream_output_tokens?: NumericCell;
+  upstream_cache_creation_input_tokens?: NumericCell;
+  upstream_cache_read_input_tokens?: NumericCell;
+  upstream_cache_observed_read_tokens?: NumericCell;
+  upstream_cache_observed_input_tokens?: NumericCell;
+  upstream_cache_read_reports?: NumericCell;
+  upstream_total_tokens?: NumericCell;
+  upstream_attempts?: NumericCell;
+  upstream_usage_reports?: NumericCell;
+  upstream_usage_missing?: NumericCell;
 };
 
 type UpstreamWindowRow = {
-  today_total?: NumericCell,
-  today_attempts?: NumericCell,
-  h24_total?: NumericCell,
-  h24_attempts?: NumericCell,
-  h24_input?: NumericCell,
-  h24_input_raw?: NumericCell,
-  h24_cache_creation?: NumericCell,
-  h24_cache_read?: NumericCell,
-  h24_cache_observed_read?: NumericCell,
-  h24_cache_observed_input?: NumericCell,
-  h24_cache_read_reports?: NumericCell,
-  h24_output?: NumericCell,
-  d7_total?: NumericCell,
-  d7_attempts?: NumericCell,
+  today_total?: NumericCell;
+  today_attempts?: NumericCell;
+  h24_total?: NumericCell;
+  h24_attempts?: NumericCell;
+  h24_input?: NumericCell;
+  h24_input_raw?: NumericCell;
+  h24_cache_creation?: NumericCell;
+  h24_cache_read?: NumericCell;
+  h24_cache_observed_read?: NumericCell;
+  h24_cache_observed_input?: NumericCell;
+  h24_cache_read_reports?: NumericCell;
+  h24_output?: NumericCell;
+  d7_total?: NumericCell;
+  d7_attempts?: NumericCell;
 };
 
 type UpstreamFallbackRow = {
-  t?: NumericCell,
-  a?: NumericCell,
-  rp?: NumericCell,
-  rm?: NumericCell,
-  effective_input?: NumericCell,
-  input_raw?: NumericCell,
-  cache_creation?: NumericCell,
-  output?: NumericCell,
-  cache_read?: NumericCell,
-  cache_observed_read?: NumericCell,
-  cache_observed_input?: NumericCell,
-  cache_read_reports?: NumericCell,
+  t?: NumericCell;
+  a?: NumericCell;
+  rp?: NumericCell;
+  rm?: NumericCell;
+  effective_input?: NumericCell;
+  input_raw?: NumericCell;
+  cache_creation?: NumericCell;
+  output?: NumericCell;
+  cache_read?: NumericCell;
+  cache_observed_read?: NumericCell;
+  cache_observed_input?: NumericCell;
+  cache_read_reports?: NumericCell;
 };
 
 type UpstreamDailyRow = {
-  day: string,
-  upstream_total_tokens?: NumericCell,
-  requests?: NumericCell,
-  upstream_usage_reports?: NumericCell,
-  upstream_usage_missing?: NumericCell,
+  day: string;
+  upstream_total_tokens?: NumericCell;
+  requests?: NumericCell;
+  upstream_usage_reports?: NumericCell;
+  upstream_usage_missing?: NumericCell;
 };
 
 type UpstreamHourlyRow = {
-  hour: string,
-  upstream_total_tokens?: NumericCell,
-  requests?: NumericCell,
-  upstream_usage_reports?: NumericCell,
-  upstream_usage_missing?: NumericCell,
+  hour: string;
+  upstream_total_tokens?: NumericCell;
+  requests?: NumericCell;
+  upstream_usage_reports?: NumericCell;
+  upstream_usage_missing?: NumericCell;
 };
 
 type UpstreamModelRow = {
-  model?: string | null,
-  total?: NumericCell,
-  attempts?: NumericCell,
+  model?: string | null;
+  total?: NumericCell;
+  attempts?: NumericCell;
 };
 
 const asMessage = (e: unknown): string => String((e as { message?: unknown } | null | undefined)?.message || e);
 
-export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.now()): Promise<{
-  available: true,
-  today: { total: number, requests: number },
-  h24: { total: number, requests: number, input: number, output: number, cacheRead: number, cacheReadReports: number, cacheHitRatio: number | null },
-  d7: { total: number, requests: number },
-  cumulative: { total: number, requests: number, reports: number, missing: number, input: number, output: number, cacheRead: number, cacheReadReports: number, cacheHitRatio: number | null },
-  coverage: number | null,
-} | { available: false, error: string } | null> {
+export async function loadUpstreamSummary(
+  env: GatewayEnv,
+  now: number = Date.now(),
+): Promise<
+  | {
+      available: true;
+      today: { total: number; requests: number };
+      h24: {
+        total: number;
+        requests: number;
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheReadReports: number;
+        cacheHitRatio: number | null;
+      };
+      d7: { total: number; requests: number };
+      cumulative: {
+        total: number;
+        requests: number;
+        reports: number;
+        missing: number;
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheReadReports: number;
+        cacheHitRatio: number | null;
+      };
+      coverage: number | null;
+    }
+  | { available: false; error: string }
+  | null
+> {
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const todayStart = normalizeHour(utc8DayStartUtcMs(now));
   const h24Start = normalizeHour(now - 24 * HOUR_MS);
   const d7Start = normalizeHour(now - 7 * DAY_MS);
 
-  const splitInput = (input: number, cacheRead: number): number =>
-    Math.max(0, input - cacheRead);
-  const getCacheRatio = (reports: number, cacheRead: number, input: number): number | null =>
-    reports > 0 && input > 0 ? cacheRead / input : null;
+  const splitInput = (input: number, cacheRead: number): number => Math.max(0, input - cacheRead);
+  const getCacheRatio = (reports: number, cacheRead: number, input: number): number | null => (reports > 0 && input > 0 ? cacheRead / input : null);
 
   let totalsRow: UpstreamTotalsRow | null = null;
   let hasTotalsObservation = true;
   try {
-    totalsRow = await d1.prepare(
-      `SELECT
+    totalsRow = await d1
+      .prepare(
+        `SELECT
          upstream_effective_input_tokens,
          upstream_output_tokens,
          upstream_cache_read_input_tokens,
@@ -124,16 +154,18 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
          upstream_attempts,
          upstream_usage_reports,
          upstream_usage_missing
-       FROM ${TABLE_TOTALS} WHERE scope = 'global'`
-    ).first<UpstreamTotalsRow>();
+       FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
+      )
+      .first<UpstreamTotalsRow>();
   } catch {
     // Rolling-deploy compatibility with schema <= 0009. Before 0010 every
     // recognized cache-read field was Anthropic-style and additive, so the
     // historical effective-input value can be reconstructed exactly.
     hasTotalsObservation = false;
     try {
-      totalsRow = await d1.prepare(
-        `SELECT
+      totalsRow = await d1
+        .prepare(
+          `SELECT
            upstream_input_tokens,
            upstream_output_tokens,
            upstream_cache_creation_input_tokens,
@@ -142,16 +174,20 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
            upstream_attempts,
            upstream_usage_reports,
            upstream_usage_missing
-         FROM ${TABLE_TOTALS} WHERE scope = 'global'`
-      ).first<UpstreamTotalsRow>();
-    } catch { /* hourly fallback below */ }
+         FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
+        )
+        .first<UpstreamTotalsRow>();
+    } catch {
+      /* hourly fallback below */
+    }
   }
 
   let hourlyRow: UpstreamWindowRow | null | undefined;
   let hasHourlyObservation = true;
   try {
-    hourlyRow = await d1.prepare(
-      `SELECT
+    hourlyRow = await d1
+      .prepare(
+        `SELECT
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS today_total,
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS today_attempts,
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS h24_total,
@@ -164,17 +200,16 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_output_tokens END), 0) AS h24_output,
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS d7_total,
        COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS d7_attempts
-       FROM ${TABLE}`
-    ).bind(
-      todayStart, todayStart,
-      h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start,
-      d7Start, d7Start,
-    ).first<UpstreamWindowRow>();
+       FROM ${TABLE}`,
+      )
+      .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
+      .first<UpstreamWindowRow>();
   } catch {
     hasHourlyObservation = false;
     try {
-      hourlyRow = await d1.prepare(
-        `SELECT
+      hourlyRow = await d1
+        .prepare(
+          `SELECT
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS today_total,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS today_attempts,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS h24_total,
@@ -185,17 +220,26 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_output_tokens END), 0) AS h24_output,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS d7_total,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS d7_attempts
-         FROM ${TABLE}`
-      ).bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start).first<UpstreamWindowRow>();
+         FROM ${TABLE}`,
+        )
+        .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
+        .first<UpstreamWindowRow>();
     } catch (e) {
       return { available: false, error: `loadUpstreamSummary: ${asMessage(e)}` };
     }
   }
   if (!hourlyRow || typeof hourlyRow !== 'object') return null;
 
-  let total = 0, attempts = 0, reports = 0, missing = 0;
-  let cumulativeEffectiveInput = 0, cumulativeOutput = 0, cumulativeStoredRead = 0;
-  let cumulativeObservedRead = 0, cumulativeObservedInput = 0, cumulativeReadReports = 0;
+  let total = 0,
+    attempts = 0,
+    reports = 0,
+    missing = 0;
+  let cumulativeEffectiveInput = 0,
+    cumulativeOutput = 0,
+    cumulativeStoredRead = 0;
+  let cumulativeObservedRead = 0,
+    cumulativeObservedInput = 0,
+    cumulativeReadReports = 0;
 
   if (totalsRow && typeof totalsRow === 'object') {
     total = Number(totalsRow.upstream_total_tokens) || 0;
@@ -210,16 +254,16 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
       cumulativeObservedInput = Number(totalsRow.upstream_cache_observed_input_tokens) || 0;
       cumulativeReadReports = Number(totalsRow.upstream_cache_read_reports) || 0;
     } else {
-      cumulativeEffectiveInput = (Number(totalsRow.upstream_input_tokens) || 0)
-        + (Number(totalsRow.upstream_cache_creation_input_tokens) || 0)
-        + cumulativeStoredRead;
+      cumulativeEffectiveInput =
+        (Number(totalsRow.upstream_input_tokens) || 0) + (Number(totalsRow.upstream_cache_creation_input_tokens) || 0) + cumulativeStoredRead;
     }
   } else {
     let fb: UpstreamFallbackRow | null | undefined;
-    let fbHasObservation = true;
+    let hasFbObservation = true;
     try {
-      fb = await d1.prepare(
-        `SELECT COALESCE(SUM(upstream_total_tokens),0) AS t,
+      fb = await d1
+        .prepare(
+          `SELECT COALESCE(SUM(upstream_total_tokens),0) AS t,
                 COALESCE(SUM(upstream_attempts),0) AS a,
                 COALESCE(SUM(upstream_usage_reports),0) AS rp,
                 COALESCE(SUM(upstream_usage_missing),0) AS rm,
@@ -229,13 +273,15 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
                 COALESCE(SUM(upstream_cache_observed_read_tokens),0) AS cache_observed_read,
                 COALESCE(SUM(upstream_cache_observed_input_tokens),0) AS cache_observed_input,
                 COALESCE(SUM(upstream_cache_read_reports),0) AS cache_read_reports
-         FROM ${TABLE}`
-      ).first<UpstreamFallbackRow>();
+         FROM ${TABLE}`,
+        )
+        .first<UpstreamFallbackRow>();
     } catch {
-      fbHasObservation = false;
+      hasFbObservation = false;
       try {
-        fb = await d1.prepare(
-          `SELECT COALESCE(SUM(upstream_total_tokens),0) AS t,
+        fb = await d1
+          .prepare(
+            `SELECT COALESCE(SUM(upstream_total_tokens),0) AS t,
                   COALESCE(SUM(upstream_attempts),0) AS a,
                   COALESCE(SUM(upstream_usage_reports),0) AS rp,
                   COALESCE(SUM(upstream_usage_missing),0) AS rm,
@@ -243,9 +289,12 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
                   COALESCE(SUM(upstream_cache_creation_input_tokens),0) AS cache_creation,
                   COALESCE(SUM(upstream_cache_read_input_tokens),0) AS cache_read,
                   COALESCE(SUM(upstream_output_tokens),0) AS output
-           FROM ${TABLE}`
-        ).first<UpstreamFallbackRow>();
-      } catch { fb = null; }
+           FROM ${TABLE}`,
+          )
+          .first<UpstreamFallbackRow>();
+      } catch {
+        fb = null;
+      }
     }
     total = Number(fb?.t) || 0;
     attempts = Number(fb?.a) || 0;
@@ -253,27 +302,23 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
     missing = Number(fb?.rm) || 0;
     cumulativeOutput = Number(fb?.output) || 0;
     cumulativeStoredRead = Number(fb?.cache_read) || 0;
-    if (fbHasObservation) {
+    if (hasFbObservation) {
       cumulativeEffectiveInput = Number(fb?.effective_input) || 0;
       cumulativeObservedRead = Number(fb?.cache_observed_read) || 0;
       cumulativeObservedInput = Number(fb?.cache_observed_input) || 0;
       cumulativeReadReports = Number(fb?.cache_read_reports) || 0;
     } else {
-      cumulativeEffectiveInput = (Number(fb?.input_raw) || 0)
-        + (Number(fb?.cache_creation) || 0)
-        + cumulativeStoredRead;
+      cumulativeEffectiveInput = (Number(fb?.input_raw) || 0) + (Number(fb?.cache_creation) || 0) + cumulativeStoredRead;
     }
   }
 
   const h24StoredRead = Number(hourlyRow.h24_cache_read) || 0;
   const h24EffectiveInput = hasHourlyObservation
-    ? (Number(hourlyRow.h24_input) || 0)
-    : (Number(hourlyRow.h24_input_raw) || 0)
-      + (Number(hourlyRow.h24_cache_creation) || 0)
-      + h24StoredRead;
-  const h24ObservedRead = hasHourlyObservation ? (Number(hourlyRow.h24_cache_observed_read) || 0) : 0;
-  const h24ObservedInput = hasHourlyObservation ? (Number(hourlyRow.h24_cache_observed_input) || 0) : 0;
-  const h24ReadReports = hasHourlyObservation ? (Number(hourlyRow.h24_cache_read_reports) || 0) : 0;
+    ? Number(hourlyRow.h24_input) || 0
+    : (Number(hourlyRow.h24_input_raw) || 0) + (Number(hourlyRow.h24_cache_creation) || 0) + h24StoredRead;
+  const h24ObservedRead = hasHourlyObservation ? Number(hourlyRow.h24_cache_observed_read) || 0 : 0;
+  const h24ObservedInput = hasHourlyObservation ? Number(hourlyRow.h24_cache_observed_input) || 0 : 0;
+  const h24ReadReports = hasHourlyObservation ? Number(hourlyRow.h24_cache_read_reports) || 0 : 0;
 
   const denominator = reports + missing;
   return {
@@ -304,22 +349,29 @@ export async function loadUpstreamSummary(env: GatewayEnv, now: number = Date.no
   };
 }
 
-export async function loadUpstreamDaily(env: GatewayEnv, startDayIso: string, now: number = Date.now()): Promise<Map<string, UpstreamDailyWindowRow> | { available: false, error: string } | null> {
+export async function loadUpstreamDaily(
+  env: GatewayEnv,
+  startDayIso: string,
+  now: number = Date.now(),
+): Promise<Map<string, UpstreamDailyWindowRow> | { available: false; error: string } | null> {
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const map = new Map<string, UpstreamDailyWindowRow>();
   let dailyRows: UpstreamDailyRow[] = [];
-  let dailyTableHasData = false;
+  let hasDailyTableData = false;
 
   try {
-    const res = await d1.prepare(
-      `SELECT day, upstream_total_tokens, requests, upstream_usage_reports, upstream_usage_missing
+    const res = await d1
+      .prepare(
+        `SELECT day, upstream_total_tokens, requests, upstream_usage_reports, upstream_usage_missing
        FROM ${TABLE_DAILY}
        WHERE day >= ?
-       ORDER BY day`
-    ).bind(startDayIso).all<UpstreamDailyRow>();
+       ORDER BY day`,
+      )
+      .bind(startDayIso)
+      .all<UpstreamDailyRow>();
     dailyRows = Array.isArray(res?.results) ? res.results : [];
-    dailyTableHasData = dailyRows.length > 0;
+    hasDailyTableData = dailyRows.length > 0;
   } catch {
     dailyRows = [];
   }
@@ -336,19 +388,20 @@ export async function loadUpstreamDaily(env: GatewayEnv, startDayIso: string, no
 
   const recentStartMs = utc8DayStartUtcMs(now) - 6 * DAY_MS;
   const recentStartIso = isoDayUtc8(recentStartMs);
-  const hourlyStartDayIso = dailyTableHasData
-    ? (startDayIso > recentStartIso ? startDayIso : recentStartIso)
-    : startDayIso;
+  const hourlyStartDayIso = hasDailyTableData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
   const hourlyStartUtcMs = Date.parse(`${hourlyStartDayIso}T00:00:00Z`) - DISPLAY_TIMEZONE_OFFSET_MS;
   const hourlyStart = normalizeHour(hourlyStartUtcMs);
 
   try {
-    const res = await d1.prepare(
-      `SELECT hour, upstream_total_tokens, requests, upstream_usage_reports, upstream_usage_missing
+    const res = await d1
+      .prepare(
+        `SELECT hour, upstream_total_tokens, requests, upstream_usage_reports, upstream_usage_missing
        FROM ${TABLE}
        WHERE hour >= ?
-       ORDER BY hour`
-    ).bind(hourlyStart).all<UpstreamHourlyRow>();
+       ORDER BY hour`,
+      )
+      .bind(hourlyStart)
+      .all<UpstreamHourlyRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     const hourlyByDay = new Map<string, UpstreamDailyWindowRow>();
     for (const r of rows) {
@@ -367,25 +420,32 @@ export async function loadUpstreamDaily(env: GatewayEnv, startDayIso: string, no
     }
     for (const [day, value] of hourlyByDay) map.set(day, value);
   } catch (e) {
-    if (!dailyTableHasData) return { available: false, error: `loadUpstreamDaily: ${asMessage(e)}` };
+    if (!hasDailyTableData) return { available: false, error: `loadUpstreamDaily: ${asMessage(e)}` };
   }
   return map;
 }
 
-export async function loadUpstreamModels(env: GatewayEnv, days: number = 7, now: number = Date.now()): Promise<{ available: true, rows: Array<{ model: string, total: number, requests: number }> } | { available: false, error: string }> {
+export async function loadUpstreamModels(
+  env: GatewayEnv,
+  days: number = 7,
+  now: number = Date.now(),
+): Promise<{ available: true; rows: Array<{ model: string; total: number; requests: number }> } | { available: false; error: string }> {
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);
   try {
-    const res = await d1.prepare(
-      `SELECT LOWER(TRIM(model)) AS model,
+    const res = await d1
+      .prepare(
+        `SELECT LOWER(TRIM(model)) AS model,
               COALESCE(SUM(upstream_total_tokens), 0) AS total,
               COALESCE(SUM(upstream_attempts), 0) AS attempts
        FROM ${TABLE_MODEL}
        WHERE hour >= ?
        GROUP BY LOWER(TRIM(model))
-       ORDER BY total DESC`
-    ).bind(startHour).all<UpstreamModelRow>();
+       ORDER BY total DESC`,
+      )
+      .bind(startHour)
+      .all<UpstreamModelRow>();
     const rows = Array.isArray(res?.results) ? res.results : [];
     return {
       available: true,

@@ -13,27 +13,26 @@ import type { GatewayEnv } from '../types/runtime.ts';
 
 const EDGE_CACHE_HOST = 'edge-cache.ai-gateway.internal';
 
+// The Cloudflare Cache API default cache. Typed defensively because the
+// `caches` global may be absent (dev harness) or untyped in some runtimes.
+function defaultCache(): Cache | null {
+  if (typeof caches === 'undefined') return null;
+  return (caches as unknown as { default?: Cache }).default ?? null;
+}
+
 // Inference routes eligible for edge caching.
-const ELIGIBLE_ROUTES = new Set([
-  'openai_chat',
-  'openai_responses',
-  'anthropic_messages',
-]);
+const ELIGIBLE_ROUTES = new Set(['openai_chat', 'openai_responses', 'anthropic_messages']);
 
 // Fields that affect wire format but NOT response content — excluded from
 // the cache key so equivalent logical requests share a cache entry.
-const KEY_EXCLUDED_FIELDS = new Set(['stream', 'stream_options']);
+const _KEY_EXCLUDED_FIELDS = new Set(['stream', 'stream_options']);
 
 /**
  * Determines whether a request is eligible for edge cache lookup.
  * Eligible if: (1) route is an inference route, (2) temperature === 0
  * or x-gateway-cache: true header present.
  */
-export function edgeCacheEligible(
-  route: string,
-  bodyJson: Record<string, unknown>,
-  request: Request,
-): boolean {
+export function edgeCacheEligible(route: string, bodyJson: Record<string, unknown>, request: Request): boolean {
   if (!ELIGIBLE_ROUTES.has(route)) return false;
   const header = request.headers.get('x-gateway-cache');
   if (header && header.trim().toLowerCase() === 'true') return true;
@@ -49,13 +48,13 @@ function canonicalize(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value !== 'object') return String(value);
   if (Array.isArray(value)) {
-    return '[' + value.map(canonicalize).join(',') + ']';
+    return `[${value.map(canonicalize).join(',')}]`;
   }
   // Object: sort keys and recurse
   const entries = Object.entries(value)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => k + ':' + canonicalize(v));
-  return '{' + entries.join(',') + '}';
+    .map(([k, v]) => `${k}:${canonicalize(v)}`);
+  return `{${entries.join(',')}}`;
 }
 
 /**
@@ -63,11 +62,7 @@ function canonicalize(value: unknown): string {
  * The key incorporates route, model, and a SHA-256 of the canonical
  * request body (minus wire-format fields).
  */
-export async function buildEdgeCacheKeyRequest(
-  route: string,
-  requestedModel: string,
-  bodyJson: Record<string, unknown>,
-): Promise<Request> {
+export async function buildEdgeCacheKeyRequest(route: string, requestedModel: string, bodyJson: Record<string, unknown>): Promise<Request> {
   // Build the cache key material: route + model + canonical body (minus excluded fields)
   const { stream, stream_options, ...restBody } = bodyJson;
   const bodyForKey = { route, model: requestedModel, ...restBody };
@@ -85,15 +80,12 @@ export async function buildEdgeCacheKeyRequest(
  * Attempts a cache lookup. Returns a HIT response with x-gateway-cache-status: HIT
  * and CORS headers, or null on MISS / error.
  */
-export async function matchEdgeCache(
-  keyRequest: Request,
-  request: Request,
-  env: GatewayEnv,
-): Promise<Response | null> {
-  if (typeof caches === 'undefined' || !(caches as any).default) return null;
+export async function matchEdgeCache(keyRequest: Request, request: Request, env: GatewayEnv): Promise<Response | null> {
+  const cache = defaultCache();
+  if (!cache) return null;
   let cached: Response | undefined;
   try {
-    cached = await (caches as any).default.match(keyRequest);
+    cached = await cache.match(keyRequest);
   } catch {
     return null;
   }
@@ -150,7 +142,8 @@ export function storeEdgeCacheResponse(
   response: Response,
   ttlSec: number,
 ): void {
-  if (typeof caches === 'undefined' || !(caches as any).default) return;
+  const cache = defaultCache();
+  if (!cache) return;
   if (response.status !== 200 || !response.body) return;
   // Build the stored response with TTL and baked HIT marker
   const headers = new Headers();
@@ -166,7 +159,7 @@ export function storeEdgeCacheResponse(
   } catch {
     return;
   }
-  const task = (caches as any).default.put(keyRequest, stored).catch(() => {});
+  const task = cache.put(keyRequest, stored).catch(() => {});
   if (ctx?.waitUntil) ctx.waitUntil(task);
   else task.catch(() => {});
 }
@@ -176,11 +169,7 @@ export function storeEdgeCacheResponse(
  * that reached the upstream. Rebuilds the response to set the header
  * without disturbing the body.
  */
-export function injectMissHeader(
-  response: Response,
-  request: Request,
-  env: GatewayEnv,
-): Response {
+export function injectMissHeader(response: Response, request: Request, env: GatewayEnv): Response {
   const headers = new Headers(response.headers);
   headers.set('x-gateway-cache-status', 'MISS');
   for (const [k, v] of Object.entries(corsHeaders(request, env))) {

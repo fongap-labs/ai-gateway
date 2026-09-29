@@ -8,7 +8,7 @@
 
 import { claudeSubscriptionAdapter } from '../subscription/anthropic.ts';
 import type { Surface } from '../types/protocol.ts';
-import type { ProviderAdapter, ProviderWire, OAuthProviderConfig } from './types.ts';
+import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const ANTHROPIC_NATIVE_WIRE: ProviderWire = Object.freeze({
   protocol: 'anthropic',

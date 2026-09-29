@@ -7,11 +7,11 @@
 // ids, providers, tiers, counts or durations ever leave this module, and no
 // model name or prefix carries any business meaning.
 
-import { getPublicModelStatus } from '../runtime/model-status.ts';
 import { normalizeModelKey } from '../observability/token-usage-store.ts';
-import { escapeHtml } from './format.ts';
 import type { PublicModelStatusEntry, PublicModelStatusState } from '../runtime/model-status.ts';
+import { getPublicModelStatus } from '../runtime/model-status.ts';
 import type { RuntimeNode } from '../types/node.ts';
+import { escapeHtml } from './format.ts';
 
 const STATE_LABEL: Record<PublicModelStatusState, string> = {
   available: '服务可用',
@@ -37,8 +37,8 @@ const STATE_TOOLTIP: Record<PublicModelStatusState, string> = {
 };
 
 export type DashboardModelStatusEnvelope = {
-  observed_at: string,
-  models: PublicModelStatusEntry[],
+  observed_at: string;
+  models: PublicModelStatusEntry[];
 };
 
 // Optional dashboard-only allowlist. AIG_DASHBOARD_MODELS is a comma-separated
@@ -79,7 +79,13 @@ export function filterDashboardModelStatus(status: DashboardModelStatusEnvelope,
 // PublicModelStatus wrapper used by the dashboard. `historicalEvidence` is the
 // 7-day retention-window evidence set used to distinguish no_recent from
 // no_record; it is optional and defaults to empty (fail-open, never fabricated).
-export function publicModelStatus(nodes: ReadonlyArray<RuntimeNode>, env: Record<string, unknown> | null | undefined, evidence: ReadonlySet<string> = new Set(), now: number = Date.now(), historicalEvidence: ReadonlySet<string> = new Set()): DashboardModelStatusEnvelope {
+export function publicModelStatus(
+  nodes: ReadonlyArray<RuntimeNode>,
+  env: Record<string, unknown> | null | undefined,
+  evidence: ReadonlySet<string> = new Set(),
+  now: number = Date.now(),
+  historicalEvidence: ReadonlySet<string> = new Set(),
+): DashboardModelStatusEnvelope {
   const status = getPublicModelStatus(nodes, env, evidence, now, historicalEvidence);
   return filterDashboardModelStatus(status, env?.AIG_DASHBOARD_MODELS);
 }
@@ -90,16 +96,30 @@ export function modelStatusRows(status: { models?: PublicModelStatusEntry[] } | 
   return status.models;
 }
 
-export type TtftEntry = { available?: boolean, p50?: number | null, p95?: number | null, sampleCount?: number, p50Insufficient?: boolean, p95Insufficient?: boolean };
+export type TtftEntry = {
+  available?: boolean;
+  p50?: number | null;
+  p95?: number | null;
+  sampleCount?: number;
+  p50Insufficient?: boolean;
+  p95Insufficient?: boolean;
+};
 
 // Guarantee one TTFT result container per public model, even when the D1
 // window has no rows for it: missing keys become { p50Insufficient, p95Insufficient }
 // so the dashboard renders '-- / -- samples' instead of dropping the model.
 // Lookup key is the canonical statistical model key (trim + lowercase),
 // matching how the observability store aggregates model rows.
-export function ensureModelTtftContainers(ttft: Map<string, TtftEntry> | null | undefined, models: PublicModelStatusEntry[] | { models?: PublicModelStatusEntry[] } | null | undefined): Map<string, TtftEntry> {
+export function ensureModelTtftContainers(
+  ttft: Map<string, TtftEntry> | null | undefined,
+  models: PublicModelStatusEntry[] | { models?: PublicModelStatusEntry[] } | null | undefined,
+): Map<string, TtftEntry> {
   const map = ttft instanceof Map ? ttft : new Map<string, TtftEntry>();
-  const rows: PublicModelStatusEntry[] = Array.isArray(models) ? models : (Array.isArray((models as { models?: PublicModelStatusEntry[] })?.models) ? (models as { models: PublicModelStatusEntry[] }).models : []);
+  const rows: PublicModelStatusEntry[] = Array.isArray(models)
+    ? models
+    : Array.isArray((models as { models?: PublicModelStatusEntry[] })?.models)
+      ? (models as { models: PublicModelStatusEntry[] }).models
+      : [];
   for (const m of rows) {
     const key = normalizeModelKey(m?.id);
     if (!key || map.has(key)) continue;
@@ -118,15 +138,22 @@ function fmtTtftInterval(bucketUpperBoundMs: number): string {
   return `≤${Number.isInteger(sec) ? sec : sec.toFixed(1)}s`;
 }
 
-export function fmtModelTtft(modelTtft: TtftEntry | null | undefined): { p50: string, p95: string, samples: number, noSamples: boolean, p50Insufficient: boolean, p95Insufficient: boolean } {
+export function fmtModelTtft(modelTtft: TtftEntry | null | undefined): {
+  p50: string;
+  p95: string;
+  samples: number;
+  noSamples: boolean;
+  p50Insufficient: boolean;
+  p95Insufficient: boolean;
+} {
   if (!modelTtft || modelTtft.available === false) {
     return { p50: '--', p95: '--', samples: 0, noSamples: true, p50Insufficient: true, p95Insufficient: true };
   }
   const samples = modelTtft.sampleCount ?? 0;
   const p50Insuff = modelTtft.p50Insufficient === true;
   const p95Insuff = modelTtft.p95Insufficient === true;
-  const p50 = (p50Insuff || modelTtft.p50 == null) ? '--' : fmtTtftInterval(modelTtft.p50);
-  const p95 = (p95Insuff || modelTtft.p95 == null) ? '--' : fmtTtftInterval(modelTtft.p95);
+  const p50 = p50Insuff || modelTtft.p50 == null ? '--' : fmtTtftInterval(modelTtft.p50);
+  const p95 = p95Insuff || modelTtft.p95 == null ? '--' : fmtTtftInterval(modelTtft.p95);
   return { p50, p95, samples, noSamples: samples === 0, p50Insufficient: p50Insuff, p95Insufficient: p95Insuff };
 }
 
@@ -166,7 +193,10 @@ function renderModelBlock(title: string, models: PublicModelStatusEntry[], ttft:
   </div>`;
 }
 
-export function renderModels(status: { models?: PublicModelStatusEntry[] } | null | undefined, ttft: Map<string, TtftEntry> | null | undefined): { html: string } {
+export function renderModels(
+  status: { models?: PublicModelStatusEntry[] } | null | undefined,
+  ttft: Map<string, TtftEntry> | null | undefined,
+): { html: string } {
   const allModels = modelStatusRows(status);
   const general = allModels.filter((m) => !normalizeModelKey(m.id).startsWith('code-'));
   const code = allModels.filter((m) => normalizeModelKey(m.id).startsWith('code-'));

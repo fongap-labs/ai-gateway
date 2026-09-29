@@ -20,15 +20,15 @@
 // Unknown fields, credential material, alternate model shapes, and numeric
 // strings are configuration errors.
 
-import { readEnv, getBool } from './env.ts';
-import { loadModelsConfig, getModelsConfigDiagnostics } from './models.ts';
-import { loadPoliciesConfig, getPoliciesConfigDiagnostics } from './policies.ts';
-import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
-import { loadModelRegistry } from './registry.ts';
-import { providerWire, getProviderAdapter } from '../providers/registry.ts';
-import type { RegistryEntry } from './registry.ts';
-import type { RuntimeNode, NodeTier } from '../types/node.ts';
+import { getProviderAdapter, providerWire } from '../providers/registry.ts';
+import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
+import { getBool, readEnv } from './env.ts';
+import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
+import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from './policies.ts';
+import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
+import type { RegistryEntry } from './registry.ts';
+import { loadModelRegistry } from './registry.ts';
 
 export const TIER_SHARD_PATTERN = /^AIG_TIER([123])_NODES_(\d{2})$/;
 export const SECRET_SHARD_PATTERN = /^AIG_TIER([123])_CREDENTIALS_(\d{2})$/;
@@ -41,18 +41,18 @@ const ALLOWED_AUTH_MODES = new Set(['oauth']);
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
 export type GatewayConfig = {
-  status: ConfigStatus,
-  ready: boolean,
-  accessKeyBound: boolean,
-  nodes: RuntimeNode[],
-  tiers: TierMap<RuntimeNode[]>,
+  status: ConfigStatus;
+  ready: boolean;
+  accessKeyBound: boolean;
+  nodes: RuntimeNode[];
+  tiers: TierMap<RuntimeNode[]>;
   bindings: {
-    tierShards: string[],
-    secretShards: string[],
-  },
-  nodesTotal: number,
-  nodesUsable: number,
-  diagnostics: string[],
+    tierShards: string[];
+    secretShards: string[];
+  };
+  nodesTotal: number;
+  nodesUsable: number;
+  diagnostics: string[];
 };
 
 let cachedEnv: Record<string, unknown> | undefined;
@@ -66,10 +66,7 @@ export function loadGatewayConfig(env: Record<string, unknown>): GatewayConfig {
 }
 
 function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
-  const diags = [
-    ...getModelsConfigDiagnostics(env),
-    ...getPoliciesConfigDiagnostics(env),
-  ];
+  const diags = [...getModelsConfigDiagnostics(env), ...getPoliciesConfigDiagnostics(env)];
   const models = loadModelsConfig(env);
   const policies = loadPoliciesConfig(env);
   for (const [model, mcfg] of Object.entries(models)) {
@@ -96,7 +93,9 @@ function collectNodeModelDiagnostics(nodes: ReadonlyArray<RuntimeNode>, env: Rec
   for (const node of nodes) {
     for (const logical of Object.keys(node.models)) {
       if (internalModels.has(logical)) {
-        diags.push(`NODE CONFIG: node "${node.id}" maps logical model "${logical}" which is marked visibility:"internal" in AIG_MODELS_CONFIG; internal models are still requestable but hidden from the dashboard`);
+        diags.push(
+          `NODE CONFIG: node "${node.id}" maps logical model "${logical}" which is marked visibility:"internal" in AIG_MODELS_CONFIG; internal models are still requestable but hidden from the dashboard`,
+        );
       }
     }
   }
@@ -173,10 +172,10 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
       continue;
     }
     for (const rawNode of parsed) {
-      const rawId = rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode)
-        && typeof (rawNode as Record<string, unknown>).id === 'string'
-        ? ((rawNode as Record<string, unknown>).id as string).trim()
-        : '';
+      const rawId =
+        rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && typeof (rawNode as Record<string, unknown>).id === 'string'
+          ? ((rawNode as Record<string, unknown>).id as string).trim()
+          : '';
       const secretTier = ID_PATTERN.test(rawId) ? credentialTiers.get(rawId) : undefined;
       if (secretTier && secretTier !== tier) {
         diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}.`);
@@ -293,8 +292,7 @@ function buildRuntimeNode(
   // subscription needs only {id, provider, auth:"oauth", models}. A missing
   // base_url with no provider default is a configuration error (fail-closed).
   const rawBaseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
-  const baseUrl = rawBaseUrl
-    || (auth === 'oauth' ? (getProviderAdapter(provider).subscriptionEndpoint ?? '') : '');
+  const baseUrl = rawBaseUrl || (auth === 'oauth' ? (getProviderAdapter(provider).subscriptionEndpoint ?? '') : '');
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -325,7 +323,9 @@ function buildRuntimeNode(
     return null;
   }
   if (auth === 'oauth' && credentials.get(id)) {
-    diagnostics.push(`node "${id}": auth:"oauth" nodes must not have a static credential in AIG_TIER{N}_CREDENTIALS_*; the OAuth token store owns their credential`);
+    diagnostics.push(
+      `node "${id}": auth:"oauth" nodes must not have a static credential in AIG_TIER{N}_CREDENTIALS_*; the OAuth token store owns their credential`,
+    );
     return null;
   }
 
@@ -360,7 +360,9 @@ function parsePriority(raw: unknown, nodeId: string, diagnostics: string[]): num
 
 function normalizeModels(models: unknown, nodeId: string, diagnostics: string[]): Record<string, string> | null {
   if (!models || typeof models !== 'object' || Array.isArray(models)) {
-    diagnostics.push(`node "${nodeId}": models is required and must be an object { logical: upstream }; use {} only for an intentional catalog-bounded wildcard`);
+    diagnostics.push(
+      `node "${nodeId}": models is required and must be an object { logical: upstream }; use {} only for an intentional catalog-bounded wildcard`,
+    );
     return null;
   }
 
@@ -387,8 +389,8 @@ export function collectShards(
   expectedExample: string,
   indexGroup: number,
   diagnostics: string[],
-): Array<{ key: string, index: number, tierNumber: number }> {
-  const shards: Array<{ key: string, index: number, tierNumber: number }> = [];
+): Array<{ key: string; index: number; tierNumber: number }> {
+  const shards: Array<{ key: string; index: number; tierNumber: number }> = [];
   for (const key of Object.keys(env || {})) {
     const match = pattern.exec(key);
     if (match) {

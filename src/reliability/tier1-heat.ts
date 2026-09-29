@@ -5,8 +5,8 @@
 // and short-lived provider-model 429 cohort evidence. Heat changes ranking and
 // hedge admission only; it never makes a primary candidate ineligible.
 
-import { tier1AccountInFlight } from './tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
+import { tier1AccountInFlight } from './tier1-state.ts';
 
 export const TIER1_INFLIGHT_MAX_FACTOR = 1.25;
 export const TIER1_HEDGE_MAX_CONCURRENCY_PRESSURE = 0.75;
@@ -18,7 +18,7 @@ export const TIER1_PROVIDER_MODEL_429_MILD_FACTOR = 1.15;
 export const TIER1_PROVIDER_MODEL_429_STRONG_FACTOR = 1.35;
 
 type Tier1ProviderModelRateLimitRuntime = {
-  accounts: Map<string, number>,
+  accounts: Map<string, number>;
 };
 
 const providerModelRateLimits = new Map<string, Tier1ProviderModelRateLimitRuntime>();
@@ -50,8 +50,7 @@ function pruneProviderModelRateLimits(provider: string, upstreamModel: string, n
 export function recordTier1ProviderModelRateLimit(provider: string, upstreamModel: string, accountId: string, now: number = Date.now()): void {
   if (!provider || !upstreamModel || !accountId) return;
   const key = providerModelKey(provider, upstreamModel);
-  const runtime = pruneProviderModelRateLimits(provider, upstreamModel, now)
-    ?? { accounts: new Map<string, number>() };
+  const runtime = pruneProviderModelRateLimits(provider, upstreamModel, now) ?? { accounts: new Map<string, number>() };
   runtime.accounts.set(accountId, now);
   providerModelRateLimits.set(key, runtime);
 }

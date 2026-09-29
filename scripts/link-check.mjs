@@ -25,7 +25,9 @@ for (const file of markdownFiles) {
     if (!target || target.startsWith('#') || /^(https?:|mailto:)/i.test(target)) continue;
     if (target.startsWith('<') && target.endsWith('>')) target = target.slice(1, -1);
     target = target.split('#', 1)[0].split('?', 1)[0];
-    try { target = decodeURIComponent(target); } catch {}
+    try {
+      target = decodeURIComponent(target);
+    } catch {}
     const resolved = path.resolve(path.dirname(file), target);
     if (!fs.existsSync(resolved)) {
       missing.push(`${path.relative(root, file)} -> ${target}`);
@@ -39,4 +41,3 @@ if (missing.length) {
   process.exit(1);
 }
 console.log(`Markdown link check passed (${markdownFiles.length} files).`);
-

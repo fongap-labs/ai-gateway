@@ -40,7 +40,12 @@ export function resolveAnthropicPath(surface: Surface): string {
 // Subscription nodes (auth:"oauth") authenticate with a Bearer token instead
 // of x-api-key; `extraHeaders` may carry deployment-owned subscription
 // headers (e.g. an OAuth beta header) resolved by the request layer.
-export function buildAnthropicHeaders(request: Request, credential: string, requestId: string, options?: { auth?: 'oauth', extraHeaders?: Readonly<Record<string, string>> }): Headers {
+export function buildAnthropicHeaders(
+  request: Request,
+  credential: string,
+  requestId: string,
+  options?: { auth?: 'oauth'; extraHeaders?: Readonly<Record<string, string>> },
+): Headers {
   const headers = new Headers();
   if (options?.auth === 'oauth') {
     headers.set('Authorization', `Bearer ${credential}`);
@@ -70,11 +75,11 @@ export function buildAnthropicHeaders(request: Request, credential: string, requ
 // content_block_start, content_block_stop, ping, message_delta) are NOT
 // commit points - a node that streams them before dying can still fail over.
 // Anthropic-native first-real-output predicate for the first-event guard:
-  // only content_block_delta events carrying text / thinking / tool-input
-  // deltas are real model output. Lifecycle events (message_start,
-  // content_block_start, content_block_stop, ping, message_delta) are NOT
-  // commit points - a node that streams them before dying can still fail over.
-  export function isAnthropicNativeRealOutput(json: unknown): boolean {
+// only content_block_delta events carrying text / thinking / tool-input
+// deltas are real model output. Lifecycle events (message_start,
+// content_block_start, content_block_stop, ping, message_delta) are NOT
+// commit points - a node that streams them before dying can still fail over.
+export function isAnthropicNativeRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   if (json?.type !== 'content_block_delta') return false;
   const delta = isRecord(json.delta) ? json.delta : {};
@@ -87,8 +92,11 @@ export function buildAnthropicHeaders(request: Request, credential: string, requ
 export function isAnthropicMessageMeaningful(json: unknown): boolean {
   if (!isRecord(json)) return false;
   for (const block of Array.isArray(json.content) ? json.content : []) {
-    if ((block?.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0)
-      || (block?.type === 'thinking' && typeof block.thinking === 'string' && block.thinking.trim().length > 0)) return true;
+    if (
+      (block?.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0) ||
+      (block?.type === 'thinking' && typeof block.thinking === 'string' && block.thinking.trim().length > 0)
+    )
+      return true;
     if (block?.type === 'tool_use' && typeof block.name === 'string' && block.name.trim().length > 0) return true;
   }
   return false;

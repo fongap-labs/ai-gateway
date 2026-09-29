@@ -18,10 +18,17 @@ export function corsHeaders(request: Request, env: Record<string, unknown>): Rec
   const origin = normalizeAllowedOrigin(allowedOrigin);
   if (origin === null) return { ...SECURITY_HEADERS };
   const requested = String(request.headers.get('Access-Control-Request-Headers') || '')
-    .split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
   const allowedRequestHeaders = new Set([
-    'authorization', 'x-api-key', 'content-type', 'accept', 'idempotency-key',
-    'anthropic-version', 'anthropic-beta',
+    'authorization',
+    'x-api-key',
+    'content-type',
+    'accept',
+    'idempotency-key',
+    'anthropic-version',
+    'anthropic-beta',
   ]);
   const accepted = requested.filter((v) => allowedRequestHeaders.has(v));
   const headers: Record<string, string> = {
@@ -47,7 +54,15 @@ function normalizeAllowedOrigin(value: string): string | null {
   }
 }
 
-export function jsonError(request: Request, env: Record<string, unknown>, status: number, message: string, details?: Record<string, unknown>, requestId?: string, extraHeaders?: Record<string, string>): Response {
+export function jsonError(
+  request: Request,
+  env: Record<string, unknown>,
+  status: number,
+  message: string,
+  details?: Record<string, unknown>,
+  requestId?: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify({ error: { message, ...(details ? { details } : {}) } }), {
     status,
     headers: {
@@ -60,19 +75,27 @@ export function jsonError(request: Request, env: Record<string, unknown>, status
   });
 }
 
-export function htmlResponse(content: BodyInit, init?: { status?: number, headers?: Record<string, unknown> }): Response {
+export function htmlResponse(content: BodyInit, init?: { status?: number; headers?: Record<string, unknown>; nonce?: string }): Response {
+  const nonce = init?.nonce ?? base64url(crypto.getRandomValues(new Uint8Array(16)));
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
   return new Response(content, {
     status: init?.status ?? 200,
     headers: {
       'content-type': 'text/html;charset=UTF-8',
       'cache-control': 'no-store',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      'content-security-policy': csp,
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       'x-frame-options': 'DENY',
     },
     ...init?.headers,
   });
+}
+
+function base64url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // Strict upstream header construction lives in src/transport/: the protocol
@@ -139,14 +162,27 @@ export async function safeReadErrorBody(response: Response, maxBytes: number = 4
       let result: ReadableStreamReadResult<Uint8Array>;
       if (deadline) {
         const remaining = deadline - Date.now();
-        if (remaining <= 0) { await reader.cancel().catch(() => {}); return ''; }
+        if (remaining <= 0) {
+          await reader.cancel().catch(() => {});
+          return '';
+        }
         let timerId: ReturnType<typeof setTimeout> | undefined;
-        const timeoutP = new Promise<null>((resolve) => { timerId = setTimeout(() => resolve(null), remaining); });
+        const timeoutP = new Promise<null>((resolve) => {
+          timerId = setTimeout(() => resolve(null), remaining);
+        });
         try {
-          const raced = await Promise.race([reader.read().then((v) => ({ ok: true as const, value: v })), timeoutP.then(() => ({ ok: false as const }))]);
-          if (!raced.ok) { await reader.cancel().catch(() => {}); return ''; }
+          const raced = await Promise.race([
+            reader.read().then((v) => ({ ok: true as const, value: v })),
+            timeoutP.then(() => ({ ok: false as const })),
+          ]);
+          if (!raced.ok) {
+            await reader.cancel().catch(() => {});
+            return '';
+          }
           result = raced.value;
-        } finally { clearTimeout(timerId); }
+        } finally {
+          clearTimeout(timerId);
+        }
       } else {
         result = await reader.read();
       }
@@ -171,7 +207,9 @@ export async function safeReadErrorBody(response: Response, maxBytes: number = 4
 }
 
 export function trimDiagnostic(text: unknown, limit: number = 600): string {
-  return String(text || '').replace(/\s+/g, ' ').slice(0, limit);
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .slice(0, limit);
 }
 
 // Terminal-error intent header: tells SDKs (Codex / Claude) NOT to auto-retry a

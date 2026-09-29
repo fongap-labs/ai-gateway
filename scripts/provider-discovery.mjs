@@ -13,20 +13,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
+  aggregateCatalogCapabilities,
+  checkRuntimeAgainstCatalog,
+  diffCatalogs,
+  diffModelSnapshots,
+  formatActionSummary,
+  formatChangesMarkdown,
+  formatDiscoveryMarkdown,
+  formatJsonReport,
   loadCatalogFile,
   normalizeCatalog,
   normalizeRuntimeView,
-  diffCatalogs,
-  summarizeBySeverity,
-  checkRuntimeAgainstCatalog,
-  summarizeWarnings,
-  aggregateCatalogCapabilities,
-  formatChangesMarkdown,
-  formatActionSummary,
-  formatJsonReport,
   scanDiscoveryEnv,
-  diffModelSnapshots,
-  formatDiscoveryMarkdown,
+  summarizeBySeverity,
+  summarizeWarnings,
 } from './provider-discovery/index.js';
 
 function die(msg, code = 1) {
@@ -96,7 +96,9 @@ function cmdCheckSnapshot(argv) {
     const p = normalized.providers[name];
     for (const proto of Object.keys(p)) {
       const e = p[proto];
-      console.log(`  - ${name} [${proto}]: supported=${e.supported} surfaces=[${e.surfaces.join(',')}] evidence=${e.evidence} base_url=${e.base_url || '(null)'}`);
+      console.log(
+        `  - ${name} [${proto}]: supported=${e.supported} surfaces=[${e.surfaces.join(',')}] evidence=${e.evidence} base_url=${e.base_url || '(null)'}`,
+      );
     }
   }
   process.exit(raw.valid ? 0 : 1);
@@ -159,12 +161,14 @@ function cmdSummary(argv) {
   if (!file) die('usage: provider-discovery.mjs summary <catalog.json>');
   const { normalized } = loadCatalogOrDie(file);
   const capability = aggregateCatalogCapabilities(normalized);
-  process.stdout.write(formatActionSummary({
-    diff: { added: [], removed: [], changed: [] },
-    warnings: [],
-    capability,
-    generatedAt: new Date().toISOString(),
-  }));
+  process.stdout.write(
+    formatActionSummary({
+      diff: { added: [], removed: [], changed: [] },
+      warnings: [],
+      capability,
+      generatedAt: new Date().toISOString(),
+    }),
+  );
 }
 
 function loadPreviousSnapshot(file) {
@@ -183,7 +187,10 @@ async function cmdLive(argv) {
   const { opts } = readArgs(argv);
   const outDir = resolveAgainstCwd(String(opts['out-dir'] || 'model-discovery'));
   const previous = loadPreviousSnapshot(opts.previous ? String(opts.previous) : '');
-  const allowPrivate = String(process.env.AIG_CAN_DISCOVER_PRIVATE_PROVIDERS || '').trim().toLowerCase() === 'true';
+  const allowPrivate =
+    String(process.env.AIG_CAN_DISCOVER_PRIVATE_PROVIDERS || '')
+      .trim()
+      .toLowerCase() === 'true';
   const current = await scanDiscoveryEnv(process.env, { allowPrivate });
   const diff = diffModelSnapshots(previous, current);
   const markdown = formatDiscoveryMarkdown(previous, current, diff);
@@ -193,16 +200,23 @@ async function cmdLive(argv) {
   fs.writeFileSync(path.join(outDir, 'current-models.json'), JSON.stringify(current, null, 2));
   fs.writeFileSync(path.join(outDir, 'changes.json'), JSON.stringify(diff, null, 2));
   fs.writeFileSync(path.join(outDir, 'changes.md'), markdown);
-  fs.writeFileSync(path.join(outDir, 'capabilities.json'), JSON.stringify({
-    generated_at: current.generated_at,
-    nodes: current.nodes.map((n) => ({
-      node_id: n.node_id,
-      provider: n.provider,
-      protocol: n.protocol,
-      status: n.status,
-      capabilities: n.capabilities,
-    })),
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(outDir, 'capabilities.json'),
+    JSON.stringify(
+      {
+        generated_at: current.generated_at,
+        nodes: current.nodes.map((n) => ({
+          node_id: n.node_id,
+          provider: n.provider,
+          protocol: n.protocol,
+          status: n.status,
+          capabilities: n.capabilities,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
 
   const ok = current.nodes.filter((n) => n.status === 'ok').length;
   const failed = current.nodes.length - ok;

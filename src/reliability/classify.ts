@@ -8,12 +8,9 @@
 // Rules of scope: every failure here is NODE-local. Never punish a provider,
 // tier, or the whole gateway for one node's 429/401.
 
-import { parseRetryAfterMs, getLimits } from '../config/timeouts.ts';
-import {
-  UPSTREAM_PROCESSING_ERROR,
-  upstreamProcessingErrorCode,
-} from '../types/upstream-processing.ts';
+import { getLimits, parseRetryAfterMs } from '../config/timeouts.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
+import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingErrorCode } from '../types/upstream-processing.ts';
 
 export const KIND = {
   RATE_LIMIT: 'rate_limit',
@@ -35,16 +32,16 @@ export const KIND = {
   UNKNOWN: 'unknown',
 } as const;
 
-export type FailureKind = typeof KIND[keyof typeof KIND];
+export type FailureKind = (typeof KIND)[keyof typeof KIND];
 
 export type FailureClassification = {
-  kind: FailureKind,
-  action: 'rotate' | 'stop' | 'neutral',
-  cooldownMs: number,
-  counted: boolean,
-  retryAfterMs?: number,
-  modelScoped?: boolean,
-  explicitRetryAfter?: boolean,
+  kind: FailureKind;
+  action: 'rotate' | 'stop' | 'neutral';
+  cooldownMs: number;
+  counted: boolean;
+  retryAfterMs?: number;
+  modelScoped?: boolean;
+  explicitRetryAfter?: boolean;
 };
 
 const CLIENT_STOP_STATUSES = new Set([413, 415, 422]);
@@ -72,7 +69,13 @@ function looksLikeProviderRateLimit(body: unknown): boolean {
   return false;
 }
 
-export function classifyUpstreamStatus(status: number, headers: Headers, env: GatewayEnv, now: number = Date.now(), body: unknown = ''): FailureClassification {
+export function classifyUpstreamStatus(
+  status: number,
+  headers: Headers,
+  env: GatewayEnv,
+  now: number = Date.now(),
+  body: unknown = '',
+): FailureClassification {
   const limits = getLimits(env);
   if (status === 429) return rateLimitClassification(headers, env, now);
   if (status === 413 && looksLikeProviderRateLimit(body)) return rateLimitClassification(headers, env, now);

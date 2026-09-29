@@ -15,10 +15,10 @@
 //   The request handler calls authorizeModel() against the configured
 //   logical model set BEFORE entering the scheduler.
 //
-// OAuth onboarding routes (/oauth/start) may additionally pass the access
-// key as a ?key= query parameter so an operator can start onboarding from
-// a browser address bar (which cannot set custom headers). API request
-// routes never pass queryKey, so they stay header-only.
+// OAuth onboarding routes (/oauth/start) accept the access key through a
+// POST form body (the paste page), which is converted into an x-api-key
+// credential before verification. Keys never appear in URLs, so they stay
+// out of access logs, browser history, and Referer headers.
 //
 // If no AIG_ACCESS_KEY_<GROUP> is configured, no credential is accepted.
 // Raw secrets never leave this module. Only the low-cardinality group label
@@ -58,15 +58,15 @@ function presentedCredentials(request: Request): string[] {
 }
 
 // Resolve the request to an auth result (see AuthResult).
-// `options.queryKey` lets OAuth onboarding routes accept a ?key= query
-// parameter as a credential source (browser address bars cannot set
-// Authorization headers). API routes never pass this option.
-export async function authorize(request: Request, env: GatewayEnv, options?: { queryKey?: string }): Promise<AuthResult> {
-  const presented = presentedCredentials(request);
-  if (options?.queryKey) {
-    const qk = options.queryKey.trim();
-    if (qk) presented.push(qk);
-  }
+export async function authorize(request: Request, env: GatewayEnv): Promise<AuthResult> {
+  return authorizeCredentials(presentedCredentials(request), env);
+}
+
+// Verify explicit credential strings (header values already extracted, or a
+// POST form value from the OAuth paste page). Same constant-time matching
+// as authorize(); credentials are never logged or echoed.
+export async function authorizeCredentials(credentials: readonly string[], env: GatewayEnv): Promise<AuthResult> {
+  const presented = credentials.map((c) => String(c ?? '').trim()).filter(Boolean);
   if (presented.length === 0) return { authorized: false, mode: 'none' };
 
   const access = loadAccessKeysConfig(env);

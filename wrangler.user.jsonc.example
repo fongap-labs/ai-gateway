@@ -1,0 +1,18 @@
+{
+  // Operator-specific configuration. Copy to wrangler.user.jsonc (gitignored) and fill in.
+  // This file is inherited by wrangler.jsonc via "inherit": "wrangler.user.jsonc"
+
+  // Production custom domain (optional). If set, the worker is attached to this domain.
+  // "routes": [
+  //   {
+  //     "pattern": "api.example.com",
+  //     "custom_domain": true
+  //   }
+  // ],
+
+  // Production-specific vars that differ from wrangler.jsonc defaults
+  // "vars": {
+  //   "AIG_PUBLIC_URL": "https://api.example.com",
+  //   "AIG_CORS_ORIGIN": "https://app.example.com"
+  // }
+}

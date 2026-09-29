@@ -2,36 +2,33 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { attemptFirstEventTimeoutMs } from '../../config/timeouts.ts';
-import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
-import { recordTier1Ttft } from '../../reliability/tier1-state.ts';
-import {
-  classifyFirstEventFailure,
-  classifyClientAbort,
-} from '../../reliability/classify.ts';
-import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
-import {
-  isAnthropicNativeRealOutput, isAnthropicNativeRealOutputForConversion,
-  isResponsesRealOutput, isOpenAIChatRealOutput, isOpenAIChatRealOutputForConversion,
-} from '../../transport/index.ts';
-import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
-import { trackStreamResponse } from '../../stream/track.ts';
+import { createOpenAIChatStreamFromAnthropic } from '../../conversion/anthropic-stream-to-openai-chat.ts';
+import { createAnthropicStreamFromOpenAI } from '../../conversion/stream-converter.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { mergeReportedUsage } from '../../observability/token-usage.ts';
+import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
+import { classifyClientAbort, classifyFirstEventFailure } from '../../reliability/classify.ts';
+import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
+import { recordTier1Ttft } from '../../reliability/tier1-state.ts';
+import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
+import { trackStreamResponse } from '../../stream/track.ts';
+import {
+  isAnthropicNativeRealOutput,
+  isAnthropicNativeRealOutputForConversion,
+  isOpenAIChatRealOutput,
+  isOpenAIChatRealOutputForConversion,
+  isResponsesRealOutput,
+} from '../../transport/index.ts';
+import type { AttemptOutcome } from '../../types/request.ts';
 import { gatewayError } from '../errors.ts';
 import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../response-helpers.ts';
-import { createAnthropicStreamFromOpenAI } from '../../conversion/stream-converter.ts';
-import { createOpenAIChatStreamFromAnthropic } from '../../conversion/anthropic-stream-to-openai-chat.ts';
-import {
-  recordTokens, makeNodeStreamTrack,
-  observeUpstreamAttemptUsage,
-} from './observability.ts';
-import { recordOutcome, hedgeLoserOutcome } from './outcome.ts';
+import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from './observability.ts';
+import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
-import type { AttemptOutcome } from '../../types/request.ts';
 
 export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
-  const { request, env, logger, requestId, route, node, requestedModel, bodyJson, limits, exposeUpstreamInfo, state, policy } = c;
+  const { request, env, requestId, route, node, requestedModel, bodyJson, limits, exposeUpstreamInfo, state, policy } = c;
   const surface = c.surface;
   const extraHeaders = {
     'x-request-id': requestId,
@@ -46,7 +43,8 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   const guardStartMs = Date.now();
   let guarded: Response;
   try {
-    const remainingRequestBudgetMs = (c.failoverBudgetMs ?? limits.failoverBudgetMs) - (Date.now() - (c.requestStartMs || (s.attemptStartMs as number) || Date.now()));
+    const remainingRequestBudgetMs =
+      (c.failoverBudgetMs ?? limits.failoverBudgetMs) - (Date.now() - (c.requestStartMs || (s.attemptStartMs as number) || Date.now()));
     const remainingAttemptBudgetMs = (c.attemptDeadlineMs ?? Date.now()) - Date.now();
     const effectiveFirstEventTimeoutMs = policy?.firstEventTimeoutMs ?? limits.firstEventTimeoutMs;
     const firstEventTimeout = attemptFirstEventTimeoutMs(
@@ -55,27 +53,23 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       1,
     );
     const isRealOutput = c.conversionContext
-      ? (c.conversionContext.fallbackProtocol === 'anthropic'
-          ? isAnthropicNativeRealOutputForConversion
-          : isOpenAIChatRealOutputForConversion)
+      ? c.conversionContext.fallbackProtocol === 'anthropic'
+        ? isAnthropicNativeRealOutputForConversion
+        : isOpenAIChatRealOutputForConversion
       : surface === 'messages'
         ? isAnthropicNativeRealOutput
-        : surface === 'responses' ? isResponsesRealOutput
-        : surface === 'chat_completions' ? isOpenAIChatRealOutput
-        : undefined;
-    guarded = await ensureFirstSseEvent(
-      upstream,
-      firstEventTimeout,
-      request.signal,
-      isRealOutput,
-      (event: unknown) => {
-        const usage = reportedUsageFromPayload(event);
-        if (usage != null) observeUpstreamAttemptUsage(c, usage);
-      },
-    );
+        : surface === 'responses'
+          ? isResponsesRealOutput
+          : surface === 'chat_completions'
+            ? isOpenAIChatRealOutput
+            : undefined;
+    guarded = await ensureFirstSseEvent(upstream, firstEventTimeout, request.signal, isRealOutput, (event: unknown) => {
+      const usage = reportedUsageFromPayload(event);
+      if (usage != null) observeUpstreamAttemptUsage(c, usage);
+    });
   } catch (e) {
     detach();
-    const code = (e && typeof e === 'object' && 'code' in e) ? String((e as { code: unknown }).code) : GUARD_ERROR.EMPTY;
+    const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : GUARD_ERROR.EMPTY;
     if (request.signal?.aborted) {
       recordOutcome(state, node, classifyClientAbort(), c, {
         latencyMs: Date.now() - (c.attemptStartMs as number),
@@ -134,18 +128,15 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
         observeUpstreamAttemptUsage(c, u);
       },
     });
-    const tracked = trackStreamResponse(
-      new Response(openAiStream, { status: 200, headers }),
-      {
-        idleTimeoutMs: limits.streamIdleTimeoutMs,
-        completionMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
-        ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
-        onUsage: () => recordTokens(c, node, upstreamUsage),
-        interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
-        upstreamFailureReason: hiddenStreamFailure,
-        ...makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false }),
-      },
-    );
+    const tracked = trackStreamResponse(new Response(openAiStream, { status: 200, headers }), {
+      idleTimeoutMs: limits.streamIdleTimeoutMs,
+      completionMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
+      ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
+      onUsage: () => recordTokens(c, node, upstreamUsage),
+      interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
+      upstreamFailureReason: hiddenStreamFailure,
+      ...makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false }),
+    });
     return { response: new Response(tracked.body, { status: 200, headers }) };
   }
 
@@ -156,7 +147,8 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       failureMarker: /event:\s*response\.failed\b/,
       ...(needsModelRewrite ? { rewriteModel: requestedModel, rewriteModelAt: 'response.model' } : {}),
       onUsage: (u: unknown) => recordTokens(c, node, u),
-      interruptionChunk: (reason: string | null, details?: { nextSequenceNumber?: number }) => streamInterruptionChunk(route, requestId, reason, details),
+      interruptionChunk: (reason: string | null, details?: { nextSequenceNumber?: number }) =>
+        streamInterruptionChunk(route, requestId, reason, details),
       upstreamFailureReason: hiddenStreamFailure,
       ...makeNodeStreamTrack(c, node, latencyMs),
     });
@@ -180,19 +172,16 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
         observeUpstreamAttemptUsage(c, u);
       },
     });
-    const tracked = trackStreamResponse(
-      new Response(anthropicStream, { status: 200, headers }),
-      {
-        idleTimeoutMs: limits.streamIdleTimeoutMs,
-        completionMarker: /event:\s*message_stop\b/,
-        // A clean delivery still counts even when the upstream omitted usage;
-        // recordTokens(null) records coverage-missing without inventing tokens.
-        onUsage: () => recordTokens(c, node, upstreamUsage),
-        interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
-        upstreamFailureReason: hiddenStreamFailure,
-        ...makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false }),
-      },
-    );
+    const tracked = trackStreamResponse(new Response(anthropicStream, { status: 200, headers }), {
+      idleTimeoutMs: limits.streamIdleTimeoutMs,
+      completionMarker: /event:\s*message_stop\b/,
+      // A clean delivery still counts even when the upstream omitted usage;
+      // recordTokens(null) records coverage-missing without inventing tokens.
+      onUsage: () => recordTokens(c, node, upstreamUsage),
+      interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
+      upstreamFailureReason: hiddenStreamFailure,
+      ...makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false }),
+    });
     return { response: new Response(tracked.body, { status: 200, headers }) };
   }
 

@@ -20,10 +20,14 @@ assert.ok(Array.isArray(config.triggers?.crons) && config.triggers.crons.include
 assert.ok(fs.existsSync(path.join(root, 'package-lock.json')), 'package-lock.json is required for npm ci');
 
 const tooling = [
-  'scripts/install.sh', 'scripts/install.ps1',
-  'scripts/reconfigure.sh', 'scripts/reconfigure.ps1',
-  'scripts/node-config-shards.mjs', 'scripts/plan-node-configuration.mjs',
-  'scripts/cloudflare-wrangler.mjs', 'scripts/github-deployment-config.mjs',
+  'scripts/install.sh',
+  'scripts/install.ps1',
+  'scripts/reconfigure.sh',
+  'scripts/reconfigure.ps1',
+  'scripts/node-config-shards.mjs',
+  'scripts/plan-node-configuration.mjs',
+  'scripts/cloudflare-wrangler.mjs',
+  'scripts/github-deployment-config.mjs',
   'scripts/deploy.sh',
 ];
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
@@ -77,8 +81,10 @@ for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry
 
 for (const removed of [
   'scripts/deploy.ps1',
-  'scripts/update.sh', 'scripts/update.ps1',
-  'scripts/setup-and-deploy.sh', 'scripts/setup-and-deploy.ps1',
+  'scripts/update.sh',
+  'scripts/update.ps1',
+  'scripts/setup-and-deploy.sh',
+  'scripts/setup-and-deploy.ps1',
 ]) {
   assert.equal(fs.existsSync(path.join(root, removed)), false, `${removed} must not return as duplicate lifecycle tooling`);
 }
@@ -86,7 +92,10 @@ for (const removed of [
 const workflowDir = path.join(root, '.github', 'workflows');
 const permanentWorkflows = ['ci.yml', 'dispatch-pr-governance.yml'];
 assert.deepEqual(
-  fs.readdirSync(workflowDir).filter((name) => /\.ya?ml$/i.test(name)).sort(),
+  fs
+    .readdirSync(workflowDir)
+    .filter((name) => /\.ya?ml$/i.test(name))
+    .sort(),
   permanentWorkflows,
   'only thin repository workflows may live in .github/workflows',
 );
@@ -114,10 +123,12 @@ for (const forbidden of ['AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKE
 const taskSource = JSON.parse(read('.github/task-source.json'));
 assert.equal(taskSource.schema_version, '1');
 assert.equal(taskSource.push, false);
-assert.deepEqual(taskSource.schedules, [{
-  cron: '15 4 * * *',
-  projects: ['model-discovery'],
-}]);
+assert.deepEqual(taskSource.schedules, [
+  {
+    cron: '15 4 * * *',
+    projects: ['model-discovery'],
+  },
+]);
 
 const modelDiscoveryTask = JSON.parse(read('projects/model-discovery/task.json'));
 assert.deepEqual(modelDiscoveryTask, {
@@ -148,11 +159,7 @@ assert.match(deployScript, /github-deployment-config\.mjs health-check/);
 assert.match(deployScript, /DEPLOY_SOURCE_SHA/);
 assert.doesNotMatch(deployScript, /wrangler@\d+\.\d+\.\d+/);
 
-for (const removedExample of [
-  'config/tier2-nodes.example.json',
-  'config/node-secrets.example.json',
-  'config/gateway-secrets.example.json',
-]) {
+for (const removedExample of ['config/tier2-nodes.example.json', 'config/node-secrets.example.json', 'config/gateway-secrets.example.json']) {
   assert.equal(fs.existsSync(path.join(root, removedExample)), false, `${removedExample} must stay absent`);
 }
 assert.ok(fs.existsSync(path.join(root, 'config/worker-vars.example.json')));

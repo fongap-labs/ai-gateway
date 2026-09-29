@@ -127,9 +127,10 @@ export function recordSuccess(nodeId: string, latencyMs: number, model: string, 
   s.lastTransientFailureAt = 0;
   s.healthScore = Math.min(HEALTH_MAX, s.healthScore + HEALTH_SUCCESS_GAIN);
   s.consecutiveFailures = 0;
-  s.avgLatencyMs = s.avgLatencyMs === 0 || typeof latencyMs !== 'number'
-    ? Math.max(0, latencyMs || 0)
-    : s.avgLatencyMs * (1 - LATENCY_EWMA_ALPHA) + latencyMs * LATENCY_EWMA_ALPHA;
+  s.avgLatencyMs =
+    s.avgLatencyMs === 0 || typeof latencyMs !== 'number'
+      ? Math.max(0, latencyMs || 0)
+      : s.avgLatencyMs * (1 - LATENCY_EWMA_ALPHA) + latencyMs * LATENCY_EWMA_ALPHA;
   if (model) updateModelPerf(s, model, { latencyMs }, now);
   recoverFromHalfOpen(s);
 }
@@ -137,9 +138,7 @@ export function recordSuccess(nodeId: string, latencyMs: number, model: string, 
 export function recordTtft(nodeId: string, ttftMs: number, model: string, { source = 'passive' }: { source?: string } = {}): void {
   const s = getNodeState(nodeId);
   const alpha = source === 'probe' ? PROBE_EWMA_ALPHA : LATENCY_EWMA_ALPHA;
-  s.avgTtftMs = s.avgTtftMs === 0 || typeof ttftMs !== 'number' || ttftMs < 0
-    ? Math.max(0, ttftMs || 0)
-    : s.avgTtftMs * (1 - alpha) + ttftMs * alpha;
+  s.avgTtftMs = s.avgTtftMs === 0 || typeof ttftMs !== 'number' || ttftMs < 0 ? Math.max(0, ttftMs || 0) : s.avgTtftMs * (1 - alpha) + ttftMs * alpha;
   if (model) updateModelPerf(s, model, { ttftMs, source });
 }
 
@@ -148,21 +147,35 @@ export function getModelPerf(nodeId: string, model: string) {
   return s?.modelPerf?.get(model) || null;
 }
 
-function updateModelPerf(s: NodeState, model: string, opts: { ttftMs?: number, latencyMs?: number, source?: string } = {}, now: number = Date.now()): void {
+function updateModelPerf(
+  s: NodeState,
+  model: string,
+  opts: { ttftMs?: number; latencyMs?: number; source?: string } = {},
+  now: number = Date.now(),
+): void {
   const { ttftMs, latencyMs, source = 'passive' } = opts;
   let entry = s.modelPerf.get(model);
   if (!entry) {
     if (s.modelPerf.size >= MODEL_PERF_MAX) {
-      let oldest: number | null = null, oldestKey: string | null = null;
+      let oldest: number | null = null,
+        oldestKey: string | null = null;
       for (const [k, v] of s.modelPerf) {
-        if (!oldest || v.lastUsedAt < oldest) { oldest = v.lastUsedAt; oldestKey = k; }
+        if (!oldest || v.lastUsedAt < oldest) {
+          oldest = v.lastUsedAt;
+          oldestKey = k;
+        }
       }
       if (oldestKey) s.modelPerf.delete(oldestKey);
     }
     entry = {
-      avgTtftMs: 0, avgLatencyMs: 0, lastUsedAt: now,
-      ttftSamples: 0, passiveSamples: 0, probeSamples: 0,
-      lastTtftAt: 0, lastProbeFailureAt: 0,
+      avgTtftMs: 0,
+      avgLatencyMs: 0,
+      lastUsedAt: now,
+      ttftSamples: 0,
+      passiveSamples: 0,
+      probeSamples: 0,
+      lastTtftAt: 0,
+      lastProbeFailureAt: 0,
     };
     s.modelPerf.set(model, entry);
   }
@@ -173,14 +186,10 @@ function updateModelPerf(s: NodeState, model: string, opts: { ttftMs?: number, l
     entry.ttftSamples++;
     if (source === 'probe') entry.probeSamples++;
     else entry.passiveSamples++;
-    entry.avgTtftMs = entry.avgTtftMs === 0
-      ? ttftMs
-      : entry.avgTtftMs * (1 - alpha) + ttftMs * alpha;
+    entry.avgTtftMs = entry.avgTtftMs === 0 ? ttftMs : entry.avgTtftMs * (1 - alpha) + ttftMs * alpha;
   }
   if (typeof latencyMs === 'number' && latencyMs >= 0) {
-    entry.avgLatencyMs = entry.avgLatencyMs === 0
-      ? latencyMs
-      : entry.avgLatencyMs * (1 - LATENCY_EWMA_ALPHA) + latencyMs * LATENCY_EWMA_ALPHA;
+    entry.avgLatencyMs = entry.avgLatencyMs === 0 ? latencyMs : entry.avgLatencyMs * (1 - LATENCY_EWMA_ALPHA) + latencyMs * LATENCY_EWMA_ALPHA;
   }
 }
 
@@ -197,7 +206,16 @@ export function markProbeFailure(nodeId: string, model: string, now: number = Da
 // an auto-computed fallback (no explicit Retry-After), a light ±10% jitter
 // is applied to avoid synchronized re-probes across isolates. Explicit
 // provider Retry-After values pass through unchanged.
-export function recordFailure(nodeId: string, { counted = false, cooldownMs = 0, reason = null, explicitRetryAfter = false }: { counted?: boolean, cooldownMs?: number, reason?: string | null, explicitRetryAfter?: boolean } = {}, now: number = Date.now()): void {
+export function recordFailure(
+  nodeId: string,
+  {
+    counted = false,
+    cooldownMs = 0,
+    reason = null,
+    explicitRetryAfter = false,
+  }: { counted?: boolean; cooldownMs?: number; reason?: string | null; explicitRetryAfter?: boolean } = {},
+  now: number = Date.now(),
+): void {
   const s = releaseAndReturn(nodeId);
   s.totalFailures++;
   if (cooldownMs > 0) {
@@ -320,9 +338,16 @@ export function applyHealthPenalty(nodeId: string, kind: string): void {
 // stay driven by the real outcome path for Tier 2/3 and stay neutral for
 // Tier 1 (whose slot/concurrency is owned by tier1-state). Mirroring business
 // stats here is explicitly allowed: existing D1/KV business-statistics capabilities stay.
-export function bumpNodeCounters(nodeId: string, { requests = 0, successes = 0, failures = 0 }: { requests?: number, successes?: number, failures?: number } = {}, now: number = Date.now()): void {
+export function bumpNodeCounters(
+  nodeId: string,
+  { requests = 0, successes = 0, failures = 0 }: { requests?: number; successes?: number; failures?: number } = {},
+  now: number = Date.now(),
+): void {
   const s = getNodeState(nodeId);
-  if (requests) { s.totalRequests += requests; s.lastUsedAt = now; }
+  if (requests) {
+    s.totalRequests += requests;
+    s.lastUsedAt = now;
+  }
   if (successes) s.totalSuccesses += successes;
   if (failures) s.totalFailures += failures;
 }

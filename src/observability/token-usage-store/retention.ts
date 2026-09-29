@@ -16,14 +16,21 @@
 //   MODEL_STATS_RETENTION_DAYS = 7 (legacy, matches the dashboard's
 //                                   7-day query window)
 
+import type { GatewayEnv } from '../../types/runtime.ts';
 import { getUtcWeekStartUtcMs } from '../time-buckets.ts';
 import {
-  TABLE, TABLE_MODEL, TABLE_DAILY, TABLE_WEEKLY,
-  DAY_MS, WEEK_MS,
-  HOURLY_RETENTION_MS, DAILY_RETENTION_MS, WEEKLY_RETENTION_MS,
-  normalizeHour, tokenStatsD1,
+  DAILY_RETENTION_MS,
+  DAY_MS,
+  HOURLY_RETENTION_MS,
+  normalizeHour,
+  TABLE,
+  TABLE_DAILY,
+  TABLE_MODEL,
+  TABLE_WEEKLY,
+  tokenStatsD1,
+  WEEK_MS,
+  WEEKLY_RETENTION_MS,
 } from './keys.ts';
-import type { GatewayEnv } from '../../types/runtime.ts';
 
 const HOURLY_RETENTION_DAYS = HOURLY_RETENTION_MS / DAY_MS;
 const DAILY_RETENTION_WEEKS = DAILY_RETENTION_MS / WEEK_MS;
@@ -42,9 +49,7 @@ export async function cleanupUsageRetention(env: GatewayEnv, now: number = Date.
   // Hourly: delete rows older than 7 days.
   const hourlyCutoff = normalizeHour(now - HOURLY_RETENTION_DAYS * DAY_MS);
   try {
-    const res = await d1.prepare(
-      `DELETE FROM ${TABLE} WHERE hour < ?`
-    ).bind(hourlyCutoff).run();
+    const res = await d1.prepare(`DELETE FROM ${TABLE} WHERE hour < ?`).bind(hourlyCutoff).run();
     results.hourly = { deleted: res?.meta?.changes ?? 0, cutoff: hourlyCutoff };
   } catch (e) {
     results.hourly = { error: (e as { message?: unknown } | null | undefined)?.message || e };
@@ -58,9 +63,7 @@ export async function cleanupUsageRetention(env: GatewayEnv, now: number = Date.
   const dailyCutoffMs = currentWeekStart - (DAILY_RETENTION_WEEKS - 1) * WEEK_MS;
   const dailyCutoff = new Date(dailyCutoffMs).toISOString().slice(0, 10);
   try {
-    const res = await d1.prepare(
-      `DELETE FROM ${TABLE_DAILY} WHERE day < ?`
-    ).bind(dailyCutoff).run();
+    const res = await d1.prepare(`DELETE FROM ${TABLE_DAILY} WHERE day < ?`).bind(dailyCutoff).run();
     results.daily = { deleted: res?.meta?.changes ?? 0, cutoff: dailyCutoff };
   } catch (e) {
     results.daily = { error: (e as { message?: unknown } | null | undefined)?.message || e };
@@ -72,9 +75,7 @@ export async function cleanupUsageRetention(env: GatewayEnv, now: number = Date.
   const weeklyCutoffMs = currentWeekStart - (WEEKLY_RETENTION_WEEKS - 1) * WEEK_MS;
   const weeklyCutoff = new Date(weeklyCutoffMs).toISOString().slice(0, 10);
   try {
-    const res = await d1.prepare(
-      `DELETE FROM ${TABLE_WEEKLY} WHERE week_start < ?`
-    ).bind(weeklyCutoff).run();
+    const res = await d1.prepare(`DELETE FROM ${TABLE_WEEKLY} WHERE week_start < ?`).bind(weeklyCutoff).run();
     results.weekly = { deleted: res?.meta?.changes ?? 0, cutoff: weeklyCutoff };
   } catch (e) {
     results.weekly = { error: (e as { message?: unknown } | null | undefined)?.message || e };
@@ -92,9 +93,7 @@ export async function cleanupModelStats(env: GatewayEnv) {
   if (!d1) return { skipped: true, reason: 'TOKEN_STATS_DB binding missing' };
   const cutoffHour = normalizeHour(Date.now() - MODEL_STATS_RETENTION_DAYS * DAY_MS);
   try {
-    const res = await d1.prepare(
-      `DELETE FROM ${TABLE_MODEL} WHERE hour < ?`,
-    ).bind(cutoffHour).run();
+    const res = await d1.prepare(`DELETE FROM ${TABLE_MODEL} WHERE hour < ?`).bind(cutoffHour).run();
     const deleted = res?.meta?.changes ?? 0;
     console.log(`token-stats cleanup: deleted ${deleted} model-usage rows older than ${cutoffHour}`);
     return { deleted, cutoffHour };
@@ -114,9 +113,9 @@ export async function maintainUsageStats(env: GatewayEnv, now: number = Date.now
   // not need anything from retention.ts, but the orchestrator
   // chains them. The dynamic import keeps the module graph a DAG.
   const { aggregateHourlyToDaily, aggregateDailyToWeekly } = await import('./aggregation.ts');
-  const aggDaily = await aggregateHourlyToDaily(env, now).catch(e => ({ error: e?.message || e }));
-  const aggWeekly = await aggregateDailyToWeekly(env, now).catch(e => ({ error: e?.message || e }));
-  const cleanup = await cleanupUsageRetention(env, now).catch(e => ({ error: e?.message || e }));
+  const aggDaily = await aggregateHourlyToDaily(env, now).catch((e) => ({ error: e?.message || e }));
+  const aggWeekly = await aggregateDailyToWeekly(env, now).catch((e) => ({ error: e?.message || e }));
+  const cleanup = await cleanupUsageRetention(env, now).catch((e) => ({ error: e?.message || e }));
   const modelCleanup = await cleanupModelStats(env);
   return { aggDaily, aggWeekly, cleanup, modelCleanup };
 }

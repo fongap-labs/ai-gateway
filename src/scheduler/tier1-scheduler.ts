@@ -15,18 +15,12 @@
 // This module touches Tier 1 ONLY. Tier 2 / Tier 3 keep using
 // src/scheduler/scheduler.ts.
 
-import {
-  isTier1Eligible, claimTier1Slot, makeTier1ReleaseToken,
-  maybeTransitionToHalfOpen,
-} from '../reliability/tier1-state.ts';
-import {
-  tier1CanAcceptHedge,
-  tier1SelectionHeatFactor,
-} from '../reliability/tier1-heat.ts';
-import { calculateTier1Score } from './tier1-scoring.ts';
-import { tier1AffinityFactor, affinityShouldEscape } from './tier1-affinity.ts';
+import { tier1CanAcceptHedge, tier1SelectionHeatFactor } from '../reliability/tier1-heat.ts';
+import { claimTier1Slot, isTier1Eligible, makeTier1ReleaseToken, maybeTransitionToHalfOpen } from '../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { RoutableRequest, PickedCandidate } from '../types/scheduler.ts';
+import type { PickedCandidate, RoutableRequest } from '../types/scheduler.ts';
+import { affinityShouldEscape, tier1AffinityFactor } from './tier1-affinity.ts';
+import { calculateTier1Score } from './tier1-scoring.ts';
 
 // Conservative fixed estimate of one upstream attempt cost when no P99 TTFT is
 // available. Used only to decide whether the remaining request deadline can
@@ -50,21 +44,30 @@ export function tier1DeadlineTooSmall(remainingBudgetMs: number, p99TtftMs?: num
 //     the stored binding (escape window reached).
 //   excludeId          — skip the hedge primary when picking a twin. A non-null
 //     value also marks hedge selection, where soft spare-capacity gating applies.
-export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: RoutableRequest, attempted: Set<string>, {
-  affinityAccountId = null, evaluateAffinity = false, now = Date.now(),
-  excludeId = null, rng = Math.random, knownModels = null,
-  raceLostIds = null,
-  maxInFlight = null,
-}: {
-  affinityAccountId?: string | null,
-  evaluateAffinity?: boolean,
-  now?: number,
-  excludeId?: string | null,
-  rng?: () => number,
-  knownModels?: ReadonlySet<string> | null,
-  raceLostIds?: Set<string> | null,
-  maxInFlight?: number | null,
-} = {}): PickedCandidate | null {
+export function pickTier1Candidate(
+  tier1Nodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  attempted: Set<string>,
+  {
+    affinityAccountId = null,
+    evaluateAffinity = false,
+    now = Date.now(),
+    excludeId = null,
+    rng = Math.random,
+    knownModels = null,
+    raceLostIds = null,
+    maxInFlight = null,
+  }: {
+    affinityAccountId?: string | null;
+    evaluateAffinity?: boolean;
+    now?: number;
+    excludeId?: string | null;
+    rng?: () => number;
+    knownModels?: ReadonlySet<string> | null;
+    raceLostIds?: Set<string> | null;
+    maxInFlight?: number | null;
+  } = {},
+): PickedCandidate | null {
   const eligible: RuntimeNode[] = [];
   for (const node of tier1Nodes) {
     if (node.id === excludeId) continue;
@@ -81,21 +84,14 @@ export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: 
   }
   if (eligible.length === 0) return null;
 
-  const affinityNode = affinityAccountId
-    ? eligible.find((n) => n.id === affinityAccountId) : null;
+  const affinityNode = affinityAccountId ? eligible.find((n) => n.id === affinityAccountId) : null;
 
   let chosen: RuntimeNode;
-  let escapedFromAffinity = false;
+  let hasEscapedFromAffinity = false;
   let updateAffinity = !affinityAccountId;
 
-  const selectionFactor = (node: RuntimeNode): number => tier1SelectionHeatFactor(
-    node,
-    tier1AffinityFactor(node.id, affinityAccountId),
-  );
-  const scoreFor = (node: RuntimeNode): number => calculateTier1Score(
-    node, req.model, eligible,
-    selectionFactor(node), now,
-  );
+  const selectionFactor = (node: RuntimeNode): number => tier1SelectionHeatFactor(node, tier1AffinityFactor(node.id, affinityAccountId));
+  const scoreFor = (node: RuntimeNode): number => calculateTier1Score(node, req.model, eligible, selectionFactor(node), now);
 
   if (eligible.length === 1) {
     const only = eligible[0];
@@ -117,7 +113,7 @@ export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: 
       const affScore = scoreFor(affinityNode);
       if (evaluateAffinity && affinityShouldEscape(affScore, p2cWinnerScore)) {
         chosen = p2cWinner;
-        escapedFromAffinity = true;
+        hasEscapedFromAffinity = true;
         updateAffinity = true;
       } else if (evaluateAffinity) {
         chosen = affinityNode;
@@ -145,7 +141,7 @@ export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: 
   return {
     node: chosen,
     releaseToken: makeTier1ReleaseToken(chosen.id),
-    escapedFromAffinity,
+    escapedFromAffinity: hasEscapedFromAffinity,
     updateAffinity,
     affinityHit: Boolean(affinityAccountId && chosen.id === affinityAccountId),
   };
@@ -155,7 +151,7 @@ export function pickTier1Candidate(tier1Nodes: ReadonlyArray<RuntimeNode>, req: 
 // `rng` is an injectable uniform [0,1) source for deterministic tests; in
 // production Math.random is used so behaviour stays best-effort random and
 // no new env knob is required.
-function sampleTwo(arr: RuntimeNode[], rng: () => number = Math.random, affinityNode: RuntimeNode | null = null): { a: RuntimeNode, b: RuntimeNode } {
+function sampleTwo(arr: RuntimeNode[], rng: () => number = Math.random, affinityNode: RuntimeNode | null = null): { a: RuntimeNode; b: RuntimeNode } {
   if (affinityNode) {
     const peers = arr.filter((node) => node.id !== affinityNode.id);
     const peer = peers[Math.floor(rng() * peers.length)];

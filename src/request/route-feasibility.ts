@@ -18,34 +18,39 @@
 // for the lifetime of a single request and may be computed once and carried
 // through the pipeline.
 
-import { supportsRequest } from '../scheduler/scheduler.ts';
-import { TIER_ORDER } from './router.ts';
 import { getFallbackChain } from '../config/protocol-fallbacks.ts';
-import type { RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
+import { supportsRequest } from '../scheduler/scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
-import type { TierMap } from '../types/scheduler.ts';
+import type { RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
+import type { TierMap } from '../types/scheduler.ts';
+import { TIER_ORDER } from './router.ts';
 
 /**
  * Evaluate whether a request has any reachable execution path.
  */
-export function evaluateRouteFeasibility({ route, requestedModel, requestDescriptor, tiers, knownModels, env }: {
-  route: string,
-  requestedModel: string,
-  requestDescriptor: RequestDescriptor,
-  tiers: TierMap<RuntimeNode[]>,
-  knownModels: Set<string>,
-  env: GatewayEnv,
+export function evaluateRouteFeasibility({
+  route,
+  requestedModel,
+  requestDescriptor,
+  tiers,
+  knownModels,
+  env,
+}: {
+  route: string;
+  requestedModel: string;
+  requestDescriptor: RequestDescriptor;
+  tiers: TierMap<RuntimeNode[]>;
+  knownModels: Set<string>;
+  env: GatewayEnv;
 }): RouteFeasibilityResult {
-  const nativeSupported = TIER_ORDER.some((t) =>
-    tiers[t].some((n) => supportsRequest(n, requestDescriptor, knownModels)));
+  const nativeSupported = TIER_ORDER.some((t) => tiers[t].some((n) => supportsRequest(n, requestDescriptor, knownModels)));
 
-  const fallbacks: Array<{ protocol: Protocol, surface: Surface }> = [];
+  const fallbacks: Array<{ protocol: Protocol; surface: Surface }> = [];
   for (const fb of getFallbackChain(route, env)) {
     const fbReqDescriptor = { model: requestedModel, protocol: fb.protocol, surface: fb.surface };
-    if (TIER_ORDER.some((t) =>
-      tiers[t].some((n) => supportsRequest(n, fbReqDescriptor, knownModels)))) {
+    if (TIER_ORDER.some((t) => tiers[t].some((n) => supportsRequest(n, fbReqDescriptor, knownModels)))) {
       fallbacks.push({ protocol: fb.protocol, surface: fb.surface });
     }
   }

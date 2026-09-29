@@ -7,8 +7,13 @@
 import { corsHeaders, shouldNotRetryHeaders } from './http.ts';
 
 export type AnthropicErrorType =
-  | 'invalid_request_error' | 'authentication_error' | 'permission_error'
-  | 'not_found_error' | 'rate_limit_error' | 'overloaded_error' | 'api_error';
+  | 'invalid_request_error'
+  | 'authentication_error'
+  | 'permission_error'
+  | 'not_found_error'
+  | 'rate_limit_error'
+  | 'overloaded_error'
+  | 'api_error';
 
 export function anthropicErrorTypeForStatus(status: number): AnthropicErrorType {
   if (status === 400 || status === 413 || status === 415 || status === 422) return 'invalid_request_error';
@@ -20,7 +25,14 @@ export function anthropicErrorTypeForStatus(status: number): AnthropicErrorType 
   return 'api_error';
 }
 
-export function anthropicErrorResponse(request: Request, env: Record<string, unknown>, status: number, message: unknown, requestId?: string, extraHeaders?: Record<string, string>): Response {
+export function anthropicErrorResponse(
+  request: Request,
+  env: Record<string, unknown>,
+  status: number,
+  message: unknown,
+  requestId?: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   const error = { type: anthropicErrorTypeForStatus(status), message: String(message || 'Unknown gateway error.') };
   return new Response(JSON.stringify({ type: 'error', error }), {
     status,
@@ -76,19 +88,22 @@ function estimateTextTokens(text: unknown): number {
 
 export function estimateAnthropicInputTokens(body: Record<string, unknown>): number {
   let tokens = 0;
-  const countText = (value: unknown) => { tokens += estimateTextTokens(value); };
+  const countText = (value: unknown) => {
+    tokens += estimateTextTokens(value);
+  };
   if (typeof body.system === 'string') countText(body.system);
   else if (Array.isArray(body.system)) for (const x of body.system) countText(x?.text || x);
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
     tokens += 2; // per-message structural overhead
     if (typeof message.content === 'string') countText(message.content);
-    else for (const block of message.content || []) {
-      if (block?.type === 'text') countText(block.text);
-      else if (block?.type === 'tool_use') countText(JSON.stringify(block.input || {}));
-      else if (block?.type === 'tool_result') countText(toolResultToString(block.content, block.is_error));
-      else if (block?.type === 'image') tokens += 1600;
-      else countText(JSON.stringify(block));
-    }
+    else
+      for (const block of message.content || []) {
+        if (block?.type === 'text') countText(block.text);
+        else if (block?.type === 'tool_use') countText(JSON.stringify(block.input || {}));
+        else if (block?.type === 'tool_result') countText(toolResultToString(block.content, block.is_error));
+        else if (block?.type === 'image') tokens += 1600;
+        else countText(JSON.stringify(block));
+      }
   }
   // Tool schemas are dense JSON: charge them at a denser ratio plus a fixed
   // per-tool overhead instead of the plain-text ratio.

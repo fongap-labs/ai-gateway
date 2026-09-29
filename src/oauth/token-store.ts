@@ -16,42 +16,42 @@
 //   - Missing/expired token with no usable refresh token -> resolve fails and
 //     the dispatch layer rotates to another node (never sends a stale token).
 
-import { encryptSecret, decryptSecret, hasTokenKey } from './crypto.ts';
+import { decryptSecret, encryptSecret, hasTokenKey } from './crypto.ts';
 
 export type StoredSubscriptionToken = {
-  nodeId: string,
-  provider: string,
-  accessToken: string,
-  refreshToken: string | null,
-/** Provider account identity (e.g., OpenAI ChatGPT account id). Not a
- *  secret; used as a request header by subscription upstreams. */
-  accountId: string | null,
+  nodeId: string;
+  provider: string;
+  accessToken: string;
+  refreshToken: string | null;
+  /** Provider account identity (e.g., OpenAI ChatGPT account id). Not a
+   *  secret; used as a request header by subscription upstreams. */
+  accountId: string | null;
   /** Upstream model ids the subscription adapter discovered for this
    *  credential (operator diagnostics; routing stays node.models). */
-  discoveredModels: readonly string[] | null,
+  discoveredModels: readonly string[] | null;
   /** Monotonic compare-and-swap guard for refresh-token rotation. */
-  refreshVersion: number,
-  expiresAt: number,
-  status: string,
+  refreshVersion: number;
+  expiresAt: number;
+  status: string;
 };
 
 export type SubscriptionTokenRow = {
-  node_id: string,
-  provider: string,
-  access_token_enc: string,
-  refresh_token_enc: string | null,
-  token_iv: string,
-  refresh_iv: string | null,
-  expires_at: number,
-  status: string,
+  node_id: string;
+  provider: string;
+  access_token_enc: string;
+  refresh_token_enc: string | null;
+  token_iv: string;
+  refresh_iv: string | null;
+  expires_at: number;
+  status: string;
 };
 
 export type OAuthFlowStateRow = {
-  state: string,
-  provider: string,
-  node_id: string,
-  code_verifier: string,
-  created_at: number,
+  state: string;
+  provider: string;
+  node_id: string;
+  code_verifier: string;
+  created_at: number;
 };
 
 export const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -59,11 +59,11 @@ export const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
 type D1Like = {
   prepare: (query: string) => {
     bind: (...values: unknown[]) => {
-      first: () => Promise<unknown>,
-      all: () => Promise<{ results: unknown[] }>,
-      run: () => Promise<{ meta?: { changes?: number } } | unknown>,
-    },
-  },
+      first: () => Promise<unknown>;
+      all: () => Promise<{ results: unknown[] }>;
+      run: () => Promise<{ meta?: { changes?: number } } | unknown>;
+    };
+  };
 };
 
 function d1(env: Record<string, unknown>): D1Like | null {
@@ -74,36 +74,36 @@ function d1(env: Record<string, unknown>): D1Like | null {
 
 // ---- Flow states (short-lived PKCE session state) --------------------------
 
-export async function saveFlowState(
-  env: Record<string, unknown>,
-  row: OAuthFlowStateRow,
-): Promise<boolean> {
+export async function saveFlowState(env: Record<string, unknown>, row: OAuthFlowStateRow): Promise<boolean> {
   const db = d1(env);
   if (!db) return false;
   try {
-    await db.prepare(
-      'INSERT INTO oauth_flow_states (state, provider, node_id, code_verifier, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).bind(row.state, row.provider, row.node_id, row.code_verifier, row.created_at).run();
+    await db
+      .prepare('INSERT INTO oauth_flow_states (state, provider, node_id, code_verifier, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(row.state, row.provider, row.node_id, row.code_verifier, row.created_at)
+      .run();
     return true;
   } catch {
     return false;
   }
 }
 
-export async function loadFlowState(
-  env: Record<string, unknown>,
-  state: string,
-): Promise<OAuthFlowStateRow | null> {
+export async function loadFlowState(env: Record<string, unknown>, state: string): Promise<OAuthFlowStateRow | null> {
   const db = d1(env);
   if (!db) return null;
   try {
-    const row = await db.prepare(
-      'SELECT state, provider, node_id, code_verifier, created_at FROM oauth_flow_states WHERE state = ?',
-    ).bind(state).first();
+    const row = await db
+      .prepare('SELECT state, provider, node_id, code_verifier, created_at FROM oauth_flow_states WHERE state = ?')
+      .bind(state)
+      .first();
     if (!row || typeof row !== 'object') return null;
     const record = row as Record<string, unknown>;
-    if (typeof record.provider !== 'string' || typeof record.node_id !== 'string'
-      || typeof record.code_verifier !== 'string' || typeof record.created_at !== 'number') {
+    if (
+      typeof record.provider !== 'string' ||
+      typeof record.node_id !== 'string' ||
+      typeof record.code_verifier !== 'string' ||
+      typeof record.created_at !== 'number'
+    ) {
       return null;
     }
     return {
@@ -118,10 +118,7 @@ export async function loadFlowState(
   }
 }
 
-export async function deleteFlowState(
-  env: Record<string, unknown>,
-  state: string,
-): Promise<void> {
+export async function deleteFlowState(env: Record<string, unknown>, state: string): Promise<void> {
   const db = d1(env);
   if (!db) return;
   try {
@@ -150,13 +147,13 @@ export async function purgeExpiredFlowStates(env: Record<string, unknown>): Prom
 export async function storeSubscriptionToken(
   env: Record<string, unknown>,
   input: {
-    nodeId: string,
-    provider: string,
-    accessToken: string,
-    refreshToken: string | null,
-    accountId?: string | null,
-    discoveredModels?: readonly string[] | null,
-    expiresAt: number,
+    nodeId: string;
+    provider: string;
+    accessToken: string;
+    refreshToken: string | null;
+    accountId?: string | null;
+    discoveredModels?: readonly string[] | null;
+    expiresAt: number;
   },
 ): Promise<boolean> {
   const db = d1(env);
@@ -166,12 +163,12 @@ export async function storeSubscriptionToken(
   if (!accessEnc) return false;
   const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
   const accountId = input.accountId?.trim() || null;
-  const discoveredJson = input.discoveredModels && input.discoveredModels.length > 0
-    ? JSON.stringify(input.discoveredModels) : null;
+  const discoveredJson = input.discoveredModels && input.discoveredModels.length > 0 ? JSON.stringify(input.discoveredModels) : null;
   const now = Date.now();
   try {
-    await db.prepare(
-      `INSERT INTO subscription_tokens
+    await db
+      .prepare(
+        `INSERT INTO subscription_tokens
          (node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, updated_at, account_id, refresh_version, discovered_models)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 0, ?)
        ON CONFLICT(node_id) DO UPDATE SET
@@ -185,12 +182,20 @@ export async function storeSubscriptionToken(
          account_id = COALESCE(excluded.account_id, subscription_tokens.account_id),
          refresh_version = 0,
          discovered_models = COALESCE(excluded.discovered_models, subscription_tokens.discovered_models)`,
-    ).bind(
-      input.nodeId, input.provider,
-      accessEnc.ciphertextB64, refreshEnc?.ciphertextB64 ?? null,
-      accessEnc.ivB64, refreshEnc?.ivB64 ?? null,
-      input.expiresAt, now, accountId, discoveredJson,
-    ).run();
+      )
+      .bind(
+        input.nodeId,
+        input.provider,
+        accessEnc.ciphertextB64,
+        refreshEnc?.ciphertextB64 ?? null,
+        accessEnc.ivB64,
+        refreshEnc?.ivB64 ?? null,
+        input.expiresAt,
+        now,
+        accountId,
+        discoveredJson,
+      )
+      .run();
     return true;
   } catch {
     return false;
@@ -204,11 +209,11 @@ export async function storeSubscriptionToken(
 export async function persistRefreshedToken(
   env: Record<string, unknown>,
   input: {
-    nodeId: string,
-    accessToken: string,
-    refreshToken: string | null,
-    expiresAt: number,
-    expectedVersion: number,
+    nodeId: string;
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: number;
+    expectedVersion: number;
   },
 ): Promise<boolean> {
   const db = d1(env);
@@ -219,8 +224,9 @@ export async function persistRefreshedToken(
   const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
   const now = Date.now();
   try {
-    const result = await db.prepare(
-      `UPDATE subscription_tokens SET
+    const result = await db
+      .prepare(
+        `UPDATE subscription_tokens SET
          access_token_enc = ?,
          token_iv = ?,
          refresh_token_enc = COALESCE(?, refresh_token_enc),
@@ -230,12 +236,18 @@ export async function persistRefreshedToken(
          updated_at = ?,
          refresh_version = refresh_version + 1
        WHERE node_id = ? AND refresh_version = ?`,
-    ).bind(
-      accessEnc.ciphertextB64, accessEnc.ivB64,
-      refreshEnc?.ciphertextB64 ?? null, refreshEnc?.ivB64 ?? null,
-      input.expiresAt, now,
-      input.nodeId, input.expectedVersion,
-    ).run();
+      )
+      .bind(
+        accessEnc.ciphertextB64,
+        accessEnc.ivB64,
+        refreshEnc?.ciphertextB64 ?? null,
+        refreshEnc?.ivB64 ?? null,
+        input.expiresAt,
+        now,
+        input.nodeId,
+        input.expectedVersion,
+      )
+      .run();
     const changes = (result as { meta?: { changes?: number } } | null)?.meta?.changes;
     // D1 reports meta.changes; when unavailable treat any completed write as
     // a win (older D1 mocks) — the singleflight path is still race-free.
@@ -245,22 +257,25 @@ export async function persistRefreshedToken(
   }
 }
 
-export async function loadSubscriptionToken(
-  env: Record<string, unknown>,
-  nodeId: string,
-): Promise<StoredSubscriptionToken | null> {
+export async function loadSubscriptionToken(env: Record<string, unknown>, nodeId: string): Promise<StoredSubscriptionToken | null> {
   const db = d1(env);
   if (!db) return null;
   if (!hasTokenKey(env)) return null;
   try {
-    const row = await db.prepare(
-      'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, account_id, refresh_version, discovered_models FROM subscription_tokens WHERE node_id = ?',
-    ).bind(nodeId).first();
+    const row = await db
+      .prepare(
+        'SELECT node_id, provider, access_token_enc, refresh_token_enc, token_iv, refresh_iv, expires_at, status, account_id, refresh_version, discovered_models FROM subscription_tokens WHERE node_id = ?',
+      )
+      .bind(nodeId)
+      .first();
     if (!row || typeof row !== 'object') return null;
     const record = row as Record<string, unknown>;
-    if (typeof record.provider !== 'string'
-      || typeof record.access_token_enc !== 'string' || typeof record.token_iv !== 'string'
-      || typeof record.expires_at !== 'number') {
+    if (
+      typeof record.provider !== 'string' ||
+      typeof record.access_token_enc !== 'string' ||
+      typeof record.token_iv !== 'string' ||
+      typeof record.expires_at !== 'number'
+    ) {
       return null;
     }
     const accessToken = await decryptSecret(env, {
@@ -302,17 +317,11 @@ export async function loadSubscriptionToken(
   }
 }
 
-export async function markTokenStatus(
-  env: Record<string, unknown>,
-  nodeId: string,
-  status: string,
-): Promise<void> {
+export async function markTokenStatus(env: Record<string, unknown>, nodeId: string, status: string): Promise<void> {
   const db = d1(env);
   if (!db) return;
   try {
-    await db.prepare(
-      'UPDATE subscription_tokens SET status = ?, updated_at = ? WHERE node_id = ?',
-    ).bind(status, Date.now(), nodeId).run();
+    await db.prepare('UPDATE subscription_tokens SET status = ?, updated_at = ? WHERE node_id = ?').bind(status, Date.now(), nodeId).run();
   } catch {
     // Non-fatal: dispatch cooldown already isolates the node.
   }

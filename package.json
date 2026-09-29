@@ -14,9 +14,10 @@
     "check:docs": "node scripts/docs-check.mjs",
     "test": "node scripts/test.mjs",
     "security:scan": "node scripts/secret-scan.mjs",
+    "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run typecheck && npm run check:links",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run typecheck && npm run check:links",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:links",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:links",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
@@ -45,6 +46,7 @@
     "multi-provider"
   ],
   "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
     "typescript": "^7.0.2"
   }
 }
