@@ -120,7 +120,7 @@ The extension recipe is intentionally small. A new provider with its own wire co
 1. One adapter module in `src/subscription/<provider>.ts` implementing `SubscriptionAdapter`. Decide native wire (omit `wire`) or proprietary wire (implement `SubscriptionWire` in a sibling `<provider>-wire.ts`).
 2. One provider adapter in `src/providers/<provider>.ts` declaring `wire` (protocol + surfaces), `streamUsage`, optional `oauth` onboarding defaults, optional `subscriptionEndpoint`, and `subscription: <adapter>`.
 3. One line in the `PROVIDER_REGISTRY` in `src/providers/registry.ts`.
-4. Contract tests under `tests/`.
+4. Contract tests in the central pack (`action-worker:tests/packs/ai-gateway/`).
 
 Adding a plain OpenAI-compatible provider needs no source change at all — the generic OpenAI adapter is the registry fallback. The adapter contract is the only subscription extension point; the scheduler, reliability, transport, and conversion layers stay provider-agnostic and are not branched on provider names.
 

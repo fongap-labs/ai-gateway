@@ -7,11 +7,17 @@ if [ -z "$TARGET_ROOT" ] || [ ! -d "$TARGET_ROOT" ]; then
   echo "central-ci: target root is required" >&2
   exit 64
 fi
+if [ -z "${CENTRAL_CI_AW_ROOT:-}" ] || [ ! -f "$CENTRAL_CI_AW_ROOT/tests/run-pack.mjs" ]; then
+  echo "central-ci: CENTRAL_CI_AW_ROOT must point to the action-worker checkout" >&2
+  exit 64
+fi
 
 cd "$TARGET_ROOT"
 
 npm ci
 npm run validate:merge
+# Test suites are owned by action-worker (tests/packs/ai-gateway) and run against this checkout.
+node "$CENTRAL_CI_AW_ROOT/tests/run-pack.mjs" ai-gateway "$TARGET_ROOT" all
 npm run check:deploy
 
 if [ "${CENTRAL_CI_PR_NUMBER:-0}" = "0" ]; then

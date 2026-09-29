@@ -4,6 +4,8 @@
 
 - fix: security review round — the dashboard now enforces gateway-key auth at the request layer (renderers receive an explicit auth verdict; `AIG_DASHBOARD_PUBLIC=true` remains the documented opt-out), OAuth onboarding drops the `?key=` query credential in favor of a paste page whose key travels in the POST body, dashboard and OAuth HTML ship inline scripts under a per-request CSP nonce, production routes are removed from `wrangler.jsonc` (operator-local `wrangler.user.jsonc` takes over), and the per-group RPM limit is documented as group-scoped rather than per-client. Biome replaces the legacy linter/formatter and is wired into `validate:merge`/`validate:deploy`.
 
+- test: run the product test suites from the central Action Worker test pack (`tests/packs/ai-gateway`) instead of a local `tests/` directory so a pull request cannot weaken its own tests.
+
 - fix: bump the Gemini CLI user agent from v0.14.0 to v0.60.0 so Code Assist upstreams accept requests that identify as the current CLI release.
 
 - feat: edge idempotent caching for zero-temperature inference — the Cloudflare Cache API intercepts requests with temperature=0 or x-gateway-cache: true, serving HIT responses with x-gateway-cache-status: HIT in ~50ms and zero upstream cost; MISS responses carry x-gateway-cache-status: MISS. Cache key is SHA-256 of canonicalized route/model/body. TTL controlled by AIG_EDGE_CACHE_TTL_SEC (default 4h, 0 disables). [Phase 3]

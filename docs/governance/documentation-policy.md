@@ -36,7 +36,7 @@ Do not copy a transient implementation plan into a permanent policy document. Do
 | Provider Discovery behavior | `docs/operations/provider-discovery.md` |
 | deployment workflow / Wrangler bindings | `docs/operations/deployment.md` |
 | supported local tooling entry points | `scripts/README.md` |
-| test layout and execution | `tests/README.md` |
+| test layout and execution | `action-worker:tests/packs/ai-gateway/README.md` |
 | repository settings / About metadata | `docs/operations/github-repository-settings.md` |
 | top-level module layout | `docs/architecture/repository-layout.md` |
 | CI and quality gates | `docs/governance/quality-policy.md` |
@@ -60,7 +60,7 @@ High-drift values should have one executable owner whenever practical.
 - Node requirement: `package.json.engines.node`.
 - Runtime variable names/defaults: `src/config/runtime-vars.ts`.
 - Error-kind vocabulary: `src/reliability/classify.ts`.
-- Unit-suite registry: `tests/run-unit.mjs`.
+- Suite discovery: `action-worker:tests/run-pack.mjs` (suites are discovered from disk; only the gate tier is listed in `pack.json`).
 - Wrangler pin: `scripts/cloudflare-wrangler.mjs`.
 - Deployment identity: CI-selected Git commit SHA, exposed as `/health.build`.
 
@@ -85,8 +85,8 @@ The repository validates documentation through:
 
 - `scripts/docs-check.mjs` — directory, naming, localized-README, and internal-link rules;
 - `scripts/link-check.mjs` — Markdown link integrity;
-- `tests/docs-contract-test.mjs` — executable guards against known architecture and configuration drift;
-- `tests/product-policy-contract-test.mjs` — executable guard for permanent product scope, Tier roles, clean replacement, human-owned release identity, and simplicity rules.
+- `action-worker:tests/packs/ai-gateway/docs-contract-test.mjs` — executable guards against known architecture and configuration drift;
+- `action-worker:tests/packs/ai-gateway/product-policy-contract-test.mjs` — executable guard for permanent product scope, Tier roles, clean replacement, human-owned release identity, and simplicity rules.
 
 A green docs check does not prove every sentence is current. Reviewers must still compare changed claims with their executable source.
 

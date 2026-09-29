@@ -34,7 +34,7 @@ Do not copy the Wrangler version into package scripts, installers, reconfigurati
 
 ## Validation tooling
 
-The repository uses focused executable checks under `scripts/`, including syntax, deployment configuration, migrations, documentation, links, and secret scanning. Tests for these tools live under `tests/`.
+The repository uses focused executable checks under `scripts/`, including syntax, deployment configuration, migrations, documentation, links, and secret scanning. Tests for these tools live in the central pack (`action-worker:tests/packs/ai-gateway/`).
 
 ## Operator probes
 
@@ -47,7 +47,7 @@ The repository uses focused executable checks under `scripts/`, including syntax
 ## What does not belong here
 
 - Worker runtime code → `src/`
-- executable tests/contracts/test-only helpers → `tests/`
+- executable tests/contracts/test-only helpers → `action-worker:tests/packs/ai-gateway/`
 - persistent configuration examples → `config/`
 - D1 schema changes → `migrations/`
 - long-lived design and policy documentation → `docs/`
