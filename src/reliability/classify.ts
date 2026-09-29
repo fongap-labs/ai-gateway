@@ -78,9 +78,10 @@ export function retryHintFromBody(body: unknown): number {
 
 // Long-lived allowances (daily / plan window / credits) versus short per-minute
 // limits, from wording alone. Deliberately conservative: text that says neither
-// stays unclassified and keeps the default ladder.
+// stays unclassified and keeps the default ladder. Chinese wording is matched by
+// code point escapes so the source stays English-only.
 const QUOTA_WORDING =
-  /\b(?:quota|daily|per[ -]day|credits?|balance|billing|usage limit|plan limit|exhausted)\b|额度|配额|用完|用尽|耗尽|每日|每天|每\s*\d+\s*小时|余额|欠费/i;
+  /\b(?:quota|daily|per[ -]day|credits?|balance|billing|usage limit|plan limit|exhausted)\b|\u989d\u5ea6|\u914d\u989d|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\s*\d+\s*\u5c0f\u65f6|\u4f59\u989d|\u6b20\u8d39/i;
 const WINDOW_WORDING = /\b(?:per[ -]minute|per[ -]second|rpm|tpm|itpm|otpm|too many requests|concurren\w*)\b/i;
 
 export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined {
