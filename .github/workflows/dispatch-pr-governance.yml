@@ -1,8 +1,11 @@
 name: Dispatch PR Governance
 
+# Approved thin trigger. It only tells Action Worker that a pull request changed; every fact is
+# re-read centrally. It runs no pull request code and must stay byte-identical to the approved
+# template (see policies/security.json approved_workflows).
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, edited, closed]
+    types: [opened, synchronize]
 
 permissions:
   statuses: write
@@ -14,14 +17,16 @@ concurrency:
 jobs:
   dispatch:
     name: Dispatch PR Governance
-    runs-on: ubuntu-24.04
+    # Dependabot cannot read Actions secrets; central intake covers those pull requests.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # Resolved centrally (docs/RUNNER_POLICY.md); defaults to GitHub-hosted Linux.
+    runs-on: ${{ fromJSON(vars.AW_DISPATCH_RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 3
 
     steps:
       - name: Dispatch central governance
         env:
           AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
-          ACTION: ${{ github.event.action }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -53,35 +58,25 @@ jobs:
           on_error() {
             local code=$?
             set +e
-            if [ "$ACTION" != "closed" ]; then
-              set_status failure "PR governance dispatch failed"
-            fi
+            set_status failure "PR governance dispatch failed"
             exit "$code"
           }
           trap on_error ERR
 
-          if [ "$ACTION" != "closed" ]; then
-            set_status pending "PR governance dispatch pending"
-          fi
+          set_status pending "PR governance dispatch pending"
 
           if [ -z "$AW_DISPATCH_TOKEN" ]; then
             echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
             false
           fi
 
-          event_type="run-pr-governance"
-          if [ "$ACTION" = "closed" ]; then
-            event_type="cancel-pr-work"
-          fi
-
           payload="$(
             jq -cn \
-              --arg event_type "$event_type" \
               --arg request_id "$REQUEST_ID" \
               --arg repository "$REPOSITORY" \
               --argjson pr_number "$PR_NUMBER" \
               '{
-                event_type: $event_type,
+                event_type: "run-pr-governance",
                 client_payload: {
                   schema_version: "1",
                   request_id: $request_id,
