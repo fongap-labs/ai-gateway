@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- chore: drop a duplicated design bullet from the `key-rpm.ts` header comment.
+
 - ci: add the approved thin PR dispatcher so pull request events reach central governance within about a minute; it runs no PR code and skips Dependabot.
 
 - feat: serve the public dashboard without gateway-key auth — the `/` route no longer runs `authorize()`, the "Authentication required" 401 page is removed, and `AIG_DASHBOARD_PUBLIC` is retired (delete the variable from deployed config). API routes keep their existing gateway-key enforcement; the dashboard remains a read-only projection of public model status and aggregated usage. This supersedes the dashboard-auth clause of the security-review entry below, which never shipped.
