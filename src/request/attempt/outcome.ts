@@ -8,12 +8,24 @@
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
 import { trimDiagnostic } from '../../protocol/http.ts';
-import { nextAdaptive429CooldownMs, snapshotAdaptive429State } from '../../reliability/adaptive-429.ts';
+import {
+  ADAPTIVE_429_QUOTA_START_STAGE,
+  adaptive429StepsFromEnv,
+  nextAdaptive429CooldownMs,
+  snapshotAdaptive429State,
+} from '../../reliability/adaptive-429.ts';
 import type { FailureClassification, FailureKind } from '../../reliability/classify.ts';
 import { classifyHedgeRaceLoss, KIND } from '../../reliability/classify.ts';
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordModelMissing, recordNeutralEnd } from '../../reliability/node-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../reliability/tier1-heat.ts';
-import { applyTier1Outcome, classifyTier1Failure, releaseTier1Slot, settleTier1Quota } from '../../reliability/tier1-state.ts';
+import {
+  applyTier1Outcome,
+  classifyTier1Failure,
+  decideTier1RateLimitScope,
+  recordTier1Oversize,
+  releaseTier1Slot,
+  settleTier1Quota,
+} from '../../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome, LoopState } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
@@ -103,6 +115,7 @@ export function recordOutcome(
   const headersMs = c?.headersMs ?? (latencyMs >= 0 ? latencyMs : undefined);
   let tier1RateLimitStage: number | null = null;
   let tier1RateLimitCooldownMs: number | null = null;
+  let tier1RateLimitScope: 'model' | 'account' | null = null;
 
   if (node.tier === 'tier-1') {
     // A failed dispatch still consumed a request slot upstream; confirm the
@@ -116,14 +129,31 @@ export function recordOutcome(
     } else {
       const upstreamModel = upstreamModelOf(node, state.requestedModel);
       let tier1RetryAfterMs = classification.retryAfterMs || 0;
+      if (classification.requestTooLarge) recordTier1Oversize(node.id, state.requestedModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
-        tier1RetryAfterMs = nextAdaptive429CooldownMs(node.provider, node.id, classification.retryAfterMs || 0);
-        const adaptive429 = snapshotAdaptive429State(node.provider, node.id);
+        // A 429 is blamed on the model that got it; the whole key is blamed only
+        // when a second model on it is limited too. Each scope has its own ladder.
+        tier1RateLimitScope = decideTier1RateLimitScope(node.id, state.requestedModel);
+        const ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
+        const ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+        const now = Date.now();
+        tier1RetryAfterMs = nextAdaptive429CooldownMs(
+          node.provider,
+          node.id,
+          classification.retryAfterMs || 0,
+          now,
+          ladderModel,
+          ladderSteps,
+          classification.rateLimitWindow === 'quota' ? ADAPTIVE_429_QUOTA_START_STAGE : 1,
+        );
+        const adaptive429 = snapshotAdaptive429State(node.provider, node.id, now, ladderModel);
         tier1RateLimitStage = adaptive429.stage;
         tier1RateLimitCooldownMs = adaptive429.cooldown_remaining_ms;
       }
-      const t1Class = classifyTier1Failure(classification, { retryAfterMs: tier1RetryAfterMs });
+      const t1Class = classifyTier1Failure(tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope } : classification, {
+        retryAfterMs: tier1RetryAfterMs,
+      });
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : state.requestedModel;
       applyTier1Outcome(node.id, tier1ModelKey, t1Class);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
@@ -151,7 +181,7 @@ export function recordOutcome(
       ` hedged=${hedged} kind=${classification.kind} status=${status} counted=${classification.counted}` +
       ` headers_ms=${headersMs ?? -1}${ttftWaitMs !== undefined ? ` ttft_wait_ms=${ttftWaitMs}` : ''}` +
       ` latency_ms=${latencyMs}` +
-      `${tier1RateLimitStage !== null ? ` rate_limit_stage=${tier1RateLimitStage} rate_limit_cooldown_ms=${tier1RateLimitCooldownMs ?? -1}` : ''}` +
+      `${tier1RateLimitStage !== null ? ` rate_limit_scope=${tier1RateLimitScope} rate_limit_stage=${tier1RateLimitStage} rate_limit_cooldown_ms=${tier1RateLimitCooldownMs ?? -1}` : ''}` +
       `${diagnostic && c?.exposeUpstreamInfo ? ` detail=${trimDiagnostic(diagnostic, 200)}` : ''}`,
   );
 
@@ -169,6 +199,7 @@ export function recordOutcome(
   if (headersMs !== undefined && headersMs >= 0) record.headers_ms = headersMs;
   if (ttftWaitMs !== undefined && ttftWaitMs >= 0) record.ttft_wait_ms = ttftWaitMs;
   if (latencyMs >= 0) record.latency_ms = latencyMs;
+  if (tier1RateLimitScope !== null) record.rate_limit_scope = tier1RateLimitScope;
   if (tier1RateLimitStage !== null) record.rate_limit_stage = tier1RateLimitStage;
   if (tier1RateLimitCooldownMs !== null) record.rate_limit_cooldown_ms = tier1RateLimitCooldownMs;
   if (c?.exposeUpstreamInfo && diagnostic) record.detail = trimDiagnostic(diagnostic, 300);

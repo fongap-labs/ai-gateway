@@ -178,6 +178,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const limits = getLimits(env);
   let bodyJson: Record<string, unknown>;
+  let bodyChars = 0;
   try {
     const contentType = (request.headers.get('content-type') || '').toLowerCase();
     if (!contentType.includes('application/json')) {
@@ -187,6 +188,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       };
     }
     const text = await readBodyTextWithLimit(request, limits.maxBodyBytes);
+    bodyChars = text.length;
     bodyJson = JSON.parse(text || '{}');
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
@@ -282,6 +284,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages',
     model: requestedModel,
     ...ROUTE_PROTOCOL_SURFACE[route as keyof typeof ROUTE_PROTOCOL_SURFACE],
+    bodyChars,
   };
 
   const feasibility = evaluateRouteFeasibility({

@@ -66,6 +66,9 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_LOG_LEVEL', def: 'info' },
   { name: 'AIG_PROTOCOL_FALLBACKS', def: '' },
   { name: 'AIG_DASHBOARD_MODELS', def: '' },
+  // Tier 1 429 cooldown ladder in milliseconds, comma separated ("15000,30000,60000,...").
+  // Empty keeps the built-in ladder (15s, 30s, 1m, 2m, 5m, 15m, 30m, 1h).
+  { name: 'AIG_RATE_LIMIT_STEPS_MS', def: '' },
   // Tier 2 subscription OAuth provider registry: JSON object keyed by
   // provider name -> { authorize_url, token_url, client_id, scope,
   // upstream_headers? }. Unset disables all subscription onboarding and

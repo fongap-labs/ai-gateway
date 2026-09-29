@@ -19,6 +19,7 @@ export type RequestDescriptor = {
   model: string;
   protocol: Protocol;
   surface: Surface;
+  bodyChars?: number;
 };
 
 /**
