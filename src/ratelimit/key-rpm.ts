@@ -21,8 +21,6 @@
 //     so all keys in the same group share the cap;
 //   * a denied request returns 429 with Retry-After: <seconds until
 //     the oldest stamp falls out of the window>;
-//   * a denied request returns 429 with Retry-After: <seconds until
-//     the oldest stamp falls out of the window>;
 //   * bounded by the number of distinct keys the gateway has seen
 //     in the current isolate — the map is capped and old keys are
 //     evicted.
