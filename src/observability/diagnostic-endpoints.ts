@@ -111,10 +111,15 @@ function buildModelsList(
   return { object: 'list', data };
 }
 
-export function healthResponse(request: Request, env: Record<string, unknown>, requestId: string): Response {
+export function healthResponse(request: Request, env: Record<string, unknown>, requestId: string, authResult: AuthResult): Response {
   const config = loadGatewayConfig(env);
   const now = Date.now();
   const allLogical = collectKnownModels(config.nodes, env);
+  // A key sees only the nodes behind models it may call, matching /v1/models.
+  // Aggregate counts and diagnostics stay gateway-wide.
+  const filterShape = authResult.authorized && authResult.mode !== 'skip' ? { allowAll: authResult.allowAll, allowlist: authResult.allowlist } : null;
+  const allowedModels = new Set(filterModelsByKey(filterShape, allLogical));
+  const visibleNodeIds = new Set(config.nodes.filter((n) => [...allowedModels].some((model) => servesModel(n, model, allLogical))).map((n) => n.id));
   const endpoints = config.nodes.map((n) => {
     const configuredModels = Object.keys(n.models || {});
     const models = configuredModels.length ? configuredModels : [...allLogical];
@@ -191,7 +196,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
           };
         })(),
         diagnostics: config.diagnostics,
-        endpoints,
+        endpoints: endpoints.filter((e) => visibleNodeIds.has(e.id)),
         request_id: requestId,
       },
       null,

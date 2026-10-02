@@ -88,6 +88,27 @@ export async function saveFlowState(env: Record<string, unknown>, row: OAuthFlow
   }
 }
 
+function parseFlowRow(state: string, row: unknown): OAuthFlowStateRow | null {
+  if (!row || typeof row !== 'object') return null;
+  const record = row as Record<string, unknown>;
+  if (
+    typeof record.provider !== 'string' ||
+    typeof record.node_id !== 'string' ||
+    typeof record.code_verifier !== 'string' ||
+    typeof record.created_at !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    state,
+    provider: record.provider,
+    node_id: record.node_id,
+    code_verifier: record.code_verifier,
+    created_at: record.created_at,
+  };
+}
+
+// Read-only lookup, for the paste page that renders before the code is submitted.
 export async function loadFlowState(env: Record<string, unknown>, state: string): Promise<OAuthFlowStateRow | null> {
   const db = d1(env);
   if (!db) return null;
@@ -96,23 +117,23 @@ export async function loadFlowState(env: Record<string, unknown>, state: string)
       .prepare('SELECT state, provider, node_id, code_verifier, created_at FROM oauth_flow_states WHERE state = ?')
       .bind(state)
       .first();
-    if (!row || typeof row !== 'object') return null;
-    const record = row as Record<string, unknown>;
-    if (
-      typeof record.provider !== 'string' ||
-      typeof record.node_id !== 'string' ||
-      typeof record.code_verifier !== 'string' ||
-      typeof record.created_at !== 'number'
-    ) {
-      return null;
-    }
-    return {
-      state,
-      provider: record.provider,
-      node_id: record.node_id,
-      code_verifier: record.code_verifier,
-      created_at: record.created_at,
-    };
+    return parseFlowRow(state, row);
+  } catch {
+    return null;
+  }
+}
+
+// Single-use read: deletes the state and returns it in one statement, so two
+// concurrent callbacks carrying the same state cannot both obtain its PKCE verifier.
+export async function consumeFlowState(env: Record<string, unknown>, state: string): Promise<OAuthFlowStateRow | null> {
+  const db = d1(env);
+  if (!db) return null;
+  try {
+    const row = await db
+      .prepare('DELETE FROM oauth_flow_states WHERE state = ? RETURNING state, provider, node_id, code_verifier, created_at')
+      .bind(state)
+      .first();
+    return parseFlowRow(state, row);
   } catch {
     return null;
   }

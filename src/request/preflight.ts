@@ -162,7 +162,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const diag = await import('../observability/diagnostic-endpoints.ts');
   switch (route) {
     case 'health':
-      return { ok: false, response: diag.healthResponse(request, env, requestId) };
+      return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };
     case 'metrics':
       return { ok: false, response: diag.metricsResponse(request, env, requestId) };
     case 'models':
