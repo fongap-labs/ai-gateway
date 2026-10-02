@@ -24,7 +24,15 @@ import { authorize, authorizeCredentials } from '../request/auth.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { hasTokenKey } from './crypto.ts';
 import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from './provider-configs.ts';
-import { deleteFlowState, loadFlowState, OAUTH_FLOW_TTL_MS, purgeExpiredFlowStates, saveFlowState, storeSubscriptionToken } from './token-store.ts';
+import {
+  consumeFlowState,
+  deleteFlowState,
+  loadFlowState,
+  OAUTH_FLOW_TTL_MS,
+  purgeExpiredFlowStates,
+  saveFlowState,
+  storeSubscriptionToken,
+} from './token-store.ts';
 
 const HTML_AMP = String.fromCharCode(38);
 
@@ -310,8 +318,7 @@ async function handleOAuthCallback(env: GatewayEnv, url: URL, pathProvider: stri
   if (url.searchParams.get('error'))
     return oauthError(400, 'Authorization failed', `Provider error: ${escapeHtml(url.searchParams.get('error') || '')}`);
   if (!code || !state) return oauthError(400, 'Invalid callback', 'Missing code or state.');
-  const flow = await loadFlowState(env, state);
-  await deleteFlowState(env, state);
+  const flow = await consumeFlowState(env, state);
   if (!flow) return oauthError(400, 'Unknown state', 'Restart onboarding from /oauth/start.');
   if (flow.provider !== pathProvider) return oauthError(400, 'Provider mismatch', 'Restart onboarding.');
   if (Date.now() - flow.created_at > OAUTH_FLOW_TTL_MS) return oauthError(400, 'Expired', 'Restart onboarding from /oauth/start.');
@@ -356,8 +363,7 @@ async function handleOAuthPastePost(env: GatewayEnv, request: Request): Promise<
     return oauthError(400, 'Bad request', 'Expected form-urlencoded body.');
   }
   if (!state || !code) return oauthError(400, 'Missing data', 'Both state and code are required.');
-  const flow = await loadFlowState(env, state);
-  await deleteFlowState(env, state);
+  const flow = await consumeFlowState(env, state);
   if (!flow) return oauthError(400, 'Unknown state', 'This paste link is invalid or already used. Restart from /oauth/start.');
   if (Date.now() - flow.created_at > OAUTH_FLOW_TTL_MS) return oauthError(400, 'Expired', 'Restart onboarding from /oauth/start.');
   const providerConfig = getOAuthProvider(env, flow.provider);

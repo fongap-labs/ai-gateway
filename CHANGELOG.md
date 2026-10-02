@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- fix [security]: `/health` lists only the nodes behind models the caller's access key may use, matching `/v1/models`; aggregate counts and diagnostics are unchanged.
+
+- fix: an OAuth callback or code paste claims its flow state with a single `DELETE ... RETURNING`, so two concurrent requests with the same state can no longer both exchange the authorization code.
+
+- build: resolve every npm package from `registry.npmjs.org` instead of a third-party mirror (integrity hashes unchanged).
+
 - fix [security, breaking]: limit Tier 2 subscription onboarding (`/oauth/start`) to the access-key groups listed in the new `AIG_OAUTH_ADMIN_GROUPS` Variable (for example `ULTRA`). Unset disables onboarding; already linked subscriptions keep working. Set the Variable before onboarding a new subscription.
 
 - fix: key the edge cache on the canonical JSON of the request plus the caller's access-key group, so requests that differ only in value types or in separators inside a string no longer share an entry, and entries are never shared between key groups. Existing entries miss once after deployment.
