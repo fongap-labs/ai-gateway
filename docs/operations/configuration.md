@@ -167,7 +167,11 @@ through the gateway's PKCE onboarding flow.
 You need all of these before onboarding a subscription:
 
 - A deployed gateway you can reach in a browser.
-- A gateway access key (`AIG_ACCESS_KEY_<GROUP>`) for some group, e.g. `AGENT`.
+- A gateway access key (`AIG_ACCESS_KEY_<GROUP>`) whose group is listed in
+  `AIG_OAUTH_ADMIN_GROUPS` (a comma-separated Variable, e.g. `ULTRA`). Linking a
+  subscription replaces the credential every client of that node uses, so only
+  the listed groups may start onboarding; unset means nobody can (fail-closed).
+  Already linked subscriptions keep working either way.
 - `AIG_TOKEN_ENCRYPTION_KEY` set (a base64 256-bit AES key — the installer
   generates one for you; without it, subscription onboarding stays disabled,
   fail-closed).
@@ -342,7 +346,7 @@ Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 
 `AIG_RATE_LIMIT_COOLDOWN_MS` is the fallback wait for Tier 2/3 nodes when a 429 carries no hint. Tier 1 does not use it: a Tier 1 key follows the adaptive ladder `15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m` (see [Reliability model](../architecture/reliability-model.md#429-handling)). To change that ladder set `AIG_RATE_LIMIT_STEPS_MS` to comma separated milliseconds, for example `15000,30000,60000,300000`. Leave it unset unless a provider needs something different; a missing or malformed value keeps the default.
 
-Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, `AIG_DASHBOARD_MODELS`, and `AIG_OAUTH_PROVIDERS` (see [Tier 2 subscriptions](#tier-2-subscriptions-oauth)).
+Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, `AIG_DASHBOARD_MODELS`, `AIG_OAUTH_PROVIDERS`, and `AIG_OAUTH_ADMIN_GROUPS` (see [Tier 2 subscriptions](#tier-2-subscriptions-oauth)).
 
 ## Dashboard model display
 
