@@ -57,7 +57,8 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   } = pre;
 
   // Edge cache: compute plan and check for HIT before any upstream work.
-  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env);
+  const keyGroup = ('group' in pre.authResult && pre.authResult.group) || '';
+  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env, keyGroup);
   if (edgeCachePlan) {
     const hit = await matchEdgeCache(edgeCachePlan.keyRequest, request, env);
     if (hit) return hit;
