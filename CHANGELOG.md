@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: key the edge cache on the canonical JSON of the request plus the caller's access-key group, so requests that differ only in value types or in separators inside a string no longer share an entry, and entries are never shared between key groups. Existing entries miss once after deployment.
+
 - fix: Tier 1 429 cooldown returns keys to the pool sooner and stops punishing healthy models. A 429 is now blamed on the model that received it (the key's other models stay routable) and widens to the whole key only when a second model on it is limited within a minute; each scope has its own ladder. The default ladder tops out at 30 minutes instead of one hour (`15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m`, tunable with the new `AIG_RATE_LIMIT_STEPS_MS`). A provider's own wait (`Retry-After`, or "try again in 7s" in the error text) is trusted for the first two failures; text that names a quota, daily limit or credits starts the ladder at 5 minutes; a recovered key wakes cooling sibling keys of the same provider. A `413` that quotes a token ceiling is now a request-local refusal (no cooldown; larger requests skip that key for ten minutes) instead of a rate limit, and a model id that keeps answering 404 "not found" (including "no endpoints found") is retried on a 5s -> 30m ladder instead of every 5 seconds. `AIG_RATE_LIMIT_COOLDOWN_MS` is documented as the Tier 2/3 fallback only.
 
 - chore: drop a duplicated design bullet from the `key-rpm.ts` header comment.
