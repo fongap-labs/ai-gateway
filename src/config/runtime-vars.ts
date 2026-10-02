@@ -74,6 +74,10 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // upstream_headers? }. Unset disables all subscription onboarding and
   // resolution (fail-closed). See docs/operations/configuration.md.
   { name: 'AIG_OAUTH_PROVIDERS', def: '' },
+  // Access-key groups allowed to start Tier 2 subscription onboarding, comma
+  // separated ("ULTRA" or "ULTRA,AGENT"). Unset disables onboarding
+  // (fail-closed); already linked subscriptions keep working.
+  { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
 ];
 
 export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [

@@ -15,6 +15,7 @@
 //     Manual code-paste flow for providers whose OAuth client does not allow
 //     arbitrary redirect URIs (e.g., Google Gemini CLI).
 
+import { readEnv } from '../config/env.ts';
 import { getLogger } from '../observability/logger.ts';
 import { corsHeaders, htmlResponse } from '../protocol/http.ts';
 import { getProviderAdapter } from '../providers/registry.ts';
@@ -189,6 +190,16 @@ async function completeTokenExchange(
 
 // ---- GET+POST /oauth/start ---------------------------------------------------
 
+function oauthAdminGroups(env: GatewayEnv): Set<string> {
+  const raw = readEnv(env, 'AIG_OAUTH_ADMIN_GROUPS') ?? '';
+  return new Set(
+    raw
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean),
+  );
+}
+
 // Paste page shown when no header credential was presented. The gateway key
 // is submitted through the POST body (never a URL), then verified through
 // the same constant-time path as header credentials.
@@ -226,6 +237,18 @@ async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRou
     // GET without credentials: render the paste page instead of leaking a
     // JSON error into the operator's browser.
     return startKeyPage(provider, nodeId);
+  }
+  // Linking a subscription replaces the credential every client of that node
+  // uses, so it is limited to the operator's key groups.
+  const group = 'group' in authResult ? authResult.group : undefined;
+  if (!group || !oauthAdminGroups(env).has(group)) {
+    logger.info(`oauth onboarding refused for key group ${group || 'unknown'}`);
+    return jsonResponse(request, env, 403, {
+      error: {
+        message: 'This gateway key group may not start subscription onboarding. Set AIG_OAUTH_ADMIN_GROUPS to allow it.',
+        type: 'gateway_oauth_forbidden',
+      },
+    });
   }
   if (!provider || !nodeId)
     return jsonResponse(request, env, 400, { error: { message: 'Missing provider or node parameter.', type: 'gateway_oauth_bad_request' } });
