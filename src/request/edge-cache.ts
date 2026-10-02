@@ -40,33 +40,38 @@ export function edgeCacheEligible(route: string, bodyJson: Record<string, unknow
 }
 
 /**
- * Canonicalizes a value for deterministic hashing. Sorts object keys
- * recursively to make the hash order-independent for semantically
- * identical JSON. Arrays keep their order (positional semantics).
+ * Sorts object keys recursively so semantically identical JSON hashes the
+ * same. Arrays keep their order (positional semantics). The result is
+ * serialized with JSON.stringify, which keeps types and string boundaries
+ * distinct ("1" vs 1, "" vs null, a value containing "," or ":").
  */
-function canonicalize(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value !== 'object') return String(value);
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalize).join(',')}]`;
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, sortKeys(record[key])]),
+    );
   }
-  // Object: sort keys and recurse
-  const entries = Object.entries(value)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}:${canonicalize(v)}`);
-  return `{${entries.join(',')}}`;
+  return value;
 }
 
 /**
  * Builds the virtual cache-key Request for the Cloudflare Cache API.
- * The key incorporates route, model, and a SHA-256 of the canonical
- * request body (minus wire-format fields).
+ * The key incorporates the key schema version, route, model, the caller's
+ * access-key group, and a SHA-256 of the canonical request body (minus
+ * wire-format fields). Entries are never shared across key groups.
  */
-export async function buildEdgeCacheKeyRequest(route: string, requestedModel: string, bodyJson: Record<string, unknown>): Promise<Request> {
-  // Build the cache key material: route + model + canonical body (minus excluded fields)
+export async function buildEdgeCacheKeyRequest(
+  route: string,
+  requestedModel: string,
+  bodyJson: Record<string, unknown>,
+  keyGroup: string,
+): Promise<Request> {
   const { stream, stream_options, ...restBody } = bodyJson;
-  const bodyForKey = { route, model: requestedModel, ...restBody };
-  const canonical = canonicalize(bodyForKey);
+  const canonical = JSON.stringify(sortKeys({ v: 2, route, model: requestedModel, group: keyGroup, body: restBody }));
   const encoder = new TextEncoder();
   const data = encoder.encode(canonical);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -118,12 +123,13 @@ export async function resolveEdgeCachePlan(
   bodyJson: Record<string, unknown>,
   request: Request,
   env: GatewayEnv,
+  keyGroup: string,
 ): Promise<EdgeCachePlan | null> {
   if (!edgeCacheEligible(route, bodyJson, request)) return null;
   const ttlSec = readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC');
   const ttl = ttlSec ? Number(ttlSec) : 14400;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
-  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson);
+  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup);
   return { keyRequest, ttlSec: ttl };
 }
 
