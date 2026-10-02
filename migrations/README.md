@@ -29,7 +29,7 @@ See [Deployment](../docs/operations/deployment.md) for the complete production s
 `npm run migrations:check` enforces the executable migration contract:
 
 1. SQL migration files use `NNN_slug.sql` names with unique, consecutive numeric prefixes.
-2. Applied SQL files are immutable. Schema corrections are added as a new migration rather than editing, deleting, or renaming an existing migration.
+2. Applied SQL files are immutable in their executed SQL. Schema corrections are added as a new migration rather than editing, deleting, or renaming an existing migration. Comment-only changes (copyright headers, prose) are tolerated because they do not alter executed SQL and cannot drift the live schema.
 3. `CREATE TABLE` / `CREATE INDEX` statements use `IF NOT EXISTS` where applicable so safe re-application remains possible.
 4. Destructive operations are blocked by default because they can break rollback compatibility.
 5. A destructive migration is allowed only through the explicit allowlist in `scripts/migrations-check.mjs` after backward compatibility has been established.
