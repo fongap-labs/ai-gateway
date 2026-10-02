@@ -13,7 +13,7 @@ Do not disclose security vulnerabilities publicly. Use the private reporting pro
 ## Development setup
 
 ```bash
-git clone https://github.com/fongap/ai-gateway.git
+git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
 npm ci
 npm run validate:merge

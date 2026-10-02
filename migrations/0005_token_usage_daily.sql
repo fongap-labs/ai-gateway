@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Daily aggregates keyed by UTC+8 calendar date (YYYY-MM-DD).
 -- This is the display-oriented layer that powers the 52-week heatmap.

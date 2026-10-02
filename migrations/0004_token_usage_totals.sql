@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Lifetime cumulative totals (single-row, fixed low cardinality).
 -- Provides an ever-growing cumulative KPI that survives hourly/daily/weekly

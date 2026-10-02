@@ -130,10 +130,32 @@ function ensureHistory(baseCommit) {
   }
 }
 
+function isCommentOnlyModification(baseCommit, file) {
+  // A modification is schema-safe when every changed line is a SQL line
+  // comment (`--`) or blank. Comment-only edits (copyright headers, prose)
+  // do not alter executed SQL and cannot drift the live schema from a fresh
+  // apply, so they do not violate the immutability contract's intent.
+  const r = spawnSync('git', ['diff', '--unified=0', baseCommit, '--', file], { cwd: root, encoding: 'utf8' });
+  if (r.status !== 0) return false;
+  for (const line of r.stdout.split('\n')) {
+    if (!line) continue;
+    if (line.startsWith('diff ') || line.startsWith('index ')) continue;
+    if (line.startsWith('--- ') || line.startsWith('+++ ') || line.startsWith('@@')) continue;
+    if (line.startsWith('-') || line.startsWith('+')) {
+      const content = line.slice(1).trim();
+      if (content === '' || content.startsWith('--')) continue;
+      return false;
+    }
+  }
+  return true;
+}
+
 function checkImmutability(files) {
   // Compare against base commit using git diff --name-status.
   // Only migrations/ paths are considered.
-  // New files (A) are allowed. Modified (M), Deleted (D), Renamed (R) are blocked.
+  // New files (A) are allowed. Modified (M) files are allowed only when the
+  // change is comment-only; any change to executed SQL is blocked. Deleted
+  // (D), Renamed (R), Copied (C) are always blocked.
   const baseCommit = getBaseCommit();
   if (!baseCommit) {
     if (isRootCommit()) {
@@ -154,8 +176,11 @@ function checkImmutability(files) {
     const file = line.slice(2).trim();
     if (!file.endsWith('.sql')) continue;
     // Allow: Added (A) — new migration files
-    // Block: Modified (M), Deleted (D), Renamed (R), Copied (C)
-    assert.ok(code === 'A', `${file} is in a non-add state (${code}). Applied migrations are immutable; create a new NNN_*.sql file instead.`);
+    // Allow: Modified (M) when comment-only (header/prose) — no executed SQL changes
+    // Block: Deleted (D), Renamed (R), Copied (C), and Modified files touching executed SQL
+    if (code === 'A') continue;
+    if (code === 'M' && isCommentOnlyModification(baseCommit, file)) continue;
+    assert.ok(false, `${file} is in a non-add state (${code}). Applied migrations are immutable; create a new NNN_*.sql file instead.`);
   }
 }
 

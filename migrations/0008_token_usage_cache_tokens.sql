@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Add Anthropic Prompt Cache token columns to all token usage tables.
 -- These columns track cache_creation_input_tokens and cache_read_input_tokens
