@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Separate physical-upstream-attempt usage from delivered-response usage.
 --

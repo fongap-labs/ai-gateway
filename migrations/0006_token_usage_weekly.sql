@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Weekly aggregates keyed by the Monday start date (UTC) of the ISO week
 -- (YYYY-MM-DD). Retention: 52 weeks.

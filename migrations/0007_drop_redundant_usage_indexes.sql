@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Studio
+-- Copyright (c) 2026 Fongap Labs
 --
 -- Drop redundant indexes that duplicate PRIMARY KEY implicit indexes.
 -- token_usage_hourly: PRIMARY KEY(hour) already provides an index on hour.
