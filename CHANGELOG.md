@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- feat [security]: add `AIG_IS_SUBSCRIPTION_ENABLED` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
+
+- feat [security]: add `AIG_DIAGNOSTICS_GROUPS` to limit `/health` and `/metrics` to named key groups (default: every valid key, as before) and `AIG_PUBLIC_DASHBOARD` (default `true`) to turn the public dashboard and status badge off.
+
+- fix [security]: bind stored subscription tokens to their node, provider and column with AES-GCM additional authenticated data; rows written before this change still decrypt and are rewritten bound the next time they are saved.
+
+- fix: expired OAuth flow states are purged under `waitUntil` instead of a fire-and-forget promise the runtime could cancel.
+
+- fix [security]: write the Wrangler secret bundle with mode 0600 and run `scripts/deploy.sh` with `umask 077`.
+
+- refactor: remove the unused duplicate dashboard script.
+
+## [Unreleased]
+
 - fix [security]: the edge cache no longer replays one caller's answer to another. A streamed and a non-streamed request get separate entries, an entry is scoped to a keyed fingerprint of the credential that was presented, responses that contain tool calls, truncated streams and bodies over 2 MB are not stored, and a response is only stored when its content type matches the request. Behavior change: automatic caching of `temperature: 0` requests is now off; send `x-gateway-cache: true` or set `AIG_EDGE_CACHE_AUTO=true` to restore it.
 - ci: add `.github/security-scan.json` so the TypeScript sources are scanned by CodeQL, and `.github/CODEOWNERS` naming the maintainers for the whole repository, workflows and scripts.
 - fix: the OAuth key page and code paste page could not be submitted because their Content-Security-Policy used `form-action 'none'`; these pages now allow `form-action 'self'`, other HTML pages keep `'none'`, and `POST /oauth/start` answers with a refresh page instead of a 302 that the browser blocks. `htmlResponse` also keeps its security headers when a caller passes extra headers.

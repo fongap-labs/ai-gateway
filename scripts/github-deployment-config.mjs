@@ -382,7 +382,7 @@ async function main() {
       wrangler,
       JSON.stringify(buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID), null, 2),
     );
-    fs.writeFileSync(secretsOut, JSON.stringify(bulkSecrets));
+    fs.writeFileSync(secretsOut, JSON.stringify(bulkSecrets), { mode: 0o600 });
     const removed = Object.values(bulkSecrets).filter((value) => value === null).length;
     const summaryOut = argValue(argv, '--summary');
     if (summaryOut) {

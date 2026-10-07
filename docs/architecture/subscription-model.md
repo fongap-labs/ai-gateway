@@ -4,6 +4,8 @@ Tier 2 carries membership/subscription entitlement capacity: operator-owned Clau
 
 This document is the stable contract for the subscription **adapter** — the per-provider request-semantics extension point. The adapter owns how one subscription entitlement family must be called. It never decides which node to call (scheduler), how failures change node state (reliability), or how a response is classified (`classify.ts`). Generality lives in the **unified access way** (one adapter contract, composed through the provider registry), not in forcing every provider's subscription semantics into one engine.
 
+> **Operator risk.** The adapters present the vendors' own client identities (user agents, `x-app`, `originator` and the public Gemini CLI OAuth client). Using a subscription this way may breach the provider's terms. `AIG_IS_SUBSCRIPTION_ENABLED=false` disables the whole feature; see [SECURITY.md](../../SECURITY.md#subscription-proxying-and-provider-terms).
+
 ## Scope and pipeline position
 
 A `SubscriptionAdapter` is composed into a `ProviderAdapter` through `src/providers/registry.ts` and bound to a node by the `auth: "oauth"` marker. The provider registry is the single dispatchability authority: an `auth: "oauth"` node whose provider has no subscription adapter, or whose adapter refuses to shape a request, rotates pre-dispatch and never falls into the generic OpenAI-compatible path pretending to be usable.
