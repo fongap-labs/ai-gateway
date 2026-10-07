@@ -83,3 +83,9 @@ authentication. Credentials are accepted only via `Authorization: Bearer` or
 request body (never in URL query parameters). Query-string credentials
 (`?key=...`) are no longer accepted to prevent credential leakage in logs,
 browser history, and screenshots.
+
+The onboarding pages are the only HTML pages that submit a form, and their
+Content-Security-Policy allows `form-action 'self'` so the key can be posted
+back to the gateway; every other HTML page keeps `form-action 'none'`. After a
+form submit the gateway sends the browser to the provider with a refresh page,
+because a redirect that follows a form submission is subject to `form-action`.

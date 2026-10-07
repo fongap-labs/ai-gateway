@@ -92,6 +92,8 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
   // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.
   { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
+  // Cache temperature=0 requests without the x-gateway-cache: true opt-in. Off by default.
+  { name: 'AIG_EDGE_CACHE_AUTO', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

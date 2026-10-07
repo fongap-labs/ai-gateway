@@ -58,7 +58,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
   // Edge cache: compute plan and check for HIT before any upstream work.
   const keyGroup = ('group' in pre.authResult && pre.authResult.group) || '';
-  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env, keyGroup);
+  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env, keyGroup, clientWantsStream);
   if (edgeCachePlan) {
     const hit = await matchEdgeCache(edgeCachePlan.keyRequest, request, env);
     if (hit) return hit;
@@ -241,7 +241,13 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
         if (effectiveLoopCtx.edgeCachePlan && nativeResult.status === 200) {
           const clientResponse = nativeResult;
           const cacheBranch = clientResponse.clone();
-          storeEdgeCacheResponse(effectiveLoopCtx.ctx, effectiveLoopCtx.edgeCachePlan.keyRequest, cacheBranch, effectiveLoopCtx.edgeCachePlan.ttlSec);
+          storeEdgeCacheResponse(
+            effectiveLoopCtx.ctx,
+            effectiveLoopCtx.edgeCachePlan.keyRequest,
+            cacheBranch,
+            effectiveLoopCtx.edgeCachePlan.ttlSec,
+            effectiveLoopCtx.edgeCachePlan.stream,
+          );
           return injectMissHeader(clientResponse, effectiveLoopCtx.request, effectiveLoopCtx.env);
         }
         return nativeResult;
@@ -268,7 +274,13 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
         if (fallbackLoopCtx.edgeCachePlan && fbResult.status === 200) {
           const clientResponse = fbResult;
           const cacheBranch = clientResponse.clone();
-          storeEdgeCacheResponse(fallbackLoopCtx.ctx, fallbackLoopCtx.edgeCachePlan.keyRequest, cacheBranch, fallbackLoopCtx.edgeCachePlan.ttlSec);
+          storeEdgeCacheResponse(
+            fallbackLoopCtx.ctx,
+            fallbackLoopCtx.edgeCachePlan.keyRequest,
+            cacheBranch,
+            fallbackLoopCtx.edgeCachePlan.ttlSec,
+            fallbackLoopCtx.edgeCachePlan.stream,
+          );
           return injectMissHeader(clientResponse, fallbackLoopCtx.request, fallbackLoopCtx.env);
         }
         return fbResult;

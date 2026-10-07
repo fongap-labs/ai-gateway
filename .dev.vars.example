@@ -87,6 +87,7 @@ AIG_TIER1_NODES_01='[
 # AIG_PUBLIC_DASHBOARD="true"              # default: true; false answers / and /readme-status.svg with 404
 # AIG_DIAGNOSTICS_GROUPS="AGENT"           # default: unset (every key); limits /health and /metrics to these key groups
 # AIG_EDGE_CACHE_TTL_SEC="14400"            # default: 4 h (0 = disabled)
+# AIG_EDGE_CACHE_AUTO="false"               # default: false; true also caches temperature=0 requests without x-gateway-cache: true
 # AIG_LOG_LEVEL="info"
 # AIG_SHOULD_EXPOSE_UPSTREAM="false"
 # AIG_HAS_STREAM_GUARD="false"
