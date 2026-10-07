@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- ci: add `.github/security-scan.json` so the TypeScript sources are scanned by CodeQL, and `.github/CODEOWNERS` naming the maintainers for the whole repository, workflows and scripts.
+
 - fix [security]: `/health` lists only the nodes behind models the caller's access key may use, matching `/v1/models`; aggregate counts and diagnostics are unchanged.
 
 - fix: an OAuth callback or code paste claims its flow state with a single `DELETE ... RETURNING`, so two concurrent requests with the same state can no longer both exchange the authorization code.
