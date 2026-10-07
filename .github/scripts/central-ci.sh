@@ -15,6 +15,11 @@ fi
 cd "$TARGET_ROOT"
 
 npm ci
+# Standard tools run here with fixed arguments, so a pull request cannot weaken them by editing the
+# "lint" or "typecheck" scripts in package.json. Their configuration files and the repository-owned
+# checks below are still part of the change under review.
+npx --no-install biome check .
+npx --no-install tsc --noEmit
 npm run validate:merge
 # Test suites are owned by action-worker (tests/packs/ai-gateway) and run against this checkout.
 node "$CENTRAL_CI_AW_ROOT/tests/run-pack.mjs" ai-gateway "$TARGET_ROOT" all
