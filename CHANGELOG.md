@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- ci: the central CI script runs `biome check .` and `tsc --noEmit` directly with fixed arguments before `npm run validate:merge`, so a pull request cannot weaken lint or type checking by editing the package scripts (AW-005 option A; the repository-owned check scripts stay part of the change under review).
+
 - feat [security]: add `AIG_IS_SUBSCRIPTION_ENABLED` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
 
 - feat [security]: add `AIG_DIAGNOSTICS_GROUPS` to limit `/health` and `/metrics` to named key groups (default: every valid key, as before) and `AIG_PUBLIC_DASHBOARD` (default `true`) to turn the public dashboard and status badge off.
