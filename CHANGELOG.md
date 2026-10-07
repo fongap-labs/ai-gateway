@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix [security]: the edge cache no longer replays one caller's answer to another. A streamed and a non-streamed request get separate entries, an entry is scoped to a keyed fingerprint of the credential that was presented, responses that contain tool calls, truncated streams and bodies over 2 MB are not stored, and a response is only stored when its content type matches the request. Behavior change: automatic caching of `temperature: 0` requests is now off; send `x-gateway-cache: true` or set `AIG_EDGE_CACHE_AUTO=true` to restore it.
+
 - fix [security]: `/health` lists only the nodes behind models the caller's access key may use, matching `/v1/models`; aggregate counts and diagnostics are unchanged.
 
 - fix: an OAuth callback or code paste claims its flow state with a single `DELETE ... RETURNING`, so two concurrent requests with the same state can no longer both exchange the authorization code.
