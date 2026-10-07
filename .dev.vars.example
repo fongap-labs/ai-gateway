@@ -83,6 +83,9 @@ AIG_TIER1_NODES_01='[
 # AIG_HEDGE_DELAY_MS="3000"                  # default: 3 s
 # AIG_REQUEST_HEDGE_MAX="1"             # default: 1
 # AIG_ACCESS_KEY_RPM="600"                  # default: 0 (disabled)
+# AIG_IS_SUBSCRIPTION_ENABLED="true"          # default: true; false disables Tier 2 subscription nodes and /oauth/*
+# AIG_PUBLIC_DASHBOARD="true"              # default: true; false answers / and /readme-status.svg with 404
+# AIG_DIAGNOSTICS_GROUPS="AGENT"           # default: unset (every key); limits /health and /metrics to these key groups
 # AIG_EDGE_CACHE_TTL_SEC="14400"            # default: 4 h (0 = disabled)
 # AIG_EDGE_CACHE_AUTO="false"               # default: false; true also caches temperature=0 requests without x-gateway-cache: true
 # AIG_LOG_LEVEL="info"

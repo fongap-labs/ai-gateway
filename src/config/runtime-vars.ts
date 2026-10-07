@@ -78,12 +78,20 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // separated ("ULTRA" or "ULTRA,AGENT"). Unset disables onboarding
   // (fail-closed); already linked subscriptions keep working.
   { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
+  // Access-key groups allowed to read /health and /metrics, comma separated ("AGENT" or
+  // "AGENT,ULTRA"). Unset keeps the previous behavior: every valid key may read them.
+  { name: 'AIG_DIAGNOSTICS_GROUPS', def: '' },
 ];
 
 export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   { name: 'AIG_SHOULD_EXPOSE_UPSTREAM', def: false },
   { name: 'AIG_HAS_STREAM_GUARD', def: false },
   { name: 'AIG_CAN_USE_HTTP', def: false },
+  // Serve the public dashboard at / and the README status badge. false answers both with 404.
+  { name: 'AIG_PUBLIC_DASHBOARD', def: true },
+  // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
+  // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.
+  { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
   // Cache temperature=0 requests without the x-gateway-cache: true opt-in. Off by default.
   { name: 'AIG_EDGE_CACHE_AUTO', def: false },
 ];

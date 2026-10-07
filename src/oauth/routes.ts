@@ -80,7 +80,15 @@ function publicBaseUrl(env: GatewayEnv): string | null {
 
 export type OAuthRouteContext = {
   tier2Nodes: ReadonlyArray<{ id: string; provider: string; auth?: string }>;
+  // Keeps background work alive after the response is sent; absent in test harnesses.
+  waitUntil?: (promise: Promise<unknown>) => void;
 };
+
+async function purgeInBackground(ctx: OAuthRouteContext, env: GatewayEnv): Promise<void> {
+  const purge = purgeExpiredFlowStates(env);
+  if (ctx.waitUntil) ctx.waitUntil(purge);
+  else await purge;
+}
 
 function lookupNode(ctx: OAuthRouteContext, provider: string, nodeId: string): { found: boolean; providerMatches: boolean } {
   const node = ctx.tier2Nodes.find((c) => c.id === nodeId);
@@ -285,7 +293,7 @@ async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRou
     logger.error('oauth flow state persist failed');
     return jsonResponse(request, env, 503, { error: { message: 'Flow state storage unavailable.', type: 'gateway_oauth_store_unavailable' } });
   }
-  void purgeExpiredFlowStates(env);
+  await purgeInBackground(ctx, env);
 
   const authorizeUrl = new URL(providerConfig.authorizeUrl);
   authorizeUrl.searchParams.set('response_type', 'code');
@@ -321,8 +329,8 @@ async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRou
 
 // ---- GET /oauth/callback/<provider> (automatic) ----------------------------
 
-async function handleOAuthCallback(env: GatewayEnv, url: URL, pathProvider: string): Promise<Response> {
-  void purgeExpiredFlowStates(env);
+async function handleOAuthCallback(env: GatewayEnv, ctx: OAuthRouteContext, url: URL, pathProvider: string): Promise<Response> {
+  await purgeInBackground(ctx, env);
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
   if (url.searchParams.get('error'))
@@ -389,7 +397,7 @@ export async function handleOAuthRoute(request: Request, env: GatewayEnv, ctx: O
   const url = new URL(request.url);
   if (pathname === '/oauth/start') return handleOAuthStart(request, env, ctx, url);
   const callbackMatch = /^\/oauth\/callback\/([a-z0-9][a-z0-9-]{0,63})$/.exec(pathname);
-  if (callbackMatch?.[1]) return handleOAuthCallback(env, url, callbackMatch[1]);
+  if (callbackMatch?.[1]) return handleOAuthCallback(env, ctx, url, callbackMatch[1]);
   if (pathname === '/oauth/paste') {
     return request.method === 'POST' ? handleOAuthPastePost(env, request) : handleOAuthPasteGet(env, url);
   }

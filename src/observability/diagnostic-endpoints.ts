@@ -111,6 +111,21 @@ function buildModelsList(
   return { object: 'list', data };
 }
 
+// AIG_DIAGNOSTICS_GROUPS narrows /health and /metrics to named key groups. Unset keeps them open to
+// every valid key; when set, a request with no resolved group is refused.
+export function canReadDiagnostics(env: Record<string, unknown>, authResult: AuthResult): boolean {
+  const raw = String(env?.AIG_DIAGNOSTICS_GROUPS ?? '').trim();
+  if (!raw) return true;
+  const allowed = new Set(
+    raw
+      .split(',')
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean),
+  );
+  const group = authResult.authorized && 'group' in authResult ? authResult.group : null;
+  return typeof group === 'string' && allowed.has(group.toUpperCase());
+}
+
 export function healthResponse(request: Request, env: Record<string, unknown>, requestId: string, authResult: AuthResult): Response {
   const config = loadGatewayConfig(env);
   const now = Date.now();
