@@ -93,7 +93,7 @@ export async function buildEdgeCacheKeyRequest(
   options: { stream?: boolean; scope?: string } = {},
 ): Promise<Request> {
   const { stream, stream_options, ...restBody } = bodyJson;
-  const wantsStream = options.stream ?? stream === true;
+  const isStreamRequested = options.stream ?? stream === true;
   const canonical = JSON.stringify(
     sortKeys({
       v: 3,
@@ -101,8 +101,8 @@ export async function buildEdgeCacheKeyRequest(
       model: requestedModel,
       group: keyGroup,
       scope: options.scope ?? '',
-      stream: wantsStream,
-      stream_options: wantsStream ? (stream_options ?? null) : null,
+      stream: isStreamRequested,
+      stream_options: isStreamRequested ? (stream_options ?? null) : null,
       body: restBody,
     }),
   );
@@ -159,15 +159,15 @@ export async function resolveEdgeCachePlan(
   request: Request,
   env: GatewayEnv,
   keyGroup: string,
-  wantsStream: boolean,
+  isStreamRequested: boolean,
 ): Promise<EdgeCachePlan | null> {
   if (!edgeCacheEligible(route, bodyJson, request, env)) return null;
   const ttlSec = readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC');
   const ttl = ttlSec ? Number(ttlSec) : 14400;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
   const scope = await callerCacheScope(request, env);
-  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: wantsStream, scope });
-  return { keyRequest, ttlSec: ttl, stream: wantsStream };
+  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: isStreamRequested, scope });
+  return { keyRequest, ttlSec: ttl, stream: isStreamRequested };
 }
 
 /**
@@ -184,7 +184,7 @@ export function storeEdgeCacheResponse(
   keyRequest: Request,
   response: Response,
   ttlSec: number,
-  expectStream: boolean,
+  isStreamExpected: boolean,
 ): void {
   const cache = defaultCache();
   if (!cache) return;
@@ -192,7 +192,7 @@ export function storeEdgeCacheResponse(
   // The response must have the shape the key promised: a stream for a streaming client, JSON otherwise.
   const ct = response.headers.get('content-type') || '';
   const isStream = /text\/event-stream/i.test(ct);
-  if (isStream !== expectStream || (!isStream && !/json/i.test(ct))) return;
+  if (isStream !== isStreamExpected || (!isStream && !/json/i.test(ct))) return;
   const buffering = response.headers.get('x-accel-buffering');
   const task = (async () => {
     const text = await response.text();
