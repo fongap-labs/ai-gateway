@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- ci: add `.github/security-scan.json` so the TypeScript sources are scanned by CodeQL, and `.github/CODEOWNERS` naming the maintainers for the whole repository, workflows and scripts.
 - fix: the OAuth key page and code paste page could not be submitted because their Content-Security-Policy used `form-action 'none'`; these pages now allow `form-action 'self'`, other HTML pages keep `'none'`, and `POST /oauth/start` answers with a refresh page instead of a 302 that the browser blocks. `htmlResponse` also keeps its security headers when a caller passes extra headers.
 
 - fix [security]: `/health` lists only the nodes behind models the caller's access key may use, matching `/v1/models`; aggregate counts and diagnostics are unchanged.

@@ -1,0 +1,9 @@
+# CODEOWNERS for ai-gateway
+# Code owners are requested for review automatically. Their approval is required only while the
+# repository ruleset enables require_code_owner_review (see the ORG-006 plan in action-worker).
+
+* @fongap @fongxen
+
+/.github/ @fongap @fongxen
+
+/scripts/ @fongap @fongxen
