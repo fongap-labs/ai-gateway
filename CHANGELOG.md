@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- feat [security]: add `AIG_ENABLE_SUBSCRIPTION` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
+
+- feat [security]: add `AIG_DIAGNOSTICS_GROUPS` to limit `/health` and `/metrics` to named key groups (default: every valid key, as before) and `AIG_PUBLIC_DASHBOARD` (default `true`) to turn the public dashboard and status badge off.
+
+- fix [security]: bind stored subscription tokens to their node, provider and column with AES-GCM additional authenticated data; rows written before this change still decrypt and are rewritten bound the next time they are saved.
+
+- fix: expired OAuth flow states are purged under `waitUntil` instead of a fire-and-forget promise the runtime could cancel.
+
+- fix [security]: write the Wrangler secret bundle with mode 0600 and run `scripts/deploy.sh` with `umask 077`.
+
+- refactor: remove the unused duplicate dashboard script.
+
 - fix [security]: `/health` lists only the nodes behind models the caller's access key may use, matching `/v1/models`; aggregate counts and diagnostics are unchanged.
 
 - fix: an OAuth callback or code paste claims its flow state with a single `DELETE ... RETURNING`, so two concurrent requests with the same state can no longer both exchange the authorization code.

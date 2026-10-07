@@ -60,6 +60,21 @@ designed for installed applications and are **not** considered secret. The
 OAuth onboarding flow uses these only for the Tier 2 Gemini Code Assist
 subscription; no client-supplied credentials reach the upstream provider.
 
+## Subscription proxying and provider terms
+
+Tier 2 subscription nodes (`auth: "oauth"`) call the Claude, Codex and Gemini
+subscription endpoints with the identity of the vendors' own command-line
+clients: the adapters send first-party client headers and user agents (for
+example `claude-cli`, `codex-tui` and `GeminiCLI`) and, for Gemini, the public
+Gemini CLI OAuth client. Those vendors' terms may not allow a subscription to
+be used through a third-party proxy, and a vendor may rate-limit, suspend or
+ban an account that is. Enabling subscription nodes is the operator's own
+decision and risk; review the current terms of each provider first.
+
+Set `AIG_ENABLE_SUBSCRIPTION=false` to remove the feature: no Tier 2 `oauth` node
+is loaded and every `/oauth/*` route answers 404. The default is `true`, which
+keeps the current behavior.
+
 ## OAuth start credential handling
 
 The `/oauth/start` endpoint requires a gateway access key for operator

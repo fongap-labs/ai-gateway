@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { loadAccessKeysConfig } from '../config/access-keys.ts';
+import { getBool } from '../config/env.ts';
 import { loadModelsConfig } from '../config/models.ts';
 import type { GatewayConfig } from '../config/nodes.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
@@ -88,10 +89,13 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (request.method === 'OPTIONS') {
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
   }
+  const isPublicDashboard = getBool(env, 'AIG_PUBLIC_DASHBOARD', true);
   if (request.method === 'GET' && pathname === '/' && acceptsHtml(request)) {
+    if (!isPublicDashboard) return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
     return { ok: false, response: await dashboardResponse(request, env) };
   }
   if (request.method === 'GET' && pathname === '/readme-status.svg') {
+    if (!isPublicDashboard) return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
     return { ok: false, response: await readmeStatusSvgResponse(env) };
   }
 
@@ -100,6 +104,9 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // /oauth/start requires a gateway key (checked inside the handler); the
   // callback and paste routes are authorized by their single-use D1 state.
   if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
+    if (!getBool(env, 'AIG_ENABLE_SUBSCRIPTION', true)) {
+      return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
+    }
     const config = loadGatewayConfig(env);
     const oauthResponse = await handleOAuthRoute(
       request,
@@ -110,6 +117,8 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
           provider: node.provider,
           auth: node.auth,
         })),
+        // A closure, because Workers reject waitUntil called detached from its context.
+        waitUntil: ctx.waitUntil ? (promise) => ctx.waitUntil?.(promise) : undefined,
       },
       pathname,
     );
@@ -160,6 +169,9 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   const diag = await import('../observability/diagnostic-endpoints.ts');
+  if ((route === 'health' || route === 'metrics') && !diag.canReadDiagnostics(env, authResult)) {
+    return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
+  }
   switch (route) {
     case 'health':
       return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };

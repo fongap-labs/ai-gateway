@@ -180,9 +180,11 @@ export async function storeSubscriptionToken(
   const db = d1(env);
   if (!db) return false;
   if (!hasTokenKey(env)) return false;
-  const accessEnc = await encryptSecret(env, input.accessToken);
+  const accessEnc = await encryptSecret(env, input.accessToken, { nodeId: input.nodeId, provider: input.provider, field: 'access' });
   if (!accessEnc) return false;
-  const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
+  const refreshEnc = input.refreshToken
+    ? await encryptSecret(env, input.refreshToken, { nodeId: input.nodeId, provider: input.provider, field: 'refresh' })
+    : null;
   const accountId = input.accountId?.trim() || null;
   const discoveredJson = input.discoveredModels && input.discoveredModels.length > 0 ? JSON.stringify(input.discoveredModels) : null;
   const now = Date.now();
@@ -231,6 +233,7 @@ export async function persistRefreshedToken(
   env: Record<string, unknown>,
   input: {
     nodeId: string;
+    provider: string;
     accessToken: string;
     refreshToken: string | null;
     expiresAt: number;
@@ -240,9 +243,11 @@ export async function persistRefreshedToken(
   const db = d1(env);
   if (!db) return false;
   if (!hasTokenKey(env)) return false;
-  const accessEnc = await encryptSecret(env, input.accessToken);
+  const accessEnc = await encryptSecret(env, input.accessToken, { nodeId: input.nodeId, provider: input.provider, field: 'access' });
   if (!accessEnc) return false;
-  const refreshEnc = input.refreshToken ? await encryptSecret(env, input.refreshToken) : null;
+  const refreshEnc = input.refreshToken
+    ? await encryptSecret(env, input.refreshToken, { nodeId: input.nodeId, provider: input.provider, field: 'refresh' })
+    : null;
   const now = Date.now();
   try {
     const result = await db
@@ -299,17 +304,19 @@ export async function loadSubscriptionToken(env: Record<string, unknown>, nodeId
     ) {
       return null;
     }
-    const accessToken = await decryptSecret(env, {
-      ciphertextB64: record.access_token_enc,
-      ivB64: record.token_iv,
-    });
+    const accessToken = await decryptSecret(
+      env,
+      { ciphertextB64: record.access_token_enc, ivB64: record.token_iv },
+      { nodeId, provider: record.provider, field: 'access' },
+    );
     if (!accessToken) return null;
     let refreshToken: string | null = null;
     if (typeof record.refresh_token_enc === 'string' && typeof record.refresh_iv === 'string') {
-      refreshToken = await decryptSecret(env, {
-        ciphertextB64: record.refresh_token_enc,
-        ivB64: record.refresh_iv,
-      });
+      refreshToken = await decryptSecret(
+        env,
+        { ciphertextB64: record.refresh_token_enc, ivB64: record.refresh_iv },
+        { nodeId, provider: record.provider, field: 'refresh' },
+      );
     }
     let discoveredModels: readonly string[] | null = null;
     if (typeof record.discovered_models === 'string' && record.discovered_models.trim()) {

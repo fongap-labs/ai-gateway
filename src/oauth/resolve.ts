@@ -148,6 +148,7 @@ async function resolveOnce(env: Record<string, unknown>, node: RuntimeNode): Pro
   // and serve it instead of clobbering with a stale refresh token.
   const persisted = await persistRefreshedToken(env, {
     nodeId: node.id,
+    provider: node.provider,
     accessToken: refreshed.token,
     refreshToken: nextRefreshToken,
     expiresAt,

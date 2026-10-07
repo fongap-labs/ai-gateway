@@ -111,7 +111,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
 
   const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
   const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
-  const nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
+  let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
   if (!accessKeyBound || tierShards.length === 0) {
@@ -160,6 +160,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   }
 
   const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
+  const isSubscriptionEnabled = getBool(env, 'AIG_ENABLE_SUBSCRIPTION', true);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -184,6 +185,11 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
       }
       const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics);
       if (!node) continue;
+      if (node.auth === 'oauth' && !isSubscriptionEnabled) {
+        // Disabled subscription nodes are not part of the configuration at all.
+        nodesDeclared -= 1;
+        continue;
+      }
       if (seenIds.has(node.id)) {
         diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key})`);
         hasConflict = true;
