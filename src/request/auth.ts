@@ -48,7 +48,7 @@ function parseBearer(value: string | null | undefined): string {
   return token || '';
 }
 
-function presentedCredentials(request: Request): string[] {
+export function presentedCredentials(request: Request): string[] {
   const bearer = parseBearer(request.headers.get('authorization'));
   const xApiKey = String(request.headers.get('x-api-key') || '').trim();
   const presented: string[] = [];

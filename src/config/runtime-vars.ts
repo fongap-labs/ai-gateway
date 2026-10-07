@@ -84,6 +84,8 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   { name: 'AIG_SHOULD_EXPOSE_UPSTREAM', def: false },
   { name: 'AIG_HAS_STREAM_GUARD', def: false },
   { name: 'AIG_CAN_USE_HTTP', def: false },
+  // Cache temperature=0 requests without the x-gateway-cache: true opt-in. Off by default.
+  { name: 'AIG_EDGE_CACHE_AUTO', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.
