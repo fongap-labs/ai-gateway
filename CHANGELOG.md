@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- feat [security]: add `AIG_ENABLE_SUBSCRIPTION` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
+- feat [security]: add `AIG_IS_SUBSCRIPTION_ENABLED` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
 
 - feat [security]: add `AIG_DIAGNOSTICS_GROUPS` to limit `/health` and `/metrics` to named key groups (default: every valid key, as before) and `AIG_PUBLIC_DASHBOARD` (default `true`) to turn the public dashboard and status badge off.
 

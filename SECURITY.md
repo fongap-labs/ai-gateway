@@ -71,7 +71,7 @@ be used through a third-party proxy, and a vendor may rate-limit, suspend or
 ban an account that is. Enabling subscription nodes is the operator's own
 decision and risk; review the current terms of each provider first.
 
-Set `AIG_ENABLE_SUBSCRIPTION=false` to remove the feature: no Tier 2 `oauth` node
+Set `AIG_IS_SUBSCRIPTION_ENABLED=false` to remove the feature: no Tier 2 `oauth` node
 is loaded and every `/oauth/*` route answers 404. The default is `true`, which
 keeps the current behavior.
 

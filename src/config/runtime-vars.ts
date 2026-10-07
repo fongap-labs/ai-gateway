@@ -91,7 +91,7 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   { name: 'AIG_PUBLIC_DASHBOARD', def: true },
   // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
   // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.
-  { name: 'AIG_ENABLE_SUBSCRIPTION', def: true },
+  { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

@@ -160,7 +160,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   }
 
   const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
-  const isSubscriptionEnabled = getBool(env, 'AIG_ENABLE_SUBSCRIPTION', true);
+  const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   const seenIds = new Map<string, string>();
   const nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);

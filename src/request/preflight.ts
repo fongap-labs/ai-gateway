@@ -104,7 +104,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // /oauth/start requires a gateway key (checked inside the handler); the
   // callback and paste routes are authorized by their single-use D1 state.
   if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
-    if (!getBool(env, 'AIG_ENABLE_SUBSCRIPTION', true)) {
+    if (!getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true)) {
       return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
     }
     const config = loadGatewayConfig(env);
