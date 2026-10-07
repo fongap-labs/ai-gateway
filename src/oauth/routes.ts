@@ -47,7 +47,7 @@ button{padding:0.5rem 1rem;background:#0052cc;color:#fff;border:none;border-radi
 
 function oauthHtml(status: number, bodyHtml: string): Response {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>ai-gateway oauth</title>${OAUTH_STYLE}</head><body>${bodyHtml}</body></html>`;
-  return htmlResponse(html, { status });
+  return htmlResponse(html, { status, allowSelfForm: true });
 }
 
 function oauthError(status: number, title: string, detail: string): Response {
@@ -303,6 +303,16 @@ async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRou
       `<meta http-equiv="refresh" content="0; url=${escapeHtml(authorizeUrl.toString())}">` +
         `<h1>Redirecting to authorization...</h1>` +
         `<p>After authorizing, copy the code and paste it at <a href="${escapeHtml(pasteUrl)}">${escapeHtml(pasteUrl)}</a>.</p>` +
+        `<p>Not redirected? <a href="${escapeHtml(authorizeUrl.toString())}">Click here</a>.</p>`,
+    );
+  }
+  if (request.method === 'POST') {
+    // The browser applies form-action to a redirect that follows a form submission, so the paste
+    // page navigates to the provider with a refresh page instead of a 302.
+    return oauthHtml(
+      200,
+      `<meta http-equiv="refresh" content="0; url=${escapeHtml(authorizeUrl.toString())}">` +
+        `<h1>Redirecting to authorization...</h1>` +
         `<p>Not redirected? <a href="${escapeHtml(authorizeUrl.toString())}">Click here</a>.</p>`,
     );
   }

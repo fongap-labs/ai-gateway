@@ -75,12 +75,19 @@ export function jsonError(
   });
 }
 
-export function htmlResponse(content: BodyInit, init?: { status?: number; headers?: Record<string, unknown>; nonce?: string }): Response {
+// Pages that submit a form back to this origin (OAuth onboarding) pass allowSelfForm; every other
+// page keeps form-action 'none'. The security headers below always win over caller headers.
+export function htmlResponse(
+  content: BodyInit,
+  init?: { status?: number; headers?: Record<string, string>; nonce?: string; allowSelfForm?: boolean },
+): Response {
   const nonce = init?.nonce ?? base64url(crypto.getRandomValues(new Uint8Array(16)));
-  const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`;
+  const formAction = init?.allowSelfForm ? "'self'" : "'none'";
+  const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action ${formAction}`;
   return new Response(content, {
     status: init?.status ?? 200,
     headers: {
+      ...init?.headers,
       'content-type': 'text/html;charset=UTF-8',
       'cache-control': 'no-store',
       'content-security-policy': csp,
@@ -88,7 +95,6 @@ export function htmlResponse(content: BodyInit, init?: { status?: number; header
       'referrer-policy': 'no-referrer',
       'x-frame-options': 'DENY',
     },
-    ...init?.headers,
   });
 }
 
