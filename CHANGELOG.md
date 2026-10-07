@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix [security]: the edge cache no longer replays one caller's answer to another. A streamed and a non-streamed request get separate entries, an entry is scoped to a keyed fingerprint of the credential that was presented, responses that contain tool calls, truncated streams and bodies over 2 MB are not stored, and a response is only stored when its content type matches the request. Behavior change: automatic caching of `temperature: 0` requests is now off; send `x-gateway-cache: true` or set `AIG_EDGE_CACHE_AUTO=true` to restore it.
 - ci: add `.github/security-scan.json` so the TypeScript sources are scanned by CodeQL, and `.github/CODEOWNERS` naming the maintainers for the whole repository, workflows and scripts.
 - fix: the OAuth key page and code paste page could not be submitted because their Content-Security-Policy used `form-action 'none'`; these pages now allow `form-action 'self'`, other HTML pages keep `'none'`, and `POST /oauth/start` answers with a refresh page instead of a 302 that the browser blocks. `htmlResponse` also keeps its security headers when a caller passes extra headers.
 
