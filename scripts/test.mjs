@@ -16,6 +16,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(root, '.github', 'test-pack.json'), 'utf8'));
 const tier = process.argv[2] ?? 'all';
 
+// The test-pack ref must be a full 40-character commit SHA, never a mutable
+// branch name. A mutable ref lets a compromise of the action-worker repo
+// execute arbitrary code on every contributor's machine that runs `npm test`.
+if (!/^[0-9a-f]{40}$/.test(config.ref)) {
+  console.error(`test-pack.json: ref must be a full 40-char commit SHA, got "${config.ref}".`);
+  process.exit(64);
+}
+
 let workerRoot = process.env.ACTION_WORKER_ROOT;
 if (!workerRoot) {
   workerRoot = join(root, '.cache', 'action-worker');
@@ -25,6 +33,12 @@ if (!workerRoot) {
   }
   git('-C', workerRoot, 'fetch', '--quiet', 'origin', config.ref);
   git('-C', workerRoot, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
+  // Fail-closed: the checkout must match the pinned SHA exactly.
+  const actual = spawnSync('git', ['-C', workerRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  if (actual !== config.ref) {
+    console.error(`test-pack: fetched HEAD ${actual} does not match pinned SHA ${config.ref}.`);
+    process.exit(1);
+  }
 }
 
 const result = spawnSync(process.execPath, [join(workerRoot, 'tests', 'run-pack.mjs'), config.pack, root, tier], { stdio: 'inherit' });

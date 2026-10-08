@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix [security]: pin `test-pack.json` to an immutable 40-character commit SHA and validate the ref before fetching; the previous mutable `ref: "main"` let a compromise of the action-worker repo execute arbitrary code on every contributor machine running `npm test`.
+
 - ci: the central CI script runs `biome check .` and `tsc --noEmit` directly with fixed arguments before `npm run validate:merge`, so a pull request cannot weaken lint or type checking by editing the package scripts (AW-005 option A; the repository-owned check scripts stay part of the change under review).
 
 - feat [security]: add `AIG_IS_SUBSCRIPTION_ENABLED` (default `true`). When `false`, no Tier 2 `oauth` node is loaded and `/oauth/*` answers 404. `SECURITY.md` now states that the subscription adapters present the vendors' client identities and may breach their terms.
