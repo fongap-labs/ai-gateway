@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,12 +36,37 @@ const textExtensions = new Set([
 
 const patterns = [
   ['OpenAI-style key', new RegExp('s' + 'k-[A-Za-z0-9_-]{20,}', 'g')],
-  ['GitHub token', new RegExp('g' + 'hp_[A-Za-z0-9]{20,}', 'g')],
+  ['GitHub token', new RegExp('g' + 'h[posur]_[A-Za-z0-9]{20,}', 'g')],
+  ['GitHub fine-grained PAT', new RegExp('g' + 'ithub_pat_[A-Za-z0-9_]{22,}', 'g')],
   ['Google API key', new RegExp('A' + 'Iza[A-Za-z0-9_-]{20,}', 'g')],
+  ['Google OAuth client secret', new RegExp('G' + 'OCSPX-[A-Za-z0-9_-]{20,}', 'g')],
   ['Private key', /BEGIN (?:RSA|OPENSSH|EC) PRIVATE KEY/g],
   ['Cloudflare API token assignment', /CLOUDFLARE_API_TOKEN\s*=\s*["']?[A-Za-z0-9_-]{30,}/g],
   ['AWS access key ID', /\bAKIA[0-9A-Z]{16}\b/g],
+  ['npm token', new RegExp('n' + 'pm_[A-Za-z0-9]{36}', 'g')],
+  ['Slack token', new RegExp('x' + 'ox[baprs]-[A-Za-z0-9-]{10,}', 'g')],
 ];
+
+// SHA-256 digests of values that are public by design and documented in
+// SECURITY.md "Google OAuth client constants" (the Gemini CLI's installed-app
+// OAuth client). Allowlisting the digest — never the plaintext — keeps this
+// script free of credential values while still failing on any other match of
+// the same pattern family.
+//
+// ▚ HUMAN DECISION REQUIRED: confirm the client type in the Google Cloud
+// Console. If it is a "Desktop app / Installed application", the digest stays
+// and the constant remains documented. If it is a "Web application", rotate
+// the secret immediately, move the value into a Worker secret, delete the
+// constant from src/providers/google.ts, and remove this digest entry.
+const knownPublicValueDigests = new Set([
+  // Gemini CLI installed-app OAuth client secret
+  '6a5f78b8b99dd4025e41ba11bf54c304c6af29f924c5569cc7865b2428ce03a9',
+]);
+
+function matchIsAllowlisted(match) {
+  const digest = createHash('sha256').update(match, 'utf8').digest('hex');
+  return knownPublicValueDigests.has(digest);
+}
 
 const sensitiveNames = [/^\.dev\.vars$/, /^\.env(?:\..+)?$/, /^secrets.*\.json$/i, /^wrangler\.user\.jsonc$/, /^gateway-.*-secrets.*\.json$/i];
 const findings = [];
@@ -65,7 +91,11 @@ function scanFile(rel) {
   }
   for (const [label, pattern] of patterns) {
     pattern.lastIndex = 0;
-    if (pattern.test(content)) findings.push(`${normalized}: possible ${label}`);
+    for (const match of content.matchAll(pattern)) {
+      if (matchIsAllowlisted(match[0])) continue;
+      findings.push(`${normalized}: possible ${label}`);
+      break;
+    }
   }
 }
 
