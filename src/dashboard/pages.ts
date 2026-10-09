@@ -35,7 +35,7 @@ function shell({ title, body, nonce }: { title: string; body: string; nonce: str
 <header>
   <div class="wrap header-row">
     <a class="brand" href="#" aria-label="AI Gateway 首页">
-      <svg class="brand-logo" viewBox="0 0 48 48" aria-hidden="true">
+      <svg class="brand-logo" viewBox="0 -2.6 48 48" aria-hidden="true">
         <path d="M7 37L24 5L41 37Q33 40 24 31Q15 40 7 37Z"
           fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>

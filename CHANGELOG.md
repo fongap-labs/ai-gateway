@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: the dashboard header logo sat about 2px above the title/slogan block; the logo's viewBox is now offset so its visual center lines up with the text.
+
 - fix [security]: replace `Math.random()` with `cryptoRng()` (CSPRNG via `crypto.getRandomValues`) in scheduler, jitter, and hedge paths, and replace the `/\/+$/` regex with a regex-free `trimTrailingSlashes` helper on URL inputs, resolving all 27 open CodeQL code scanning alerts (24 `js/insecure-randomness` + 3 `js/polynomial-redos`).
 
 - fix [security]: pin `test-pack.json` to an immutable 40-character commit SHA and validate the ref before fetching; the previous mutable `ref: "main"` let a compromise of the action-worker repo execute arbitrary code on every contributor machine running `npm test`.
