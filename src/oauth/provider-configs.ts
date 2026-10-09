@@ -31,6 +31,7 @@
 
 import { builtinOAuthProviderConfigs } from '../providers/registry.ts';
 import type { OAuthProviderConfig, OAuthUpstreamHeaders } from '../providers/types.ts';
+import { trimTrailingSlashes } from '../utils/trim.ts';
 
 export type { OAuthProviderConfig, OAuthUpstreamHeaders } from '../providers/types.ts';
 
@@ -173,7 +174,7 @@ export function isManualPasteProvider(provider: OAuthProviderConfig): boolean {
 export function resolveRedirectUri(provider: OAuthProviderConfig, publicBaseUrl: string, providerName: string): string | null {
   if (provider.manualRedirectUrl) return provider.manualRedirectUrl;
   if (!publicBaseUrl) return null;
-  return `${publicBaseUrl.replace(/\/+$/, '')}/oauth/callback/${providerName}`;
+  return `${trimTrailingSlashes(publicBaseUrl)}/oauth/callback/${providerName}`;
 }
 
 // Reset cached parse state (used by tests).

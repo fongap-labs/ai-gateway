@@ -27,6 +27,7 @@ import { pickTier1Candidate } from '../../scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import type { PickedCandidate } from '../../types/scheduler.ts';
+import { cryptoRng } from '../../utils/crypto-rng.ts';
 import { attemptNode } from './dispatch.ts';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,7 +109,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
       ? pickTier1Candidate(tierNodes, args.reqDescriptor, args.state.attempted, {
           excludeId: args.node.id,
           now: Date.now(),
-          rng: args.rng ?? Math.random,
+          rng: args.rng ?? cryptoRng,
           affinityAccountId: args.tier1AffinityAccountId,
           evaluateAffinity: args.tier1EvaluateAffinity,
           // A hedge is still a real Tier 1 dispatch. Preserve the same explicit
