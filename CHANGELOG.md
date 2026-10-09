@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix [security]: replace `Math.random()` with `cryptoRng()` (CSPRNG via `crypto.getRandomValues`) in scheduler, jitter, and hedge paths, and replace the `/\/+$/` regex with a regex-free `trimTrailingSlashes` helper on URL inputs, resolving all 27 open CodeQL code scanning alerts (24 `js/insecure-randomness` + 3 `js/polynomial-redos`).
+
 - fix [security]: pin `test-pack.json` to an immutable 40-character commit SHA and validate the ref before fetching; the previous mutable `ref: "main"` let a compromise of the action-worker repo execute arbitrary code on every contributor machine running `npm test`.
 
 - fix [security]: extend the secret scanner with `GOCSPX-`, `gho_/ghu_/ghs_`, `github_pat_`, `npm_`, and `xox[baprs]-` token patterns, and allowlist the Gemini CLI's public OAuth client constant by its SHA-256 digest so the scanner catches any other value of the same family while not flagging the documented public constant.

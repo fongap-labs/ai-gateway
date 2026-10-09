@@ -23,6 +23,7 @@
 import { getProviderAdapter, providerWire } from '../providers/registry.ts';
 import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
+import { trimTrailingSlashes } from '../utils/trim.ts';
 import { getBool, readEnv } from './env.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
 import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from './policies.ts';
@@ -347,7 +348,7 @@ function buildRuntimeNode(
     provider,
     protocol,
     surfaces,
-    baseUrl: baseUrl.replace(/\/+$/, ''),
+    baseUrl: trimTrailingSlashes(baseUrl),
     credential,
     priority,
     models,

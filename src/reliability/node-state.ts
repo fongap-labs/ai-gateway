@@ -21,6 +21,7 @@
 // pass through unchanged.
 
 import type { NodeState } from '../types/reliability.ts';
+import { cryptoRng } from '../utils/crypto-rng.ts';
 import { jitterCooldownMs } from './cooldown-jitter.ts';
 
 export const CIRCUIT_FAILURE_THRESHOLD = 3;
@@ -221,7 +222,7 @@ export function recordFailure(
   if (cooldownMs > 0) {
     // Only jitter auto-computed cooldowns; explicit Retry-After must be
     // honored exactly so a provider's 60s hint is not shortened to ~54s.
-    const effectiveCooldown = explicitRetryAfter ? cooldownMs : jitterCooldownMs(cooldownMs, Math.random());
+    const effectiveCooldown = explicitRetryAfter ? cooldownMs : jitterCooldownMs(cooldownMs, cryptoRng());
     s.cooldownUntil = now + effectiveCooldown;
     s.cooldownReason = reason;
   }

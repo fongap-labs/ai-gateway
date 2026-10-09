@@ -19,6 +19,7 @@ import { tier1CanAcceptHedge, tier1SelectionHeatFactor } from '../reliability/ti
 import { claimTier1Slot, isTier1Eligible, makeTier1ReleaseToken, maybeTransitionToHalfOpen } from '../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PickedCandidate, RoutableRequest } from '../types/scheduler.ts';
+import { cryptoRng } from '../utils/crypto-rng.ts';
 import { affinityShouldEscape, tier1AffinityFactor } from './tier1-affinity.ts';
 import { calculateTier1Score } from './tier1-scoring.ts';
 
@@ -53,7 +54,7 @@ export function pickTier1Candidate(
     evaluateAffinity = false,
     now = Date.now(),
     excludeId = null,
-    rng = Math.random,
+    rng = cryptoRng,
     knownModels = null,
     raceLostIds = null,
     maxInFlight = null,
@@ -149,9 +150,9 @@ export function pickTier1Candidate(
 
 // Sample two distinct indices uniformly. P2C needs randomness, not sorting.
 // `rng` is an injectable uniform [0,1) source for deterministic tests; in
-// production Math.random is used so behaviour stays best-effort random and
+// production cryptoRng is used so behaviour stays best-effort random and
 // no new env knob is required.
-function sampleTwo(arr: RuntimeNode[], rng: () => number = Math.random, affinityNode: RuntimeNode | null = null): { a: RuntimeNode; b: RuntimeNode } {
+function sampleTwo(arr: RuntimeNode[], rng: () => number = cryptoRng, affinityNode: RuntimeNode | null = null): { a: RuntimeNode; b: RuntimeNode } {
   if (affinityNode) {
     const peers = arr.filter((node) => node.id !== affinityNode.id);
     const peer = peers[Math.floor(rng() * peers.length)];

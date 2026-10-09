@@ -9,6 +9,7 @@ import { servesModel } from '../config/registry.ts';
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { RoutableRequest } from '../types/scheduler.ts';
+import { cryptoRng } from '../utils/crypto-rng.ts';
 import { jitterCooldownMs } from './cooldown-jitter.ts';
 
 export const TIER1_EWMA_ALPHA = 0.25;
@@ -482,7 +483,7 @@ function exponential(base: number, max: number, count: number): number {
 }
 
 function jittered(ms: number): number {
-  return jitterCooldownMs(ms, Math.random());
+  return jitterCooldownMs(ms, cryptoRng());
 }
 
 function modelCooldownMs(model: Tier1ModelRuntime, outcome: Tier1Outcome): number {

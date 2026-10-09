@@ -22,6 +22,7 @@ import { getProviderAdapter } from '../providers/registry.ts';
 import type { OAuthProviderConfig } from '../providers/types.ts';
 import { authorize, authorizeCredentials } from '../request/auth.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
+import { trimTrailingSlashes } from '../utils/trim.ts';
 import { hasTokenKey } from './crypto.ts';
 import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from './provider-configs.ts';
 import {
@@ -75,7 +76,7 @@ async function sha256Base64Url(input: string): Promise<string> {
 function publicBaseUrl(env: GatewayEnv): string | null {
   const raw = typeof env?.AIG_PUBLIC_URL === 'string' ? (env.AIG_PUBLIC_URL as string).trim() : '';
   if (!raw) return null;
-  return raw.replace(/\/+$/, '');
+  return trimTrailingSlashes(raw);
 }
 
 export type OAuthRouteContext = {

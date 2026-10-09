@@ -14,6 +14,7 @@ import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import type { RoutableRequest, Tier, TierMap } from '../types/scheduler.ts';
+import { cryptoRng } from '../utils/crypto-rng.ts';
 import { TIER_ORDER } from './router.ts';
 
 function tier1Dispatchable(
@@ -83,10 +84,10 @@ export function pickForTier(
 }
 
 // Mulberry32 is used only when TIER1_SCHEDULER_SEED is set for deterministic
-// tests. Production leaves it unset and uses Math.random.
+// tests. Production leaves it unset and uses cryptoRng.
 export function makeTier1Rng(env: GatewayEnv): () => number {
   const seedRaw = String(env?.TIER1_SCHEDULER_SEED ?? '').trim();
-  if (!seedRaw) return Math.random;
+  if (!seedRaw) return cryptoRng;
   let h = 1779033703 ^ seedRaw.length;
   for (let i = 0; i < seedRaw.length; i++) {
     h = Math.imul(h ^ seedRaw.charCodeAt(i), 3432918353);
