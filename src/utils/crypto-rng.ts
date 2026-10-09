@@ -6,5 +6,6 @@
 // in Cloudflare Workers) instead of Math.random, which is not CSPRNG-backed.
 export function cryptoRng(): number {
   const buf = crypto.getRandomValues(new Uint32Array(1));
-  return (buf[0] ?? 0) / 0x100000000;
+  const random = buf[0] ?? 0;
+  return random * 2 ** -32;
 }
