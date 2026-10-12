@@ -248,7 +248,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') 
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
     compatibility_date: '2026-08-06',
-    workers_dev: true,
+    workers_dev: false,
     keep_vars: false,
     observability: { enabled: true },
     triggers: { crons: ['0 3 * * *'] },
