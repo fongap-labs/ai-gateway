@@ -21,7 +21,7 @@ CI Evidence + Main Write Guard
     ↓
 .github/deploy.json
     ↓
-Action Worker Source Script Deploy
+Action Worker Deploy Source Script
     ↓ environment: production
 scripts/deploy.sh
     ↓
@@ -66,7 +66,7 @@ Pull-request CI does not trigger production deployment.
 
 ## Manual central deployment
 
-Action Worker's `Source Script Deploy` workflow can be started manually with:
+Action Worker's `Deploy Source Script` workflow can be started manually with:
 
 ```text
 source_repository = fongap-labs/ai-gateway
