@@ -24,6 +24,12 @@
 // hour at worst, while a long outage still costs only about one probe per 30 minutes.
 export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_200_000, 1_800_000] as const);
 
+// A 429 that hit a short per-minute style window (rpm/tpm/rate-limit wording, or
+// an explicit wait hint of a minute or less) clears as soon as the window rolls
+// over, so this ladder escalates gently and tops out at 5 minutes — a long block
+// here would only waste the provider's free capacity.
+export const ADAPTIVE_429_WINDOW_STEPS_MS = Object.freeze([15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 180_000, 300_000] as const);
+
 export const ADAPTIVE_429_TRUSTED_HINT_STAGES = 2;
 // A 429 whose text names a long-lived allowance (daily limit, plan window, credits)
 // will not clear in 15 seconds, so the ladder starts here (5 minutes on the default
@@ -35,19 +41,20 @@ const STEP_MAX_MS = 24 * 3_600_000;
 const STEP_MAX_COUNT = 12;
 
 /**
- * Ladder from AIG_RATE_LIMIT_STEPS_MS, a comma separated list of milliseconds such as
- * "15000,30000,60000,300000". Unset or invalid input keeps the built-in ladder; the
- * gateway never fails to start over a typo here.
+ * Ladder from AIG_RATE_LIMIT_STEPS_MS (or the caller's fallback ladder), a comma
+ * separated list of milliseconds such as "15000,30000,60000,300000". Unset or
+ * invalid input keeps the given fallback ladder; the gateway never fails to start
+ * over a typo here.
  */
-export function adaptive429StepsFromEnv(raw: unknown): readonly number[] {
-  if (typeof raw !== 'string' || !raw.trim()) return ADAPTIVE_429_COOLDOWN_STEPS_MS;
+export function adaptive429StepsFromEnv(raw: unknown, fallback: readonly number[] = ADAPTIVE_429_COOLDOWN_STEPS_MS): readonly number[] {
+  if (typeof raw !== 'string' || !raw.trim()) return fallback;
   const steps = raw
     .split(',')
     .map((part) => Number(part.trim()))
     .filter((value) => Number.isFinite(value) && value >= STEP_MIN_MS && value <= STEP_MAX_MS)
     .map((value) => Math.round(value));
   const parsed = raw.split(',').length;
-  if (steps.length === 0 || steps.length !== parsed || steps.length > STEP_MAX_COUNT) return ADAPTIVE_429_COOLDOWN_STEPS_MS;
+  if (steps.length === 0 || steps.length !== parsed || steps.length > STEP_MAX_COUNT) return fallback;
   return Object.freeze(steps);
 }
 

@@ -45,9 +45,10 @@ export type FailureClassification = {
   /** The upstream said this request is larger than the model accepts (413). */
   requestTooLarge?: boolean;
   /**
-   * What kind of allowance a 429 ran into, judged from the response text alone:
+   * What kind of allowance a 429 ran into, judged from the response wording and,
+   * when the wording says nothing, from the magnitude of an explicit wait hint:
    * 'window' = a short per-minute style limit, 'quota' = a long-lived allowance
-   * (daily, hourly plan, credits). Absent when the text does not say.
+   * (daily, hourly plan, credits). Absent when neither signal says.
    */
   rateLimitWindow?: 'window' | 'quota';
 };
@@ -76,26 +77,43 @@ export function retryHintFromBody(body: unknown): number {
   return total > 0 ? clampRetryAfterMs(total) : 0;
 }
 
-// Long-lived allowances (daily / plan window / credits) versus short per-minute
+// Long-lived allowances (daily / plan window / credits / points) versus short per-minute
 // limits, from wording alone. Deliberately conservative: text that says neither
 // stays unclassified and keeps the default ladder. Chinese wording is matched by
 // code point escapes so the source stays English-only.
 const QUOTA_WORDING =
-  /\b(?:quota|daily|per[ -]day|credits?|balance|billing|usage limit|plan limit|exhausted)\b|\u989d\u5ea6|\u914d\u989d|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\s*\d+\s*\u5c0f\u65f6|\u4f59\u989d|\u6b20\u8d39/i;
-const WINDOW_WORDING = /\b(?:per[ -]minute|per[ -]second|rpm|tpm|itpm|otpm|too many requests|concurren\w*)\b/i;
+  /\b(?:quota|daily|per[ -]day|per[ -]hour|per[ -]week|weekly|credits?|balance|billing|usage limit|plan limit)\b|\u989d\u5ea6|\u914d\u989d|\u79ef\u5206|\u9650\u989d|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\u5468|\u6bcf\s*\d+\s*\u5c0f\u65f6|\u4f59\u989d|\u6b20\u8d39/i;
+const WINDOW_WORDING = /\b(?:per[ -]minute|per[ -]second|rpm|tpm|itpm|otpm|too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b/i;
+// "exhausted" proves a limit ran out but not its horizon: only a WEAK long-lived
+// hint after minute-window wording has been ruled out. "inference tpm exhausted"
+// stays a window, while "plan limit exhausted" (caught above) and a bare
+// "exhausted" read as a long-lived allowance.
+const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d/i;
 
 export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined {
   const text = String(body || '');
   if (!text) return undefined;
   if (QUOTA_WORDING.test(text)) return 'quota';
   if (WINDOW_WORDING.test(text)) return 'window';
+  if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
   return undefined;
 }
+
+// An explicit provider-stated wait is itself a classification signal when the
+// wording says nothing: a minute-and-a-half or less can only be a short window,
+// while ten minutes or more can only be a long-lived allowance. Only an EXPLICIT
+// hint counts — the default cooldown never guesses a class.
+const WINDOW_HINT_CEILING_MS = 90_000;
+const QUOTA_HINT_FLOOR_MS = 600_000;
 
 function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number, body: unknown = ''): FailureClassification {
   const limits = getLimits(env);
   const retryAfterMs = parseRetryAfterMs(headers, now) || retryHintFromBody(body);
-  const rateLimitWindow = rateLimitWindowOf(body);
+  let rateLimitWindow = rateLimitWindowOf(body);
+  if (!rateLimitWindow && retryAfterMs > 0) {
+    if (retryAfterMs <= WINDOW_HINT_CEILING_MS) rateLimitWindow = 'window';
+    else if (retryAfterMs >= QUOTA_HINT_FLOOR_MS) rateLimitWindow = 'quota';
+  }
   return {
     kind: KIND.RATE_LIMIT,
     action: 'rotate',

@@ -10,6 +10,7 @@
 import { trimDiagnostic } from '../../protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
+  ADAPTIVE_429_WINDOW_STEPS_MS,
   adaptive429StepsFromEnv,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,
@@ -134,9 +135,18 @@ export function recordOutcome(
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
         // A 429 is blamed on the model that got it; the whole key is blamed only
         // when a second model on it is limited too. Each scope has its own ladder.
-        tier1RateLimitScope = decideTier1RateLimitScope(node.id, state.requestedModel);
+        const observedScope = decideTier1RateLimitScope(node.id, state.requestedModel);
+        // A long-lived allowance (quota wording, or a multi-minute wait hint) is
+        // account-wide by nature: cool the whole key on the FIRST such 429 instead
+        // of letting every model climb its own ladder against one shared pool.
+        tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
-        const ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+        // A short per-minute window clears on its own quickly; that class gets a
+        // gentle ladder capped at 5 minutes instead of the 30-minute default.
+        const ladderSteps =
+          classification.rateLimitWindow === 'window'
+            ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_WINDOW_STEPS_MS, ADAPTIVE_429_WINDOW_STEPS_MS)
+            : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
         const now = Date.now();
         tier1RetryAfterMs = nextAdaptive429CooldownMs(
           node.provider,
@@ -181,7 +191,7 @@ export function recordOutcome(
       ` hedged=${hedged} kind=${classification.kind} status=${status} counted=${classification.counted}` +
       ` headers_ms=${headersMs ?? -1}${ttftWaitMs !== undefined ? ` ttft_wait_ms=${ttftWaitMs}` : ''}` +
       ` latency_ms=${latencyMs}` +
-      `${tier1RateLimitStage !== null ? ` rate_limit_scope=${tier1RateLimitScope} rate_limit_stage=${tier1RateLimitStage} rate_limit_cooldown_ms=${tier1RateLimitCooldownMs ?? -1}` : ''}` +
+      `${tier1RateLimitStage !== null ? ` rate_limit_scope=${tier1RateLimitScope} rate_limit_class=${classification.rateLimitWindow ?? 'unknown'} rate_limit_stage=${tier1RateLimitStage} rate_limit_cooldown_ms=${tier1RateLimitCooldownMs ?? -1}` : ''}` +
       `${diagnostic && c?.exposeUpstreamInfo ? ` detail=${trimDiagnostic(diagnostic, 200)}` : ''}`,
   );
 
@@ -200,7 +210,10 @@ export function recordOutcome(
   if (ttftWaitMs !== undefined && ttftWaitMs >= 0) record.ttft_wait_ms = ttftWaitMs;
   if (latencyMs >= 0) record.latency_ms = latencyMs;
   if (tier1RateLimitScope !== null) record.rate_limit_scope = tier1RateLimitScope;
-  if (tier1RateLimitStage !== null) record.rate_limit_stage = tier1RateLimitStage;
+  if (tier1RateLimitStage !== null) {
+    record.rate_limit_class = classification.rateLimitWindow ?? 'unknown';
+    record.rate_limit_stage = tier1RateLimitStage;
+  }
   if (tier1RateLimitCooldownMs !== null) record.rate_limit_cooldown_ms = tier1RateLimitCooldownMs;
   if (c?.exposeUpstreamInfo && diagnostic) record.detail = trimDiagnostic(diagnostic, 300);
   state.attempts.push(record);
