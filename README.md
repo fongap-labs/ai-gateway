@@ -29,7 +29,9 @@
 | 部署并调用 | [快速开始](#快速开始) |
 | 配置节点、访问分组或订阅 | [配置](#配置) |
 | 理解路由与可靠性 | [工作原理](#工作原理)、[文档地图](#文档地图) |
-| 参与开发或维护 | [维护者参考](#维护者参考) |
+| 参与贡献 | [参与贡献](#参与贡献) |
+| 报告安全问题 | [安全](#安全) |
+| 维护与治理 | [维护者参考](#维护者参考) |
 
 ## 这是什么
 
@@ -299,19 +301,11 @@ curl https://<你的网关>/v1/chat/completions \
 | 故障排查 | [故障排查](docs/operations/troubleshooting.md) |
 | 产品边界与治理 | [产品策略](docs/governance/product-policy.md) · [治理索引](docs/governance/README.md) |
 
-## 安全
-
-- 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
-- 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
-- `/health`、`/metrics` 与 `/v1/*` 都需要鉴权。发现漏洞请走 GitHub 私密报告（Security → Report a vulnerability），不要开公开 Issue。
-
-完整规则见 [SECURITY.md](SECURITY.md)。
-
 ---
 
 ## 维护者参考
 
-> 面向维护者与贡献者。只使用网关的读者可以跳过。
+> 面向维护者。只使用网关的读者可以跳过，下面的“参与贡献”与“安全”对所有人都适用。
 
 ### 治理边界
 
@@ -349,14 +343,21 @@ flowchart LR
 | `npm run validate:merge` | 合并前的本地门禁：语法、部署配置、迁移、密钥扫描、文档与链接、lint、类型检查 |
 | `npm run check:deploy` | Worker 产物的 dry-run，不部署到生产 |
 
-### 参与贡献
+## 参与贡献
 
 完整规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 - 人类文档使用中文；PR 标题、工程 diff 与 CHANGELOG 使用英文。
 - 分支使用 `feat/`、`fix/`、`docs/` 等前缀，每个 PR 只有一个主要目标。
 - 行为、配置、协议或部署变化，必须在同一 PR 中更新规范文档。
-- PR 描述按 `.github/pull_request_template.md` 填写，合并只用 Squash merge。
+- 提交前运行 `npm run validate:merge`；PR 描述按 `.github/pull_request_template.md` 填写，合并只用 Squash merge。
+
+## 安全
+
+- 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
+- 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
+- `/health`、`/metrics` 与 `/v1/*` 都需要鉴权。
+- 发现漏洞请走 GitHub 私密报告（Security → Report a vulnerability），不要开公开 Issue。完整规则见 [SECURITY.md](SECURITY.md)。
 
 ## License
 
