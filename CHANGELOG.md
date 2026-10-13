@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- fix: `docs-check` enforces the single `README.md` policy and rejects localized README copies; `link-check` skips the local `.cache/` action-worker checkout, so `check:links` no longer scans third-party Markdown after `npm test`.
+
+- fix: `CLOUDFLARE_ACCOUNT_ID` is a repository Variable, so it is removed from `.github/deploy.secrets.allowed` and guarded by `deployment-config-check`.
+
 - fix [security]: replace the biased-division pattern in `cryptoRng()` (flagged by CodeQL `js/biased-cryptographic-random`) with equivalent multiplication by `2^-32`; the result distribution is unchanged.
 
 - fix: update `.github/test-pack.json` ref to the current action-worker main SHA after the action-worker history rewrite made the previous ref unreachable.

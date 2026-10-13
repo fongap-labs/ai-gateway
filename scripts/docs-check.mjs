@@ -27,13 +27,13 @@ check('docs/ root has no stray .md files', unexpectedDocsRoot.length === 0, unex
 const unexpectedDocsDirs = docsDirs.filter((d) => !ALLOWED_DOCS_DIRS.includes(d));
 check(`docs/ only contains allowed subdirectories: ${ALLOWED_DOCS_DIRS.join(', ')}`, unexpectedDocsDirs.length === 0, unexpectedDocsDirs.join(', '));
 
+// Single-README policy (docs/governance/documentation-policy.md): the root holds only README.md,
+// so localized copies such as README.zh-CN.md are rejected like any other unexpected file.
 const ALLOWED_ROOT_MDS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'CLAUDE.md', 'CHANGELOG.md'];
-const LOCALIZED_README_PATTERN = /^README\.[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*\.md$/;
 const rootEntries = fs.readdirSync(root, { withFileTypes: true });
 const rootMds = rootEntries.filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => e.name);
-const localizedReadmes = rootMds.filter((f) => LOCALIZED_README_PATTERN.test(f));
-const unexpectedRootMds = rootMds.filter((f) => !ALLOWED_ROOT_MDS.includes(f) && !LOCALIZED_README_PATTERN.test(f));
-check('root only contains allowed .md files plus localized READMEs', unexpectedRootMds.length === 0, unexpectedRootMds.join(', '));
+const unexpectedRootMds = rootMds.filter((f) => !ALLOWED_ROOT_MDS.includes(f));
+check('root only contains allowed .md files (single README.md, no localized READMEs)', unexpectedRootMds.length === 0, unexpectedRootMds.join(', '));
 
 function isKebabCase(name) {
   return /^[a-z0-9]+(-[a-z0-9]+)*\.md$/.test(name) || name === 'README.md';
@@ -74,7 +74,7 @@ for (const file of allDocsMd) {
 }
 
 const LINK_PATTERN = /!?(?:\[[^\]]*\])\(([^)]+)\)/g;
-const MD_FILES = ['README.md', ...localizedReadmes, 'CONTRIBUTING.md', ...allDocsMd.map((f) => path.relative(root, f))];
+const MD_FILES = ['README.md', 'CONTRIBUTING.md', ...allDocsMd.map((f) => path.relative(root, f))];
 const broken = [];
 for (const relFile of MD_FILES) {
   const file = path.join(root, relFile);
