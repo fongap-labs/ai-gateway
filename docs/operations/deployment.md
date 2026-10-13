@@ -99,7 +99,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 按 Tier 划分范围的 `AIG_TIER{1,2,3}_CREDENTIALS_01..10`；
 - 使用加密订阅凭据时所需的 `AIG_TOKEN_ENCRYPTION_KEY`。
 
-`CLOUDFLARE_ACCOUNT_ID` 是 **Variable**（`vars.CLOUDFLARE_ACCOUNT_ID`），不是 Secret，因此不出现在 `.github/deploy.secrets.allowed` 中。
+`CLOUDFLARE_ACCOUNT_ID` 的值不是 Secret，而是由中央策略别名注入：`policies/deploy-secrets.json` 将 `CLOUDFLARE_ACCOUNT_ID` 映射到主机仓库的 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` Variable。由于 `resolve-secret-scope` 只对 target 在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，该名字必须保持在列表中——列表声明的是可注入的环境变量名，而不是"已存储的 Secret 清单"。
 
 当必需的生产输入缺失时，应用预检会失败即关闭。
 

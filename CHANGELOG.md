@@ -6,7 +6,7 @@
 
 - fix: `docs-check` enforces the single `README.md` policy and rejects localized README copies; `link-check` skips the local `.cache/` action-worker checkout, so `check:links` no longer scans third-party Markdown after `npm test`.
 
-- fix: `CLOUDFLARE_ACCOUNT_ID` is a repository Variable, so it is removed from `.github/deploy.secrets.allowed` and guarded by `deployment-config-check`.
+- fix: keep `CLOUDFLARE_ACCOUNT_ID` declared in `.github/deploy.secrets.allowed`. The control-plane deploy policy aliases that name to the `CLOUDFLARE_ACCOUNT_ID_SECONDARY` Variable, and `resolve-secret-scope` only applies an alias to a name the target declares; removing the declaration silently dropped the alias and failed the production deploy preflight. `deployment-config-check` now asserts the declaration stays instead of forbidding it.
 
 - fix [security]: replace the biased-division pattern in `cryptoRng()` (flagged by CodeQL `js/biased-cryptographic-random`) with equivalent multiplication by `2^-32`; the result distribution is unchanged.
 

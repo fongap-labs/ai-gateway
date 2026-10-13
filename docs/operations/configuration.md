@@ -13,7 +13,7 @@
 | `AIG_MODELS_CONFIG` | 可选的逻辑模型元数据/能力声明 |
 | `AIG_POLICIES_CONFIG` | attempt、hedge、超时与 Tier 1 准入策略 |
 | `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符，是仓库 **Variable**（不是 Secret） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符；值来自主机仓库 Variable `CLOUDFLARE_ACCOUNT_ID_SECONDARY`（经中央别名注入，该名字需声明在 `.github/deploy.secrets.allowed`） |
 
 `src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。
 

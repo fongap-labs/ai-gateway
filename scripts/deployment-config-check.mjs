@@ -116,8 +116,10 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .filter(Boolean);
 assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
 assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
-// CLOUDFLARE_ACCOUNT_ID is a repository Variable (vars.CLOUDFLARE_ACCOUNT_ID), never a secret.
-assert.equal(deploySecretScope.includes('CLOUDFLARE_ACCOUNT_ID'), false, 'CLOUDFLARE_ACCOUNT_ID is a Variable, not a deploy secret');
+// CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
+// alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
+// applies an alias to a name the target declares in .github/deploy.secrets.allowed.
+assert.ok(deploySecretScope.includes('CLOUDFLARE_ACCOUNT_ID'), 'CLOUDFLARE_ACCOUNT_ID must stay declared for the control-plane alias to inject it');
 for (const forbidden of ['AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKEN']) {
   assert.equal(deploySecretScope.includes(forbidden), false, `deploy secret scope must not expose ${forbidden}`);
 }
