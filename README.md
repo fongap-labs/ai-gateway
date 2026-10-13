@@ -168,7 +168,7 @@ ANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>
 | `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | 该分组允许调用的逻辑模型 | 普通变量 |
 | `AIG_POLICIES_CONFIG` | attempt、hedge、超时与 Tier 1 准入策略（可选） | 普通变量 |
 
-`01..10` 只是分片编号。配置分片与凭据分片的编号彼此独立，凭据通过 **Tier + 节点 id** 绑定到节点，而不是靠相同的后缀对应。完整的变量清单见 [配置文档](docs/operations/configuration.md)。
+`01..10` 只是分片编号。配置分片与凭据分片彼此独立（independent），凭据按 **Tier + node id** 绑定到节点，不按相同的后缀一一对应。完整的变量清单见 [配置文档](docs/operations/configuration.md)。
 
 ### 节点与凭据
 
