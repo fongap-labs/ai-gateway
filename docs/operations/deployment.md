@@ -99,6 +99,8 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 按 Tier 划分范围的 `AIG_TIER{1,2,3}_CREDENTIALS_01..10`；
 - 使用加密订阅凭据时所需的 `AIG_TOKEN_ENCRYPTION_KEY`。
 
+`CLOUDFLARE_ACCOUNT_ID` 是 **Variable**（`vars.CLOUDFLARE_ACCOUNT_ID`），不是 Secret，因此不出现在 `.github/deploy.secrets.allowed` 中。
+
 当必需的生产输入缺失时，应用预检会失败即关闭。
 
 ## 源码自有的部署入口

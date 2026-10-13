@@ -80,6 +80,13 @@ rate-limiting
 
 不要把 Deploy 配置为合并前的必需检查：它在已被接受的变更进入 `main` 之后才运行。
 
+## Variables 与 Secrets
+
+非敏感的部署标识与运行时配置放在仓库 **Variables**（`vars.*`）中；凭据放在 **Secrets**（`secrets.*`）中。
+
+- `CLOUDFLARE_ACCOUNT_ID` 是 **Variable**（`vars.CLOUDFLARE_ACCOUNT_ID`），不是 Secret；它不得列入 `.github/deploy.secrets.allowed`。
+- `CLOUDFLARE_API_TOKEN` 是 **Secret**（`secrets.CLOUDFLARE_API_TOKEN`）。
+
 ## GitHub Actions
 
 工作流权限应保持最小化。在可行的情况下，必需的 Action 应固定到不可变的 commit SHA。

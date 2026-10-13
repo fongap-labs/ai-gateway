@@ -116,6 +116,8 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .filter(Boolean);
 assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
 assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
+// CLOUDFLARE_ACCOUNT_ID is a repository Variable (vars.CLOUDFLARE_ACCOUNT_ID), never a secret.
+assert.equal(deploySecretScope.includes('CLOUDFLARE_ACCOUNT_ID'), false, 'CLOUDFLARE_ACCOUNT_ID is a Variable, not a deploy secret');
 for (const forbidden of ['AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKEN']) {
   assert.equal(deploySecretScope.includes(forbidden), false, `deploy secret scope must not expose ${forbidden}`);
 }

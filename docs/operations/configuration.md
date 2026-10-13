@@ -13,6 +13,7 @@
 | `AIG_MODELS_CONFIG` | 可选的逻辑模型元数据/能力声明 |
 | `AIG_POLICIES_CONFIG` | attempt、hedge、超时与 Tier 1 准入策略 |
 | `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符，是仓库 **Variable**（不是 Secret） |
 
 `src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。
 
@@ -345,6 +346,8 @@ D1 用量与公共状态仅作为可观测性输入；历史聚合数据不会�
 ## 本地校验
 
 ```bash
-npm run config:check
+npm run config:check -- --tier1 <tier1-nodes.json> --secrets <secrets.json>
 npm run validate:merge
 ```
+
+`config:check` 需要显式传入文件参数：`--secrets` 必填，且至少提供 `--tier1`、`--tier2`、`--tier3` 之一；`--models` 与 `--policies` 可选。
