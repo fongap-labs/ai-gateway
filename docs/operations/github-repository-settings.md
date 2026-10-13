@@ -84,7 +84,7 @@ rate-limiting
 
 非敏感的部署标识与运行时配置放在仓库 **Variables**（`vars.*`）中；凭据放在 **Secrets**（`secrets.*`）中。
 
-- `CLOUDFLARE_ACCOUNT_ID` 是 **Variable**（`vars.CLOUDFLARE_ACCOUNT_ID`），不是 Secret；它不得列入 `.github/deploy.secrets.allowed`。
+- `CLOUDFLARE_ACCOUNT_ID` 的值是 Variable（主机仓库的 `vars.CLOUDFLARE_ACCOUNT_ID_SECONDARY`），不是 Secret；但该名字必须列入 `.github/deploy.secrets.allowed`，因为中央别名只对已声明的名字生效。
 - `CLOUDFLARE_API_TOKEN` 是 **Secret**（`secrets.CLOUDFLARE_API_TOKEN`）。
 
 ## GitHub Actions
