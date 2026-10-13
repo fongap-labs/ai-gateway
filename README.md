@@ -4,14 +4,14 @@
 
 **基于 Cloudflare Workers 的高韧性 AI API 网关**
 
-把分散在不同 Provider、API Key、额度与模型别名上的容量，汇成 **一个稳定的 OpenAI / Anthropic 兼容入口**
+把分散在不同 Provider、API Key、额度与模型别名上的容量，汇成一个稳定的 OpenAI / Anthropic 兼容入口
 
 [![CI](https://img.shields.io/github/actions/workflow/status/fongap-labs/ai-gateway/ci.yml?branch=main&label=CI&style=flat-square&labelColor=1D3F45)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License&style=flat-square&labelColor=1D3F45&color=0f5d53)](LICENSE)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-0f5d53?style=flat-square&logo=cloudflare&logoColor=ffffff&labelColor=1D3F45)
 ![API](https://img.shields.io/badge/API-OpenAI%20%7C%20Anthropic-0f5d53?style=flat-square&labelColor=1D3F45)
 
-[快速开始](#快速开始) · [配置](#配置) · [文档](#文档) · [参与贡献](#参与贡献) · [安全](#安全)
+[快速开始](#快速开始) · [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md)
 
 </div>
 
@@ -21,28 +21,15 @@
 
 <p align="center"><sub>上图为维护者真实生产实例的近实时数据，由网关自身渲染。</sub></p>
 
+> 新手请从 **这是什么** 读到 **快速开始**。维护者可直接跳到 [维护者参考](#维护者参考)。
+
 ## 这是什么
 
-ai-gateway 是一个**私有**的 AI API 网关，运行在 Cloudflare Workers 上，面向**家庭、个人运营者或小型可信团队**。你把手里零散的模型容量接进来，客户端只需要一个地址和一把网关密钥。
+ai-gateway 是一个**私有**的 AI API 网关，运行在 Cloudflare Workers 上。你把手里分散的模型容量接进来，客户端只需要记住一个地址和一把网关密钥。
 
-> 可以把它想象成**多路插线板**：几家的电源（模型容量）插进来，某一路断了自动切到下一路，你的电器只插一个插口。
-
-```mermaid
-flowchart LR
-    client(["客户端<br/>OpenAI / Anthropic 协议"]) --> gw["ai-gateway<br/>鉴权 · 路由 · 预算"]
-    gw ==> tierOne["Tier 1<br/>免费 / 近似免费"]
-    tierOne -. 耗尽或不可用 .-> tierTwo["Tier 2<br/>订阅权益"]
-    tierTwo -. 耗尽或不可用 .-> tierThree["Tier 3<br/>付费 API 兜底"]
-    tierOne --> up["Provider 与 Key"]
-    tierTwo --> up
-    tierThree --> up
-    classDef capacityPrimary fill:#0f5d53,stroke:#0f5d53,color:#ffffff
-    classDef capacitySecondary fill:#7cb4a5,stroke:#0f5d53,color:#17211f
-    classDef capacityReserve fill:#f8f7f3,stroke:#0f5d53,color:#17211f
-    class tierOne capacityPrimary
-    class tierTwo capacitySecondary
-    class tierThree capacityReserve
-```
+- **自动切换**：一路额度用完或被限流，请求会转到下一路。
+- **密钥隔离**：客户端只拿到网关密钥，上游 Key 保存在 Cloudflare Secret 中。
+- **按分组授权**：每把网关密钥只能调用你为它配置的模型。
 
 | 适合 | 不适合 |
 | --- | --- |
@@ -50,45 +37,52 @@ flowchart LR
 | 个人或小团队自托管，想同时控制成本与稳定性 | 计费、转售、按用户计量 |
 | 同时使用 OpenAI 与 Anthropic 协议的客户端 | 企业级组织、RBAC、多租户 |
 
-## 支持的协议与可靠性
+## 一个例子
 
-| 能力 | 当前行为 |
-| --- | --- |
-| 协议 | OpenAI Chat Completions、OpenAI Responses（仅原生）、Anthropic Messages；Chat ↔ Messages 有界互转 |
-| 容量顺序 | Tier 1 免费 → Tier 2 订阅 → Tier 3 付费兜底，严格按序使用 |
-| 限流与故障 | 429 自适应冷却后单次探测恢复；模型 404 只隔离失败的映射 |
-| 重试与回退 | 所有尝试共享一套预算，`max_attempts` 为硬上限；流式输出开始后不再切换上游 |
+假设你有一把免费 Key（Tier 1）和一个 Claude 订阅（Tier 2），客户端请求逻辑模型 `code-pro`：
 
-细节见 [架构概览](docs/architecture/overview.md)、[协议模型](docs/architecture/protocol-model.md) 与 [可靠性模型](docs/architecture/reliability-model.md)。
+```mermaid
+flowchart LR
+    A["客户端<br/>请求 code-pro"] --> B["ai-gateway<br/>检查密钥与模型权限"]
+    B --> C["Tier 1<br/>免费 Key"]
+    C -- 正常 --> E["返回结果"]
+    C -. 限流（429）或不可用 .-> D["Tier 2<br/>订阅"]
+    D --> E
+    classDef brand fill:#0f5d53,stroke:#0f5d53,color:#ffffff
+    classDef soft fill:#E7F0F1,stroke:#0f5d53,color:#17211f
+    class E brand
+    class A,B,C,D soft
+```
+
+免费 Key 被限流（429）时，网关会暂时冷却它，改用订阅；冷却到期后再单次探测恢复。在输出开始之前，客户端不需要知道切换发生过。
 
 ## 快速开始
 
-网关本身是一个 **Cloudflare Worker**，安装脚本会把它部署到你的 Cloudflare 账户下。
+### 1. 安装前置工具
 
-### 开始前
+| 工具 | 版本 | 说明 |
+| --- | --- | --- |
+| Node.js | ≥ 22.18.0（以 `package.json` 为准） | [nodejs.org](https://nodejs.org/) |
+| Cloudflare 账户 | — | 网关会作为一个 Worker 部署到这个账户下 |
+| 上游 Key 或订阅 | 至少一个 | 没有上游凭据，网关无法转发请求 |
 
-- **Node.js** ≥ 22.18.0（版本以 `package.json` 为准）
-- **Cloudflare 账户**
-- **至少一个上游 Key** 或订阅，否则网关无法转发请求
+### 2. 获取代码并安装
 
-### 部署
+在终端中依次运行（每行一步）：
 
 ```bash
 git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
-npm ci
-sh scripts/install.sh          # Windows: powershell scripts/install.ps1
+npm ci                        # 安装依赖，严格按锁文件版本
+sh scripts/install.sh         # 交互式配置并部署（Windows 使用 scripts/install.ps1）
 ```
 
-安装脚本会依次提问，然后完成配置并部署。每个问题怎么回答，展开下面的说明：
-
-<details>
-<summary>安装脚本会问什么</summary>
+安装脚本会依次询问以下内容：
 
 | 步骤 | 你需要提供 | 说明 |
 | --- | --- | --- |
 | 1 | Worker 名称 | 直接回车使用默认值 |
-| 2 | KV 命名空间 ID | 在 Cloudflare 控制台创建一个 KV 命名空间，复制它的 ID |
+| 2 | KV 命名空间 ID | 先在 Cloudflare 控制台创建 KV 命名空间，复制它的 ID |
 | 3 | 节点配置文件（JSON） | Tier 1 必填，Tier 2、3 可留空；可参考 `config/tier1-nodes.example.json` |
 | 4 | 节点凭据文件（JSON） | 形如 `{ "节点 id": "上游 Key" }`，只保存在本机，不要提交到 Git |
 | 5 | 网关访问密钥 | 每个分组一把，至少一组。生成方式：`node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'` |
@@ -96,20 +90,18 @@ sh scripts/install.sh          # Windows: powershell scripts/install.ps1
 
 脚本会自动生成订阅 token 的加密密钥，无需手动填写。
 
-</details>
-
-### 验证部署
+### 3. 验证部署
 
 ```bash
 curl https://<你的网关>/health -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
 curl https://<你的网关>/v1/models -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
 ```
 
-`/v1/models` 列表为空，通常是该分组的模型允许列表没有配置，见 [配置](#配置)。
+`/v1/models` 返回的模型列表非空，说明分组配置正确。
 
-### 接入客户端
+### 4. 接入客户端
 
-客户端的 base URL 指向网关，密钥换成网关访问密钥。模型名使用**逻辑模型名**（如 `code-pro`）。
+把客户端的 base URL 指向网关，密钥换成网关访问密钥。模型名使用**逻辑模型名**（如 `code-pro`），不是上游的真实模型名。
 
 ```bash
 # OpenAI 协议（Chat Completions / Responses）
@@ -121,14 +113,15 @@ ANTHROPIC_BASE_URL=https://<你的网关>
 ANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>
 ```
 
-### 第一次调用
+仪表盘首页（`/`）的快速开始区域会按你的分组生成同样的配置。
 
-```bash
-curl https://<你的网关>/v1/chat/completions \
-  -H "Authorization: Bearer <YOUR_GATEWAY_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "code-pro", "messages": [{"role": "user", "content": "你好"}]}'
-```
+### 常见问题
+
+- **安装脚本报 Node 版本不对**：Node.js 需要 ≥ 22.18.0，用 `node -v` 检查。
+- **KV 命名空间 ID 被拒绝**：ID 必须是 32 位十六进制字符串。
+- **`/v1/models` 列表为空**：该分组的 `AIG_ACCESS_MODELS_*` 没有配置，见下面的[配置](#配置)。
+- **返回鉴权失败**：确认请求头是 `Authorization: Bearer <密钥>`，且与安装时填写的密钥一致。
+- **其他问题**：见 [故障排查](docs/operations/troubleshooting.md)。
 
 ## 配置
 
@@ -148,6 +141,53 @@ curl https://<你的网关>/v1/chat/completions \
 
 节点格式、Tier 2 订阅接入与完整变量清单见 [配置文档](docs/operations/configuration.md)。
 
+## 进阶：ai-gateway 如何工作
+
+### 容量分层
+
+请求按 Tier 顺序使用容量：Tier 1 耗尽或不可用才看 Tier 2，Tier 2 之后才是 Tier 3。
+
+| Tier | 容量类型 | 角色 |
+| --- | --- | --- |
+| **Tier 1** | 免费或近似免费的 API 容量 | 日常主力，重点保证韧性与持续可用 |
+| **Tier 2** | 订阅权益（Claude Pro/Max、ChatGPT/Codex、Google AI Premium，经 OAuth 接入） | 次级容量，不是第二个通用 Key 池 |
+| **Tier 3** | 付费 API 容量 | 受保护的最终兜底，用量可预测 |
+
+### 请求如何流转
+
+```mermaid
+flowchart TD
+    req(["请求进入"]) --> auth{"访问密钥有效<br/>且模型已授权？"}
+    auth -- 否 --> deny(["拒绝"])
+    auth -- 是 --> s1["① 同协议候选池<br/>Tier 1 → 2 → 3"]
+    s1 -- 成功 --> out(["按客户端协议返回"])
+    s1 -- 候选耗尽 --> s2["② 跨协议回退<br/>同一模型 · Chat ↔ Messages"]
+    s2 -- 成功 --> out
+    s2 -- 仍失败 --> s3["③ 兼容模型家族<br/>最多两轮"]
+    s3 -- 成功 --> out
+    s3 -- 预算耗尽 --> fail(["返回错误"])
+    classDef stage fill:#0f5d53,stroke:#0f5d53,color:#ffffff
+    class s1,s2,s3 stage
+```
+
+三步共享同一个 `max_attempts`（请求级硬上限）与时间预算。`/v1/responses` 只走原生路径，不参与第 ② 步。
+
+### 支持的协议与可靠性
+
+| 能力 | 当前行为 |
+| --- | --- |
+| 协议 | OpenAI Chat Completions、OpenAI Responses（仅原生）、Anthropic Messages；Chat ↔ Messages 有界互转 |
+| 限流与故障 | 429 自适应冷却后单次探测恢复；模型 404 只隔离失败的映射 |
+| 重试与回退 | 所有尝试共享一套预算，`max_attempts` 为硬上限；流式输出开始后不再切换上游 |
+
+- **Tier**：容量层级，见上表。
+- **节点（Node）**：一个上游账号或端点的配置单元。
+- **逻辑模型**：客户端使用的模型名（如 `code-pro`），映射到各节点的真实上游模型名。
+- **访问分组**：`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 之一，决定网关密钥可调用的逻辑模型。
+- **原生（Native）**：与客户端同协议的上游路径，是首选。
+
+更多术语见 [术语速查](docs/README.md#术语速查)。
+
 ## 文档
 
 | 想了解 | 去这里 |
@@ -157,25 +197,77 @@ curl https://<你的网关>/v1/chat/completions \
 | 配置、订阅与变量清单 | [配置](docs/operations/configuration.md) |
 | 部署、回滚与故障排查 | [部署](docs/operations/deployment.md) · [故障排查](docs/operations/troubleshooting.md) |
 | 产品边界与治理规则 | [产品策略](docs/governance/product-policy.md) · [治理索引](docs/governance/README.md) |
-| 术语解释 | [术语速查](docs/README.md#术语速查) |
 
 所有文档的入口见 [docs/README.md](docs/README.md)。
 
+## 仓库结构
+
+| 目录 | 内容 |
+| --- | --- |
+| `src/` | Cloudflare Worker 运行时：配置、调度、可靠性、协议与转换、流式、订阅、可观测性、仪表盘 |
+| `scripts/` | 安装、配置检查、部署与校验工具，入口见 [scripts/README.md](scripts/README.md) |
+| `config/` | 配置示例，不含真实凭据 |
+| `migrations/` | 有序的 D1 迁移，顺序与不可变性属于部署契约 |
+| `docs/` | 长期有效的架构、运营与治理文档 |
+| `.github/` | CI 分发、PR 治理与模板 |
+
+测试套件不在本仓库中，位于 `fongap-labs/action-worker` 的 `tests/packs/ai-gateway/`。
+
+## 维护者参考
+
+ai-gateway 的共用工程规则由 **Action Worker**（Fongap Labs 的统一 CI 与发布平台）维护。可以把它想成一个**中央质检车间**：改动先送到那里检查，通过后才能合并和部署。
+
+- **validate-merge**：唯一的合并许可。
+- **Central CI**：在中央运行测试包，并生成 CI 证据。
+- **Main Write Guard**：确认 `main` 上的提交来自合法的合并，只有可信的提交才会进入部署。
+
+### 本地检查
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run validate:merge` | 合并前的本地门禁：语法、部署配置、迁移、密钥扫描、文档与链接、lint、类型检查 |
+| `npm run check:deploy` | Worker 产物的 dry-run，不部署到生产 |
+
+### 一次变更的旅程
+
+```mermaid
+flowchart LR
+    A["Pull Request<br/>本仓库"] --> B["validate-merge<br/>Action Worker 门禁"]
+    B --> C["Squash 合并<br/>到 main"]
+    C --> D["Central CI<br/>测试包 · CI Evidence"]
+    D --> E["自动部署<br/>scripts/deploy.sh"]
+    E --> F["/health 校验<br/>commit SHA"]
+    F -. 失败 .-> G["回滚 Worker"]
+    classDef gate fill:#0f5d53,stroke:#0f5d53,color:#ffffff
+    classDef step fill:#E7F0F1,stroke:#0f5d53,color:#17211f
+    class B,D gate
+    class A,C,E,F,G step
+```
+
+- 自动部署只在 `main` 的中央 CI 成功后运行（`.github/deploy.json` 中 `automatic: true`）。
+- 部署标识是 commit SHA，经认证的 `/health` 暴露。
+- 项目发布编号由维护者人工通过 Git tag 或 GitHub Release 创建，文档与 CI 不生成。
+
 ## 参与贡献
 
-完整规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+完整规则见 [CONTRIBUTING.md](CONTRIBUTING.md)，要点如下：
 
-- 人类文档使用中文；PR 标题与 CHANGELOG 使用英文。
+- 人类文档使用中文；PR 标题、工程 diff 与 CHANGELOG 使用英文。
+- 分支使用 `feat/`、`fix/`、`docs/` 等前缀，每个 PR 只有一个主要目标。
+- PR 标题遵循 Conventional Commits，例如 `docs: state independent shard binding in README`。
 - 行为、配置、协议或部署变化，必须在同一 PR 中更新规范文档。
-- 提交前运行 `npm run validate:merge`。PR 按 `.github/pull_request_template.md` 填写，使用 Squash merge。
+- PR 描述按 `.github/pull_request_template.md` 填写，合并只用 Squash merge。
 
 ## 安全
+
+请不要在公开 Issue 中披露漏洞。使用 GitHub 私密报告：**Security → Report a vulnerability**。
 
 - 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
 - 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
 - `/health`、`/metrics` 与 `/v1/*` 都需要鉴权。
-- 发现漏洞请走 GitHub 私密报告（Security → Report a vulnerability），不要开公开 Issue。完整规则与限流边界见 [SECURITY.md](SECURITY.md)。
 
-## License
+完整规则与限流边界见 [SECURITY.md](SECURITY.md)。
+
+## 许可
 
 MIT License，详见 [LICENSE](LICENSE)。
