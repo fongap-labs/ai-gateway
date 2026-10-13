@@ -1,238 +1,238 @@
-# Reliability model
+# 可靠性模型
 
-ai-gateway separates Tier 1 adaptive account/model state from the Tier 2/3 node-state system. Both are short-lived best-effort runtime state unless an explicitly documented Cloudflare persistence primitive is involved.
+ai-gateway 将 Tier 1 的自适应账号/模型状态与 Tier 2/3 的节点状态体系分离开来。除非涉及明确记录的 Cloudflare 持久化原语，两者都属于短生命周期、尽力而为的运行时状态。
 
-## Tier 1 state
+## Tier 1 状态
 
-Tier 1 state is isolate-local and deliberately scoped:
+Tier 1 状态仅保存在 isolate 内，且范围经过刻意限定：
 
-- **Account scope** — in-flight count, account cooldown, rate-limit recovery state, and account health.
-- **Model scope** — TTFT EWMA, failure/cooldown/half-open state, and recovery state.
-- **Upstream-model scope** — cooldown ladder (5s, 20s, 80s, 5m, 20m, 30m) for provider-facing model-missing responses so a logical alias remap does not inherit stale 404 state; a model id that keeps answering "not found" (including "no endpoints found for ...") is retried less and less often and forgiven by its first success.
-- **Provider + key-slot scope** — adaptive 429 cooldown for one configured credential, kept per model (default) or for the whole key (once a second model on it is limited). The runtime node id is the non-secret key-slot identity; raw credentials are never stored in the adaptive state key.
-- **Provider + upstream-model scope** — short-lived distinct-key 429 evidence used only as a soft ranking signal when several independent credentials hit the same provider-facing model at once.
+- **账号范围**：in-flight 计数、账号冷却、限流恢复状态以及账号健康度。
+- **模型范围**：TTFT EWMA、失败/冷却/半开状态以及恢复状态。
+- **上游模型范围**：针对 provider 侧「模型不存在」响应的冷却阶梯（5s、20s、80s、5m、20m、30m），使逻辑别名的重映射不会继承陈旧的 404 状态；若某个模型 ID 持续返回「not found」（包括 "no endpoints found for ..."），则其重试频率会越来越低，并在其首次成功后被原谅。
+- **provider + key-slot 范围**：针对某个已配置凭据的自适应 429 冷却，默认按模型保存，若同一 key 上的第二个模型也被限流，则改为按整个 key 保存。运行时节点 ID 是非敏感的 key-slot 标识；原始凭据绝不会存入自适应状态的键中。
+- **provider + 上游模型范围**：短期的、来自不同 key 的 429 证据，仅当多个独立凭据同时命中同一 provider 侧模型时，作为软性排序信号使用。
 
-An isolate restart clears this adaptive state. The gateway does not claim provider-wide state consistency.
+isolate 重启会清除这些自适应状态。网关不声称 provider 级别的状态一致性。
 
-## Runtime state interface
+## 运行时状态接口
 
-The Tier 1 adaptive runtime (`reliability/tier1-state.ts`) and the Tier 2/3 node state (`reliability/node-state.ts`) keep separate implementations and learning signals by design; they are not unified into one backend. Upper layers that need to read state consume the single `RuntimeStateStore` contract in `src/types/runtime-state.ts` through projections in `src/reliability/runtime-state-store.ts`:
+Tier 1 自适应运行时（`reliability/tier1-state.ts`）与 Tier 2/3 节点状态（`reliability/node-state.ts`）按设计保持各自独立的实现与学习信号；二者并未统一为单一后端。需要读取状态的上层模块，通过 `src/reliability/runtime-state-store.ts` 中的投影，消费 `src/types/runtime-state.ts` 中的统一 `RuntimeStateStore` 契约：
 
 ```text
 runtimeStateStoreFor(node) -> { endpoint, account, model }
 ```
 
-- `EndpointState`: availability, in-flight, cooldown, circuit, health, TTFT/latency EWMA, last used.
-- `AccountState`: disabled, cooldown, quota window, in-flight.
-- `ModelState`: supported, cooldown, failure state, TTFT EWMA, sample count.
+- `EndpointState`：可用性、in-flight、冷却、熔断、健康度、TTFT/延迟 EWMA、最近使用时间。
+- `AccountState`：禁用、冷却、额度窗口、in-flight。
+- `ModelState`：是否支持、冷却、失败状态、TTFT EWMA、样本数。
 
-Projections are honest: a field a backend does not track is `null`, never a fabricated value (the Tier 1 runtime has no numeric health score or endpoint-level circuit; Tier 2/3 nodes have no per-account quota). Claims, releases, outcome recording, and quota settlement stay owned by the backend modules and the dispatch funnels — the contract is read-only. Redis, Durable Objects, and cross-isolate coordination remain out of scope; the coordination boundary is unchanged.
+投影必须是诚实的：后端未跟踪的字段一律为 `null`，绝不伪造数值（Tier 1 运行时没有数值型健康评分，也没有端点级熔断；Tier 2/3 节点没有逐账号额度）。claim、release、结果记录与额度结算仍由后端模块以及 dispatch 漏斗负责——该契约是只读的。Redis、Durable Objects 与跨 isolate 协调仍在范围之外，协调边界保持不变。
 
-## Capacity signals
+## 容量信号
 
-Provider capacity is learned from observed runtime evidence. The node schema has no `limits`, node RPM, or guessed per-node concurrency fields. The removed `limits` field is a hard schema boundary: any node that still contains it is invalid configuration and is rejected rather than interpreted. Tier 1 also has no hard concurrency ceiling by default; policy `max_in_flight` is an optional isolate-local operator guard for a known per-account contract.
+provider 的容量通过观测到的运行时证据学习而来。节点 schema 中没有 `limits`、节点 RPM 或猜测的逐节点并发字段。已移除的 `limits` 字段是硬性的 schema 边界：任何仍包含该字段的节点都属于无效配置，会被拒绝而非被解释。Tier 1 默认也没有硬性的并发上限；策略中的 `max_in_flight` 是针对已知逐账号契约的可选 isolate 本地运营者防护。
 
-Routing uses signals the gateway can actually observe:
+路由使用网关实际能够观测到的信号：
 
-- live in-flight work is a **soft** ranking signal by default, never a guessed hard ceiling;
-- an explicit positive `max_in_flight` may hard-limit Tier 1 local admission for that policy; unset, `0`, or `null` leaves admission uncapped;
-- real 429 responses create key-local adaptive cooldown and recovery state;
-- provider-reported quota windows (OpenAI/Anthropic rate-limit headers, subscription window-reset hints) feed an isolate-local quota state that demotes near-limit accounts in the score and gates admission when the window is exhausted;
-- provider-model 429 evidence adds bounded soft heat when several independent keys hit the same shared capacity limit;
-- passive TTFT, soft affinity, exploration, circuit/recovery state, and recent transient failures influence ranking and recovery;
-- optional hedge work is suppressed before primary traffic when live pressure is already high.
+- 实时 in-flight 工作量默认是**软性**的排序信号，绝不是猜测出的硬上限；
+- 显式的正数 `max_in_flight` 可以对该策略下的 Tier 1 本地准入进行硬性限制；未设置、为 `0` 或为 `null` 时，准入不设上限；
+- 真实的 429 响应会产生 key 级的自适应冷却与恢复状态；
+- provider 报告的额度窗口（OpenAI/Anthropic 限流头部、订阅窗口的重置提示）会写入 isolate 本地的额度状态：接近上限的账号在评分中被降权；窗口耗尽时则对准入进行门控；
+- 当多个独立 key 命中同一共享容量限制时，provider-model 的 429 证据会添加有界的软性热度；
+- 被动 TTFT、软性亲和、探索、熔断/恢复状态以及近期的瞬时失败，会影响排序与恢复；
+- 当实时压力已经很高时，可选的 hedge 工作会在主流量之前被抑制。
 
-Gateway access groups authorize logical models but do not add a Tier 1 score factor. `max_in_flight` is deliberately not described as Provider-global capacity: multiple Cloudflare isolates can serve the same account independently. It is a local safety override, not a replacement for adaptive 429/cooldown learning.
+网关访问分组只授权逻辑模型，并不会增加 Tier 1 的评分因子（Gateway access groups authorize logical models but do not add a Tier 1 score factor）。`max_in_flight` 刻意不被描述为 provider 全局容量：多个 Cloudflare isolate 可能各自独立地服务同一账号。它是本地的安全覆盖，而不能替代自适应的 429/冷却学习。
 
-`GATEWAY_KEY_RPM` is separate. It protects client gateway access keys; it is not Provider/Node capacity configuration.
+`AIG_ACCESS_KEY_RPM` 是独立的。它保护的是客户端网关访问密钥，并非 Provider/节点的容量配置。
 
-## Quota lease
+## 额度租约（Quota lease）
 
-Provider-reported quota is a prediction, never truth, and it never replaces the reactive mechanisms. The lifecycle extends the existing claim/release slot token:
+provider 报告的额度是一种预测，绝非事实，且它永远不会替代反应式机制。该生命周期扩展了既有的 claim/release 槽位 token：
 
 ```text
-claim (acquire+reserve) -> execute -> settle(actual usage) -> release
+claim（获取并预留）-> execute（执行）-> settle（按实际用量结算）-> release（释放）
 ```
 
-- **Unknown quota is a no-op pass-through.** Providers that report no remaining/limit headers produce no quota signal; admission is unchanged and the reactive adaptive-429 + cooldown path governs. A hard limit is never fabricated.
-- **Reservation counter.** When a provider reports an absolute remaining-request count, each claim reserves one and admission is denied at zero, so concurrent requests cannot all pass against the tail of a window. A release before settlement (client abort, pre-dispatch failure, hedge loss before commitment) restores the reservation; a settled lease confirms consumption and subtracts reported token usage from the remaining-token window. Duplicate settle/release are idempotent. A missed settle can only over-restore (the account looks healthier and falls back to the reactive path) — the failure direction never leaks a reservation.
-- **Classification.** A reported window tail at or below 10% of the reported limit (or an absolute tail of ≤1 without a limit) marks the account `near_limit`, which demotes its Tier 1 score before a 429 ever arrives. Zero remaining with a known reset instant marks `exhausted_until`, which gates eligibility and surfaces the window wait for Retry-After; expiry auto-restores the account to unknown quota until the next report.
-- **Subscription windows** keep their existing advisory semantics: entitlement reset markers extend the rate-limit cooldown exactly as before, and additionally mark the window exhausted until the reset instant so the eligibility gate and reservation counter reflect the boundary.
-- **Hedges** are real upstream dispatches: each twin claims and reserves its own slot, and a losing twin releases its reservation back.
-- Quota state is isolate-local best-effort like all Tier 1 reliability state; `recordTier1QuotaReport` is the production writer and reconciliation subtracts reservations already outstanding in the isolate from a fresh provider report.
+- **未知额度是无操作的直通。** 不报告剩余量/上限头部的 provider 不会产生额度信号；准入保持不变，由反应式的自适应 429 与冷却路径负责治理。绝不会伪造硬性上限。
+- **预留计数器。** 当 provider 报告了绝对的剩余请求数时，每次 claim 会预留一个名额，剩余数为零时拒绝准入，从而防止并发请求全部通过窗口尾部的检查。在结算之前的释放（客户端中止、dispatch 前失败、hedge 在提交前落败）会恢复该预留；已结算的租约确认消耗，并从剩余 token 窗口中扣减上报的 token 用量。重复的 settle/release 是幂等的。遗漏的 settle 只会导致过度恢复（该账号看起来更健康，并回退到反应式路径）——失败方向绝不会造成预留泄漏。
+- **分类。** 当报告的窗口尾部小于或等于报告上限的 10%（或在没有上限时绝对尾部 ≤1）时，该账号被标记为 `near_limit`，并在 429 到来之前就降低其 Tier 1 评分。剩余为零且带有已知重置时刻的账号被标记为 `exhausted_until`，它会阻止资格判断，并将窗口等待时间作为 Retry-After 返回；到期后自动恢复为未知额度，直到下一次报告。
+- **订阅窗口**保留其既有的建议性语义：权益重置标记会如同以往一样延长限流冷却，此外还会将窗口标记为耗尽，直到重置时刻为止，从而使资格门控与预留计数器反映窗口边界。
+- **Hedge** 是真实的上游 dispatch：每个孪生请求各自 claim 并预留自己的槽位，落败的孪生请求会释放其预留。
+- 额度状态与所有 Tier 1 可靠性状态一样，是 isolate 本地的尽力而为数据；`recordTier1QuotaReport` 是生产环境中唯一的写入者，对账时会从新的 provider 报告中扣减 isolate 内已经存在的预留。
 
-## 413 handling
+## 413 处理
 
-A `413` that quotes a token ceiling ("Request too large ... tokens per minute (TPM): Limit 6000, Requested 9000") is a verdict on **that request**, not on the key: smaller requests to the same key still work. It rotates to another node like a `400`, puts no cooldown on the key, and is remembered per `(key, logical model)` as the smallest request size (body characters) refused. For the next ten minutes larger requests skip that key instead of paying a guaranteed refusal, while smaller ones keep using it; afterwards one request probes again so a raised limit is noticed. A `413` that carries `Retry-After` is a time-based throttle and stays a rate limit; a plain payload-size `413` still stops the request.
+若 `413` 引用了 token 上限（"Request too large ... tokens per minute (TPM): Limit 6000, Requested 9000"），则该结论针对的是**该请求**，而非该 key：同一 key 上更小的请求仍然可以成功。它会像 `400` 一样轮换到其他节点，不会对该 key 施加冷却，并且会按 `(key, 逻辑模型)` 记录被拒绝的最小请求体（以字符数计）。在接下来的十分钟内，更大的请求会跳过该 key，以免付出一次必然被拒绝的代价；更小的请求仍会使用该 key。之后会有一次请求进行探测，以便发现被提高的限额。携带 `Retry-After` 的 `413` 属于基于时间的节流，仍按限流处理；普通的请求体大小 `413` 则会直接终止该请求。
 
-## 429 handling
+## 429 处理
 
-429 is a temporary capacity signal. Tier 1 keeps the remaining credential pool available while the affected key learns its own recovery interval.
+429 是一种临时的容量信号。Tier 1 在受影响的 key 自行学习其恢复间隔的同时，保持剩余凭据池可用。
 
-For a `(provider, key-slot)` without a stronger explicit recovery signal, the adaptive ladder is:
+对于没有更强的显式恢复信号的 `(provider, key-slot)`，自适应阶梯如下：
 
 ```text
 15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m
 ```
 
-The top step is deliberately 30 minutes: a key that has recovered is back in the pool within half an hour at worst, while a long outage costs about one probe per 30 minutes. The ladder can be replaced with `AIG_RATE_LIMIT_STEPS_MS` (comma separated milliseconds, for example `15000,30000,60000,300000`); a missing or malformed value keeps the default.
+最高一级刻意设为 30 分钟：一个已经恢复的 key 最多在半小时内重新回到池中；而长时间的故障，只会带来大约每 30 分钟一次的探测开销。该阶梯可以通过 `AIG_RATE_LIMIT_STEPS_MS`（以逗号分隔的毫秒数，例如 `15000,30000,60000,300000`）替换；缺失或格式错误的值会保持默认值。
 
-Tier 1 behavior:
+Tier 1 的行为：
 
-- adaptive cooldown is scoped to `(provider, key-slot)`; one key never cools an entire Provider or logical model;
-- **a 429 is blamed on the model that received it.** The other models served by the same key stay in the pool. Only when a second distinct model on the same key is limited within 60 seconds (or the key is already on the account ladder) does the cooldown widen to the whole key. Each scope keeps its own ladder;
-- escalation occurs only when a recovery request still receives 429 after the previous cooldown expired;
-- extra 429 responses from requests already in flight during the same cooldown do not advance the stage or restart the timer;
-- a provider's own wait (`Retry-After` header, else a wait stated in the error text such as "try again in 7s") is trusted as-is for the first two failures, because the provider knows its window better than a blind ladder; from the third failure on it only raises the ladder floor, so a provider that keeps advertising "1s" while staying exhausted still backs off;
-- a 429 whose text names a long-lived allowance (quota, daily limit, credits, plan window) starts the ladder at 5 minutes instead of 15 seconds, because it will not clear in seconds; text that names a per-minute limit, or says nothing, keeps the short first steps;
-- when one key of a provider recovers, its sibling keys that are still cooling for more than a minute are let back in early (same plan, usually the same window); each is still admitted through the normal single recovery probe, and a failed probe returns it to its previous schedule without escalating;
-- a 429 does not create a logical-model-wide cooldown; other keys serving the same logical model remain eligible;
-- one or two distinct keys hitting 429 do not change provider-model ranking;
-- three or more distinct keys hitting 429 for the same `(provider, upstream model)` within the evidence window add only a soft cohort penalty; remaining keys stay eligible;
-- after cooldown, the first real admission is the controlled recovery request for that key;
-- a real successful recovery clears the corresponding 429 state and resets the adaptive ladder;
-- while one key is blocked, routing rotates to other eligible capacity.
+- 自适应冷却的范围是 `(provider, key-slot)`；一个 key 绝不会使整个 Provider 或某个逻辑模型进入冷却；
+- **429 归因于接收到它的模型。** 同一 key 上提供服务的其他模型仍留在池中。只有当同一 key 上的第二个不同模型在 60 秒内被限流（或该 key 已处于账号阶梯之上）时，冷却才会扩大到整个 key。每个范围各自保有其阶梯；
+- 只有当恢复请求在上一次冷却到期后仍收到 429 时，才会升级阶梯；
+- 同一冷却期内，已在途的请求所收到的额外 429 不会推进阶段，也不会重启计时器；
+- provider 自身给出的等待时间（`Retry-After` 头部，否则为错误文本中的等待说明，例如 "try again in 7s"）在前两次失败中被直接采纳，因为 provider 比盲目的阶梯更了解其窗口；从第三次失败开始，它只会抬高阶梯的下限，从而使持续宣称 "1s" 却仍处于耗尽状态的 provider 仍会得到退避；
+- 若 429 文本指明了长期配额（quota、daily limit、credits、plan window），阶梯将从 5 分钟而非 15 秒开始，因为它不会在几秒内解除；文本指明每分钟限制，或未说明任何内容的，保持较短的首个阶梯；
+- 当某个 provider 的一个 key 恢复时，其仍在冷却超过一分钟的同级 key 会被提前放回（同一计划，通常处于同一窗口）；每个 key 仍须通过常规的单次恢复探测才能被准入；若探测失败，它会回到之前的排期，且不会升级；
+- 429 不会产生逻辑模型级的冷却；为同一逻辑模型提供服务的其他 key 仍然可用；
+- 一两个不同 key 命中 429 不会改变 provider-model 的排序；
+- 在证据窗口内，三个或更多不同 key 对同一 `(provider, 上游模型)` 命中 429，只会增加软性的群体惩罚；其余 key 仍然可用；
+- 冷却结束之后，第一次真实准入即为该 key 的受控恢复请求；
+- 一次真实的成功恢复会清除对应的 429 状态，并重置自适应阶梯；
+- 当某个 key 被阻塞时，路由会轮转到其他可用容量。
 
-When every key serving a logical model is temporarily cooling, the gateway reports the earliest real recovery time. No model-wide lockout is added on top of key-local cooldowns.
+当服务某个逻辑模型的每个 key 都处于临时冷却时，网关会报告最早的真实恢复时间。在 key 级冷却之上，不会再额外叠加模型级的封锁。
 
-Success rate is not used as a positive routing reward. Recovery is driven by direct failure/rate-limit evidence and real subsequent requests.
+成功率不会被用作正向的路由奖励。恢复由直接的失败/限流证据以及之后的真实请求驱动。
 
-## Heat protection
+## 热度保护
 
-Tier 1 heat is deliberately soft and bounded by default:
+Tier 1 的热度在默认情况下是刻意保持软性且有界的：
 
-- live in-flight pressure can weaken affinity and demote a busy candidate but does not hard-block primary traffic unless the operator explicitly configured `max_in_flight`;
-- a Tier 1 hedge candidate must have concurrency pressure `< 0.75`;
-- provider-model 429 evidence window: `90s`;
-- 1–2 distinct rate-limited keys: factor `1.00`;
-- 3 distinct rate-limited keys: factor `1.15`;
-- 4+ distinct rate-limited keys: factor `1.35`;
-- repeated 429s from the same key count once in the evidence window;
-- each real success removes at most one recent distinct-key 429 observation.
+- 实时 in-flight 压力可以削弱亲和并降低繁忙候选的评分，但除非运营者显式配置了 `max_in_flight`，否则它不会硬性阻断主流量；
+- Tier 1 的 hedge 候选必须满足并发压力 `< 0.75`；
+- provider-model 429 证据窗口：`90s`；
+- 1–2 个不同的被限流 key：因子 `1.00`；
+- 3 个不同的被限流 key：因子 `1.15`；
+- 4 个及以上不同的被限流 key：因子 `1.35`；
+- 同一 key 反复出现的 429 在证据窗口内只计一次；
+- 每一次真实成功，最多会移除一条最近的、来自不同 key 的 429 观测。
 
-Provider-model heat is keyed by the provider-facing model, not the gateway logical alias. It never changes eligibility, attempt budgets, account cooldowns, affinity storage, or Tier 2/3 behavior. If a heated cohort is the only usable capacity, Tier 1 still dispatches to it unless an explicit local admission ceiling is occupied.
+provider-model 热度以面向 provider 的模型为键，而非网关的逻辑别名。它绝不会改变资格、attempt 预算、账号冷却、亲和存储或 Tier 2/3 的行为。若某个处于热度中的群体是唯一可用的容量，除非显式本地准入上限已被占满，否则 Tier 1 仍会向其 dispatch。
 
-## Passive TTFT
+## 被动 TTFT
 
-TTFT is recorded per `(account, logical model)` from a real upstream attempt to the first meaningful model output.
+TTFT 按 `(account, 逻辑模型)` 记录，取自一次真实的上游 attempt 到首个有意义的模型输出的耗时。
 
-- initial state is unobserved;
-- first observation initializes the value;
-- subsequent observations use EWMA alpha `0.25`;
-- one extreme sample is bounded relative to the current EWMA, while consecutive extreme samples may expose persistent degradation;
-- there are no active background probes.
+- 初始状态为未观测；
+- 第一次观测会初始化该值；
+- 之后的观测使用 EWMA alpha `0.25`；
+- 一个极端样本相对于当前 EWMA 会被限定在有界范围内，而连续的极端样本可能揭示持续性的性能退化；
+- 不存在任何主动的后台探测。
 
-A hedge loser cancelled because its peer already committed is neutral and must not poison TTFT or failure state.
+若 hedge 落败方因对端已提交而被取消，则该结果属于中性，不得污染 TTFT 或失败状态。
 
-## Cooldown and half-open recovery
+## 冷却与半开恢复
 
-Transient timeout/server failures use conservative circuit recovery. Rate-limit recovery uses the separate provider+key adaptive cooldown described above.
+瞬时的超时/服务端失败采用保守的熔断恢复策略。限流恢复则使用上文所述的、独立的 provider+key 自适应冷却。
 
-- transient timeout/server failures can accumulate toward circuit opening;
-- an expired circuit/cooldown is reconsidered only when a real request evaluates the node/model;
-- half-open admits a constrained real probe;
-- success restores normal circuit state;
-- a half-open counted failure reopens the circuit;
-- 429 recovery uses key-local adaptive cooldown rather than the transient-failure circuit backoff.
+- 瞬时的超时/服务端失败可以累积，从而导致熔断打开；
+- 已过期的熔断/冷却，只有在真实请求评估该节点/模型时才会被重新考虑；
+- 半开状态仅放行受约束的真实探测请求；
+- 成功则恢复为正常的熔断状态；
+- 半开状态下被计入的失败会重新打开熔断；
+- 429 的恢复使用 key 级的自适应冷却，而非瞬时失败的熔断退避。
 
-Authentication failures use account-scoped cooldown so a bad credential is isolated without disabling unrelated keys.
+鉴权失败使用账号范围的冷却，以便隔离错误的凭据，而不会禁用无关的 key。
 
-## Failure classification
+## 失败分类
 
-`src/reliability/classify.ts` owns the closed failure vocabulary. Response parsers/assemblers do not choose reliability semantics: they raise typed processing reasons (`deadline`, `malformed`, `too_large`, `truncated`, `empty`, `terminal`), then `classifyPostHeadersFailure()` maps those reasons into the existing failure vocabulary. Error-message string matching is not part of this boundary.
+`src/reliability/classify.ts` 负责封闭的失败词汇表。响应解析器/组装器不会自行选择可靠性语义：它们会抛出带类型的处理原因（`deadline`、`malformed`、`too_large`、`truncated`、`empty`、`terminal`），然后由 `classifyPostHeadersFailure()` 将这些原因映射到既有的失败词汇表中。基于错误消息字符串的匹配不属于该边界的一部分。
 
-| Kind | Typical cause | Request action | Reliability effect |
+| 类别 | 典型原因 | 请求动作 | 可靠性影响 |
 | --- | --- | --- | --- |
-| `rate_limit` | HTTP 429 | rotate / key-local cooldown | not circuit-counted |
-| `auth` | HTTP 401/403 | rotate / credential cooldown | not circuit-counted |
-| `client` | request-invalid 4xx | stop | neutral to upstream reliability |
-| `model_missing` | model-shaped 404 | rotate / model mapping cooldown | not circuit-counted |
-| `endpoint_not_found` | non-model 404 | rotate / short node cooldown | not circuit-counted |
-| `server` | upstream 5xx, typed terminal response event | rotate | circuit-counted |
-| `network` | network failure | rotate | circuit-counted |
-| `headers_timeout` | no upstream response headers in time | rotate | circuit-counted |
-| `first_event_timeout` | first meaningful output or pre-commit assembly misses the absolute attempt deadline | rotate | circuit-counted |
-| `stream_interrupted` | protocol stream truncates or misses completion semantics | rotate before commit / record interruption after commit | circuit-counted |
-| `client_abort` | client cancellation | stop/neutral | neutral |
-| `invalid_base_url` | invalid upstream URL before dispatch | rotate without budget charge | neutral/non-circuit |
-| `upstream_200_non_json_body` | HTTP 200 malformed/oversized protocol body | rotate / short cooldown | circuit-counted |
-| `upstream_200_no_meaningful_output` | structurally valid HTTP 200 without meaningful model output | rotate / short cooldown | circuit-counted |
-| `cancelled_after_peer_commit` | hedge loser cancelled after winner commits | neutral | neutral |
-| `unknown` | guarded catch-all | rotate according to caller | conservative |
+| `rate_limit` | HTTP 429 | 轮换 / key 级冷却 | 不计入熔断 |
+| `auth` | HTTP 401/403 | 轮换 / 凭据冷却 | 不计入熔断 |
+| `client` | 请求无效的 4xx | 停止 | 对上游可靠性中性 |
+| `model_missing` | 模型形态的 404 | 轮换 / 模型映射冷却 | 不计入熔断 |
+| `endpoint_not_found` | 非模型形态的 404 | 轮换 / 节点短冷却 | 不计入熔断 |
+| `server` | 上游 5xx，带类型的终止性响应事件 | 轮换 | 计入熔断 |
+| `network` | 网络失败 | 轮换 | 计入熔断 |
+| `headers_timeout` | 在时限内未收到上游响应头 | 轮换 | 计入熔断 |
+| `first_event_timeout` | 首个有意义的输出或提交前组装未能在绝对 attempt 截止时间内完成 | 轮换 | 计入熔断 |
+| `stream_interrupted` | 协议流被截断或未满足完成语义 | 提交前轮换 / 提交后记录中断 | 计入熔断 |
+| `client_abort` | 客户端取消 | 停止 / 中性 | 中性 |
+| `invalid_base_url` | dispatch 前发现无效的上游 URL | 轮换，且不计入预算 | 中性 / 不计入熔断 |
+| `upstream_200_non_json_body` | HTTP 200 但协议响应体格式错误或超大 | 轮换 / 短冷却 | 计入熔断 |
+| `upstream_200_no_meaningful_output` | 结构有效的 HTTP 200，但没有有意义的模型输出 | 轮换 / 短冷却 | 计入熔断 |
+| `cancelled_after_peer_commit` | hedge 落败方在胜者提交后被取消 | 中性 | 中性 |
+| `unknown` | 有防护的兜底捕获 | 由调用方决定轮换方式 | 保守处理 |
 
-Client-class 4xx stop the logical request. The gateway does not assume every provider-specific 400 is a compatibility failure that can safely be retried elsewhere.
+客户端类的 4xx 会终止该逻辑请求。网关不会假定每个特定于 provider 的 400 都是可以安全地在其他地方重试的兼容性失败。
 
 ## Tier 2/3
 
-Tier 2/3 use `node-state.ts` for active requests, health/circuit state, cooldown, and selection inputs. Active requests are a soft ranking signal. There is no node-level RPM or configured concurrency admission gate.
+Tier 2/3 使用 `node-state.ts` 来管理活动请求、健康/熔断状态、冷却以及选择的输入。活动请求是软性的排序信号。不存在节点级的 RPM 或已配置的并发准入门控。
 
-## Model-family attempt budget
+## 模型家族 attempt 预算
 
-`max_attempts` is a request-wide **hard ceiling**. Model-family fallback shares that budget and never raises it internally.
+`max_attempts` 是请求级的**硬上限**（`max_attempts` is a request-wide hard ceiling）。模型家族回退共享该预算，且绝不会在内部提高它。
 
-For a three-member family, first-round allocation widens before it deepens:
+对于一个三成员的家族，第一轮分配先横向扩展、再纵向加深：
 
 ```text
-max_attempts=1  requested only
-max_attempts=2  requested + first sibling
+max_attempts=1  仅请求的模型
+max_attempts=2  请求的模型 + 第一个同级模型
 max_attempts=3  1 / 1 / 1
 max_attempts=4  2 / 1 / 1
 max_attempts=5  3 / 1 / 1
-max_attempts>=6 3 / 2 / 1, then bounded re-checks only from unused budget
+max_attempts>=6 3 / 2 / 1，之后仅在剩余未用预算内进行有界复检
 ```
 
-`Air` follows the same hard ceiling across the one-way `Air -> Pro -> Max -> Ultra` chain. Family fallback candidates are also intersected with the authenticated Gateway Key model scope; internal fallback cannot widen the caller's authorization.
+`Air` 在单向的 `Air -> Pro -> Max -> Ultra` 链条上遵循同样的硬上限。家族回退候选还会与已认证的网关密钥模型范围取交集；内部回退不能扩大调用方的授权范围。
 
-Every native attempt, protocol fallback, family fallback, and bounded re-check shares the same logical-attempt counter and whole-request wall-clock budget. Request-local failure-domain deduplication prevents sibling aliases that collapse to the same credential + provider-facing model from repeatedly spending that budget.
+每一次 native attempt、协议回退、家族回退以及有界复检，都共享同一个逻辑 attempt 计数器与整个请求的墙钟预算。请求内的故障域去重，可防止解析为同一「凭据 + provider 侧模型」的同级别名反复消耗该预算。
 
-When such a bounded family plan ends after only transient failures, the retryable 503 means the **attempt budget** was exhausted; it does not prove that every compatible account in the deployment was tested or unavailable.
+当这样一个有界的家族规划仅因瞬时失败而结束时，返回的可重试 503 表示**attempt 预算**已经耗尽；它并不能证明部署中所有兼容账号都已被测试或不可用。
 
-## Timeout budget
+## 超时预算
 
-`FAILOVER_BUDGET_MS` is the request-wide wall-clock ceiling for transparent recovery. A policy-level `first_event_timeout_ms` cannot exceed that request budget. Per-attempt header and first-event waits are always bounded by the remaining request and attempt deadlines.
+`AIG_FAILOVER_BUDGET_MS` 是透明恢复的请求级墙钟上限。策略级的 `first_event_timeout_ms` 不得超过该请求预算。逐 attempt 的 header 与首事件等待时间，始终受剩余请求截止时间与 attempt 截止时间的约束。
 
-The live allocator is reserve-aware, not equal-share. The current attempt may use the remaining request budget except for an escape reserve for later request-plan opportunities. With sufficient budget the reserve is capped at `MIN_FAILOVER_RESERVE_MS=5000` per later opportunity; under tight budgets it shrinks toward equal share so later candidates are not starved.
+实时分配器感知预留，而非平均分配。当前 attempt 可以使用剩余的请求预算，但需扣除为后续请求计划机会预留的逃逸时间。在预算充足时，每个后续机会的预留上限为 `MIN_FAILOVER_RESERVE_MS=5000`；在预算紧张时，预留会逐步收缩至平均份额，以免后续候选被饿死。
 
-The opportunity count is request-wide: it combines dispatchable attempts in the current pass with reachable future model-family passes. Already-spent duplicate failure domains are removed from future reserve planning, and the reserve is recomputed after a native pass before protocol fallback.
+机会数量是请求级的：它综合了当前轮次中可 dispatch 的 attempt，以及可达的后续模型家族轮次。已消耗的重复故障域会从未来的预留规划中移除；在 native 轮次结束之后、协议回退之前，预留会被重新计算。
 
-A physical upstream attempt owns one absolute deadline. Header wait, first meaningful output, successful JSON/SSE assembly, and non-2xx diagnostic body reads are all bounded by that same deadline. A hedge twin inherits the primary logical attempt's deadline and never gets a fresh wall-clock window.
+一次物理上游 attempt 只拥有一个绝对截止时间。Header 等待、首个有意义的输出、成功的 JSON/SSE 组装，以及非 2xx 诊断响应体的读取，都受同一截止时间约束。hedge 孪生请求继承主逻辑 attempt 的截止时间，绝不会获得新的墙钟窗口。
 
-This means a policy cannot claim a first-event wait longer than the whole request wall clock; invalid combinations are rejected instead of silently behaving differently from configuration.
+这意味着策略不能声称首事件等待时间长于整个请求的墙钟时间；无效的配置组合会被拒绝，而不会悄悄地表现出与配置不一致的行为。
 
-## Streaming lifecycle
+## 流式生命周期
 
-The first-event guard defines the transparent-failover boundary:
+首事件守卫定义了透明故障转移的边界：
 
-- before meaningful model output commits, a failed attempt may rotate within the shared request budget;
-- role-only, lifecycle-only, or empty deltas are not meaningful output;
-- after meaningful output commits, transparent replay/failover is unsafe and is not attempted.
+- 在有意义的模型输出被提交之前，失败的 attempt 可以在共享的请求预算内轮换；
+- 仅含 role、仅含生命周期事件或为空的增量，都不算有意义的输出；
+- 在有意义的输出被提交之后，透明的重放/故障转移是不安全的，因此不会尝试。
 
-Real upstream or live transformed streams are tracked by the node-layer `trackStreamResponse` / `makeNodeStreamTrack` path. That owner records node success/interruption, releases Tier 1 slots, and settles the outer client request exactly once.
+真实的上游流或实时转换流，由节点层的 `trackStreamResponse` / `makeNodeStreamTrack` 路径跟踪。该归属方负责记录节点的成功/中断，释放 Tier 1 的槽位，并且恰好一次地结算外层的客户端请求。
 
-A gateway-synthesized SSE stream is different: the upstream already returned a complete JSON object, so there is no live node stream tracker. The synthesis helper marks that response with an internal lifecycle header; the outer `trackClientResponse` consumes and strips the marker, relays the body, and settles success/failure/cancellation on EOF/error/cancel. Ordinary real SSE is returned by the outer layer as-is, avoiding stacked pull wrappers.
+网关合成的 SSE 流则不同：上游已经返回了完整的 JSON 对象，因此不存在实时的节点流跟踪器。合成辅助函数会用一个内部生命周期头部标记该响应；外层的 `trackClientResponse` 会消费并剥离该标记，转发响应体，并在 EOF/错误/取消时结算成功、失败或取消。真实的普通 SSE 由外层原样返回，以避免叠加多层 pull 包装。
 
-Tier 1 keeps its in-flight slot through headers, first output, and an active real upstream stream. For a synthetic stream the upstream/node success is already recorded before synthesis; only the client-facing request lifecycle remains open until the synthesized body ends.
+对于合成流，上游/节点的成功在合成之前就已记录；只有客户端侧的请求生命周期会一直保持开放，直至合成的响应体结束。Tier 1 的 in-flight 槽位会一直保留到响应头、首个输出以及活动中的真实上游流结束为止。
 
-Commit semantics remain protocol-specific; see [protocol-model.md](protocol-model.md).
+提交语义仍然因协议而异；参见 [protocol-model.md](protocol-model.md)。
 
-## Protocol fallback safety
+## 协议回退安全
 
-Cross-protocol fallback remains limited to OpenAI Chat Completions <-> Anthropic Messages. OpenAI Responses is native-only.
+跨协议回退仍仅限于 OpenAI Chat Completions <-> Anthropic Messages。OpenAI Responses 仅支持 native。
 
-Conversion fidelity is not treated as binary success/failure. `exact` and `portable` conversions may proceed. A degraded conversion may proceed only when the loss is cosmetic or explicitly safe. The fallback is rejected before dispatch when conversion would drop high-risk semantic state such as provider-native tool state/history, thinking history, context-management semantics, or tool-result error meaning.
+转换保真度不被视为二元的成功/失败。`exact` 与 `portable` 的转换可以继续进行。`degraded` 的转换仅在损失属于表面性或已被明确认定为安全的情况下才可以继续。若转换会丢弃高风险的语义状态（例如 provider 原生工具的状态/历史、thinking 历史、上下文管理语义，或工具结果的错误含义），则在 dispatch 之前就会拒绝该回退。
 
-This favors a retryable failure over an HTTP-success response whose meaning materially changed in transit.
+这种设计宁可选择可重试的失败，也不愿返回一个 HTTP 成功、但其含义在传输过程中已发生实质性改变的响应。
 
-## Circuit behavior
+## 熔断行为
 
-Transient failures drive the circuit/cooldown model; rate limits, auth failures, client errors, model mapping errors, and hedge race losses are distinct states.
+瞬时失败驱动熔断/冷却模型；限流、鉴权失败、客户端错误、模型映射错误以及 hedge 竞争落败，则属于各自不同的状态。
 
-The design intentionally distinguishes “this credential is temporarily limited”, “this model mapping is missing”, “this endpoint is bad”, and “this upstream is transiently failing”. Collapsing those into one generic failure counter would cause unnecessary pool loss.
+这一设计刻意区分「该凭据暂时受限」、「该模型映射缺失」、「该端点有问题」以及「该上游暂时故障」。若将它们合并为一个通用失败计数器，将会造成不必要的池容量损失。
 
-## Coordination boundary
+## 协调边界
 
-Global concurrency coordination is not implemented. Adaptive 429 recovery, provider-model heat, and optional `max_in_flight` admission are isolate-local. Adding Durable Objects or another strong coordination layer requires production evidence that cross-isolate recovery collisions materially harm reliability enough to justify the latency and complexity.
+全局并发协调尚未实现。自适应 429 恢复、provider-model 热度以及可选的 `max_in_flight` 准入，都仅限于 isolate 本地。只有当生产证据表明跨 isolate 的恢复冲突已经严重损害可靠性，足以证明其延迟与复杂度成本合理时，才会引入 Durable Objects 或其他强协调层。
 
-## Observability boundary
+## 可观测性边界
 
-D1 token-usage persistence and Public Model Status are observational. Historical usage, success rate, and public dashboard state do not feed back into candidate scoring.
+D1 token 用量持久化与公共模型状态仅用于观测。历史用量、成功率与公共仪表盘状态，不会反馈到候选评分中。

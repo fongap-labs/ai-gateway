@@ -50,7 +50,7 @@ Tier 3  付费 API 托底
 
 Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provider-Model 热度动态分流；模型家族 fallback 也有明确上限。
 
-Tier 2 同时支持静态 API-Key 节点和**订阅节点**（`auth: "oauth"`）：运营者自己的 Claude / Codex / Gemini 订阅通过 PKCE 授权接入，Token 以 AES-GCM 加密存储在 D1，调度时自动刷新、按需解析，全程 fail-closed。详见 [Configuration - Tier 2 订阅](docs/operations/configuration.md#tier-2-subscriptions-oauth)。
+Tier 2 同时支持静态 API-Key 节点和**订阅节点**（`auth: "oauth"`）：运营者自己的 Claude / Codex / Gemini 订阅通过 PKCE 授权接入，Token 以 AES-GCM 加密存储在 D1，调度时自动刷新、按需解析，全程 fail-closed。详见 [Configuration - Tier 2 订阅](docs/operations/configuration.md#tier-2-订阅oauth)。
 
 核心行为：
 

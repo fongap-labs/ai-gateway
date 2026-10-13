@@ -1,58 +1,58 @@
-# Dependency policy
+# 依赖策略
 
-ai-gateway keeps the Worker runtime dependency surface intentionally small. Dependency changes are treated as behavior-risk changes when they affect bundling, protocol semantics, network behavior, or deployment tooling.
+ai-gateway 将 Worker 运行时的依赖面保持在有意的最小范围内。当依赖变更影响打包、协议语义、网络行为或部署工具时，将其视为行为风险变更。
 
 ## Dependabot
 
-`.github/dependabot.yml` currently checks:
+`.github/dependabot.yml` 当前检查：
 
-- npm dependencies monthly, with at most 5 open PRs;
-- GitHub Actions monthly, with at most 5 open PRs.
+- npm 依赖，每月一次，最多 5 个未合并的 PR；
+- GitHub Actions，每月一次，最多 5 个未合并的 PR。
 
-Security updates are not deferred merely to preserve the monthly cadence.
+安全更新不会仅仅为了维持每月的节奏而被推迟。
 
-## Update policy
+## 更新策略
 
-### Patch and minor updates
+### 补丁与次要版本更新
 
-A patch/minor dependency update may be merged when:
+当满足以下条件时，可以合并补丁/次要版本的依赖更新：
 
-- required CI passes;
-- the update does not introduce a known breaking behavior;
-- Worker bundle and deployment dry-run remain valid;
-- security impact is acceptable.
+- 必需的 CI 通过；
+- 更新未引入已知的破坏性行为；
+- Worker bundle 与部署 dry-run 仍然有效；
+- 安全影响可以接受。
 
-Automatic merge is a repository-setting choice, not an assumption made by this policy.
+是否自动合并是仓库设置的选择，而非本策略所假定的前提。
 
-### Major updates
+### 主要版本更新
 
-Major updates require explicit review of breaking changes, Worker/runtime compatibility, configuration changes, and release impact. If public or operational behavior changes, update the relevant canonical documentation and `CHANGELOG.md`.
+主要版本更新需要对破坏性变更、Worker/运行时兼容性、配置变更以及发布影响进行明确评审。若公共或运营行为发生变化，应更新相关的规范文档与 `CHANGELOG.md`。
 
-## Runtime dependencies
+## 运行时依赖
 
-Prefer no runtime dependency when the Web Platform or a small local implementation is sufficient. A new runtime package needs a concrete reason such as security, protocol correctness, or substantial maintenance reduction.
+当 Web 平台或小型的本地实现已经足够时，优先不引入运行时依赖。新增运行时包需要有具体的理由，例如安全性、协议正确性，或能够大幅降低维护成本。
 
-Avoid adding general frameworks, validation stacks, HTTP wrappers, or utility libraries for convenience alone.
+不要仅为了方便而引入通用框架、校验栈、HTTP 封装或工具库。
 
 ## Lockfile
 
-- `package-lock.json` is committed.
-- CI uses `npm ci` for deterministic installation.
-- Do not hand-edit the lockfile.
+- `package-lock.json` 纳入版本控制。
+- CI 使用 `npm ci` 以保证安装的确定性。
+- 不得手动编辑 lockfile。
 
 ## GitHub Actions
 
-Actions used by required workflows should be pinned to immutable commit SHAs. Updating an Action pin requires the same review discipline as other build/deployment dependencies.
+必需工作流所使用的 Actions 应固定到不可变的 commit SHA。更新 Action 的固定版本，需要与其他构建/部署依赖同等的评审纪律。
 
 ## Wrangler
 
-Wrangler is invoked as a pinned CLI rather than installed as a production dependency. The canonical deploy wrapper is `scripts/cloudflare-wrangler.mjs`, which owns the pinned Wrangler version and the local deploy/migration behavior.
+Wrangler 以固定版本的 CLI 形式调用，而不是作为生产依赖安装。规范的部署包装器为 `scripts/cloudflare-wrangler.mjs`，它负责固定 Wrangler 版本，以及本地的部署与迁移行为。
 
-When the Wrangler pin changes:
+当 Wrangler 版本锁定发生变化时：
 
-1. review Cloudflare breaking changes;
-2. update every intentionally duplicated CLI pin in repository tooling/scripts;
-3. run `npm run validate:merge`, `npm run validate:deploy`, and `npm run check:deploy` as applicable;
-4. update operator documentation if behavior or requirements changed.
+1. 评审 Cloudflare 的破坏性变更；
+2. 更新仓库工具与脚本中每一处有意重复声明的 CLI 版本锁定；
+3. 按需运行 `npm run validate:merge`、`npm run validate:deploy` 与 `npm run check:deploy`；
+4. 若行为或运行要求发生变化，更新运营文档。
 
-Do not document `package.json` as the Wrangler version source unless Wrangler is actually moved there.
+除非 Wrangler 已真正迁移到 `package.json` 中，否则不要在文档中将 `package.json` 写成 Wrangler 版本的来源。

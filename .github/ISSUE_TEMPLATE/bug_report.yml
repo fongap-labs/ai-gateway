@@ -1,5 +1,5 @@
-name: Bug report
-description: Report a reproducible gateway defect
+name: 缺陷报告
+description: 报告一个可复现的网关缺陷
 title: "[Bug] "
 labels:
   - bug
@@ -7,88 +7,88 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a problem. Issues are for reproducible gateway defects.
+        感谢你报告问题。Issue 仅用于可复现的网关缺陷。
 
-        For setup, configuration, usage, provider integration, or troubleshooting questions, use Discussions / Q&A. For feature or product ideas, use Discussions / Ideas.
+        如果是部署、配置、使用方式、provider 接入或故障排查等问题，请使用 Discussions / Q&A。如果是功能或产品建议，请使用 Discussions / Ideas。
 
-        Never paste live API tokens, authorization headers, private upstream URLs, request bodies, or user data.
+        切勿粘贴真实的 API token、authorization 头、私有上游 URL、请求体或用户数据。
 
   - type: input
     id: version
     attributes:
-      label: Gateway version
-      description: Open the public `/version` endpoint and provide only the version number.
-      placeholder: 1.3.1
+      label: 网关 commit SHA
+      description: 使用网关访问密钥访问已鉴权的 `/health` 端点，仅提供其中 `build` 字段的值（commit SHA）。
+      placeholder: <commit SHA>
     validations:
       required: true
 
   - type: dropdown
     id: protocol
     attributes:
-      label: Client or surface
+      label: 客户端或接口
       options:
         - OpenAI Chat Completions
         - OpenAI Responses
         - Anthropic Messages / Claude Code
-        - Health or metrics endpoint
-        - Deployment or configuration
-        - Other
+        - 健康检查或指标端点
+        - 部署或配置
+        - 其他
     validations:
       required: true
 
   - type: textarea
     id: happened
     attributes:
-      label: What happened?
-      description: Describe the actual behavior with sensitive values removed.
+      label: 发生了什么？
+      description: 描述实际行为，并移除所有敏感值。
     validations:
       required: true
 
   - type: textarea
     id: reproduce
     attributes:
-      label: Steps to reproduce
-      description: Provide the smallest reliable reproduction you can.
+      label: 复现步骤
+      description: 请尽可能提供最小且可稳定复现的步骤。
       placeholder: |
-        1. Configure ...
-        2. Send ...
-        3. Observe ...
+        1. 配置 ...
+        2. 发送 ...
+        3. 观察 ...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
-      description: Describe what you expected the gateway to do.
+      label: 预期行为
+      description: 描述你期望网关的行为。
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Sanitized logs
-      description: Remove tokens, full request bodies, private domains, authorization headers, and user data.
+      label: 脱敏后的日志
+      description: 移除 token、完整请求体、私有域名、authorization 头以及用户数据。
       render: shell
 
   - type: dropdown
     id: regression
     attributes:
-      label: Regression?
-      description: Did this work correctly in an earlier gateway version?
+      label: 是否为回归问题？
+      description: 该功能在较早的网关版本中是否能正常工作？
       options:
-        - "No"
-        - "Yes"
-        - Unknown
+        - "否"
+        - "是"
+        - 未知
     validations:
       required: true
 
   - type: checkboxes
     id: checklist
     attributes:
-      label: Checklist
+      label: 检查清单
       options:
-        - label: I searched existing Issues and did not find an obvious duplicate.
+        - label: 我已搜索现有 Issue，未发现明显的重复项。
           required: true
-        - label: I removed API keys, tokens, authorization headers, private URLs, request bodies, and user data from this report.
+        - label: 我已从本报告中移除 API 密钥、token、authorization 头、私有 URL、请求体以及用户数据。
           required: true

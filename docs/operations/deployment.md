@@ -1,8 +1,8 @@
-# Deployment
+# 部署
 
-Production deployment uses the shared Action Worker execution plane. This repository owns the product code, deploy manifest, validation, and Cloudflare deployment entrypoint. Action Worker owns source admission, CI evidence, main-write provenance, runner resolution, GitHub Environment binding, secret scoping, and deploy orchestration.
+生产部署使用共享的 Action Worker 执行平面。本仓库负责产品代码、部署清单（deploy manifest）、校验以及 Cloudflare 部署入口。Action Worker 负责源码准入、CI 证据（CI Evidence）、主分支写入来源证明（provenance）、runner 解析、GitHub Environment 绑定、密钥范围控制以及部署编排。
 
-## Production path
+## 生产路径
 
 ```text
 Pull Request
@@ -11,10 +11,10 @@ Action Worker PR Governance
     ↓
 validate-merge
     ↓
-squash merge to main
+squash 合并到 main
     ↓
 ai-gateway .github/workflows/ci.yml
-    ↓ thin dispatch only
+    ↓ 仅做薄分发
 Action Worker Central CI
     ↓
 CI Evidence + Main Write Guard
@@ -25,16 +25,16 @@ Action Worker Deploy Source Script
     ↓ environment: production
 scripts/deploy.sh
     ↓
-preflight + deploy validation
+预检 + 部署校验
     ↓
-Cloudflare Worker deployment
+Cloudflare Worker 部署
     ↓
-health verification by exact source SHA
+按精确源码 SHA 进行健康验证
     ↓
-success / Worker rollback on failure
+成功 / 部署失败时回滚 Worker
 ```
 
-The source repository does not own a separate production deploy workflow. The deployment contract is declared in `.github/deploy.json`:
+源码仓库不拥有单独的生产部署工作流。部署契约声明于 `.github/deploy.json` 中：
 
 ```json
 {
@@ -48,87 +48,87 @@ The source repository does not own a separate production deploy workflow. The de
 }
 ```
 
-The manifest expresses deployment intent. It does not grant runner access, credentials, or production authority.
+清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
-## Automatic deployment
+## 自动部署
 
-After Central CI succeeds for the current default-branch HEAD, Action Worker resolves the source-owned deploy manifest. Automatic deployment proceeds only when:
+在中央 CI 对当前默认分支 HEAD 运行成功之后，Action Worker 会解析源码所有的部署清单。只有同时满足以下条件，才会进行自动部署：
 
-- the source SHA is the current default-branch HEAD;
-- the repository has the central `deploy` capability;
-- trusted Action Worker `CI Evidence` is successful;
-- Main Write Guard proves the source came through the governed merge path;
-- the manifest has `automatic: true`;
-- the selected runner profile resolves to the privileged trust domain;
-- the change is not documentation-only when `ignore_docs_only: true`.
+- 源码 SHA 是当前默认分支的 HEAD；
+- 仓库具备中央 `deploy` 能力；
+- 受信任的 Action Worker `CI Evidence` 为成功；
+- Main Write Guard 证明该源码经过了受治理的合并路径；
+- 清单中 `automatic: true`；
+- 所选的 runner profile 解析到特权信任域；
+- 当 `ignore_docs_only: true` 时，本次变更不仅限于文档。
 
-Pull-request CI does not trigger production deployment.
+Pull Request 的 CI 不会触发生产部署。
 
-## Manual central deployment
+## 中央手动部署
 
-Action Worker's `Deploy Source Script` workflow can be started manually with:
+Action Worker 的 `Deploy Source Script` 工作流可以手动启动，参数如下：
 
 ```text
 source_repository = fongap-labs/ai-gateway
-source_sha        = <exact 40-character current main SHA>
+source_sha        = <精确的 40 位当前 main SHA>
 ```
 
-Manual execution is not a validation bypass. The same source, CI Evidence, Main Write Guard, deploy manifest, runner, Environment, and secret-scope checks apply.
+手动执行并非绕过校验的途径。同样的源码、CI Evidence、Main Write Guard、部署清单、runner、Environment 与密钥范围检查全部适用。
 
-## Production Environment
+## 生产 Environment
 
-The deploy manifest binds the execution job to the GitHub Environment named `production`. Non-sensitive runtime configuration belongs in Variables; credentials belong in Secrets.
+部署清单将执行作业绑定到名为 `production` 的 GitHub Environment。非敏感的运行时配置应放在 Variables 中；凭据应放在 Secrets 中。
 
-Action Worker exports the resolved Variables and exposes only source-declared deploy Secrets. `.github/deploy.secrets.allowed` defines the maximum application-secret surface. Central control credentials are removed before `scripts/deploy.sh` executes.
+Action Worker 会导出解析后的 Variables，并且只暴露源码声明的部署 Secrets。`.github/deploy.secrets.allowed` 定义了应用密钥的最大暴露范围。在 `scripts/deploy.sh` 执行之前，中央控制凭据会被移除。
 
-Core production Variables include:
+核心生产 Variables 包括：
 
-- optional `AIG_IS_DEPLOY_ENABLED=false` emergency kill switch;
-- `CLOUDFLARE_ACCOUNT_ID`;
-- `AIG_PUBLIC_URL`;
-- at least one `AIG_TIER{1,2,3}_NODES_XX` shard;
-- `AIG_AFFINITY_KV_ID` when Tier 1 affinity is used;
-- optional `AIG_USAGE_D1_ID`;
-- corresponding `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`;
-- optional `AIG_MODELS_CONFIG`, `AIG_POLICIES_CONFIG`, and other runtime Variables.
+- 可选的 `AIG_IS_DEPLOY_ENABLED=false` 紧急开关（kill switch）；
+- `CLOUDFLARE_ACCOUNT_ID`；
+- `AIG_PUBLIC_URL`；
+- 至少一个 `AIG_TIER{1,2,3}_NODES_XX` 分片；
+- 使用 Tier 1 亲和时所需的 `AIG_AFFINITY_KV_ID`；
+- 可选的 `AIG_USAGE_D1_ID`；
+- 对应的 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`；
+- 可选的 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG` 以及其他运行时 Variables。
 
-Core production Secrets include:
+核心生产 Secrets 包括：
 
-- `CLOUDFLARE_API_TOKEN`;
-- configured `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`;
-- tier-scoped `AIG_TIER{1,2,3}_CREDENTIALS_01..10`;
-- `AIG_TOKEN_ENCRYPTION_KEY` when encrypted subscription credentials are used.
+- `CLOUDFLARE_API_TOKEN`；
+- 已配置的 `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`；
+- 按 Tier 划分范围的 `AIG_TIER{1,2,3}_CREDENTIALS_01..10`；
+- 使用加密订阅凭据时所需的 `AIG_TOKEN_ENCRYPTION_KEY`。
 
-The application preflight fails closed when required production inputs are missing.
+当必需的生产输入缺失时，应用预检会失败即关闭。
 
-## Source-owned deploy entrypoint
+## 源码自有的部署入口
 
-`scripts/deploy.sh` receives the exact admitted source SHA as `DEPLOY_SOURCE_SHA`. It:
+`scripts/deploy.sh` 通过 `DEPLOY_SOURCE_SHA` 接收经过准入的精确源码 SHA。它会依次：
 
-1. honors the emergency deploy kill switch;
-2. requires a full immutable source SHA;
-3. installs the locked Node dependencies;
-4. runs `npm run validate:deploy` and `npm run check:deploy`;
-5. prepares the Cloudflare deployment configuration and secret payload;
-6. deploys through the pinned Wrangler wrapper;
-7. verifies the live build against the exact source SHA;
-8. rolls back the Worker deployment if post-deploy verification fails.
+1. 遵守紧急部署开关；
+2. 要求提供完整的、不可变的源码 SHA；
+3. 安装锁定的 Node 依赖；
+4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
+5. 准备 Cloudflare 部署配置与密钥载荷；
+6. 通过固定版本的 Wrangler 包装器进行部署；
+7. 按精确的源码 SHA 验证线上构建；
+8. 若部署后验证失败，则回滚 Worker 部署。
 
-Cloudflare remains the execution target, not the canonical configuration editor.
+Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
-## Node credential binding
+## 节点凭据绑定
 
-Config and Secret shards are independent partitions. Runtime binding is by **Tier + node id**, not by matching shard suffixes.
+Config 与 Secret 分片是相互独立（independent）的分区。运行时绑定依据是 **Tier + node id**，而非分片后缀的匹配。
 
-To add or rotate an upstream key:
+添加或轮换上游 key 的步骤：
 
-1. keep the node in the appropriate `AIG_TIER*_NODES_XX` Variable;
-2. add or update its credential under the same node id in any Secret shard for that tier;
-3. let the next governed deployment rebuild runtime configuration.
+1. 将节点保留在相应的 `AIG_TIER*_NODES_XX` Variable 中；
+2. 在该 Tier 的任一 Secret 分片中，以相同的节点 id 添加或更新其凭据；
+3. 由下一次受治理的部署重新构建运行时配置。
 
-Do not place credentials in node JSON.
+不要将凭据放入节点 JSON 中。
 
-## Gateway access groups
+## 网关访问分组
 
 ```text
 AIG_ACCESS_KEY_AIR       + AIG_ACCESS_MODELS_AIR
@@ -138,29 +138,29 @@ AIG_ACCESS_KEY_ULTRA     + AIG_ACCESS_MODELS_ULTRA
 AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 ```
 
-A configured key with an empty or missing model allowlist is fail-closed and grants zero model access.
+已配置的密钥若其模型允许列表为空或缺失，则会失败即关闭，且授予零个模型的访问权限。
 
-## Verification and rollback
+## 验证与回滚
 
-The deployed Git commit SHA is passed into the Worker build. Authenticated `/health` exposes that build identity.
+已部署的 Git commit SHA 会被传入 Worker 构建。经过认证的 `/health` 会暴露该构建标识。
 
-Post-deploy verification requires the live build to match the exact admitted source SHA and then validates the required gateway surfaces. A failed health check triggers Worker rollback.
+部署后验证要求线上构建与经过准入的精确源码 SHA 一致，随后再校验必需的网关接口。健康检查失败会触发 Worker 回滚。
 
-D1 migrations are not transactionally undone by Worker rollback. Migration changes must therefore remain safe across deployment and rollback boundaries.
+D1 迁移不会因 Worker 回滚而被事务性地撤销。因此，迁移变更必须在部署与回滚的边界两侧都保持安全。
 
-## Local/operator lifecycle
+## 本地/运营者生命周期
 
-Local direct deployment remains an operator path and is separate from the governed GitHub production path:
+本地直接部署仍是运营者路径，与受治理的 GitHub 生产路径相互独立：
 
-- `scripts/install.sh` / `scripts/install.ps1` — first-time bootstrap;
-- `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` — update operator configuration;
-- `npm run deploy` — direct deployment from an already configured checkout;
-- `npm run cf:login`, `npm run cf:whoami`, `npm run tail` — Cloudflare operator commands.
+- `scripts/install.sh` / `scripts/install.ps1`——首次引导；
+- `scripts/reconfigure.sh` / `scripts/reconfigure.ps1`——更新运营者配置；
+- `npm run deploy`——从已配置好的检出副本直接部署；
+- `npm run cf:login`、`npm run cf:whoami`、`npm run tail`——Cloudflare 运营者命令。
 
-All direct Cloudflare CLI calls route through `scripts/cloudflare-wrangler.mjs`. The tracked `wrangler.jsonc` remains the repository baseline; local overrides belong in gitignored `wrangler.user.jsonc`.
+所有直接的 Cloudflare CLI 调用都通过 `scripts/cloudflare-wrangler.mjs` 进行。受版本控制的 `wrangler.jsonc` 仍是仓库基线；本地覆盖配置应放在被 git 忽略的 `wrangler.user.jsonc` 中。
 
-## Repository protection
+## 仓库保护
 
-`validate-merge` is the PR-time required merge authority. Production deployment is post-merge execution and is not a PR required check.
+`validate-merge` 是 PR 阶段必需的合并权威。生产部署属于合并之后的执行环节，不是 PR 的必需检查项。
 
-See [github-repository-settings.md](github-repository-settings.md) for repository settings and [Configuration](configuration.md) for runtime configuration semantics.
+仓库设置参见 [github-repository-settings.md](github-repository-settings.md)；运行时配置语义参见[配置](configuration.md)。

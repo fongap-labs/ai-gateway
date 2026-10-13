@@ -2,37 +2,37 @@ body:
   - type: markdown
     attributes:
       value: |
-        Welcome to ai-gateway Discussions.
+        欢迎来到 ai-gateway Discussions。
 
-        Use Q&A for setup, configuration, provider integration, client usage, and troubleshooting questions. If you have a reproducible gateway defect, open an Issue instead. Do not disclose security vulnerabilities publicly.
+        部署、配置、provider 接入、客户端使用以及故障排查等问题，请使用 Q&A。如果你发现了可复现的网关缺陷，请改为提交 Issue。切勿公开披露安全漏洞。
 
   - type: textarea
     id: question
     attributes:
-      label: Your question
-      description: Describe what you are trying to do and what you are seeing.
+      label: 你的问题
+      description: 描述你想要完成的事情以及你观察到的现象。
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: Gateway version
-      description: If the question is version-specific, provide the gateway version.
-      placeholder: 1.3.1
+      label: 网关 commit SHA
+      description: 若问题与特定版本有关，请提供网关的 commit SHA（即已鉴权的 `/health` 端点中 `build` 字段的值）。
+      placeholder: <commit SHA>
 
   - type: textarea
     id: tried
     attributes:
-      label: What have you tried?
-      description: Optional. Include relevant sanitized configuration details, commands, or logs.
+      label: 你已尝试过什么？
+      description: 可选。可附上相关的脱敏配置细节、命令或日志。
 
   - type: checkboxes
     id: checklist
     attributes:
-      label: Checklist
+      label: 检查清单
       options:
-        - label: I searched existing Discussions and Issues and did not find an obvious duplicate.
+        - label: 我已搜索现有 Discussions 与 Issue，未发现明显的重复项。
           required: true
-        - label: I did not include API keys, tokens, authorization headers, private upstream URLs, request bodies, or user data.
+        - label: 我未包含 API 密钥、token、authorization 头、私有上游 URL、请求体或用户数据。
           required: true

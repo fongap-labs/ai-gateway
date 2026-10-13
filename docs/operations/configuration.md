@@ -1,37 +1,37 @@
-# Configuration
+# 配置
 
-Production configuration is delivered from GitHub Actions into Cloudflare Workers. Non-sensitive account configuration belongs in repository Variables; credentials belong in Secrets. The Cloudflare Dashboard is not the canonical day-to-day configuration source.
+生产配置由 GitHub Actions 下发到 Cloudflare Workers。非敏感的账号配置应放在仓库 Variables 中；凭据应放在 Secrets 中。Cloudflare Dashboard 不是日常配置的规范来源。
 
-## Sources
+## 配置来源
 
-| Source | Purpose |
+| 来源 | 用途 |
 | --- | --- |
-| `AIG_TIER{1,2,3}_NODES_01..10` | Non-secret account/node definitions |
-| `AIG_TIER{1,2,3}_CREDENTIALS_01..10` | Tier-scoped credentials keyed by node id |
-| `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | Gateway access keys |
-| `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | Per-group logical-model allowlists |
-| `AIG_MODELS_CONFIG` | Optional logical-model metadata/capabilities |
-| `AIG_POLICIES_CONFIG` | Attempt, hedge, timeout and Tier 1 admission policy |
-| `AIG_DASHBOARD_MODELS` | Optional public-dashboard logical-model display allowlist |
+| `AIG_TIER{1,2,3}_NODES_01..10` | 非敏感的账号/节点定义 |
+| `AIG_TIER{1,2,3}_CREDENTIALS_01..10` | 按节点 id 索引的、按 Tier 划分的凭据 |
+| `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | 网关访问密钥 |
+| `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | 按分组划分的逻辑模型允许列表 |
+| `AIG_MODELS_CONFIG` | 可选的逻辑模型元数据/能力声明 |
+| `AIG_POLICIES_CONFIG` | attempt、hedge、超时与 Tier 1 准入策略 |
+| `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
 
-`src/config/runtime-vars.ts` is the single source for runtime variable defaults and ranges.
+`src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。
 
-## Access groups
+## 访问分组
 
-The five independent groups are `AIR`, `PRO`, `MAX`, `ULTRA`, and `AGENT`. A configured group uses both:
+五个相互独立的分组为 `AIR`、`PRO`、`MAX`、`ULTRA` 与 `AGENT`。已配置的分组需同时使用以下两项：
 
 ```text
 AIG_ACCESS_KEY_<GROUP>
 AIG_ACCESS_MODELS_<GROUP>
 ```
 
-Groups do not inherit from one another. An empty or missing model allowlist grants zero models for every group, including `AGENT`. The group name is an authorization boundary only; it does not assign Tier 1 scheduler priority.
+分组之间不相互继承。空的或缺失的模型允许列表，对每个分组（包括 `AGENT`）都意味着零个模型授权。分组名称仅是授权边界，不会为 Tier 1 调度器分配优先级。
 
-## Node configuration
+## 节点配置
 
-Node JSON describes an account/endpoint, not protocol implementation details.
+节点 JSON 描述的是一个账号/端点，而非协议实现细节。
 
-Required fields:
+必填字段（Required fields:）：
 
 ```text
 id
@@ -40,13 +40,13 @@ base_url
 models
 ```
 
-Optional field:
+可选字段：
 
 ```text
 priority
 ```
 
-Example:
+示例：
 
 ```json
 {
@@ -60,28 +60,22 @@ Example:
 }
 ```
 
-Rules:
+规则：
 
-- `id` matches `^[a-z0-9][a-z0-9-]{0,63}$` and is globally unique.
-- `tier` is not a node field; the Variable prefix owns the tier.
-- credentials never appear in node JSON.
-- `provider`, `base_url`, and `models` are required. `base_url` is optional
-  only for Tier 2 `auth:"oauth"` subscription nodes whose provider adapter
-  declares a built-in subscription endpoint (anthropic, openai, google);
-  onboarding such a node needs only `{id, provider, auth:"oauth", models}`.
-- `base_url` must be absolute HTTPS unless insecure HTTP is explicitly enabled.
-- `priority`, when present, is a non-negative integer JSON number. Tier 2/3 may use it; Tier 1 does not use static node priority as a P2C score.
-- `models` is an object mapping logical model → upstream model. `{}` is only an intentional catalog-bounded wildcard.
-- `protocol`, `surfaces`, `limits`, credential fields, and other unknown fields are rejected.
+- `id` 须匹配 `^[a-z0-9][a-z0-9-]{0,63}$`，并且全局唯一。
+- `tier` 不是节点字段；由变量名前缀决定其所属的 Tier。
+- 凭据绝不会出现在节点 JSON 中。
+- `provider`、`base_url` 与 `models` 为必填项。仅当 Tier 2 的 `auth:"oauth"` 订阅节点所属的 provider 适配器声明了内置订阅端点（anthropic、openai、google）时，`base_url` 才可省略；此类节点的接入只需 `{id, provider, auth:"oauth", models}`。
+- 除非显式启用了不安全的 HTTP，否则 `base_url` 必须是绝对的 HTTPS 地址。
+- 若提供了 `priority`，它必须是非负整数。Tier 2/3 可以使用它；Tier 1 不会将静态节点 priority 用作 P2C 评分。
+- `models` 是一个从逻辑模型到上游模型的映射对象。`{}` 仅表示有意设置的、受目录约束的通配符。
+- `protocol`、`surfaces`、`limits`、凭据字段以及其他未知字段均会被拒绝（`protocol`, `surfaces`, `limits`, credential fields, and other unknown fields are rejected）。
 
-There is one current node shape. No alternate or compatibility schema is retained.
+当前只有一种节点结构。不保留任何备用或兼容的 schema。
 
-### Subscription nodes (`auth: "oauth"`, Tier 2 only)
+### 订阅节点（`auth: "oauth"`，仅限 Tier 2）
 
-Tier 2 nodes may declare `"auth": "oauth"` to mark a subscription-entitlement
-node whose credential is an OAuth access token resolved at dispatch time from
-the subscription token store instead of a static
-`AIG_TIER{N}_CREDENTIALS_*` secret.
+Tier 2 节点可以声明 `"auth": "oauth"`，用以标记一个订阅权益节点。其凭据是在 dispatch 时从订阅 token 存储中解析出的 OAuth 访问 token，而非静态的 `AIG_TIER{N}_CREDENTIALS_*` 密钥。
 
 ```json
 {
@@ -93,26 +87,26 @@ the subscription token store instead of a static
 }
 ```
 
-Rules:
+规则：
 
-- `auth: "oauth"` is valid only on Tier 2 nodes; Tier 1/3 nodes declaring it are configuration errors.
-- Subscription nodes must not have a static credential in `AIG_TIER{N}_CREDENTIALS_*` — one credential source per node.
-- Without `AIG_OAUTH_PROVIDERS` and `AIG_TOKEN_ENCRYPTION_KEY` configured, subscription nodes stay unusable (fail-closed) and receive no traffic.
-- Onboarding: open `/oauth/start?provider=<name>&node=<node-id>` with a gateway access key; the browser completes the provider consent and returns to `/oauth/callback/<name>`.
+- `auth: "oauth"` 仅在 Tier 2 节点上有效；在 Tier 1/3 节点上声明该字段属于配置错误。
+- 订阅节点不得在 `AIG_TIER{N}_CREDENTIALS_*` 中拥有静态凭据——每个节点只能有一个凭据来源。
+- 若未配置 `AIG_OAUTH_PROVIDERS` 与 `AIG_TOKEN_ENCRYPTION_KEY`，订阅节点将保持不可用（失败即关闭），且不会接收任何流量。
+- 接入方式：使用网关访问密钥打开 `/oauth/start?provider=<name>&node=<node-id>`；浏览器完成 provider 的授权同意后，将返回 `/oauth/callback/<name>`。
 
-## Provider wire profiles
+## Provider wire profiles（提供商线协议配置）
 
-Protocol and API surfaces are Provider capabilities and are defined once in the provider adapter registry (`src/providers/registry.ts`):
+协议与 API surface 属于 Provider 的能力，并且仅在 provider 适配器注册表（`src/providers/registry.ts`）中定义一次：
 
-- `provider: "anthropic"` → Anthropic protocol, `messages` surface.
-- `provider: "openai"` → OpenAI protocol, `chat_completions` and `responses` surfaces.
-- other providers → OpenAI-compatible `chat_completions` surface.
+- `provider: "anthropic"` → Anthropic 协议，`messages` surface。
+- `provider: "openai"` → OpenAI 协议，`chat_completions` 与 `responses` surface。
+- 其他 provider → OpenAI 兼容的 `chat_completions` surface。
 
-Runtime normalization adds those protocol/surface facts to `RuntimeNode`; account-level Node JSON does not override them.
+运行时归一化会将这些协议/surface 事实添加到 `RuntimeNode` 中；账号级的节点 JSON 不会覆盖它们。
 
-If a Provider needs a different wire contract, change its provider adapter in `src/providers/`. Do not repeat structural protocol/surface fields across every account.
+若某个 Provider 需要不同的线协议契约，应修改其在 `src/providers/` 中的 provider 适配器。不要在每个账号中重复声明结构性的协议/surface 字段。
 
-OpenAI Responses remains Native Only. Chat/Messages protocol fallback remains bidirectional where conversion is safe:
+OpenAI Responses 仍为仅 Native（Native Only）。在转换安全的前提下，Chat/Messages 协议回退保持双向：
 
 ```json
 {
@@ -121,9 +115,9 @@ OpenAI Responses remains Native Only. Chat/Messages protocol fallback remains bi
 }
 ```
 
-## Credential shards
+## 凭据分片
 
-Credential shards are JSON objects keyed by node id:
+凭据分片是以节点 id 为键的 JSON 对象：
 
 ```json
 {
@@ -132,57 +126,39 @@ Credential shards are JSON objects keyed by node id:
 }
 ```
 
-Config and Secret shard suffixes are independent. Binding is by **Tier + node id**, not by matching shard suffix.
+Config 与 Secret 的分片后缀相互独立（independent）。绑定依据是 **Tier + node id**，而非分片后缀的匹配。
 
-## Tier roles
+## Tier 角色
 
-Routing order is fixed:
+路由顺序固定为：
 
 ```text
 Tier 1 → Tier 2 → Tier 3
 ```
 
-- Tier 1: free/effectively free capacity; primary reliability focus.
-- Tier 2: subscription entitlement capacity. Static API-key nodes and `auth: "oauth"` subscription nodes share this tier; the tier stays free of Tier 1 adaptive machinery.
-- Tier 3: paid API capacity; protected final fallback.
+- Tier 1：免费或实际上免费的容量；可靠性工作的主要关注点。
+- Tier 2：订阅权益容量。静态 API Key 节点与 `auth: "oauth"` 订阅节点共享该层；该层不引入 Tier 1 的自适应机制。
+- Tier 3：付费 API 容量；受保护的最终兜底。
 
-## Tier 2 subscriptions (OAuth)
+## Tier 2 订阅（OAuth）
 
-Tier 2 lets the gateway call your **existing paid AI subscriptions** — Claude
-Pro/Max, ChatGPT/Codex, or Google One AI Premium / AI Pro — using each
-provider's standard login, instead of a metered API key. You log in once in a
-browser; the gateway stores an encrypted token and refreshes it automatically.
-You pay nothing extra: it uses the capacity you already pay for, behind the
-gateway's single endpoint.
+Tier 2 允许网关调用你**已有的付费 AI 订阅**——Claude Pro/Max、ChatGPT/Codex，或 Google One AI Premium / AI Pro——使用各 provider 的标准登录方式，而不是按量计费的 API Key。你只需在浏览器中登录一次；网关会存储加密后的 token 并自动刷新。你无需额外付费：它使用的是你已经在付费的容量，并通过网关的统一端点对外提供服务。
 
-A subscription node is a Tier 2 node with `"auth": "oauth"`. Its credential is
-an OAuth access token resolved at dispatch time from the subscription token
-store, not a static `AIG_TIER{N}_CREDENTIALS_*` secret. Tier 2 subscription
-nodes link an operator-owned provider subscription (Claude Pro/Max,
-ChatGPT/Codex, Google One AI Premium, or any OAuth-authorized upstream)
-through the gateway's PKCE onboarding flow.
+订阅节点是声明了 `"auth": "oauth"` 的 Tier 2 节点。其凭据是在 dispatch 时从订阅 token 存储中解析出的 OAuth 访问 token，而非静态的 `AIG_TIER{N}_CREDENTIALS_*` 密钥。Tier 2 订阅节点通过网关的 PKCE 接入流程，关联运营者自有的 provider 订阅（Claude Pro/Max、ChatGPT/Codex、Google One AI Premium，或任何经 OAuth 授权的上游）。
 
-### Before you begin
+### 开始之前
 
-You need all of these before onboarding a subscription:
+在接入订阅之前，你需要满足以下全部条件：
 
-- A deployed gateway you can reach in a browser.
-- A gateway access key (`AIG_ACCESS_KEY_<GROUP>`) whose group is listed in
-  `AIG_OAUTH_ADMIN_GROUPS` (a comma-separated Variable, e.g. `ULTRA`). Linking a
-  subscription replaces the credential every client of that node uses, so only
-  the listed groups may start onboarding; unset means nobody can (fail-closed).
-  Already linked subscriptions keep working either way.
-- `AIG_TOKEN_ENCRYPTION_KEY` set (a base64 256-bit AES key — the installer
-  generates one for you; without it, subscription onboarding stays disabled,
-  fail-closed).
-- `AIG_PUBLIC_URL` set (already required by the dashboard — it derives the
-  OAuth redirect URI).
-- A paid subscription to at least one of the three providers.
+- 一个可以通过浏览器访问的已部署网关。
+- 一个网关访问密钥（`AIG_ACCESS_KEY_<GROUP>`），且其所属分组已列入 `AIG_OAUTH_ADMIN_GROUPS`（一个以逗号分隔的 Variable，例如 `ULTRA`）。关联订阅会替换该节点所有客户端所使用的凭据，因此只有列出的分组才能启动接入；未设置时，任何人都无法接入（失败即关闭）。无论如何，已关联的订阅都将继续正常工作。
+- 已设置 `AIG_TOKEN_ENCRYPTION_KEY`（一个 base64 编码的 256 位 AES 密钥——安装程序会为你生成；若缺失，订阅接入将保持禁用，失败即关闭）。
+- 已设置 `AIG_PUBLIC_URL`（仪表盘已经要求该项——它用于推导 OAuth 回调 URI）。
+- 至少拥有三个 provider 之一的付费订阅。
 
-### First subscription (walkthrough)
+### 第一个订阅（操作示例）
 
-The quickest path is a Gemini node — it needs only four fields (the gateway
-resolves the endpoint from the provider adapter):
+最快的路径是配置一个 Gemini 节点——它只需要四个字段（网关会从 provider 适配器解析端点）：
 
 ```json
 [
@@ -190,83 +166,55 @@ resolves the endpoint from the provider adapter):
 ]
 ```
 
-1. Put the JSON above into `AIG_TIER2_NODES_01` (a Cloudflare **Variable**,
-   not a Secret).
-2. Open this URL in a browser (replace the host):
+1. 将上述 JSON 放入 `AIG_TIER2_NODES_01`（一个 Cloudflare **Variable**，而非 Secret）。
+2. 在浏览器中打开以下 URL（替换主机名）：
 
    ```
    https://<your-gateway-url>/oauth/start?provider=google&node=gemini
    ```
 
-   The start page asks for your gateway access key and submits it through
-   the form body (never a URL), so the key stays out of access logs,
-   browser history, and `Referer` headers. Calling the route with an
-   `Authorization: Bearer <key>` header skips the paste page.
-3. Approve Google's consent screen. Google redirects to its own
-   `codeassist.google.com/authcode` page (its OAuth client does not allow
-   arbitrary gateway callback URLs) which displays the authorization code.
-4. Copy the code and paste it at the `/oauth/paste` link the start page shows.
-5. The gateway exchanges the code with PKCE and `client_secret`, stores the
-   encrypted token, and the node is live.
+   启动页面会要求输入你的网关访问密钥，并通过表单请求体提交（绝不通过 URL 提交），因此密钥不会出现在访问日志、浏览器历史或 `Referer` 头中。若调用该路由时附带 `Authorization: Bearer <key>` 头，则会跳过粘贴页面。
+3. 同意 Google 的授权页面。Google 会跳转到其自身的 `codeassist.google.com/authcode` 页面（其 OAuth 客户端不允许任意的网关回调 URL），该页面会显示授权码。
+4. 复制授权码，并将其粘贴到启动页面所显示的 `/oauth/paste` 链接处。
+5. 网关使用 PKCE 与 `client_secret` 交换授权码，存储加密后的 token，此时该节点即已上线。
 
-Available upstream Gemini models (the `models` mapping value):
+可用的 Gemini 上游模型（即 `models` 映射中的值）：
 
-| Upstream model | Notes |
+| 上游模型 | 说明 |
 | --- | --- |
-| `gemini-2.5-pro` | Gemini 2.5 Pro (Google One AI Premium / AI Pro) |
-| `gemini-2.5-flash` | Gemini 2.5 Flash (faster, lower quota) |
+| `gemini-2.5-pro` | Gemini 2.5 Pro（Google One AI Premium / AI Pro） |
+| `gemini-2.5-flash` | Gemini 2.5 Flash（速度更快，额度更低） |
 
-Claude and Codex nodes follow the same pattern with `provider: "anthropic"`
-or `provider: "openai"`, and their onboarding is **automatic** (no code paste
-step). See the per-provider onboarding flow below.
+Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropic"` 或 `provider: "openai"`，其接入为**自动**完成（无需粘贴授权码的步骤）。请参阅下文的各 provider 接入流程。
 
-### What the gateway does with your login
+### 网关如何处理你的登录信息
 
-- Stores the access/refresh tokens **AES-GCM encrypted** in D1; never as
-  plaintext, never in node config. A missing `AIG_TOKEN_ENCRYPTION_KEY`
-  disables all subscription onboarding and resolution (fail-closed).
-- Refreshes tokens automatically at dispatch time, with an isolate-local
-  cache and:
-  - a 5-minute expiry margin before proactive refresh;
-  - isolate-level singleflight (concurrent requests for one node share a
-    single refresh);
-  - cross-isolate compare-and-swap on a persisted `refresh_version`, so a
-    losing refresh writer reloads the winner's rotated credential instead of
-    clobbering it — one refresh token remains the single persisted authority;
-  - a 60-second negative cache on refresh failures so a broken subscription
-    does not hammer the provider's token endpoint.
-- For OpenAI/Codex: the OAuth response's `account_id` is persisted (plaintext,
-  not a secret) and sent as the `chatgpt-account-id` header on every Codex
-  subscription dispatch. Codex subscription dispatches also carry the
-  first-party `Originator: codex-tui` marker and normalize a missing
-  `instructions` field to an empty string on the Responses surface (the
-  ChatGPT backend expects the field to exist).
-- Flow states are single-use and expire after 10 minutes.
+- 访问 token 与刷新 token 以 **AES-GCM 加密**后存储在 D1 中；绝不以明文存储，也绝不存入节点配置。若缺少 `AIG_TOKEN_ENCRYPTION_KEY`，则禁用全部订阅接入与解析（失败即关闭）。
+- 在 dispatch 时自动刷新 token，并配有 isolate 本地缓存，以及以下机制：
+  - 在主动刷新之前保留 5 分钟的过期裕量；
+  - isolate 级别的 singleflight（同一节点的并发请求共享同一次刷新）；
+  - 基于持久化 `refresh_version` 的跨 isolate compare-and-swap，因此败给他人的刷新写入方会重新加载胜出方轮换后的凭据，而不是覆盖它——持久化的权威 refresh token 始终只有一个；
+  - 对刷新失败设置 60 秒的否定缓存，使失效的订阅不会反复冲击 provider 的 token 端点。
+- 对于 OpenAI/Codex：OAuth 响应中的 `account_id` 会被持久化（明文，非机密），并在每一次 Codex 订阅 dispatch 中作为 `chatgpt-account-id` 头发送。Codex 订阅 dispatch 还会携带第一方的 `Originator: codex-tui` 标记，并在 Responses surface 上将缺失的 `instructions` 字段规范化为空字符串（ChatGPT 后端要求该字段必须存在）。
+- 流程状态为一次性使用，并在 10 分钟后过期。
 
-The rest of this section is reference: the built-in provider defaults, the
-OAuth variables/secrets, and the per-provider onboarding steps.
+本节其余部分为参考资料：内置的 provider 默认值、OAuth 的变量/密钥，以及各 provider 的接入步骤。
 
-### Reference: built-in provider defaults
+### 参考：内置 provider 默认值
 
-The three mainstream international providers ship with **built-in defaults**
-(public OAuth constants from their open-source CLIs) — no
-`AIG_OAUTH_PROVIDERS` configuration is required to onboard them:
+三个主流的国际 provider 均内置了**默认值**（来自其开源 CLI 的公开 OAuth 常量）——接入它们无需配置 `AIG_OAUTH_PROVIDERS`：
 
-| Provider key | Subscription | Onboarding | Dispatch |
+| Provider 键 | 订阅 | 接入方式 | Dispatch |
 | --- | --- | --- | --- |
-| `anthropic` | Claude Pro/Max | Automatic (PKCE, redirect back to gateway) | Enabled — mainstream reverse-proxy shape: Bearer + required OAuth beta flags (`claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14`, merged with client-supplied betas) + `x-app: cli` + first-party claude-cli user agent. CCH billing-block signing (CLIProxyAPI's extra-paranoid layer) is not implemented; live-verify with your own subscription. |
-| `openai` | ChatGPT/Codex | Automatic (PKCE, redirect back to gateway) | Enabled (Bearer + `chatgpt-account-id` + `Originator: codex-tui` + `instructions` normalization on the Responses surface) |
-| `google` | Gemini (Google One) | Manual paste (Google OAuth client only allows its own redirect pages) | Enabled — Code Assist backend (`cloudcode-pa.googleapis.com/v1internal`): the gateway converts OpenAI Chat Completions to/from the proprietary `generateContent`/`streamGenerateContent` envelope inside the subscription adapter (the general transport/conversion layers stay untouched). Bearer + first-party Gemini CLI user agent. |
+| `anthropic` | Claude Pro/Max | 自动（PKCE，回跳网关） | 已启用——主流的反向代理形态：Bearer + 所需的 OAuth beta 标志（`claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14`，与客户端提供的 beta 合并）+ `x-app: cli` + 第一方 claude-cli user agent。未实现 CCH 计费块签名（CLIProxyAPI 的额外偏执层）；请使用你自己的订阅进行实际验证。 |
+| `openai` | ChatGPT/Codex | 自动（PKCE，回跳网关） | 已启用（Bearer + `chatgpt-account-id` + `Originator: codex-tui` + Responses surface 上的 `instructions` 规范化） |
+| `google` | Gemini（Google One） | 手动粘贴（Google OAuth 客户端仅允许其自身的回调页面） | 已启用——Code Assist 后端（`cloudcode-pa.googleapis.com/v1internal`）：网关在订阅适配器内部，在 OpenAI Chat Completions 与私有的 `generateContent`/`streamGenerateContent` 信封之间相互转换（通用的 transport/conversion 层保持不变）。Bearer + 第一方 Gemini CLI user agent。 |
 
-To onboard with defaults, configure the Tier 2 node with the matching
-provider name and run the onboarding flow below. To override a default or
-add a new provider, set `AIG_OAUTH_PROVIDERS`.
+要使用默认值进行接入，请将 Tier 2 节点配置为匹配的 provider 名称，然后执行下文的接入流程。若要覆盖某项默认值或新增 provider，请设置 `AIG_OAUTH_PROVIDERS`。
 
-### Reference: variables and secrets
+### 参考：变量与密钥
 
-- `AIG_OAUTH_PROVIDERS` (plain Variable, JSON, optional) — per-provider OAuth
-  registry. User entries **replace** built-in defaults at the provider level
-  (wholesale, not field-by-field). Unset uses built-in defaults only:
+- `AIG_OAUTH_PROVIDERS`（普通 Variable，JSON，可选）——按 provider 划分的 OAuth 注册表。用户条目会在 provider 层级**替换**内置默认值（整体替换，而非逐字段合并）。未设置时仅使用内置默认值：
 
 ```json
 {
@@ -282,55 +230,31 @@ add a new provider, set `AIG_OAUTH_PROVIDERS`.
 }
 ```
 
-  `client_secret` is for confidential OAuth clients (Google always requires
-  one; Claude/Codex are public PKCE clients and do not). Setting
-  `manual_redirect_url` selects the manual code-paste flow — omit it (or set
-  your own gateway callback via the default) for the automatic redirect flow.
-  Dispatch eligibility is owned by the provider adapter registry
-  (`src/providers/`), not by configuration: providers whose subscription
-  adapter is missing or refuses keep OAuth onboarding working while failing
-  runtime dispatch closed. The built-in `google` adapter owns the Code Assist
-  wire conversion (`src/subscription/google-wire.ts`); the proprietary wire
-  never enters the gateway's general transport or conversion layers.
+  `client_secret` 用于机密（confidential）OAuth 客户端（Google 始终要求提供；Claude/Codex 是公开的 PKCE 客户端，不需要）。设置 `manual_redirect_url` 会选择手动粘贴授权码的流程——若要使用自动回跳流程，请省略它（或通过默认设置使用你自己的网关回调地址）。是否具备 dispatch 资格由 provider 适配器注册表（`src/providers/`）决定，而非由配置决定：缺少订阅适配器或拒绝接入的 provider，仍可保持 OAuth 接入可用，但运行时 dispatch 会失败即关闭。内置的 `google` 适配器负责 Code Assist 线协议转换（`src/subscription/google-wire.ts`）；私有线协议绝不会进入网关通用的 transport 或 conversion 层。
 
-- `AIG_TOKEN_ENCRYPTION_KEY` (Secret) — base64-encoded 256-bit AES key.
-  Generate with: `openssl rand -base64 32`. Without it, subscription
-  onboarding and resolution are disabled (fail-closed).
+- `AIG_TOKEN_ENCRYPTION_KEY`（Secret）——base64 编码的 256 位 AES 密钥。生成方式：`openssl rand -base64 32`。若未设置，订阅接入与解析将被禁用（失败即关闭）。
 
-- `AIG_PUBLIC_URL` (Variable, already required by the dashboard) — derives
-  the OAuth redirect URI `/oauth/callback/<provider>`.
+- `AIG_PUBLIC_URL`（Variable，仪表盘已经要求该项）——用于推导 OAuth 回调 URI `/oauth/callback/<provider>`。
 
-### Reference: onboarding flow
+### 参考：接入流程
 
-`/oauth/start` renders a paste page that submits your gateway access key
-through the POST body, so the key never appears in a URL (access logs,
-browser history, `Referer`). Requests carrying
-`Authorization: Bearer <key>` go straight to the provider redirect.
+`/oauth/start` 会渲染一个粘贴页面，通过 POST 请求体提交你的网关访问密钥，因此密钥绝不会出现在 URL 中（访问日志、浏览器历史、`Referer`）。携带 `Authorization: Bearer <key>` 的请求会直接跳转到 provider 的回调。
 
-**Claude / Codex (automatic)**:
+**Claude / Codex（自动）**：
 
-1. Open
-   `https://<your-gateway-url>/oauth/start?provider=anthropic&node=<node-id>`
-   (or `provider=openai`) in a browser and enter your gateway access key.
-2. Approve the consent screen; the provider redirects back to
-   `/oauth/callback/<provider>` and the gateway completes the exchange.
+1. 在浏览器中打开 `https://<your-gateway-url>/oauth/start?provider=anthropic&node=<node-id>`（或 `provider=openai`），并输入你的网关访问密钥。
+2. 同意授权页面；provider 会跳转回 `/oauth/callback/<provider>`，网关随即完成交换。
 
-**Gemini (manual paste)**:
+**Gemini（手动粘贴）**：
 
-1. Open
-   `https://<your-gateway-url>/oauth/start?provider=google&node=<node-id>`
-   in a browser and enter your gateway access key.
-2. Approve the Google consent screen. Google redirects to its own
-   `codeassist.google.com/authcode` page (its OAuth client does not allow
-   arbitrary gateway callback URLs) which displays the authorization code.
-3. Copy the code and paste it at the `/oauth/paste` link shown on the start
-   page.
-4. The gateway exchanges the code with PKCE and `client_secret`, stores
-   the tokens, and confirms.
+1. 在浏览器中打开 `https://<your-gateway-url>/oauth/start?provider=google&node=<node-id>`，并输入你的网关访问密钥。
+2. 同意 Google 的授权页面。Google 会跳转到其自身的 `codeassist.google.com/authcode` 页面（其 OAuth 客户端不允许任意的网关回调 URL），该页面会显示授权码。
+3. 复制授权码，并将其粘贴到启动页面所显示的 `/oauth/paste` 链接处。
+4. 网关使用 PKCE 与 `client_secret` 交换授权码，存储 token，并确认完成。
 
-## Runtime variables
+## 运行时变量
 
-Current numeric tunables are owned by `src/config/runtime-vars.ts`:
+当前的数值型可调参数由 `src/config/runtime-vars.ts` 负责：
 
 - `AIG_UPSTREAM_HEADER_TIMEOUT_MS`
 - `AIG_FIRST_EVENT_TIMEOUT_MS`
@@ -344,43 +268,43 @@ Current numeric tunables are owned by `src/config/runtime-vars.ts`:
 - `AIG_ACCESS_KEY_RPM`
 - `AIG_EDGE_CACHE_TTL_SEC`
 
-`AIG_EDGE_CACHE_AUTO` (boolean, default `false`) controls automatic edge caching. By default only a request that sends `x-gateway-cache: true` is cached; set it to `true` to also cache requests with `temperature: 0`. A cache entry is scoped to the caller's key group and to a keyed fingerprint of the credential it presented (derived from `AIG_TOKEN_ENCRYPTION_KEY`), and streamed and non-streamed requests never share an entry. Responses that contain tool calls, truncated streams and bodies over 2 MB are not stored. Rotating `AIG_TOKEN_ENCRYPTION_KEY` also retires existing cache entries.
+`AIG_EDGE_CACHE_AUTO`（布尔值，默认为 `false`）控制自动边缘缓存。默认情况下，只有发送了 `x-gateway-cache: true` 的请求才会被缓存；将其设为 `true` 后，`temperature: 0` 的请求也会被缓存。缓存条目的作用范围限定在调用方的 key 分组，以及其所提交凭据的带键指纹（由 `AIG_TOKEN_ENCRYPTION_KEY` 派生），流式请求与非流式请求绝不共享条目。包含工具调用的响应、被截断的流以及超过 2 MB 的响应体均不会被存储。轮换 `AIG_TOKEN_ENCRYPTION_KEY` 也会使现有缓存条目失效。
 
-`AIG_RATE_LIMIT_COOLDOWN_MS` is the fallback wait for Tier 2/3 nodes when a 429 carries no hint. Tier 1 does not use it: a Tier 1 key follows the adaptive ladder `15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m` (see [Reliability model](../architecture/reliability-model.md#429-handling)). To change that ladder set `AIG_RATE_LIMIT_STEPS_MS` to comma separated milliseconds, for example `15000,30000,60000,300000`. Leave it unset unless a provider needs something different; a missing or malformed value keeps the default.
+`AIG_RATE_LIMIT_COOLDOWN_MS` 是 Tier 2/3 节点在 429 未携带任何提示时的回退等待时间。Tier 1 不使用它：Tier 1 的 key 遵循自适应阶梯 `15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m`（参见[可靠性模型](../architecture/reliability-model.md#429-处理)）。若要修改该阶梯，请将 `AIG_RATE_LIMIT_STEPS_MS` 设置为以逗号分隔的毫秒数，例如 `15000,30000,60000,300000`。除非某个 provider 需要不同的设置，否则请保持其未设置；缺失或格式错误的值会保持默认值。
 
-`AIG_IS_SUBSCRIPTION_ENABLED` (boolean, default `true`) turns Tier 2 subscription proxying on or off. When `false`, nodes marked `auth: "oauth"` are not loaded and every `/oauth/*` route answers 404. `AIG_PUBLIC_DASHBOARD` (boolean, default `true`) serves the dashboard at `/` and the badge at `/readme-status.svg`; when `false` both answer 404. `AIG_DIAGNOSTICS_GROUPS` (comma separated key groups, default empty) limits `/health` and `/metrics` to the listed groups; when set, any other valid key gets 403, and `/v1/models` stays open to every key.
+`AIG_IS_SUBSCRIPTION_ENABLED`（布尔值，默认为 `true`）用于开启或关闭 Tier 2 订阅代理。设为 `false` 时，标记为 `auth: "oauth"` 的节点不会被加载，且每个 `/oauth/*` 路由都会返回 404。`AIG_PUBLIC_DASHBOARD`（布尔值，默认为 `true`）决定是否在 `/` 提供仪表盘、在 `/readme-status.svg` 提供徽章；设为 `false` 时两者均返回 404。`AIG_DIAGNOSTICS_GROUPS`（以逗号分隔的 key 分组，默认为空）将 `/health` 与 `/metrics` 限制为所列分组；设置之后，其他任何有效 key 都会收到 403，而 `/v1/models` 仍对所有 key 开放。
 
-Other current variables include `AIG_CORS_ORIGIN`, `AIG_USAGE_INCLUDE_MODE`, `AIG_USAGE_EXCLUDE_PROVIDERS`, `AIG_ANTHROPIC_COUNT_MODE`, `AIG_LOG_LEVEL`, `AIG_PROTOCOL_FALLBACKS`, `AIG_SHOULD_EXPOSE_UPSTREAM`, `AIG_HAS_STREAM_GUARD`, `AIG_CAN_USE_HTTP`, `AIG_DASHBOARD_MODELS`, `AIG_OAUTH_PROVIDERS`, and `AIG_OAUTH_ADMIN_GROUPS` (see [Tier 2 subscriptions](#tier-2-subscriptions-oauth)).
+其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP`、`AIG_DASHBOARD_MODELS`、`AIG_OAUTH_PROVIDERS` 与 `AIG_OAUTH_ADMIN_GROUPS`（参见 [Tier 2 订阅](#tier-2-订阅oauth)）。
 
-## Dashboard model display
+## 仪表盘模型展示
 
-`AIG_DASHBOARD_MODELS` is a comma-separated presentation allowlist for logical models.
+`AIG_DASHBOARD_MODELS` 是逻辑模型的展示允许列表，以逗号分隔。
 
-Example:
+示例：
 
 ```text
 AIG_DASHBOARD_MODELS=Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air
 ```
 
-It does not change routing, authorization, `/v1/models`, fallback, D1 collection, or aggregate usage totals. It controls which public logical models are shown in the model-status area and which models are eligible to appear by name in the model-usage breakdown; non-allowlisted usage is aggregated into `其他`.
+它不会改变路由、授权、`/v1/models`、回退、D1 采集或聚合用量总计。它控制的是：哪些公共逻辑模型会出现在模型状态区域中，以及哪些模型可以在模型用量细分中按名称显示；未在允许列表中的用量会被汇总到「其他」中。
 
-## Capacity and reliability
+## 容量与可靠性
 
-Tier 1 uses observed runtime facts rather than guessed Provider quotas:
+Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
-- live in-flight work;
-- actual rate-limit responses, including quota-shaped provider errors normalized by the failure classifier;
-- bounded adaptive cooldown and `Retry-After`;
-- provider-model heat;
-- passive TTFT;
-- soft session affinity, exploration, recovery/circuit state;
-- optional explicit `AIG_POLICIES_CONFIG.max_in_flight` safety ceiling.
+- 实时 in-flight 工作量；
+- 真实的限流响应，包括由失败分类器归一化后的、形如配额的 provider 错误；
+- 有界的自适应冷却与 `Retry-After`；
+- provider-model 热度；
+- 被动 TTFT；
+- 软性会话亲和、探索、恢复/熔断状态；
+- 可选的显式 `AIG_POLICIES_CONFIG.max_in_flight` 安全上限。
 
-Access-key groups do not add a routing score factor. `AIG_ACCESS_KEY_RPM` protects gateway access keys; it is not a Provider quota model.
+访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。
 
-## Policies
+## 策略
 
-Example:
+示例：
 
 ```json
 {
@@ -396,29 +320,29 @@ Example:
 }
 ```
 
-`max_attempts` is the request-wide logical-attempt ceiling. Tier caps must fit inside it. `headers_timeout_ms`, `first_event_timeout_ms`, and `failover_budget_ms` optionally override the global request timing for one policy. Without an explicit model policy, `Air`/`Code-Air` use the built-in `fast` policy (`max_attempts=4`, 60s failover budget), exposing one pass across Air → Pro → Max → Ultra. `Pro`/`Max`/`Ultra` and their `Code-*` variants use `long-reasoning` (`max_attempts=6`, no hedge, 60s header timeout, 60s first-event timeout, 180s failover budget), matching the full 3/2/1 family fallback plan. Other models use `default`. An explicit `AIG_MODELS_CONFIG.<model>.policy` always wins. There is one cross-tier allocation model: hard Tier precedence. `budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema and are rejected as unknown fields.
+`max_attempts` 是请求级的逻辑 attempt 上限。Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可以选择性地为某一个策略覆盖全局的请求时序设置。若没有显式的模型策略，`Air`/`Code-Air` 使用内置的 `fast` 策略（`max_attempts=4`，60 秒故障转移预算），在 Air → Pro → Max → Ultra 之间提供一轮评估。`Pro`/`Max`/`Ultra` 及其 `Code-*` 变体使用 `long-reasoning`（`max_attempts=6`，不启用 hedge，60 秒 header 超时，60 秒首事件超时，180 秒故障转移预算），与完整的 3/2/1 家族回退计划保持一致。其他模型使用 `default`。显式设置的 `AIG_MODELS_CONFIG.<model>.policy` 总是优先。跨 Tier 的分配模型只有一种：严格的 Tier 优先级。`budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema（`budget_split`、加权分配以及备用的 Tier 预算模式不属于当前的策略 schema），若出现即作为未知字段被拒绝。
 
-## Request timing
+## 请求时序
 
-`AIG_FAILOVER_BUDGET_MS` is the global wall-clock budget for a request unless the resolved model policy supplies `failover_budget_ms`. `AIG_UPSTREAM_HEADER_TIMEOUT_MS` and `AIG_FIRST_EVENT_TIMEOUT_MS` remain the global phase defaults, while a model policy may override them with `headers_timeout_ms` and `first_event_timeout_ms`. Native tiers, protocol fallback, model-family fallback and bounded re-checks do not reset the resolved budget. A physical dispatch shares one absolute attempt deadline across headers, first meaningful output, body assembly and bounded diagnostic reads. A hedge twin inherits that deadline.
+除非解析后的模型策略提供了 `failover_budget_ms`，否则 `AIG_FAILOVER_BUDGET_MS` 即为一次请求的全局墙钟预算。`AIG_UPSTREAM_HEADER_TIMEOUT_MS` 与 `AIG_FIRST_EVENT_TIMEOUT_MS` 仍是全局的阶段默认值，而模型策略可以用 `headers_timeout_ms` 与 `first_event_timeout_ms` 覆盖它们。Native Tier、协议回退、模型家族回退以及有界复检都不会重置已解析的预算。一次物理 dispatch 会在 header、首个有意义的输出、响应体组装以及有界的诊断读取之间共享同一个绝对 attempt 截止时间。hedge 孪生请求继承该截止时间。
 
-## Usage accounting
+## 用量计费
 
-Dashboard usage intentionally separates public service volume from physical upstream work:
+仪表盘的用量展示有意将公共服务量与物理上游工作量分开：
 
-- Token totals use real upstream-reported physical Token consumption, including retry/fallback/hedge attempts when usage is reported;
-- public `次请求` counts successfully delivered requests and therefore does not inflate from internal retries, fallback, or hedge twins;
-- the model-usage breakdown may show physical upstream-call counts in its tooltips;
-- TTFT `samples` counts successful delivered requests with a TTFT sample in the recent window;
-- missing upstream usage is recorded as missing and is never estimated.
+- Token 总量使用上游报告的真实物理 Token 消耗，在上游报告了用量时，包括重试/回退/hedge attempt 的消耗；
+- public `次请求` counts successfully delivered requests（公共「次请求」统计的是成功交付的请求），因此不会因为内部重试、回退或 hedge 孪生请求而膨胀；
+- 模型用量细分可以在其工具提示中显示物理上游调用次数；
+- TTFT 的 `samples` 统计近期窗口内带有 TTFT 样本的、成功交付的请求数；
+- 缺失的上游用量会被记录为缺失，绝不会进行估算。
 
-D1 usage and public status are observability inputs only; historical aggregates do not feed routing decisions.
+D1 用量与公共状态仅作为可观测性输入；历史聚合数据不会影响路由决策。
 
-## Deployment identity
+## 部署标识
 
-Deployment identity is the Git commit SHA injected as `GITHUB_SHA` and exposed by authenticated `/health` as `build`. Named releases, when wanted, are created manually by a human as Git tags / GitHub Releases.
+部署标识是 Git commit SHA，它被注入为 `GITHUB_SHA`，并通过经过认证的 `/health` 以 `build` 字段暴露。若需要命名发布，由人工以 Git tag / GitHub Release 的方式创建。
 
-## Local validation
+## 本地校验
 
 ```bash
 npm run config:check
