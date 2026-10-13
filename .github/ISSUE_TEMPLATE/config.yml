@@ -1,10 +1,10 @@
 blank_issues_enabled: false
 
 contact_links:
-  - name: 提问
+  - name: Ask a question
     url: https://github.com/fongap-labs/ai-gateway/discussions/categories/q-a
-    about: 部署、配置、provider 接入、使用方式与故障排查类问题，请在 Discussions / Q&A 中提出。
+    about: Setup, configuration, provider integration, usage, and troubleshooting questions belong in Discussions / Q&A.
 
-  - name: 提出想法
+  - name: Suggest an idea
     url: https://github.com/fongap-labs/ai-gateway/discussions/categories/ideas
-    about: 功能、协议、路由、可靠性与产品改进类想法，请在 Discussions / Ideas 中提出。
+    about: Feature, protocol, routing, reliability, and product improvement ideas belong in Discussions / Ideas.
