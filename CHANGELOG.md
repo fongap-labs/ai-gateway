@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: classify Tier 1 429s into short-window versus long-lived-allowance and cool each class the way it actually clears. Classification reads only protocol signals — response wording first (per-minute/rpm/tpm/rate-limit versus quota/daily/credits/积分/额度/限额/每周), then the magnitude of an explicit `Retry-After`/body wait hint (≤90s = window, ≥10min = quota) — never provider names; a 429 with no signals keeps the historical default ladder unchanged. Window-class 429s use a gentle ladder capped at 5 minutes (new `AIG_RATE_LIMIT_WINDOW_STEPS_MS`, default `15s -> 30s -> 45s -> 1m -> 1.5m -> 2m -> 3m -> 5m`) so minute-style limits return to the pool quickly instead of staying dark for up to 30 minutes; long-lived-allowance 429s start at the 5-minute stage and cool the whole key on the FIRST such 429 (the allowance is account-wide, so letting every model climb its own ladder only multiplies doomed probes against one shared pool). Dispatch logs and per-attempt records gain `rate_limit_class=` (`window`/`quota`/`unknown`) alongside the existing `rate_limit_stage=`.
+
 - fix: `docs-check` enforces the single `README.md` policy and rejects localized README copies; `link-check` skips the local `.cache/` action-worker checkout, so `check:links` no longer scans third-party Markdown after `npm test`.
 
 - fix: `CLOUDFLARE_ACCOUNT_ID` is a repository Variable, so it is removed from `.github/deploy.secrets.allowed` and guarded by `deployment-config-check`.
