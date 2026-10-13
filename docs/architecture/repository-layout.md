@@ -1,119 +1,118 @@
-# Repository layout
+# 仓库布局
 
-The repository has one durable owner for each class of work: Worker runtime, tests, tooling, configuration examples, migrations, and documentation. Physical placement should make that ownership obvious.
+仓库中，每一类工作都有唯一的持久所有者：Worker 运行时、测试、工具、配置示例、迁移与文档。物理布局应当让这种归属一目了然。
 
 ```text
-src/                         Cloudflare Worker runtime
-├── config/                  environment parsing, nodes, Model Registry, policies
-├── providers/               single provider adapter registry: wire contract,
-│                            stream-usage quirk, OAuth onboarding defaults,
-│                            and subscription dispatchability per provider
-├── scheduler/               Tier 1 P2C/affinity and Tier 2/3 candidate selection
-├── reliability/             failure classification, cooldowns, quota/heat/state
-├── transport/               upstream paths, headers, native transport behavior
-├── protocol/                client validation, CORS, protocol-specific request/error behavior
-├── conversion/              Chat Completions ↔ Anthropic Messages conversion only
-├── stream/                  first-event guards, SSE parsing, stream lifecycle
-├── request/                 request orchestration, tier loop, fallback, attempt boundary
-│   └── attempt/             dispatch, hedge, success, outcome, attempt observability
-├── oauth/                   OAuth onboarding/credential resolution for Tier 2 subscriptions
-├── subscription/            subscription request-semantics adapters (codex/claude/google),
-│                            including the google Code Assist wire converter (google-wire.ts),
-│                            composed into provider adapters and bound to nodes
-├── observability/           logs, metrics, D1/token usage, safe diagnostics
-├── runtime/                 runtime availability and read-only public model status
-└── dashboard/               public/operator presentation
+src/                         Cloudflare Worker 运行时
+├── config/                  环境解析、节点、Model Registry、策略
+├── providers/               单一 provider 适配器注册表：线协议契约、
+│                            stream-usage 特例、OAuth 接入默认值，
+│                            以及各 provider 的订阅可 dispatch 性
+├── scheduler/               Tier 1 P2C/亲和，以及 Tier 2/3 候选选择
+├── reliability/             失败分类、冷却、额度/热度/状态
+├── transport/               上游路径、头部、原生 transport 行为
+├── protocol/                客户端校验、CORS、协议特定的请求/错误行为
+├── conversion/              仅负责 Chat Completions ↔ Anthropic Messages 转换
+├── stream/                  首事件守卫、SSE 解析、流生命周期
+├── request/                 请求编排、tier 循环、回退、attempt 边界
+│   └── attempt/             dispatch、hedge、成功处理、结果、attempt 可观测性
+├── oauth/                   Tier 2 订阅的 OAuth 接入/凭据解析
+├── subscription/            订阅请求语义适配器（anthropic/openai/google），
+│                            包括 google Code Assist 线协议转换器（google-wire.ts），
+│                            通过 provider 适配器组合并绑定到节点
+├── observability/           日志、指标、D1/token 用量、安全诊断
+├── runtime/                 运行时可用性与只读的公共模型状态
+└── dashboard/               公共/运营者展示层
 
-tests/                       (absent) suites live in action-worker: tests/packs/ai-gateway/
+tests/                       （不存在）测试套件位于 action-worker：tests/packs/ai-gateway/
 
-scripts/                     repository/operator/CI tooling
-├── README.md                supported tooling entry points and boundaries
-├── cloudflare-wrangler.mjs  sole Wrangler pin + direct CLI/deploy behavior
-├── install.*                first-time local bootstrap
-├── reconfigure.*            existing operator configuration update
-├── config-cli.mjs           configuration inspection/diff CLI
-├── node-config-shards.mjs   node configuration planning/sharding
+scripts/                     仓库/运营者/CI 工具
+├── README.md                受支持的工具入口与边界
+├── cloudflare-wrangler.mjs  唯一的 Wrangler 版本锁定 + 直接的 CLI/部署行为
+├── install.*                首次本地引导
+├── reconfigure.*            已有运营者配置的更新
+├── config-cli.mjs           配置检查/差异 CLI
+├── node-config-shards.mjs   节点配置规划/分片
 ├── plan-node-configuration.mjs
 ├── github-deployment-config.mjs
-├── deploy-gate-decision.mjs
-├── *-check.*                validation/operator checks
-└── provider-discovery/      read-only provider catalog/diff/report implementation
+├── *-check.*                校验/运营者检查
+└── provider-discovery/      只读的 provider 目录/差异/报告实现
 
-config/                      public configuration examples
-migrations/                  ordered D1 migrations
-docs/                        long-lived current documentation
-├── architecture/            durable system boundaries and invariants
-├── operations/              current configuration/deployment/operator procedures
-└── governance/              rules for changing and validating the system
+config/                      公共配置示例
+migrations/                  有序的 D1 迁移
+docs/                        长期有效的当前文档
+├── architecture/            持久的系统边界与不变式
+├── operations/              当前的配置/部署/运营者操作流程
+└── governance/              变更与校验系统所遵循的规则
 
 .github/
-├── workflows/               CI, Deploy, Model Discovery
+├── workflows/               CI 与 PR 治理分发（ci.yml、dispatch-pr-governance.yml）
 ├── ISSUE_TEMPLATE/
 ├── pull_request_template.md
 └── dependabot.yml
 ```
 
-## Ownership rules
+## 归属规则
 
-`src/` contains only code that is part of the Worker product/runtime. Test-only helpers and executable contracts belong in the central pack (`action-worker:tests/packs/ai-gateway/`), never in this repository. Repository, deployment, installation, configuration, discovery, and validation tools belong in `scripts/`.
+`src/` 只包含属于 Worker 产品/运行时的代码。仅供测试使用的辅助代码与可执行契约，应归入中央测试包（`action-worker:tests/packs/ai-gateway/`），绝不能放在本仓库中。仓库、部署、安装、配置、发现与校验工具，应归入 `scripts/`。
 
-A file is a **test** when its primary purpose is to verify behavior and failure is meaningful as test evidence. A file is a **script/tool** when operators, CI, or maintainers invoke it to perform an independent repository action. Tests may exercise tools in `scripts/`; the tool itself does not move into the test pack.
+当文件的主要目的是验证行为，且失败本身即是有意义的测试证据时，它是一个**测试**。当运营者、CI 或维护者为执行一项独立的仓库操作而调用某个文件时，它是一个**脚本/工具**。测试可以调用 `scripts/` 中的工具，但工具本身不会移入测试包。
 
-`migrations/` remains separate because migration order and immutability are deployment contracts, not test fixtures.
+`migrations/` 保持独立，因为迁移的顺序与不可变性属于部署契约，而非测试夹具。
 
-Repository governance is enforced by GitHub rules/workflows and executable checks. Developer-specific Git hooks may be used locally, but `.githooks/` is not a repository-owned contract because machine-specific hook behavior is non-portable and can rewrite commits outside CI review.
+仓库治理由 GitHub 规则/工作流与可执行校验共同执行。开发者可以在本地使用 Git hooks，但 `.githooks/` 不是仓库所有的契约，因为机器相关的 hook 行为不可移植，并且可能在 CI 评审之外改写提交。
 
-## Tooling entry-point ownership
+## 工具入口归属
 
-- First-time local bootstrap: `scripts/install.sh` / `scripts/install.ps1`.
-- Existing local/operator reconfiguration: `scripts/reconfigure.sh` / `scripts/reconfigure.ps1`.
-- Direct local code deployment: `npm run deploy`.
-- Wrangler login, identity, tail, development and deploy calls route through `scripts/cloudflare-wrangler.mjs`.
-- `scripts/cloudflare-wrangler.mjs` is the only repository owner of the pinned Wrangler version.
-- Compatibility aliases such as `setup-and-deploy.*`, `update.*`, and duplicate `deploy.*` wrappers are not separate responsibilities and should not be reintroduced.
-- `wrangler.jsonc` is the tracked baseline; operator-specific configuration belongs in gitignored `wrangler.user.jsonc`.
+- 首次本地引导：`scripts/install.sh` / `scripts/install.ps1`。
+- 已有的本地/运营者重新配置：`scripts/reconfigure.sh` / `scripts/reconfigure.ps1`。
+- 直接的本地代码部署：`npm run deploy`。
+- Wrangler 登录、身份、tail、开发与部署调用均通过 `scripts/cloudflare-wrangler.mjs` 路由。
+- `scripts/cloudflare-wrangler.mjs` 是仓库中唯一的 Wrangler 版本锁定所有者。
+- 诸如 `setup-and-deploy.*`、`update.*` 以及重复的 `deploy.*` 包装器等兼容别名不是独立职责，不应被重新引入。
+- `wrangler.jsonc` 是受版本控制的基线；运营者特定的配置应放在被 git 忽略的 `wrangler.user.jsonc` 中。
 
-Production deployment remains owned by GitHub Actions rather than any local script.
+生产部署仍由 GitHub Actions 负责，而非任何本地脚本。
 
-## Runtime boundaries
+## 运行时边界
 
-- `config` builds trusted internal configuration from external environment data.
-- `src/providers/registry.ts` is the single owner of the provider → protocol/surface mapping, stream-usage quirk, built-in OAuth onboarding defaults, and subscription dispatchability; account-level Node JSON does not carry those fields.
-- `scheduler` chooses an eligible node; it does not call providers directly.
-- `reliability` records availability/failure state; it does not convert protocols.
-- `request` orchestrates domain modules; it should not duplicate their logic.
-- `transport` owns upstream HTTP semantics after a node is selected.
-- `conversion` owns only the explicit Chat ↔ Messages bridge.
-- `observability` and public runtime projections do not feed historical/D1 evidence back into routing unless that contract is explicitly redesigned.
+- `config` 从外部环境数据中构建受信任的内部配置。
+- `src/providers/registry.ts` 是 provider → 协议/surface 映射、stream-usage 特例、内置 OAuth 接入默认值以及订阅可 dispatch 性的唯一所有者；账号级节点 JSON 不携带这些字段。
+- `scheduler` 选择可用节点；它不直接调用 provider。
+- `reliability` 记录可用性/失败状态；它不负责协议转换。
+- `request` 编排各领域模块；它不应重复实现其逻辑。
+- `transport` 在节点被选定之后，负责上游 HTTP 语义。
+- `conversion` 仅负责明确的 Chat ↔ Messages 桥接。
+- 除非该契约被明确重新设计，否则 `observability` 与公共运行时投影不会把历史/D1 证据反馈到路由中。
 
-## Tier 1 ownership
+## Tier 1 归属
 
-- `src/scheduler/tier1-scheduler.ts` — Eligibility → Affinity → P2C selection and slot claim.
-- `src/scheduler/tier1-affinity.ts` — hashed session binding, cache, and escape decision.
-- `src/reliability/tier1-state.ts` — isolate-local in-flight, passive TTFT, cooldown, half-open and adaptive rate-limit state.
-- `src/reliability/tier1-heat.ts` — bounded provider-model heat and hedge/spare-capacity protection.
+- `src/scheduler/tier1-scheduler.ts`：Eligibility → Affinity → P2C 选择与槽位 claim。
+- `src/scheduler/tier1-affinity.ts`：哈希后的会话绑定、缓存与逃逸决策。
+- `src/reliability/tier1-state.ts`：isolate 本地的 in-flight、被动 TTFT、冷却、半开与自适应限流状态。
+- `src/reliability/tier1-heat.ts`：有界的 provider-model 热度与 hedge/剩余容量保护。
 
-Tier 1 access-key groups are authorization-only and do not own a scheduler-priority path. Tier 2/3 retain their separate scheduler/reliability path.
+Tier 1 的访问密钥分组仅用于授权，不拥有调度优先级路径。Tier 2/3 保留其独立的调度器/可靠性路径。
 
-## Conversion ownership
+## 转换归属
 
-`src/conversion/result.ts` adds fidelity, diagnostics, and structured-output strategy around the direct converters. It does not introduce a universal protocol IR and does not make OpenAI Responses convertible.
+`src/conversion/result.ts` 在直接转换器之外，补充保真度、诊断以及结构化输出策略。它不会引入通用的协议 IR，也不会使 OpenAI Responses 变得可转换。
 
-## Dashboard / observability ownership
+## Dashboard / 可观测性归属
 
-- `src/observability/token-usage-store/` owns persisted physical upstream Token usage, delivered-request evidence, TTFT aggregates, and query contracts.
-- `src/runtime/model-status.ts` owns the five-state public logical-model projection.
-- `src/dashboard/model-status-view.ts` owns P50/P95/samples and dashboard-only model filtering.
-- `src/dashboard/usage-view.ts` owns presentation of physical Token totals, successful public request counts, and model-usage breakdowns.
+- `src/observability/token-usage-store/` 负责持久化的物理上游 Token 用量、已交付请求证据、TTFT 聚合以及查询契约。
+- `src/runtime/model-status.ts` 负责五状态的公共逻辑模型投影。
+- `src/dashboard/model-status-view.ts` 负责 P50/P95/样本数以及仅供仪表盘使用的模型过滤。
+- `src/dashboard/usage-view.ts` 负责物理 Token 总量、成功的公共请求数以及模型用量细分的展示。
 
-These are read-only consumers of operational evidence. They do not become routing inputs merely because the dashboard displays them.
+这些模块都是运行证据的只读消费者。它们不会仅因为仪表盘展示了这些数据，就成为路由的输入。
 
-## File rules
+## 文件规则
 
-- Executable tests and test-only helpers live in the central pack, not in this repository (no `tests/` directory).
-- `scripts/` must not accumulate `*-test.mjs` files.
-- `.githooks/` is not committed; local hooks remain developer-local and advisory.
-- `docs/**/*.md` uses lowercase `kebab-case.md` except conventional `README.md`.
-- `.dev.vars`, `.env*`, `secrets*.json`, and `wrangler.user.jsonc` remain local/gitignored.
-- A new top-level directory requires a durable responsibility that does not overlap an existing owner.
-- Do not create `new`, `final`, `latest`, or version-suffixed copies of an existing responsibility.
+- 可执行测试与仅供测试使用的辅助代码位于中央测试包中，而非本仓库（没有 `tests/` 目录）。
+- `scripts/` 中不得积累 `*-test.mjs` 文件。
+- `.githooks/` 不纳入提交；本地 hook 仅属于开发者本地的、建议性质的设置。
+- `docs/**/*.md` 使用小写的 `kebab-case.md` 命名，约定的 `README.md` 除外。
+- `.dev.vars`、`.env*`、`secrets*.json` 与 `wrangler.user.jsonc` 仅保留在本地，并被 git 忽略。
+- 新增顶层目录需要一项持久的职责，且该职责不得与现有所有者重叠。
+- 不得为现有职责创建 `new`、`final`、`latest` 或带版本后缀的副本。

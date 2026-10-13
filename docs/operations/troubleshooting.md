@@ -1,114 +1,114 @@
-# Troubleshooting
+# 故障排查
 
-Start with evidence from the failing boundary: configuration validation, CI job/step, authenticated `/health` build identity, sanitized gateway logs, and aggregated failure diagnostics. Do not rotate or rewrite unrelated configuration until the failing layer is identified.
+从失败的边界处获取证据：配置校验、CI 作业/步骤、经过认证的 `/health` 构建标识、脱敏的网关日志，以及聚合的失败诊断。在确定失败所在的层级之前，不要轮换或改写无关的配置。
 
-## Configuration failures
+## 配置故障
 
-### Gateway is `unconfigured`
+### 网关处于 `unconfigured` 状态
 
-Check that:
+请检查：
 
-- at least one `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret is configured;
-- its matching `AIG_ACCESS_MODELS_<GROUP>` Variable is present and non-empty;
-- at least one `AIG_TIER{1,2,3}_NODES_XX` Variable exists;
-- usable nodes have credentials in a `AIG_TIER{1,2,3}_CREDENTIALS_XX` Secret for the same tier.
+- 至少配置了一个 `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret；
+- 与之对应的 `AIG_ACCESS_MODELS_<GROUP>` Variable 存在且非空；
+- 至少存在一个 `AIG_TIER{1,2,3}_NODES_XX` Variable；
+- 可用的节点在同一 Tier 的 `AIG_TIER{1,2,3}_CREDENTIALS_XX` Secret 中拥有凭据。
 
-A group key with an empty model allowlist intentionally grants zero models.
+分组的 key 若其模型允许列表为空，则会有意地授予零个模型。
 
-### `No AIG_TIER{1,2,3}_NODES_XX Variable is configured`
+### `No AIG_TIER{1,2,3}_NODES_XX GitHub Variable is configured.`
 
-Add at least one valid tier config shard containing a JSON array of nodes. The suffix is only a shard number.
+请添加至少一个有效的 Tier 配置分片，其内容为包含节点的 JSON 数组。后缀仅是分片编号。
 
-The current account-level Node schema is:
-
-```text
-required: id, provider, base_url, models
-optional: priority
-```
-
-`protocol`, `surfaces`, `limits`, credentials, and unknown fields are rejected. Protocol and routable surfaces come from the provider adapter registry (`src/providers/registry.ts`).
-
-### Missing node credential
-
-Credentials bind by Tier + node id. They do not need to be in a Secret shard with the same suffix as the Config shard.
-
-Example:
+当前账号级节点 schema 为：
 
 ```text
-AIG_TIER1_NODES_03 contains node "nvidia-01"
-AIG_TIER1_CREDENTIALS_01 may contain {"nvidia-01":"..."}
+必填：id, provider, base_url, models
+可选：priority
 ```
 
-If the tier differs, the credential is invalid for that node.
+`protocol`、`surfaces`、`limits`、凭据以及未知字段均会被拒绝。协议与可路由的 surface 来自 provider 适配器注册表（`src/providers/registry.ts`）。
 
-### `AIG_MODELS_CONFIG` / `AIG_POLICIES_CONFIG` invalid
+### 节点凭据缺失
 
-These auxiliary configs are validated fail-fast. Check malformed JSON, unknown fields, invalid values, and model→policy references to policy names that do not exist.
+凭据按 Tier + node id 绑定。它们无需与 Config 分片使用相同的后缀，也能被放入 Secret 分片中。
 
-Use:
+示例：
+
+```text
+AIG_TIER1_NODES_03 包含节点 "nvidia-01"
+AIG_TIER1_CREDENTIALS_01 可以包含 {"nvidia-01":"..."}
+```
+
+如果 Tier 不一致，该凭据对该节点无效。
+
+### `AIG_MODELS_CONFIG` / `AIG_POLICIES_CONFIG` 无效
+
+这些辅助配置采用快速失败（fail-fast）的方式校验。请检查 JSON 格式错误、未知字段、无效取值，以及指向不存在的策略名称的 模型→策略 引用。
+
+请运行：
 
 ```bash
-npm run config:check
+npm run config:check -- --tier1 <tier1-nodes.json> --secrets <secrets.json>
 npm run validate:merge
 ```
 
-## Deployment failures
+## 部署故障
 
-### Preflight fails
+### 预检失败
 
-Use the exact missing Variable/Secret named by the job. Do not add unrelated placeholders merely to make preflight continue.
+请根据作业所指明的具体缺失的 Variable/Secret 进行修复。不要为了让预检继续通过而添加无关的占位值。
 
-### D1 migration fails
+### D1 迁移失败
 
-The Worker is not deployed after a required migration failure. Inspect the migration error first; do not bypass migration ordering.
+当必需的迁移失败时，Worker 不会被部署。请先检查迁移错误；不要绕过迁移的执行顺序。
 
-### Worker deploy succeeds but verification fails
+### Worker 部署成功但验证失败
 
-The workflow attempts Worker rollback. Check the `Verify deployed gateway`, rollback, and rollback-verification steps separately.
+工作流会尝试回滚 Worker。请分别检查部署工作流中的 `Verify deployed gateway` 步骤、回滚步骤以及回滚后的验证步骤（这些步骤由 Action Worker 的部署工作流执行）。
 
-Authenticated `/health` exposes the deployed commit SHA as `build`; production verification compares that value with the commit selected by the Deploy workflow.
+经过认证的 `/health` 会以 `build` 字段暴露已部署的 commit SHA；生产验证会将该值与部署工作流选定的 commit 进行比较。
 
-If rollback verification also fails, the previous Worker may not be healthy or external configuration/upstream state may have changed. Stop automatic retries and inspect the deployed build/configuration evidence.
+如果回滚后的验证也失败，则之前的 Worker 可能并不健康，或外部配置/上游状态已发生变化。应停止自动重试，并检查已部署的构建与配置证据。
 
-### Docs-only change did not deploy
+### 仅修改文档的变更未部署
 
-This is expected when the triggering `main` commit changes only Markdown files and/or `docs/**`. The deploy gate intentionally skips Worker deployment for documentation-only changes.
+当触发部署的 `main` commit 只修改了 Markdown 文件和/或 `docs/**` 时，这属于预期行为。部署门禁会有意跳过仅涉及文档的变更，不进行 Worker 部署。
 
-## Runtime HTTP failures
+## 运行时 HTTP 故障
 
-### 400 / other client-class 4xx
+### 400 / 其他客户端类 4xx
 
-The current failure taxonomy treats terminal request-invalid 4xx as `client` and stops the logical request. The gateway does not claim provider-specific 400 compatibility classification and automatic rotation for every such error.
+当前的失败分类将终止性的请求无效 4xx 视为 `client`，并停止该逻辑请求。网关并不声称能够对每一种由 provider 特定的 400 进行兼容性分类，也不会对每一种此类错误都自动执行轮换。
 
-Check:
+请检查：
 
-- whether the selected upstream actually supports the request field;
-- whether the request reached a native or converted fallback path;
-- structured-output/tool fields and provider wire compatibility;
-- sanitized upstream error text where available.
+- 所选的上游是否真的支持该请求字段；
+- 请求走的是 native 路径还是转换回退路径；
+- 结构化输出/工具字段以及 provider 线协议的兼容性；
+- 在可用的情况下，查看经过脱敏的上游错误文本。
 
-Do not assume a 400 means the key itself is unhealthy.
+不要假定 400 意味着该 key 本身不健康。
 
 ### 429 Too Many Requests
 
-Tier 1 learns from real upstream rate-limit evidence rather than configured node RPM guesses.
+Tier 1 从真实的上游限流证据中学习，而不是依赖配置的节点 RPM 猜测值。
 
-Check:
+请检查：
 
-- `Retry-After` if the provider sends it;
-- whether the affected credential is in key-local adaptive cooldown/recovery;
-- whether several independent keys for the same `(provider, upstream model)` are producing provider-model heat;
-- current isolate-local in-flight pressure;
-- whether multiple Worker isolates/PoPs are sharing the same upstream account/key;
-- optional policy `max_in_flight` only when you deliberately configured a known per-account local safety ceiling.
+- provider 若返回了 `Retry-After`，则查看该值；
+- 受影响的凭据是否处于 key 级的自适应冷却/恢复之中；
+- 同一 `(provider, 上游模型)` 下是否有多个独立 key 正在产生 provider-model 热度；
+- 当前 isolate 本地的 in-flight 压力；
+- 是否有多个 Worker isolate/PoP 在共享同一上游账号/key；
+- 仅当你刻意为已知的逐账号本地安全上限进行了配置时，才检查可选策略 `max_in_flight`。
 
-Tier 1 cooldown is scoped to the affected provider/key slot; it does not intentionally disable the whole Provider or logical model. Provider-model heat is a bounded ranking signal, not a global cooldown.
+Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有意禁用整个 Provider 或某个逻辑模型。provider-model 热度是有界的排序信号，而不是全局冷却。
 
-There is no node `limits.rpm`, `rpm_mode`, or guessed Provider-global concurrency contract in the current schema.
+当前 schema 中不存在节点级的 `limits.rpm`、`rpm_mode`，也不存在猜测出的 Provider 全局并发契约（There is no node `limits.rpm`, `rpm_mode`, or guessed Provider-global concurrency contract in the current schema）。
 
 ### 502 Bad Gateway
 
-Use failure diagnostics to identify whether the dominant issue is:
+请利用失败诊断判断主要的问题属于以下哪一类：
 
 - `server`
 - `network`
@@ -117,103 +117,103 @@ Use failure diagnostics to identify whether the dominant issue is:
 - `stream_interrupted`
 - `model_missing`
 - `endpoint_not_found`
-- conversion failure / unsupported fallback semantics
+- 转换失败 / 不受支持的回退语义
 
-A converted fallback still returns the original client's error envelope.
+转换后的回退仍会返回原始客户端的错误信封。
 
 ### 503 Service Unavailable
 
-Common causes:
+常见原因：
 
-- gateway configuration is invalid/unconfigured;
-- all matching protocol/surface/model candidates are temporarily unavailable;
-- the request-wide logical-attempt plan is exhausted after retryable failures;
-- an explicit local `max_in_flight` ceiling is occupied for the relevant Tier 1 policy;
-- no authorized compatible family fallback remains inside the same request budget.
+- 网关配置无效或未配置；
+- 所有匹配的 protocol/surface/model 候选均暂时不可用；
+- 在可重试的失败之后，请求级的逻辑 attempt 计划已耗尽；
+- 相关 Tier 1 策略上显式的本地 `max_in_flight` 上限已被占满；
+- 在同一请求预算内，已无经过授权的兼容家族回退可用。
 
-Use authenticated `/health` and sanitized runtime diagnostics. A retryable family-exhaustion 503 does not prove that every account in the deployment was tested or globally unavailable.
+请使用经过认证的 `/health` 与经过脱敏的运行时诊断信息。可重试的家族耗尽型 503 并不能证明部署中的每个账号都已被测试或全局不可用。
 
 ### 504 Gateway Timeout
 
-The request-wide `AIG_FAILOVER_BUDGET_MS` was exhausted or no safe attempt remained within the wall-clock budget. Inspect upstream headers/first-event latency, attempted failure domains, and fallback/hedge activity before increasing the budget.
+请求级的 `AIG_FAILOVER_BUDGET_MS` 已耗尽，或在墙钟预算之内已无安全的 attempt 可用。在增大预算之前，请先检查上游的 header/首事件延迟、已尝试的故障域，以及回退/hedge 的活动情况。
 
-## Model problems
+## 模型问题
 
-### Model not listed or unavailable
+### 模型未列出或不可用
 
-Check the logical model name against node `models` mappings and optional `AIG_MODELS_CONFIG`. Provider-facing model ids may differ from the gateway's logical model aliases.
+请对照节点 `models` 映射以及可选的 `AIG_MODELS_CONFIG`，检查逻辑模型名称。面向 provider 的模型 id 可能与网关的逻辑模型别名不同。
 
-A model-shaped upstream 404 uses a short upstream-model-specific cooldown; it should not permanently poison the logical alias after remapping.
+模型形态的上游 404 会使用一个针对该上游模型的短期冷却；在重映射之后，它不应永久地污染逻辑别名。
 
-### Claude Code / Anthropic Messages fallback problem
+### Claude Code / Anthropic Messages 回退问题
 
-A native Anthropic route requires a node whose `provider` resolves to the Anthropic provider adapter. If native candidates are exhausted and fallback is enabled, the request may convert to OpenAI Chat.
+原生的 Anthropic 路由要求节点的 `provider` 解析到 Anthropic provider 适配器。若 native 候选已耗尽且回退已启用，请求可能会被转换为 OpenAI Chat。
 
-The conversion bridge is intentionally not full Anthropic semantic emulation. Features such as thinking history/control, context-management controls, provider-native tools, and some tool hints may be degraded or rejected. Debug conversion diagnostics expose fixed categories without request content.
+转换桥接刻意不做完整的 Anthropic 语义模拟。诸如 thinking 历史/控制、上下文管理控制、provider 原生工具以及部分工具提示等特性，可能会被降级或被拒绝。调试时，转换诊断会以固定的类别暴露信息，而不包含请求内容。
 
-### OpenAI Responses problem
+### OpenAI Responses 问题
 
-OpenAI Responses is Native Only. Under the current provider adapters, native `/v1/responses` routing is available only to nodes using `provider: "openai"`.
+OpenAI Responses 为仅 Native（Native Only）。在当前的 provider 适配器下，只有使用 `provider: "openai"` 的节点才可以使用原生的 `/v1/responses` 路由。
 
-Confirm:
+请确认：
 
-- the Node Config uses `provider: "openai"`;
-- `base_url` points to the intended OpenAI endpoint;
-- the logical model mapping resolves to a model supported by `/v1/responses`;
-- credentials are bound to that node in the same tier.
+- Node Config 使用了 `provider: "openai"`；
+- `base_url` 指向预期的 OpenAI 端点；
+- 逻辑模型映射解析到一个支持 `/v1/responses` 的模型；
+- 凭据在同一 Tier 中已绑定到该节点。
 
-Do not add per-node `protocol` or `surfaces` fields; those are rejected by the current Node schema. If another Provider needs native Responses support, its provider adapter must be changed explicitly.
+不要添加节点级的 `protocol` 或 `surfaces` 字段；当前的节点 schema 会拒绝它们。如果其他 Provider 需要原生 Responses 支持，必须显式修改其 provider 适配器。
 
-### Structured output fallback
+### 结构化输出回退
 
-The conversion strategy is conservative:
+转换策略是保守的：
 
-- positive native capability evidence can use native JSON Schema;
-- synthetic Tool mode additionally needs a response-side unwrap adapter;
-- unknown target capability uses Prompt emulation.
+- 只有在具备明确的原生能力证据时，才会使用原生 JSON Schema；
+- 合成 Tool 模式还需要响应侧的解包适配器；
+- 未知的目标能力使用 Prompt 模拟。
 
-The current generic runtime fallback path therefore defaults unknown targets to Prompt rather than forcing an unsupported `response_format`.
+因此，当前通用的运行时回退路径会将未知目标默认为 Prompt，而不会强行发送不受支持的 `response_format`。
 
-## Tier 1 routing diagnosis
+## Tier 1 路由诊断
 
-A fast key is not guaranteed to receive most traffic. Tier 1 deliberately balances passive TTFT with live pressure and failure evidence.
+流量最快的 key 并不保证获得最多的流量。Tier 1 会有意地在被动 TTFT 与实时压力及失败证据之间取得平衡。
 
-If a previously preferred affinity key receives less traffic, check whether:
+如果一个此前被优先选择的亲和 key 获得的流量减少了，请检查：
 
-- its current in-flight pressure is elevated;
-- provider-model rate-limit heat is penalizing the cohort;
-- its affinity advantage has weakened as pressure/heat rose;
-- it is in cooldown/recovery/half-open state;
-- an explicit local `max_in_flight` ceiling is occupied;
-- hedge spare-capacity gating excluded it from optional twin work.
+- 它当前的 in-flight 压力是否偏高；
+- provider-model 限流热度是否正在对该群体进行惩罚；
+- 随着压力/热度上升，其亲和优势是否已经减弱；
+- 它是否处于冷却/恢复/半开状态；
+- 显式的本地 `max_in_flight` 上限是否已被占满；
+- hedge 的剩余容量门控是否将其排除在可选的孪生请求之外。
 
-Access-key groups (`AIR/PRO/MAX/ULTRA/AGENT`) authorize models; they do not assign Tier 1 scheduler priority.
+访问密钥分组（`AIR/PRO/MAX/ULTRA/AGENT`）仅用于授权模型；它们不会分配 Tier 1 调度优先级（Access-key groups authorize models; they do not assign Tier 1 scheduler priority）。
 
-## Dashboard / usage diagnosis
+## 仪表盘 / 用量诊断
 
-The public dashboard intentionally uses different counters for different questions:
+公共仪表盘有意使用不同的计数器来回答不同的问题：
 
-- Token totals: real physical upstream Token usage, including retry/fallback/hedge work when the upstream reports usage;
-- public `次请求`: successfully delivered requests, so internal retry/fallback/hedge attempts do not inflate the count;
-- model-usage tooltips: physical upstream calls for the model-usage breakdown;
-- model-status `samples`: successful delivered requests with a recorded TTFT sample in the recent window.
+- Token 总量：真实的物理上游 Token 用量；当上游报告了用量时，包括重试/回退/hedge 的工作量；
+- 公共「次请求」：成功交付的请求数，因此内部的重试/回退/hedge attempt 不会使该计数膨胀；
+- 模型用量的工具提示：用于模型用量细分的物理上游调用次数；
+- 模型状态的 `samples`：近期窗口内记录了 TTFT 样本的、成功交付的请求数。
 
-Do not divide aggregate physical Token usage by upstream-attempt count and compare that result directly with public successful-request or TTFT-sample counts; they answer different questions.
+请勿将聚合的物理 Token 用量除以上游 attempt 数，再将结果与公共的成功请求数或 TTFT 样本数直接比较；二者回答的是不同的问题。
 
-## Streaming problems
+## 流式故障
 
-### Headers timeout
+### Headers 超时
 
-No upstream response headers arrived before `AIG_UPSTREAM_HEADER_TIMEOUT_MS`. Check network/provider responsiveness.
+在 `AIG_UPSTREAM_HEADER_TIMEOUT_MS` 之前，没有收到上游的响应头。请检查网络与 provider 的响应速度。
 
-### First-event timeout
+### 首事件超时
 
-Headers arrived but no meaningful protocol-specific output appeared before the active attempt deadline. `AIG_FIRST_EVENT_TIMEOUT_MS` is bounded by the same request/attempt wall-clock budget; lifecycle-only SSE events do not necessarily commit the response.
+已收到响应头，但在当前 attempt 截止时间之前，没有出现有意义的、协议特定的输出。`AIG_FIRST_EVENT_TIMEOUT_MS` 受同一请求/attempt 墙钟预算的约束；仅包含生命周期事件的 SSE 不一定会提交响应。
 
-### Stream interruption
+### 流中断
 
-A stream can commit successfully and later truncate. After commit, the gateway does not transparently replay the request to another provider because duplicate partial output would be unsafe.
+流可以成功提交，之后再被截断。提交之后，网关不会将请求透明地重放到另一个 provider，因为重复的部分输出是不安全的。
 
-## Safe evidence collection
+## 安全的证据收集
 
-Never include live credentials, full authorization headers, private upstream URLs, prompts/request bodies, or user data in an Issue or public log sample. See [SECURITY.md](../../SECURITY.md).
+切勿在 Issue 或公开日志样本中包含真实凭据、完整的 authorization 头、私有上游 URL、提示词/请求体或用户数据。参见 [SECURITY.md](../../SECURITY.md)。

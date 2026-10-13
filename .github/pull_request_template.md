@@ -1,24 +1,24 @@
-## Goal
+## 目标
 
-Describe the concrete problem this PR solves.
+描述本 PR 解决的具体问题。
 
-## Changes
+## 变更
 
 - 
 
-## Verification
+## 验证
 
 - [ ] `npm ci`
 - [ ] `npm run validate:merge`
 - [ ] `npm run check:deploy`
-- [ ] Relevant regression or contract coverage is included
-- [ ] Canonical documentation is updated where behavior/configuration changed
-- [ ] No live token, private URL, request body, or user data is included
+- [ ] 已包含相关的回归或契约测试覆盖
+- [ ] 若行为或配置发生变化，已更新对应的规范文档
+- [ ] 未包含任何真实 token、私有 URL、请求体或用户数据
 
-## Impact
+## 影响
 
-- Protocol / API compatibility:
-- Routing / reliability:
-- Resource / latency:
-- Security:
-- Breaking change: No / Yes — explain if Yes
+- 协议 / API 兼容性：
+- 路由 / 可靠性：
+- 资源 / 延迟：
+- 安全性：
+- 破坏性变更：否 / 是——若为「是」，请说明

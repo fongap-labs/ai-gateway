@@ -2,75 +2,76 @@
 
 # ai-gateway
 
-**Resilient AI API gateway for Cloudflare Workers**
+**基于 Cloudflare Workers 的高韧性 AI API 网关**
 
-Multi-provider routing · Multi-key load balancing · Tiered failover · OpenAI / Anthropic compatibility
-
-[**English**](README.md) · [简体中文](README.zh-CN.md)
+多 Provider 路由 · 多 Key 负载均衡 · 分层故障转移 · OpenAI / Anthropic 兼容
 
 [![CI](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License)
 
-[Quick Start](#quick-start) · [Architecture](docs/architecture/overview.md) · [Configuration](docs/operations/configuration.md) · [Deployment](docs/operations/deployment.md)
+[快速开始](#快速开始) · [架构](docs/architecture/overview.md) · [配置](docs/operations/configuration.md) · [部署](docs/operations/deployment.md)
 
 </div>
 
 <p align="center">
-  <a href="https://api.135468.xyz/"><img src="https://api.135468.xyz/readme-status.svg?v=20260918-3" alt="Live production usage from the maintainer deployment" width="920"></a>
+  <a href="https://api.135468.xyz/"><img src="https://api.135468.xyz/readme-status.svg?v=20260918-3" alt="维护者实例实时生产运行数据" width="920"></a>
 </p>
 
-## What is ai-gateway?
+## 这是什么
 
-ai-gateway turns fragmented AI providers, API keys, quotas, and model aliases into **one stable endpoint**.
+ai-gateway 把分散在不同 AI Provider、API Key、额度和模型别名上的容量，汇聚成 **一个稳定的 API 入口**。
 
-It runs on Cloudflare Workers and is built for self-hosted individuals or small trusted teams using heterogeneous capacity that may be cheap or free, but often rate-limited or temporarily unavailable.
+它运行在 Cloudflare Workers 上，适合个人或小型可信团队自托管使用，尤其适合"低成本/免费容量很多，但限流、波动和临时不可用也很多"的场景。
 
-## Why it exists
+## 为什么需要它
 
-Real AI capacity is messy: providers have different quotas, one provider may have several keys, models can disappear or recover, and OpenAI/Anthropic surfaces are not identical. Free capacity should be used first without letting retries or fallback run out of control.
+真实的 AI API 资源很零散：Provider 额度不同，同一家可能有多个 Key，模型会 404 / 429 后又恢复，OpenAI 与 Anthropic 接口也不完全一样。免费容量应该优先吃，但 retry / fallback 不能失控。
 
-A simple reverse proxy does not solve that. ai-gateway adds bounded routing and reliability around the pool.
+普通反向代理解决不了这些问题。ai-gateway 在资源池外面补上有界调度和可靠性控制。
 
-## How it works
+## 怎么工作
 
 ```text
 Client
   ↓
 ai-gateway
   ↓
-Tier 1  free / effectively free
+Tier 1  免费 / 近似免费容量
   ↓
-Tier 2  subscription entitlements
+Tier 2  会员 / 订阅权益容量
   ↓
-Tier 3  paid API fallback
+Tier 3  付费 API 托底
   ↓
-Providers and keys
+各 Provider 与 Key
 ```
 
-Each request shares one attempt and wall-clock budget. Native protocol routes are tried first. Cross-protocol fallback is limited to **OpenAI Chat Completions ↔ Anthropic Messages**; **OpenAI Responses stays native-only**.
+每个请求共用一套 attempt 和时间预算。原生协议优先；跨协议只支持 **OpenAI Chat Completions ↔ Anthropic Messages**，**OpenAI Responses 保持 Native Only**。
 
-Tier 1 reshapes traffic using live availability, in-flight pressure, TTFT, 429 cooldown/recovery, and provider-model heat. Model-family fallback is bounded as well.\n\nTier 2 supports both static API-key nodes and **subscription nodes** (`auth: "oauth"`): operator-owned Claude / Codex / Gemini subscriptions onboarded through PKCE, stored AES-GCM encrypted in D1, refreshed automatically at dispatch time, and resolved fail-closed. See [Configuration - Tier 2 subscriptions](docs/operations/configuration.md#tier-2-subscriptions-oauth).
+Tier 1 会根据实时可用性、in-flight、TTFT、429 冷却/恢复和 Provider-Model 热度动态分流；模型家族 fallback 也有明确上限。
 
-Core behavior:
+Tier 2 同时支持静态 API-Key 节点和**订阅节点**（`auth: "oauth"`）：运营者自己的 Claude / Codex / Gemini 订阅通过 PKCE 授权接入，Token 以 AES-GCM 加密存储在 D1，调度时自动刷新、按需解析，全程 fail-closed。详见 [Configuration - Tier 2 订阅](docs/operations/configuration.md#tier-2-订阅oauth)。
 
-- **Multi-provider / multi-key pooling** behind one logical endpoint.\n- **Subscription entitlements** via OAuth (PKCE) with encrypted token storage and automatic refresh.
-- **Quota-aware reliability** with narrow 404 isolation and 429 recovery.
-- **Streaming safety**: transparent failover stops after meaningful output begins.
-- **Visible amplification**: Token usage, delivered requests, TTFT, retry/fallback/hedge work stay distinct.
-- **Fail-closed access**: credentials are separated from node config; missing model allowlists grant no access.
+核心行为：
 
-Full contracts: [Architecture](docs/architecture/overview.md).
+- **多 Provider / 多 Key 聚合**：客户端只看到一个逻辑入口。
+- **订阅权益接入**：OAuth (PKCE) 授权、Token 加密存储、自动刷新。
+- **额度保护**：429 进入恢复机制，模型型 404 只隔离对应映射。
+- **流式安全**：真正内容开始输出后，不再透明切换上游。
+- **放大可见**：Token、成功请求、TTFT、retry / fallback / hedge 分开统计。
+- **默认收紧**：凭据与 Node Config 分离，模型 allowlist 缺失时不给访问权限。
 
-## Production use
+完整规则见 [Architecture](docs/architecture/overview.md)。
 
-The panel above is from the maintainer's real production deployment, not a synthetic benchmark.
+## 真实运行
 
-The project is now in a **stability phase**. Architecture stays frozen unless production data shows a structural problem; current focus is real 429 behavior, fallback/hedge amplification, D1 write volume, and TTFT.
+上方状态图来自维护者真实生产实例，不是合成 Benchmark。
 
-## Quick start
+项目目前已经进入 **稳定性阶段**：除非真实生产数据证明现有架构有结构性问题，否则不再继续调整架构。后续重点看真实 429、fallback / hedge 放大、D1 写入量和 TTFT。
 
-Requires Node.js **>=22.18.0**, a Cloudflare account, and at least one upstream credential.
+## 快速开始
+
+要求：Node.js **>=22.18.0**、Cloudflare 账户，以及至少一个上游凭据。
 
 ```bash
 git clone https://github.com/fongap-labs/ai-gateway.git
@@ -79,40 +80,40 @@ npm ci
 sh scripts/install.sh
 ```
 
-Windows:
+Windows：
 
 ```powershell
 powershell scripts/install.ps1
 ```
 
-The installer validates configuration, collects credentials, deploys the Worker, and can verify the live endpoint.
+安装脚本会校验配置、读取凭据、部署 Worker，并可验证线上入口。
 
-Config and Secret shards are independent and bind by **Tier + node id**, not by matching suffixes. Access is controlled by `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` and `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`.
+Config shard 与 Secret shard 彼此独立，按 **Tier + node id** 绑定，不按相同后缀一一对应。访问由 `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` 与 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` 控制。
 
-See [Configuration](docs/operations/configuration.md) for the schema and [Deployment](docs/operations/deployment.md) for the production flow.
+Schema 见 [Configuration](docs/operations/configuration.md)，生产部署见 [Deployment](docs/operations/deployment.md)。
 
-## API surface
+## API Surface
 
 | Method | Path | Surface |
 | --- | --- | --- |
 | `POST` | `/v1/chat/completions` | OpenAI Chat Completions |
 | `POST` | `/v1/responses` | OpenAI Responses |
 | `POST` | `/v1/messages` | Anthropic Messages |
-| `POST` | `/v1/messages/count_tokens` | Anthropic-compatible local token count |
-| `GET` | `/v1/models` | Authenticated model catalog |
-| `GET` | `/health` | Authenticated health diagnostics |
-| `GET` | `/metrics` | Authenticated runtime metrics |
+| `POST` | `/v1/messages/count_tokens` | Anthropic-compatible 本地 Token 计数 |
+| `GET` | `/v1/models` | 鉴权后的模型目录 |
+| `GET` | `/health` | 鉴权后的健康诊断 |
+| `GET` | `/metrics` | 鉴权后的运行时指标 |
 
-## Documentation
+## 文档
 
 [Architecture](docs/architecture/overview.md) · [Configuration](docs/operations/configuration.md) · [Deployment](docs/operations/deployment.md) · [Product Policy](docs/governance/product-policy.md) · [Governance](docs/governance/README.md)
 
-English is canonical; [简体中文](README.zh-CN.md) is maintained for readers.
+本 README 是唯一的中文入口文档；文档内容以本仓库中的单一版本为准。
 
-## Security
+## 安全
 
-Never place upstream credentials in node configuration or public logs. See [SECURITY.md](SECURITY.md).
+不要将上游凭据写入 Node Config 或公开日志。详见 [SECURITY.md](SECURITY.md)。
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License，详见 [LICENSE](LICENSE)。

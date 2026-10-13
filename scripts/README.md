@@ -1,55 +1,54 @@
-# Tooling
+# 工具
 
-`scripts/` contains repository, operator, CI, configuration, deployment, validation, and provider-discovery tools. It is not a home for Worker runtime code or tests.
+`scripts/` 包含仓库、运营者、CI、配置、部署、校验以及 provider 发现相关的工具。它不是 Worker 运行时代码或测试的存放地。
 
-## Supported entry points
+## 受支持的入口点
 
-| Purpose | Entry point |
+| 用途 | 入口点 |
 | --- | --- |
-| First-time local bootstrap | `scripts/install.sh` / `scripts/install.ps1` |
-| Reconfigure an existing local/operator deployment | `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` |
-| Direct local code deploy | `npm run deploy` |
-| Local Worker development | `npm run dev` |
-| Cloudflare login / identity / tail | `npm run cf:login`, `npm run cf:whoami`, `npm run tail` |
-| Configuration inspection | `npm run config:check`, `npm run config:show`, `npm run config:diff` |
-| Provider Discovery | `npm run discovery:check`, `npm run discovery:summary` and the manual workflow |
+| 首次本地引导 | `scripts/install.sh` / `scripts/install.ps1` |
+| 重新配置已有的本地/运营者部署 | `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` |
+| 直接进行本地代码部署 | `npm run deploy` |
+| 本地 Worker 开发 | `npm run dev` |
+| Cloudflare 登录 / 身份 / 日志 tail | `npm run cf:login`、`npm run cf:whoami`、`npm run tail` |
+| 配置检查 | `npm run config:check -- --tier1 <file> --secrets <file>`；`config:show` 与 `config:diff` 同样需要通过 `--` 传入文件参数（用法见 `scripts/config-cli.mjs`） |
+| Provider Discovery | `npm run discovery:check`、`npm run discovery:summary` |
 
-Production deployment remains repository-driven through GitHub Actions. Local entry points are operator tools; they do not replace the production CI gate.
+生产部署仍然由 GitHub Actions 以仓库为驱动完成。本地入口点是运营者工具；它们不能替代生产 CI 门禁。
 
-## Wrangler ownership
+## Wrangler 归属
 
-`scripts/cloudflare-wrangler.mjs` is the single repository owner of the pinned Wrangler version and the common direct-CLI behavior. It also enforces the required Tier 1 affinity binding and D1 migration-before-Worker ordering for real local deploys.
+`scripts/cloudflare-wrangler.mjs` 是仓库中唯一的 Wrangler 版本锁定所有者，并负责通用的直接 CLI 行为。对于真实的本地部署，它还负责强制要求必需的 Tier 1 亲和绑定（TIER1_AFFINITY），以及 D1 迁移先于 Worker 部署的执行顺序。
 
-Do not copy the Wrangler version into package scripts, installers, reconfiguration scripts, or new wrappers. Route Cloudflare CLI calls through `cloudflare-wrangler.mjs`.
+不要将 Wrangler 版本号复制到 package 脚本、安装程序、重新配置脚本或新的包装器中。所有 Cloudflare CLI 调用都应通过 `cloudflare-wrangler.mjs` 进行。
 
-## Configuration tooling
+## 配置工具
 
-- `config-cli.mjs` inspects, validates, displays, and compares operator configuration.
-- `node-config-shards.mjs` owns node-config/secret shard validation and planning primitives.
-- `plan-node-configuration.mjs` exposes those primitives as a CLI.
-- `github-deployment-config.mjs` bridges GitHub Variables/Secrets into the production deployment payload.
-- `deploy-gate-decision.mjs` decides whether a completed CI run is eligible to deploy.
+- `config-cli.mjs` 用于检查、校验、展示和比较运营者配置。
+- `node-config-shards.mjs` 负责节点配置/Secret 分片的校验与规划原语。
+- `plan-node-configuration.mjs` 将这些原语以 CLI 的形式暴露出来。
+- `github-deployment-config.mjs` 负责将 GitHub Variables/Secrets 桥接到生产部署载荷中。
 
-`wrangler.jsonc` is tracked baseline configuration. Operator-specific Worker name, bindings, and local variables belong in the gitignored `wrangler.user.jsonc`; bootstrap tooling must not rewrite the tracked baseline.
+`wrangler.jsonc` 是受版本控制的基线配置。运营者特定的 Worker 名称、绑定与本地变量应放在被 git 忽略的 `wrangler.user.jsonc` 中；引导工具不得改写受版本控制的基线。
 
-## Validation tooling
+## 校验工具
 
-The repository uses focused executable checks under `scripts/`, including syntax, deployment configuration, migrations, documentation, links, and secret scanning. Tests for these tools live in the central pack (`action-worker:tests/packs/ai-gateway/`).
+仓库在 `scripts/` 下使用一组聚焦的可执行检查，包括语法、部署配置、迁移、文档、链接与密钥扫描。这些工具的测试位于中央测试包（`action-worker:tests/packs/ai-gateway/`）中。
 
-## Operator probes
+## 运营者探针
 
-`health-check.*`, `models-check.*`, and `metrics-check.*` are deliberately small platform-native Shell/PowerShell probes. They remain separate so credentials can be prompted without introducing a cross-platform interactive dependency or a large abstraction for three simple endpoints.
+`health-check.*`、`models-check.*` 与 `metrics-check.*` 是刻意保持精简的、平台原生的 Shell/PowerShell 探针。它们保持独立，是为了让凭据可以通过交互方式输入，而不引入跨平台的交互式依赖，也不为三个简单端点引入大型抽象。
 
 ## Provider Discovery
 
-`scripts/provider-discovery/` is a read-only advisory subsystem for capability snapshots, normalization, diffs, runtime consistency checks, reporting, and SSRF protection. It does not mutate Runtime Node configuration or join the AI request hot path.
+`scripts/provider-discovery/` 是只读的建议性子系统，负责能力快照、归一化、差异比较、运行时一致性检查、报告生成以及 SSRF 防护。它不会修改运行时节点配置，也不会加入 AI 请求的热路径。
 
-## What does not belong here
+## 不属于本目录的内容
 
-- Worker runtime code → `src/`
-- executable tests/contracts/test-only helpers → `action-worker:tests/packs/ai-gateway/`
-- persistent configuration examples → `config/`
-- D1 schema changes → `migrations/`
-- long-lived design and policy documentation → `docs/`
+- Worker 运行时代码 → `src/`
+- 可执行的测试/契约/仅供测试使用的辅助代码 → `action-worker:tests/packs/ai-gateway/`
+- 持久化的配置示例 → `config/`
+- D1 schema 变更 → `migrations/`
+- 长期有效的设计与策略文档 → `docs/`
 
-Do not add compatibility aliases such as `setup-and-deploy.*`, `update.*`, or duplicate `deploy.*` wrappers when an existing supported entry point already owns the action.
+当已有受支持的入口点承担某项操作时，不要新增兼容别名，例如 `setup-and-deploy.*`、`update.*` 或重复的 `deploy.*` 包装器。

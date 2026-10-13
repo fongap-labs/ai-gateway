@@ -1,32 +1,32 @@
-# Routing model
+# 路由模型
 
-Routing is constrained by **protocol + surface + model + tier**. Native requests enter only runtime nodes whose provider adapter supports the active protocol and surface; converted fallback requests enter the target protocol pool only after conversion succeeds.
+路由受 **protocol + surface + model + tier** 四个维度约束。Native 请求只能进入其 provider 适配器支持当前 protocol 与 surface 的运行时节点；转换后的回退请求，只有在转换成功之后，才会进入目标协议池。
 
-Tier order is a product invariant:
+Tier 顺序是产品级不变式：
 
 ```text
 Tier 1 → Tier 2 → Tier 3
 ```
 
-Tier 1 is free/effectively free capacity and the primary daily layer. Tier 2 is membership/subscription entitlement capacity (Claude/Codex/Gemini subscriptions through OAuth). Tier 3 is paid API capacity kept as protected final fallback.
+Tier 1 是免费或实际上免费的容量，也是日常的主要层级。Tier 2 是订阅权益容量（通过 OAuth 接入的 Claude/Codex/Gemini 订阅）。Tier 3 是付费 API 容量，作为受保护的最终回退保留。
 
-OpenAI Chat Completions ↔ Anthropic Messages fallback is evaluated only after the native route is exhausted. OpenAI Responses remains Native Only for protocol conversion.
+OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽之后才会评估。OpenAI Responses 在协议转换方面仍为仅 Native（Native Only）。
 
-## Model registry, Provider Registry, and nodes
+## 模型注册表、Provider Registry 与节点
 
-The Model Registry owns logical-model knowledge as two distinct concepts: catalog facts (capabilities, reasoning efforts, modalities) and runtime policy (failover policy binding, visibility, UI grouping); the flat `AIG_MODELS_CONFIG` operator schema is unchanged. The provider adapter registry in `src/providers/registry.ts` owns protocol and routable surfaces (plus stream-usage quirks, OAuth onboarding defaults, and subscription dispatchability). Account-level Node Config owns provider name, base URL, logical→upstream model mapping, optional static priority, and credential binding; runtime normalization combines those facts into a routable `RuntimeNode`.
+模型注册表（Model Registry）将逻辑模型的知识划分为两类不同的概念：目录事实（能力、推理强度、模态）与运行时策略（故障转移策略绑定、可见性、UI 分组）；扁平的 `AIG_MODELS_CONFIG` 运营者 schema 保持不变。`src/providers/registry.ts` 中的 provider 适配器注册表负责 protocol 与可路由 surface（以及 stream-usage 特例、OAuth 接入默认值和订阅可 dispatch 性）。账号级 Node Config 负责 provider 名称、base URL、逻辑→上游模型映射、可选的静态 priority 以及凭据绑定；运行时归一化会将这些事实合并为可路由的 `RuntimeNode`。
 
-Node `limits`, `protocol`, and `surfaces` are not part of the account schema. Provider capacity comes from observed runtime signals rather than operator-supplied RPM/concurrency guesses.
+节点的 `limits`、`protocol` 与 `surfaces` 均不属于账号 schema（Node `limits`, `protocol`, and `surfaces` are not part of the account schema）。Provider 的容量来自运行时观测到的信号，而非运营者提供的 RPM/并发数猜测值。
 
-Credentials bind by **Tier + node id**. Config and Secret shard suffixes are independent partition numbers.
+凭据按 **Tier + node id** 绑定。Config 与 Secret 的分片后缀是相互独立（independent）的分区编号。
 
-Static node `priority` is meaningful for Tier 2/3 and deliberately ignored by Tier 1 P2C. Gateway access groups only authorize logical models; they do not bias Tier 1 candidate scoring.
+静态节点 `priority` 对 Tier 2/3 有意义，而 Tier 1 的 P2C 会有意忽略它。网关访问分组（Gateway access groups）只授权逻辑模型（access groups only authorize logical models）；它们不会影响 Tier 1 的候选评分。
 
-## Logical-model family fallback
+## 逻辑模型家族回退
 
-Logical-model fallback is separate from protocol fallback. Protocol fallback changes wire protocol/surface for the same logical model; family fallback changes the logical model while preserving the client route and requested-model identity.
+逻辑模型回退独立于协议回退。协议回退改变同一逻辑模型的线协议/surface；家族回退改变逻辑模型本身，同时保留客户端路由与请求的模型标识。
 
-Family membership is derived from the final capability tier. Every preceding name segment is preserved as the logical-family prefix, so new families do not require source changes.
+家族成员资格由最终的能力等级推导。每个前置的名称段都会作为逻辑家族前缀保留，因此新增家族无需修改源码。
 
 ```text
 <family>-Ultra → <family>-Max → <family>-Pro
@@ -35,162 +35,162 @@ Family membership is derived from the final capability tier. Every preceding nam
 <family>-Air   → <family>-Pro → <family>-Max → <family>-Ultra
 ```
 
-The same rules apply to unprefixed `Ultra / Max / Pro / Air`. Examples include `Code-*`, `Audit-*`, and any future family that exposes matching sibling tiers in the known-model catalog.
+同样的规则也适用于无前缀的 `Ultra / Max / Pro / Air`。例如 `Code-*`、`Audit-*`，以及任何未来在已知模型目录中暴露出匹配同级层级的家族。
 
-Fallback never crosses family prefixes. `Air` may move upward inside its family; `Ultra / Max / Pro` never fall back down to `Air`. If no compatible sibling is configured, the requested logical model keeps the legacy single-model behavior and policy-owned attempt budget.
+回退绝不跨越家族前缀。`Air` 可以在其家族内向上移动；`Ultra / Max / Pro` 绝不会向下回退到 `Air`。若未配置兼容的同级模型，则请求的逻辑模型保持原有的单模型行为，并使用由策略负责的 attempt 预算。
 
-`max_attempts` is the request-wide hard ceiling and family planning never raises it. First-round family allocation widens before it deepens. Compatible families get at most a bounded second evaluation round, and that round may use only budget left from the same request.
+`max_attempts` 是请求级的硬上限（`max_attempts` is the request-wide hard ceiling），家族规划绝不会提高它。第一轮家族分配先横向扩展、再纵向加深。兼容家族至多获得一轮有界的第二轮评估，且该轮只能使用同一请求中剩余的预算。
 
-Every model pass runs native Tier 1 → Tier 2 → Tier 3 first and, when configured, the supported cross-protocol fallback for that same effective model. Model changes never create fresh logical-attempt, dispatch, hedge, or wall-clock budgets.
+每一轮模型评估都会先执行 Tier 1 → Tier 2 → Tier 3 的 native 路由，并在已配置的情况下，对同一有效模型执行受支持的跨协议回退。模型切换绝不会产生新的逻辑 attempt、dispatch、hedge 或墙钟预算。
 
-A model-shaped 404 isolates the failing node/model mapping. An authorized compatible sibling may still be tried inside the same request budget.
+模型形态的 404 会隔离失败的节点/模型映射。经授权的兼容同级模型仍可能在同一请求预算内被尝试。
 
-Family retry planning is failure-domain aware: aliases on the same configured node/account that resolve to the same upstream model share one request-local failure domain. Once spent, that domain does not consume another logical attempt or reserve phantom future wall-clock escape time.
+家族重试规划感知故障域：配置在同一节点/账号上、并解析为同一上游模型的别名，会共享一个请求内的故障域。该故障域一旦耗尽，便不会再消耗额外的逻辑 attempt，也不会为未来的请求预留虚假的墙钟逃逸时间。
 
-All-transient bounded family exhaustion is retryable; it means the request plan was exhausted, not that every account in the deployment was proven unavailable.
+全部为瞬时失败、且家族有界规划耗尽的情况是可重试的；这意味着请求计划已经用尽，但并不代表部署中的每个账号都已被证实不可用。
 
-## Tier 1: Eligibility → Affinity → P2C
+## Tier 1: Eligibility → Affinity → P2C（资格 → 亲和 → P2C）
 
-Tier 1 has no independent attempt cap. It uses the request-wide budget, optional explicit per-tier cap, current dispatchability, and wall-clock failover budget.
+Tier 1 没有独立的 attempt 上限（Tier 1 has no independent attempt cap）。它使用请求级预算、可选的显式逐层上限、当前的可 dispatch 性以及墙钟故障转移预算。
 
 ```text
-Eligibility
+Eligibility（资格）
    ↓
-soft session Affinity
+软性会话 Affinity（亲和）
    ↓
-P2C sample
+P2C 采样
    ↓
-bounded score comparison
+有界评分比较
    ↓
-live inFlight record
+实时 inFlight 记录
    ↓
-real upstream request
+真实上游请求
    ↓
-passive TTFT / failure-state update
+被动 TTFT / 失败状态更新
 ```
 
-There is no full-pool latency sort.
+不存在全池延迟排序。
 
-### Eligibility
+### Eligibility（资格）
 
-A Tier 1 node must:
+一个 Tier 1 节点必须：
 
-- be `tier-1`;
-- match protocol and surface;
-- serve the requested logical model;
-- not be disabled or in an active account/model/upstream-model cooldown;
-- not be blocked by half-open single-probe state;
-- satisfy an explicit positive `max_in_flight` ceiling when one was deliberately configured.
+- 为 `tier-1`；
+- 匹配 protocol 与 surface；
+- 服务于请求的逻辑模型；
+- 未被禁用，且不处于活动中的账号/模型/上游模型冷却之中；
+- 未被半开单次探测状态阻塞；
+- 若运营者明确配置了正数的 `max_in_flight` 上限，则需满足该上限。
 
-Heat protection remains ranking-only and never turns the last healthy candidate into an artificial hard failure.
+热度保护仅用于排序，绝不会把最后一个健康候选变成人为的硬失败。
 
-### Soft session affinity
+### 软性会话亲和（Soft session affinity）
 
-Clients may provide `x-session-id` (8–128 characters). The gateway hashes it before storing a Tier 1 account binding in `TIER1_AFFINITY`.
+客户端可以提供 `x-session-id`（8–128 个字符）。网关会先对其进行哈希，然后再在 `TIER1_AFFINITY` 中存储 Tier 1 的账号绑定。
 
-Affinity is a score bias, not sticky routing. It cannot bypass eligibility, cooldown, or health state.
+亲和是评分偏置，而非粘性路由。它不能绕过资格、冷却或健康状态。
 
-### P2C score
+### P2C 评分
 
-When more than one candidate exists, Tier 1 samples two distinct eligible accounts and chooses the lower bounded score. Signals include:
+当存在多个候选时，Tier 1 会从中采样两个不同的可用账号，并选择有界评分较低者。评分信号包括：
 
-- passive per-account/model TTFT;
-- current in-flight pressure;
-- half-open recovery state;
-- soft affinity;
-- exploration for unobserved nodes;
-- provider + upstream-model multi-key rate-limit heat.
+- 按账号/模型统计的被动 TTFT；
+- 当前的 in-flight 压力；
+- 半开恢复状态；
+- 软性亲和；
+- 对未观测节点的探索；
+- provider + 上游模型的多 key 限流热度。
 
-Success rate is not a positive routing reward. Access-key group names are authorization categories, not scheduler priority classes.
+成功率不是正向的路由奖励。访问密钥分组名称是授权类别，而非调度器的优先级类别。
 
-### Passive TTFT
+### 被动 TTFT
 
-TTFT is learned only from real requests. Unknown nodes remain eligible and receive bounded exploration. Tier 1 runs no background latency probes.
+TTFT 仅从真实请求中学习。未知节点仍然可用，并获得有界的探索机会。Tier 1 不运行任何后台延迟探测。
 
-## Tier 1 heat protection
+## Tier 1 热度保护
 
-Tier 1 spreads load using observable runtime facts rather than guessed provider quotas.
+Tier 1 利用可观测的运行时事实分散负载，而非依赖猜测的 provider 额度。
 
-### Live in-flight pressure
+### 实时 in-flight 压力
 
-Current in-flight work is a soft ranking signal. A busier account tends to lose against a comparable idle peer but remains usable when alternatives are unavailable.
+当前的 in-flight 工作量是一个软性的排序信号。在存在可比的空闲同级节点时，较忙的账号往往会落败；但当没有其他替代时，它仍然可用。
 
-### Provider-model rate-limit heat
+### provider-model 限流热度
 
-Distinct-key rate-limit evidence is aggregated isolate-locally by `(provider, upstream model)` over a short window. It changes ranking only: it does not create provider-wide cooldown or remove the last healthy candidate.
+在一个较短的时间窗口内，不同 key 的限流证据会在 isolate 本地按 `(provider, 上游模型)` 进行聚合。它只影响排序：不会产生 provider 级的冷却，也不会移除最后一个健康候选。
 
-Providers that encode throughput limits in non-429 status codes are normalized by reliability classification when the error body clearly identifies a rate/throughput quota. Ordinary client payload errors keep their client-error semantics.
+若某些 provider 使用非 429 的状态码来表示吞吐限制，当错误响应体明确标识为速率/吞吐配额时，可靠性分类会将其归一化。普通的客户端负载错误保持其客户端错误语义。
 
-### Affinity decay and hedge gate
+### 亲和衰减与 hedge 门控
 
-Affinity preference weakens toward neutral as live pressure or heat rises. A Tier 1 hedge twin is optional latency work and yields before primary traffic when spare capacity is low.
+当实时压力或热度上升时，对亲和的偏好会向中性值衰减。Tier 1 的 hedge 孪生请求属于可选的延迟优化工作，在剩余容量较低时会让位于主流量。
 
-### Deliberate limits
+### 刻意的限制
 
-Tier 1 does not add:
+Tier 1 不会增加以下机制：
 
-- success-rate reward weighting;
-- access-group priority weighting;
-- guessed dynamic provider concurrency limits;
-- cross-isolate global coordination;
-- extra capacity fields;
-- hard removal of the last healthy primary candidate.
+- 成功率奖励加权；
+- 访问分组优先级加权；
+- 猜测的动态 provider 并发上限；
+- 跨 isolate 的全局协调；
+- 额外的容量字段；
+- 硬性移除最后一个健康的主候选。
 
-## Tier 2 and Tier 3
+## Tier 2 与 Tier 3
 
-Tier 2/3 use the separate `node-state.ts` reliability model and the existing selector. They may consider static priority, active-request load, health/circuit state, cooldown, and latency preference.
+Tier 2/3 使用独立的 `node-state.ts` 可靠性模型以及既有的选择器。它们可以考虑静态 priority、活动请求负载、健康/熔断状态、冷却与延迟偏好。
 
-Tier 2/3 do not consume Tier 1 TTFT, affinity, or provider-model heat state.
+Tier 2/3 不消费 Tier 1 的 TTFT、亲和或 provider-model 热度状态。
 
-Their product roles remain intentionally narrow: Tier 2 is subscription-entitlement capacity; Tier 3 is paid API fallback. Do not duplicate Tier 1 machinery into them without measured need.
+它们的产品角色保持明确而狭窄：Tier 2 是订阅权益容量；Tier 3 是付费 API 兜底。在没有实测需求的情况下，不要把 Tier 1 的机制复制到它们之中。
 
-## Attempt allocation
+## Attempt 分配
 
-There is exactly one cross-tier allocation model.
+跨 Tier 的分配模型只有一个（There is exactly one cross-tier allocation model）。
 
-`max_attempts` is the request-wide logical-attempt ceiling. `tier_attempts` may explicitly cap individual tiers. For each model/protocol pass:
+`max_attempts` 是请求级的逻辑 attempt 上限（即 request-wide logical-attempt ceiling）。`tier_attempts` 可以显式地限制各个 Tier 的 attempt 数。对于每一轮 model/protocol 评估：
 
-1. tiers with no dispatchable candidate receive zero;
-2. explicit `tier_attempts` caps are applied first; explicit zero disables that tier;
-3. remaining dispatchable tiers receive a one-attempt baseline while budget permits, in strict Tier 1 → Tier 2 → Tier 3 order;
-4. every remaining surplus attempt goes to the first adjustable dispatchable tier.
+1. 没有可 dispatch 候选的 Tier 分配到零；
+2. 首先应用显式的 `tier_attempts` 上限；显式设为零即禁用该 Tier；
+3. 在预算允许的前提下，其余可 dispatch 的 Tier 按严格的 Tier 1 → Tier 2 → Tier 3 顺序，各分得一次 attempt 的基线；
+4. 其余所有剩余 attempt 分配给第一个可调整的、可 dispatch 的 Tier。
 
-Candidate count affects selection **inside** a tier. It never redistributes request budget away from a higher tier.
+候选数量只影响**Tier 内部**的选择，绝不会把请求预算从更高的 Tier 上重新分配走。
 
-There is no `budget_split`, weighted allocation, or alternate cross-tier budget mode in the current schema.
+当前 schema 中不存在 `budget_split`、加权分配或其他跨 Tier 预算模式（There is no `budget_split`, weighted allocation, or alternate cross-tier budget mode in the current schema）。
 
-Model-family and protocol fallback share the same hard `max_attempts` and wall-clock boundary.
+模型家族回退与协议回退共享同一个硬性的 `max_attempts` 与墙钟边界。
 
-## Failover budget
+## 故障转移预算
 
-`FAILOVER_BUDGET_MS` limits the entire request wall clock; the default is 60 seconds. Neither protocol fallback nor model-family fallback receives a fresh clock.
+`AIG_FAILOVER_BUDGET_MS` 限制整个请求的墙钟时间；默认值为 60 秒。协议回退与模型家族回退都不会获得新的时钟。
 
-The attempt allocator preserves bounded escape time for later request-plan opportunities rather than equal-splitting the whole budget. Live candidates and reachable compatible family passes participate in that reserve. Known duplicate failure domains are pruned from future reserve planning.
+attempt 分配器会为后续的请求计划机会保留有界的逃逸时间，而不是把整个预算平均分配。存活的候选与可达的兼容家族轮次都参与该保留时间的计算。已知的重复故障域会从未来的保留规划中剔除。
 
-Each physical dispatch receives one absolute attempt deadline. Header wait, first meaningful output, response assembly, and bounded non-2xx diagnostic-body reads all stay inside that deadline. A hedge twin inherits the primary logical attempt's deadline.
+每一次物理 dispatch 都会获得一个绝对的 attempt 截止时间。Header 等待、首个有意义的输出、响应组装以及有界的非 2xx 诊断响应体读取，都在该截止时间之内完成。hedge 孪生请求继承主逻辑 attempt 的截止时间。
 
 ## Hedge
 
-Reactive hedge starts one twin when the current logical attempt has not committed before the configured delay. `HEDGE_DELAY_MS` defaults to 3 seconds; zero disables it.
+当当前的逻辑 attempt 在配置的延迟之前仍未提交时，反应式 hedge 会启动一个孪生请求。`AIG_HEDGE_DELAY_MS` 默认为 3 秒；设为 0 则禁用。
 
-- the twin is the same logical attempt;
-- it consumes one physical dispatch but not another logical-attempt slot;
-- it uses the same protocol and surface as the primary;
-- a loser cancelled after peer commit is neutral;
-- genuine timeout/server failure remains a real failure;
-- Tier 1 twins additionally pass the spare-capacity gate.
+- 孪生请求属于同一个逻辑 attempt；
+- 它消耗一次物理 dispatch，但不消耗另一个逻辑 attempt 名额；
+- 它使用与主请求相同的 protocol 与 surface；
+- 在对端已提交后被取消的失败方属于中性结果；
+- 真实的超时/服务端失败仍计为真正的失败；
+- Tier 1 的孪生请求还需通过剩余容量门控。
 
-## Capacity signals
+## 容量信号
 
-Node-level configured RPM/concurrency limits are not part of the schema. Active routing uses:
+节点级配置的 RPM/并发限制不属于 schema。活动路由使用：
 
-- live in-flight pressure;
-- real rate-limit evidence and `Retry-After`;
-- provider-model multi-key heat;
-- circuit state and counted transient failures;
-- passive TTFT;
-- explicit positive `max_in_flight` only when the operator knows a real account contract.
+- 实时 in-flight 压力；
+- 真实的限流证据与 `Retry-After`；
+- provider-model 多 key 热度；
+- 熔断状态与计入的瞬时失败；
+- 被动 TTFT；
+- 仅当运营者明确掌握真实账号契约时，才使用显式的正数 `max_in_flight`。
 
-`GATEWAY_KEY_RPM` is separate client-access protection and does not claim to represent Provider capacity.
+`AIG_ACCESS_KEY_RPM` 是独立的，用于保护客户端访问密钥；它并不代表 Provider/节点的容量配置。
 
-See [Reliability model](reliability-model.md) for failure classification, cooldown, recovery and stream-lifecycle ownership.
+失败分类、冷却、恢复与流生命周期的归属，请参阅[可靠性模型](reliability-model.md)。

@@ -1,70 +1,70 @@
 # Provider Discovery
 
-Provider Discovery is read-only operational tooling for tracking external protocol/surface evidence. It is not part of request routing and must never mutate production node configuration.
+Provider Discovery 是只读的运营工具，用于跟踪外部的协议/surface 证据。它不属于请求路由的一部分，并且绝不能修改生产环境的节点配置。
 
-## Boundary
+## 边界
 
 ```text
-External provider evidence
+外部 provider 证据
         ↓
-Discovery catalog
+Discovery 目录
         ↓
-normalize / semantic diff
+归一化 / 语义差异比较
         ↓
-runtime consistency report
+运行时一致性报告
         ↓
-human review
+人工评审
         ↓
-explicit configuration change, if justified
+（若有充分理由）显式的配置变更
 ```
 
-The critical rule is one-way flow: Discovery may report that runtime configuration and observed provider capability disagree; it does not disable nodes, rewrite models, change base URLs, or alter tiers automatically.
+关键规则是单向流动：Discovery 可以报告运行时配置与观测到的 provider 能力不一致；但它不会自动禁用节点、改写模型、修改 base URL 或变更 Tier。
 
-## Wire contract
+## 线协议契约
 
-Discovery reads the same account-level Node Config used by runtime: `id`, `provider`, `base_url`, `models`, and optional node `priority`. Protocol and routable surfaces are not account fields. They come from `src/providers/registry.ts`, the single provider wire contract used by both runtime and Discovery.
+Discovery 读取与运行时相同的账号级 Node Config：`id`、`provider`、`base_url`、`models` 以及可选的节点 `priority`。协议与可路由的 surface 不是账号字段，它们来自 `src/providers/registry.ts`——运行时与 Discovery 共用的唯一 provider 线协议契约。
 
-Current wire profiles are:
+当前的线协议配置为：
 
-- `anthropic` → Anthropic `messages`;
-- `openai` → OpenAI `chat_completions` + `responses`;
-- other provider names → OpenAI-compatible `chat_completions`.
+- `anthropic` → Anthropic `messages`；
+- `openai` → OpenAI `chat_completions` + `responses`；
+- 其他 provider 名称 → OpenAI 兼容的 `chat_completions`。
 
-A valid Node Config must not add `protocol` or `surfaces` to override this contract.
+有效的 Node Config 不得添加 `protocol` 或 `surfaces` 来覆盖该契约。
 
-## Catalog model
+## 目录模型
 
-The catalog records provider observations for OpenAI and Anthropic protocol families, including known base URLs and surfaces.
+目录记录 OpenAI 与 Anthropic 协议族的 provider 观测结果，包括已知的 base URL 与 surface。
 
-Support state is three-valued:
+支持状态为三值的：
 
-- `true` — supported by current evidence;
-- `false` — evidence indicates unsupported;
-- `null` — unknown/unconfirmed.
+- `true`——当前证据表明支持；
+- `false`——证据表明不支持；
+- `null`——未知或未经确认。
 
-Unknown is not equivalent to unsupported.
+未知并不等同于不支持。
 
-Current catalog surfaces include:
+当前目录的 surface 包括：
 
-- OpenAI: `chat_completions`, `responses`;
-- Anthropic: `messages`, `count_tokens` as discovery metadata.
+- OpenAI：`chat_completions`、`responses`；
+- Anthropic：`messages`，以及作为 discovery 元数据的 `count_tokens`。
 
-`count_tokens` is discovery metadata; the runtime node schema models Anthropic `messages` as the routable Anthropic surface.
+`count_tokens` 仅是 discovery 元数据；运行时节点 schema 将 Anthropic `messages` 建模为可路由的 Anthropic surface。
 
-## Evidence discipline
+## 证据纪律
 
-Discovery distinguishes configured/official/verified/unknown evidence according to the catalog schema. The tooling must not claim active generation verification when it only read documentation or safe metadata.
+Discovery 会按照目录 schema，区分已配置、官方、已验证与未知的证据。当工具只读取了文档或安全的元数据时，不得声称已完成生成能力的验证。
 
-Live Model Discovery performs two bounded observations:
+Live Model Discovery 执行两项有界的观测：
 
-1. `GET /v1/models` using the configured node credential;
-2. a surface probe using an intentionally invalid empty `POST {}` request.
+1. 使用已配置的节点凭据调用 `GET /v1/models`；
+2. 使用一个刻意无效的空 `POST {}` 请求进行 surface 探测。
 
-The surface probe is not a valid generation request and must not contain a prompt, user content, or a real model workload. Its purpose is only to distinguish an existing endpoint from an unsupported endpoint by status code.
+surface 探测并不是有效的生成请求，绝不能包含提示词、用户内容或真实的模型负载。其目的仅是通过状态码区分「端点存在」与「端点不受支持」。
 
-## Runtime consistency
+## 运行时一致性
 
-The runtime comparison uses a sanitized projection such as:
+运行时比较使用经过脱敏的投影，例如：
 
 ```text
 id
@@ -74,9 +74,9 @@ surfaces
 base_url
 ```
 
-Credentials are excluded from snapshots, reports, artifacts, logs, and diffs.
+快照、报告、产物、日志与差异中均排除凭据。
 
-Warnings are advisory and severity-ranked. A base-URL difference is a difference, not proof that either URL is invalid.
+告警仅供参考，并按严重程度排序。base URL 的差异属于差异本身，并不能证明任一 URL 无效。
 
 ## CLI
 
@@ -91,25 +91,38 @@ node scripts/provider-discovery.mjs runtime-check <catalog.json> <runtime-view.j
 node scripts/provider-discovery.mjs live --previous <previous-models.json> --out-dir <directory>
 ```
 
-Exit code `2` indicates a high-priority runtime consistency warning; it is not an automatic runtime mutation signal.
+退出码 `2` 表示高优先级的运行时一致性告警；它并不是自动修改运行时配置的信号。
 
-## Workflow
+## 工作流
 
-`.github/workflows/model-discovery.yml` runs daily at `04:15 UTC` and may also be started manually. It is intentionally decoupled from required merge CI so third-party availability cannot block normal pull requests.
+本仓库的 `.github/workflows/` 只包含两个薄分发入口：`ci.yml` 与 `dispatch-pr-governance.yml`。二者都不运行 Discovery，仓库中也**不存在** `model-discovery.yml`。
 
-The workflow temporarily receives the same Node Config variables and Node Secret shards required to authenticate provider observations. Credentials exist only in the controlled GitHub Actions environment for the duration of the run. They must never be written into discovery snapshots, artifacts, reports, logs, or repository files.
+定时的外部观测由 Action Worker 的任务源调度执行：
 
-Required CI validates the Discovery implementation with offline tests. External observation remains background operational evidence, not a merge requirement and not a runtime dependency.
+- `.github/task-source.json` 声明 cron `15 4 * * *`，将 `model-discovery` 项目交给 Action Worker 调度；
+- `projects/model-discovery/run.sh` 是该任务的源码入口。若没有可用的节点与凭据分片，它会跳过并以成功退出；否则调用 `node scripts/provider-discovery.mjs live`，把结果写入任务状态目录，并在 GitHub Step Summary 中输出摘要；
+- 任务只通过 `projects/model-discovery/.secrets.allowed` 声明的 `AIG_TIER{1,2,3}_CREDENTIALS_XX` 分片获得凭据，不包括 `AIG_ACCESS_KEY_AGENT` 或任何控制平面凭据。
 
-## Security
+需要时也可以手动运行上述 CLI。
 
-Discovery must never:
+若将来改为仓库内的定时观测工作流，它必须满足：
 
-- persist or log API credentials, authorization headers, cookies, or user request data;
-- synthesize a provider URL from an untrusted provider name;
-- use credential-bearing URLs;
-- follow a URL or redirect that fails structural or DNS-backed SSRF validation unless `AIG_CAN_DISCOVER_PRIVATE_PROVIDERS` is explicitly enabled for a trusted private provider;
-- perform destructive or configuration-writing actions;
-- become a runtime dependency of `src/request`, `src/scheduler`, `src/reliability`, `src/transport`, `src/protocol`, `src/conversion`, or `src/stream`.
+- 与必需的合并 CI 解耦，使第三方服务的可用性不会阻塞正常的 Pull Request；
+- 仅在受控的 GitHub Actions 环境中、且仅在运行期间，临时接收认证 provider 观测所需的 Node Config 变量与节点 Secret 分片；凭据绝不能写入 Discovery 快照、产物、报告、日志或仓库文件。
 
-The catalog is evidence for review, not an authority above the running configuration.
+此类改动还需同时修改 `scripts/deployment-config-check.mjs`：其中的 `permanentWorkflows` 列表与 `model-discovery.yml` 断言会拒绝新增此类工作流。
+
+中央 CI 使用离线测试验证 Discovery 的实现。外部观测属于后台运营证据，既不是合并要求，也不是运行时依赖。
+
+## 安全
+
+Discovery 绝不能：
+
+- 持久化或记录 API 凭据、authorization 头、cookie 或用户请求数据；
+- 从不受信任的 provider 名称合成 provider URL；
+- 使用携带凭据的 URL；
+- 跟随未通过结构或 DNS 支撑的 SSRF 校验的 URL 或重定向，除非为受信任的私有 provider 显式启用了 `AIG_CAN_DISCOVER_PRIVATE_PROVIDERS`；
+- 执行破坏性操作或写入配置的操作；
+- 成为 `src/request`、`src/scheduler`、`src/reliability`、`src/transport`、`src/protocol`、`src/conversion` 或 `src/stream` 的运行时依赖。
+
+目录是供评审使用的证据，而不是高于正在运行配置的权威。
