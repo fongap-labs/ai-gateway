@@ -2,7 +2,7 @@
 
 # ai-gateway
 
-基于 Cloudflare Workers 的高韧性 AI API 网关，将分散在各 Provider、API Key、额度与模型别名上的容量，聚合为一个稳定的 OpenAI / Anthropic 兼容入口。
+基于 Cloudflare Workers 的高韧性 AI API 网关，将分散在各 Provider、API Key、额度与模型别名上的容量，聚合为一个统一的 OpenAI / Anthropic 兼容入口。
 
 [![CI](https://img.shields.io/github/actions/workflow/status/fongap-labs/ai-gateway/ci.yml?branch=main&label=CI&style=flat-square&labelColor=1D3F45)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License&style=flat-square&labelColor=1D3F45&color=0f5d53)](LICENSE)
@@ -19,11 +19,13 @@
 
 <p align="center"><sub>上图为维护者真实生产实例的近实时数据，由网关自身渲染。</sub></p>
 
-> 新手请从 **这是什么** 读到 **快速开始**。维护者可直接跳到 [维护者参考](#维护者参考)。
+> 新手请从 **这是什么** 读到 **快速开始**。维护者可直接跳到 [参与贡献](#参与贡献)。
+
+**目录**：[这是什么](#这是什么) · [一个例子](#一个例子) · [快速开始](#快速开始) · [配置](#配置) · [进阶](#进阶ai-gateway-如何工作) · [文档](#文档) · [仓库结构](#仓库结构) · [参与贡献](#参与贡献) · [安全](#安全) · [许可](#许可)
 
 ## 这是什么
 
-ai-gateway 是一个**私有**的 AI API 网关，运行在 Cloudflare Workers 上。你把手里分散的模型容量接进来，客户端只需要记住一个地址和一把网关密钥。
+ai-gateway 是一个**私有**的 AI API 网关，运行在 Cloudflare Workers 上。这里的"私有"指自托管、仅供你自己或可信的小团队使用。你把手里分散的模型容量接进来，客户端只需要记住一个地址和一把网关密钥。
 
 - **自动切换**：一路额度用完或被限流，请求会转到下一路。
 - **密钥隔离**：客户端只拿到网关密钥，上游 Key 保存在 Cloudflare Secret 中。
@@ -56,13 +58,15 @@ flowchart LR
 
 ## 快速开始
 
-### 1. 安装前置工具
+### 1. 准备工作
 
-| 工具 | 版本 | 说明 |
-| --- | --- | --- |
-| Node.js | ≥ 22.18.0（以 `package.json` 为准） | [nodejs.org](https://nodejs.org/) |
-| Cloudflare 账户 | — | 网关会作为一个 Worker 部署到这个账户下 |
-| 上游 Key 或订阅 | 至少一个 | 没有上游凭据，网关无法转发请求 |
+- [ ] **Node.js ≥ 22.18.0**（以 `package.json` 为准，`node -v` 可检查）
+- [ ] **Cloudflare 账户**，并已在控制台创建一个 KV 命名空间，记下它的 32 位十六进制 ID
+- [ ] **至少一个上游 Key 或订阅**，以及对应的节点配置 JSON 和凭据 JSON
+- [ ] **至少一个访问分组**：一把网关密钥，加上该分组允许调用的逻辑模型列表（`AIG_ACCESS_MODELS_*`，必填）
+- [ ] **部署后的 `https://` 公网地址**，安装时需要填写
+
+> **费用**：部署会使用你的 Cloudflare 账户（如 Workers、KV），是否产生费用取决于你的 Cloudflare 计划，请以其当前计费为准。网关按 Tier 1 → 2 → 3 的顺序使用容量，Tier 3 是按量计费的付费 API，只在前两层不可用或耗尽时才会被使用。Tier 2 订阅请按各服务商的订阅条款使用。
 
 ### 2. 获取代码并安装
 
@@ -81,12 +85,14 @@ sh scripts/install.sh         # 交互式配置并部署（Windows 使用 script
 | --- | --- | --- |
 | 1 | Worker 名称 | 直接回车使用默认值 |
 | 2 | KV 命名空间 ID | 先在 Cloudflare 控制台创建 KV 命名空间，复制它的 ID |
-| 3 | 节点配置文件（JSON） | Tier 1 必填，Tier 2、3 可留空；可参考 `config/tier1-nodes.example.json` |
-| 4 | 节点凭据文件（JSON） | 形如 `{ "节点 id": "上游 Key" }`，只保存在本机，不要提交到 Git |
-| 5 | 网关访问密钥 | 每个分组一把，至少一组。生成方式：`node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'` |
-| 6 | 网关公网地址 | `https://` 开头 |
+| 3 | 节点配置文件（JSON） | Tier 1 必填，Tier 2、3 可留空；可参考 [`config/tier1-nodes.example.json`](config/tier1-nodes.example.json) |
+| 4 | 节点凭据文件（JSON） | 必填。形如 `{ "节点 id": "上游 Key" }`，只保存在本机，不要提交到 Git |
+| 5 | 网关访问密钥与模型列表 | 每个分组一把密钥（至少一组），并为该分组填写 `AIG_ACCESS_MODELS_*` 模型列表（CSV，必填）。密钥生成方式：`node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'` |
+| 6 | 网关公网地址 | `https://` 开头，用于 OAuth 与仪表盘 |
 
-脚本会自动生成订阅 token 的加密密钥，无需手动填写。
+安装脚本还会在 Cloudflare 未登录时引导 `wrangler login`，并执行完整的 `npm run validate:merge`，耗时可能较长。脚本会自动生成订阅 token 的加密密钥，无需手动填写。
+
+最后，脚本会询问部署后的网关地址：填写后会自动请求 `/health` 与 `/v1/models` 进行验证；留空则跳过，需要自行完成下面的第 3 步。
 
 ### 3. 验证部署
 
@@ -95,7 +101,10 @@ curl https://<你的网关>/health -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
 curl https://<你的网关>/v1/models -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
 ```
 
-`/v1/models` 返回的模型列表非空，说明分组配置正确。
+预期结果：
+
+- `/health` 返回 JSON，包含 `build`（部署的 commit SHA）、`status`、`ready`、`nodes_usable` 等字段。返回 `200` 表示配置有效；返回 `503` 表示配置无效或未配置，见[故障排查](docs/operations/troubleshooting.md)。`nodes_usable` 应大于 0。
+- `/v1/models` 返回非空的模型列表，说明分组配置正确。若为空，见下方[常见问题](#常见问题)。
 
 ### 4. 接入客户端
 
@@ -123,7 +132,7 @@ ANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>
 
 ## 配置
 
-网关的行为由下面四类变量决定：
+节点与访问控制由下面四类变量决定：
 
 | 变量 | 作用 | 存放位置 |
 | --- | --- | --- |
@@ -137,7 +146,7 @@ ANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>
 - 五个访问分组互不继承；模型列表为空，该分组就**不能调用任何模型**。
 - 凭据绝不写入节点配置。
 
-节点格式、Tier 2 订阅接入与完整变量清单见 [配置文档](docs/operations/configuration.md)。
+其他行为开关（例如仪表盘是否公开、订阅开关、限流与回退参数）不在上表中，见[配置文档](docs/operations/configuration.md)。示例文件位于 [`config/`](config/) 目录，不含真实凭据。节点格式、Tier 2 订阅接入与完整变量清单同样见配置文档。
 
 ## 进阶：ai-gateway 如何工作
 
@@ -148,7 +157,7 @@ ANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>
 | Tier | 容量类型 | 角色 |
 | --- | --- | --- |
 | **Tier 1** | 免费或近似免费的 API 容量 | 日常主力，重点保证韧性与持续可用 |
-| **Tier 2** | 订阅权益（Claude Pro/Max、ChatGPT/Codex、Google AI Premium，经 OAuth 接入） | 次级容量，不是第二个通用 Key 池 |
+| **Tier 2** | 订阅权益（Claude Pro/Max、ChatGPT/Codex、Google One AI Premium，经 OAuth 接入） | 次级容量，不是第二个通用 Key 池 |
 | **Tier 3** | 付费 API 容量 | 受保护的最终兜底，用量可预测 |
 
 ### 请求如何流转
@@ -209,43 +218,6 @@ flowchart TD
 | `docs/` | 长期有效的架构、运营与治理文档 |
 | `.github/` | CI 分发、PR 治理与模板 |
 
-测试套件不在本仓库中，位于 `fongap-labs/action-worker` 的 `tests/packs/ai-gateway/`。
-
-## 维护者参考
-
-ai-gateway 的共用工程规则由 **Action Worker**（Fongap Labs 的统一 CI 与发布平台）维护。可以把它想成一个**中央质检车间**：改动先送到那里检查，通过后才能合并和部署。
-
-- **validate-merge**：唯一的合并许可。
-- **Central CI**：在中央运行测试包，并生成 CI 证据。
-- **Main Write Guard**：确认 `main` 上的提交来自合法的合并，只有可信的提交才会进入部署。
-
-### 本地检查
-
-| 命令 | 作用 |
-| --- | --- |
-| `npm run validate:merge` | 合并前的本地门禁：语法、部署配置、迁移、密钥扫描、文档与链接、lint、类型检查 |
-| `npm run check:deploy` | Worker 产物的 dry-run，不部署到生产 |
-
-### 一次变更的旅程
-
-```mermaid
-flowchart LR
-    A["Pull Request<br/>本仓库"] --> B["validate-merge<br/>Action Worker 门禁"]
-    B --> C["Squash 合并<br/>到 main"]
-    C --> D["Central CI<br/>测试包 · CI Evidence"]
-    D --> E["自动部署<br/>scripts/deploy.sh"]
-    E --> F["/health 校验<br/>commit SHA"]
-    F -. 失败 .-> G["回滚 Worker"]
-    classDef gate fill:#0f5d53,stroke:#0f5d53,color:#ffffff
-    classDef step fill:#E7F0F1,stroke:#0f5d53,color:#17211f
-    class B,D gate
-    class A,C,E,F,G step
-```
-
-- 自动部署只在 `main` 的中央 CI 成功后运行（`.github/deploy.json` 中 `automatic: true`）。
-- 部署标识是 commit SHA，经认证的 `/health` 暴露。
-- 项目发布编号由维护者人工通过 Git tag 或 GitHub Release 创建，文档与 CI 不生成。
-
 ## 参与贡献
 
 完整规则见 [CONTRIBUTING.md](CONTRIBUTING.md)，要点如下：
@@ -256,13 +228,24 @@ flowchart LR
 - 行为、配置、协议或部署变化，必须在同一 PR 中更新规范文档。
 - PR 描述按 `.github/pull_request_template.md` 填写，合并只用 Squash merge。
 
+### 本地检查
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run validate:merge` | 合并前的本地门禁：语法、部署配置、迁移、密钥扫描、文档与链接、lint、类型检查 |
+| `npm run check:deploy` | Worker 产物的 dry-run，不部署到生产 |
+| `npm test` | 运行测试包；会从 action-worker 拉取固定版本，需要能访问 GitHub |
+
+测试套件不在本仓库中，位于 [fongap-labs/action-worker](https://github.com/fongap-labs/action-worker)。生产部署流程（合并门禁、中央 CI、自动部署与回滚）见 [部署文档](docs/operations/deployment.md)。
+
 ## 安全
 
 请不要在公开 Issue 中披露漏洞。使用 GitHub 私密报告：**Security → Report a vulnerability**。
 
 - 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
 - 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
-- `/health`、`/metrics` 与 `/v1/*` 都需要鉴权。
+- `/health`、`/metrics` 与 `/v1/*` 需要有效的网关密钥。可用 `AIG_DIAGNOSTICS_GROUPS` 将 `/health` 与 `/metrics` 限制给指定分组。
+- 仪表盘 `/` 与徽章 `/readme-status.svg` **默认公开**（`AIG_PUBLIC_DASHBOARD` 默认为 `true`），徽章包含本实例的用量统计。不希望公开时，将其设为 `false`。
 
 完整规则与限流边界见 [SECURITY.md](SECURITY.md)。
 
