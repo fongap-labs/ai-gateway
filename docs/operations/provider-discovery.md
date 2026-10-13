@@ -95,12 +95,22 @@ node scripts/provider-discovery.mjs live --previous <previous-models.json> --out
 
 ## 工作流
 
-当前本仓库的 `.github/workflows/` 中**没有** `model-discovery.yml`（仅包含 `ci.yml` 与 `dispatch-pr-governance.yml`）。因此，目前不存在定时自动执行的外部观测。需要时可手动运行上述 CLI。
+本仓库的 `.github/workflows/` 只包含两个薄分发入口：`ci.yml` 与 `dispatch-pr-governance.yml`。二者都不运行 Discovery，仓库中也**不存在** `model-discovery.yml`。
 
-若将来重新配置定时观测工作流，它应当：
+定时的外部观测由 Action Worker 的任务源调度执行：
+
+- `.github/task-source.json` 声明 cron `15 4 * * *`，将 `model-discovery` 项目交给 Action Worker 调度；
+- `projects/model-discovery/run.sh` 是该任务的源码入口。若没有可用的节点与凭据分片，它会跳过并以成功退出；否则调用 `node scripts/provider-discovery.mjs live`，把结果写入任务状态目录，并在 GitHub Step Summary 中输出摘要；
+- 任务只通过 `projects/model-discovery/.secrets.allowed` 声明的 `AIG_TIER{1,2,3}_CREDENTIALS_XX` 分片获得凭据，不包括 `AIG_ACCESS_KEY_AGENT` 或任何控制平面凭据。
+
+需要时也可以手动运行上述 CLI。
+
+若将来改为仓库内的定时观测工作流，它必须满足：
 
 - 与必需的合并 CI 解耦，使第三方服务的可用性不会阻塞正常的 Pull Request；
 - 仅在受控的 GitHub Actions 环境中、且仅在运行期间，临时接收认证 provider 观测所需的 Node Config 变量与节点 Secret 分片；凭据绝不能写入 Discovery 快照、产物、报告、日志或仓库文件。
+
+此类改动还需同时修改 `scripts/deployment-config-check.mjs`：其中的 `permanentWorkflows` 列表与 `model-discovery.yml` 断言会拒绝新增此类工作流。
 
 中央 CI 使用离线测试验证 Discovery 的实现。外部观测属于后台运营证据，既不是合并要求，也不是运行时依赖。
 

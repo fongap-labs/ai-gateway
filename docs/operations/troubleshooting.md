@@ -48,7 +48,7 @@ AIG_TIER1_CREDENTIALS_01 可以包含 {"nvidia-01":"..."}
 请运行：
 
 ```bash
-npm run config:check
+npm run config:check -- --tier1 <tier1-nodes.json> --secrets <secrets.json>
 npm run validate:merge
 ```
 

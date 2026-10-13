@@ -11,7 +11,7 @@
 | 直接进行本地代码部署 | `npm run deploy` |
 | 本地 Worker 开发 | `npm run dev` |
 | Cloudflare 登录 / 身份 / 日志 tail | `npm run cf:login`、`npm run cf:whoami`、`npm run tail` |
-| 配置检查 | `npm run config:check`、`npm run config:show`、`npm run config:diff` |
+| 配置检查 | `npm run config:check -- --tier1 <file> --secrets <file>`；`config:show` 与 `config:diff` 同样需要通过 `--` 传入文件参数（用法见 `scripts/config-cli.mjs`） |
 | Provider Discovery | `npm run discovery:check`、`npm run discovery:summary` |
 
 生产部署仍然由 GitHub Actions 以仓库为驱动完成。本地入口点是运营者工具；它们不能替代生产 CI 门禁。
