@@ -2,9 +2,7 @@
 
 # ai-gateway
 
-**基于 Cloudflare Workers 的高韧性 AI API 网关**
-
-把分散在不同 Provider、API Key、额度与模型别名上的容量，汇成一个稳定的 OpenAI / Anthropic 兼容入口
+基于 Cloudflare Workers 的高韧性 AI API 网关，将分散在各 Provider、API Key、额度与模型别名上的容量，聚合为一个稳定的 OpenAI / Anthropic 兼容入口。
 
 [![CI](https://img.shields.io/github/actions/workflow/status/fongap-labs/ai-gateway/ci.yml?branch=main&label=CI&style=flat-square&labelColor=1D3F45)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License&style=flat-square&labelColor=1D3F45&color=0f5d53)](LICENSE)
