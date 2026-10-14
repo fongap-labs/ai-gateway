@@ -31,7 +31,10 @@ const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.na
 // 429 cooldown duration is owned exclusively by adaptive-429.ts. This module
 // stores the supplied deadline and controls the post-cooldown recovery probe;
 // it must never invent a second rate-limit ladder.
-export const TIER1_429_PROBE_GATE_MS = 5_000;
+export const TIER1_429_PROBE_GATE_MS = 15_000;
+// Single-model escalation: when one model on an account sees this many consecutive
+// 429s without any 2xx success between them, the scope widens to the whole account.
+export const TIER1_429_SINGLE_MODEL_ESCALATION_STREAK = 3;
 // A 429 is blamed on the model that received it. Only when a second distinct model
 // on the same account is limited inside this window does the cooldown widen to the
 // whole account (an account-wide quota looks exactly like that).
@@ -269,6 +272,11 @@ export function claimTier1Slot(
   account.provider = node.provider;
   normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
+  // Probe-gate mutex: while a recovery probe is in flight (rateLimitRecoveryUntil > 0
+  // and not yet succeeded), do not admit any additional concurrent requests.
+  // This prevents multiple requests from simultaneously hammering a key that is
+  // still proving it has recovered.
+  if (account.rateLimitRecoveryUntil > now && account.inFlight > 0) return false;
   const model = modelId ? account.models.get(modelId) : null;
   if (modelId && upstreamModelCooldownRemainingMs(account, node, modelId, now) > 0) return false;
   if ((model?.rateLimitRecoveryUntil ?? 0) > now) return false;
@@ -359,6 +367,9 @@ export function isTier1Eligible(
   if (!account) return true;
   normalizeQuotaWindow(account, now);
   if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
+  // Probe-gate mutex: while a recovery probe is in flight (rateLimitRecoveryUntil > 0
+  // and not yet succeeded), do not admit any additional concurrent requests.
+  if (account.rateLimitRecoveryUntil > now && account.inFlight > 0) return false;
   if (upstreamModelCooldownRemainingMs(account, node, req.model, now) > 0) return false;
   const model = account.models.get(req.model);
   if (modelBlocked(model, now) || (model?.rateLimitRecoveryUntil ?? 0) > now) return false;
@@ -551,8 +562,10 @@ function exceedsOversizeCeiling(account: Tier1AccountRuntime, modelId: string, r
  * Default is the model, so one limited upstream model does not take the healthy
  * models of the same key out of the pool. The account is blamed when it is
  * already on the account-wide ladder, or when a second distinct model on it is
- * rate limited within TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS. Records the
- * observation; call it exactly once per 429.
+ * rate limited within TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS, OR when a single
+ * model has accumulated TIER1_429_SINGLE_MODEL_ESCALATION_STREAK consecutive
+ * 429s without any successful response in between. Records the observation;
+ * call it exactly once per 429.
  */
 export function decideTier1RateLimitScope(accountId: string, modelId: string, now: number = Date.now()): 'model' | 'account' {
   const account = getTier1Account(accountId);
@@ -562,6 +575,8 @@ export function decideTier1RateLimitScope(accountId: string, modelId: string, no
   }
   account.recentRateLimitedModels.set(modelId, now);
   if (account.consecutiveRateLimits > 0 || account.accountCooldownUntil > now) return 'account';
+  const model = account.models.get(modelId);
+  if (model && model.consecutiveRateLimits >= TIER1_429_SINGLE_MODEL_ESCALATION_STREAK) return 'account';
   return account.recentRateLimitedModels.size >= TIER1_429_ACCOUNT_ESCALATION_MODELS ? 'account' : 'model';
 }
 

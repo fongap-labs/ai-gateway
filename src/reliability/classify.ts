@@ -93,9 +93,8 @@ const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d
 export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined {
   const text = String(body || '');
   if (!text) return undefined;
-  if (QUOTA_WORDING.test(text)) return 'quota';
+  if (QUOTA_WORDING.test(text) || WEAK_QUOTA_WORDING.test(text)) return 'quota';
   if (WINDOW_WORDING.test(text)) return 'window';
-  if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
   return undefined;
 }
 
