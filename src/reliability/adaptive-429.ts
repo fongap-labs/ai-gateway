@@ -141,10 +141,13 @@ export function nextAdaptive429CooldownMs(
   }
 
   // The account-wide ladder inherits the highest stage any model ladder of
-  // this key has reached, so an account-scoped 429 after model-scoped ones
-  // does not reset the key back to stage 1 and start probing the short
-  // steps all over again.
-  const inheritedMaxModelStage = modelId === '' ? getMaxModelStageForKey(provider, keyId) : 0;
+  // this key has reached, but ONLY when the caller is already starting at
+  // an elevated stage (quota-classified 429 with QUOTA_START_STAGE=5).
+  // This prevents a key that was quota-exhausted, recovered, then exhausted
+  // again from resetting to stage 1, while keeping window-classified ladders
+  // independent as the existing tests expect.
+  const shouldInherit = modelId === '' && startStage > 1;
+  const inheritedMaxModelStage = shouldInherit ? getMaxModelStageForKey(provider, keyId) : 0;
   const firstStage = Math.min(Math.max(1, Math.trunc(startStage) || 1, inheritedMaxModelStage || 1), steps.length);
   if (!state) {
     state = { stage: firstStage, cooldownUntil: 0, last429At: now };

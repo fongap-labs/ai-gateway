@@ -10,7 +10,6 @@
 import { trimDiagnostic } from '../../protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
-  ADAPTIVE_429_WINDOW_STEPS_MS,
   adaptive429StepsFromEnv,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,
@@ -140,14 +139,40 @@ export function recordOutcome(
         // account-wide by nature: cool the whole key on the FIRST such 429 instead
         // of letting every model climb its own ladder against one shared pool.
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
-        const ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
-        // A short per-minute window clears on its own quickly; that class gets a
-        // gentle ladder capped at 5 minutes instead of the 30-minute default.
-        const ladderSteps =
-          classification.rateLimitWindow === 'window'
-            ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_WINDOW_STEPS_MS, ADAPTIVE_429_WINDOW_STEPS_MS)
-            : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
         const now = Date.now();
+
+        // Determine the adaptive-429 ladder to use. If classifier says 'window' but
+        // the model/account ladder already reached stage >= 3, the limit is effectively
+        // a long-lived quota — promote to quota ladder (default steps, startStage=5)
+        // and widen scope to account.
+        let ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
+        let ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+        let startStage = tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
+        let isWindowClassified = classification.rateLimitWindow === 'window';
+
+        if (isWindowClassified && tier1RateLimitScope === 'model') {
+          // Check the model ladder stage for potential promotion
+          const modelAdaptive = snapshotAdaptive429State(node.provider, node.id, now, state.requestedModel);
+          if (modelAdaptive.stage >= 3) {
+            // Promote: treat as quota, use account ladder with quota settings
+            tier1RateLimitScope = 'account';
+            ladderModel = '';
+            ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+            startStage = ADAPTIVE_429_QUOTA_START_STAGE;
+            isWindowClassified = false;
+          }
+        }
+
+        if (isWindowClassified && tier1RateLimitScope === 'account') {
+          // Window-classified but already account-scoped: check account ladder
+          const accountAdaptive = snapshotAdaptive429State(node.provider, node.id, now, '');
+          if (accountAdaptive.stage >= 3) {
+            ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+            startStage = ADAPTIVE_429_QUOTA_START_STAGE;
+            isWindowClassified = false;
+          }
+        }
+
         tier1RetryAfterMs = nextAdaptive429CooldownMs(
           node.provider,
           node.id,
@@ -155,22 +180,11 @@ export function recordOutcome(
           now,
           ladderModel,
           ladderSteps,
-          classification.rateLimitWindow === 'quota' ? ADAPTIVE_429_QUOTA_START_STAGE : 1,
+          startStage,
         );
         const adaptive429 = snapshotAdaptive429State(node.provider, node.id, now, ladderModel);
         tier1RateLimitStage = adaptive429.stage;
         tier1RateLimitCooldownMs = adaptive429.cooldown_remaining_ms;
-
-        // Auto-promotion: if classifier says 'window' but the ladder has already
-        // reached stage >= 3 (consecutive short-window failures), the limit is
-        // effectively a long-lived quota. Force promote to 'quota' to avoid
-        // repeated futile probes against a window that never actually rolls over.
-        if (
-          classification.rateLimitWindow === 'window' &&
-          adaptive429.stage >= 3
-        ) {
-          tier1RateLimitScope = 'account';
-        }
       }
       const t1Class = classifyTier1Failure(tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope } : classification, {
         retryAfterMs: tier1RetryAfterMs,
