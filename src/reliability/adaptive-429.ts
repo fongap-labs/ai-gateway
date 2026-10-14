@@ -67,11 +67,30 @@ type Adaptive429State = {
 };
 
 const states = new Map<string, Adaptive429State>();
+const maxModelStage = new Map<string, number>();
 
 function scopeKey(provider: string, keyId: string, modelId: string = ''): string {
   return `${String(provider || '')
     .trim()
     .toLowerCase()}\u0000${String(keyId || '').trim()}\u0000${String(modelId || '').trim()}`;
+}
+
+function accountKey(provider: string, keyId: string): string {
+  return `${String(provider || '').trim().toLowerCase()}\u0000${String(keyId || '').trim()}`;
+}
+
+function getMaxModelStageForKey(provider: string, keyId: string): number {
+  return maxModelStage.get(accountKey(provider, keyId)) ?? 0;
+}
+
+function updateMaxModelStageForKey(provider: string, keyId: string, stage: number): void {
+  const key = accountKey(provider, keyId);
+  const current = maxModelStage.get(key) ?? 0;
+  if (stage > current) maxModelStage.set(key, stage);
+}
+
+function clearMaxModelStageForKey(provider: string, keyId: string): void {
+  maxModelStage.delete(accountKey(provider, keyId));
 }
 
 function automaticCooldownMs(stage: number, steps: readonly number[]): number {
@@ -121,7 +140,12 @@ export function nextAdaptive429CooldownMs(
     return Math.max(1, state.cooldownUntil - now);
   }
 
-  const firstStage = Math.min(Math.max(1, Math.trunc(startStage) || 1), steps.length);
+  // The account-wide ladder inherits the highest stage any model ladder of
+  // this key has reached, so an account-scoped 429 after model-scoped ones
+  // does not reset the key back to stage 1 and start probing the short
+  // steps all over again.
+  const inheritedMaxModelStage = modelId === '' ? getMaxModelStageForKey(provider, keyId) : 0;
+  const firstStage = Math.min(Math.max(1, Math.trunc(startStage) || 1, inheritedMaxModelStage || 1), steps.length);
   if (!state) {
     state = { stage: firstStage, cooldownUntil: 0, last429At: now };
   } else {
@@ -133,6 +157,7 @@ export function nextAdaptive429CooldownMs(
   state.cooldownUntil = now + (trustHint ? explicit : Math.max(adaptive, explicit));
   state.last429At = now;
   states.set(key, state);
+  if (modelId !== '') updateMaxModelStageForKey(provider, keyId, state.stage);
   pruneIfNeeded();
 
   return Math.max(1, state.cooldownUntil - now);
@@ -141,6 +166,7 @@ export function nextAdaptive429CooldownMs(
 /** Clear only after a real recovery request succeeds. */
 export function clearAdaptive429State(provider: string, keyId: string, modelId: string = ''): void {
   states.delete(scopeKey(provider, keyId, modelId));
+  if (modelId === '') clearMaxModelStageForKey(provider, keyId);
 }
 
 export function snapshotAdaptive429State(provider: string, keyId: string, now: number = Date.now(), modelId: string = '') {

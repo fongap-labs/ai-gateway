@@ -160,6 +160,17 @@ export function recordOutcome(
         const adaptive429 = snapshotAdaptive429State(node.provider, node.id, now, ladderModel);
         tier1RateLimitStage = adaptive429.stage;
         tier1RateLimitCooldownMs = adaptive429.cooldown_remaining_ms;
+
+        // Auto-promotion: if classifier says 'window' but the ladder has already
+        // reached stage >= 3 (consecutive short-window failures), the limit is
+        // effectively a long-lived quota. Force promote to 'quota' to avoid
+        // repeated futile probes against a window that never actually rolls over.
+        if (
+          classification.rateLimitWindow === 'window' &&
+          adaptive429.stage >= 3
+        ) {
+          tier1RateLimitScope = 'account';
+        }
       }
       const t1Class = classifyTier1Failure(tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope } : classification, {
         retryAfterMs: tier1RetryAfterMs,
