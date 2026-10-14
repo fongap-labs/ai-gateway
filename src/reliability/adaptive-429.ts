@@ -76,7 +76,9 @@ function scopeKey(provider: string, keyId: string, modelId: string = ''): string
 }
 
 function accountKey(provider: string, keyId: string): string {
-  return `${String(provider || '').trim().toLowerCase()}\u0000${String(keyId || '').trim()}`;
+  return `${String(provider || '')
+    .trim()
+    .toLowerCase()}\u0000${String(keyId || '').trim()}`;
 }
 
 function getMaxModelStageForKey(provider: string, keyId: string): number {
