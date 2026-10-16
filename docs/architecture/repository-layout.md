@@ -46,7 +46,7 @@ docs/                        长期有效的当前文档
 └── governance/              变更与校验系统所遵循的规则
 
 .github/
-├── workflows/               CI 与 PR 治理分发（ci.yml、dispatch-pr-governance.yml）
+├── workflows/               CI 与 PR 治理分发（ci.yml、notify-action-worker.yml）
 ├── ISSUE_TEMPLATE/
 ├── pull_request_template.md
 └── dependabot.yml
