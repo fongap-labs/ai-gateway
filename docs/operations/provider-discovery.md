@@ -95,7 +95,7 @@ node scripts/provider-discovery.mjs live --previous <previous-models.json> --out
 
 ## 工作流
 
-本仓库的 `.github/workflows/` 只包含两个薄分发入口：`ci.yml` 与 `dispatch-pr-governance.yml`。二者都不运行 Discovery，仓库中也**不存在** `model-discovery.yml`。
+本仓库的 `.github/workflows/` 只包含两个薄分发入口：`ci.yml` 与 `notify-action-worker.yml`。二者都不运行 Discovery，仓库中也**不存在** `model-discovery.yml`。
 
 定时的外部观测由 Action Worker 的任务源调度执行：
 
