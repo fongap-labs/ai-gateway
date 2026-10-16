@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: add a Blog link (https://www.fongap.com/) to the dashboard footer between Fongap Labs and GitHub.
+
 - perf: stop futile probes against quota-exhausted keys. `rateLimitWindowOf` now lets quota wording win over window wording, a window-classified 429 auto-promotes to the account quota ladder once its ladder reaches stage 3, a single model with three consecutive 429s widens the Tier 1 scope to the whole key, the Tier 1 probe gate opens after 15s instead of 5s, and no concurrent request may enter while a key is still proving recovery.
 
 - feat: classify Tier 1 429s into short-window versus long-lived-allowance and cool each class the way it actually clears. Classification reads only protocol signals — response wording first (per-minute/rpm/tpm/rate-limit versus quota/daily/credits/points/weekly allowance wording, CJK included), then the magnitude of an explicit `Retry-After`/body wait hint (<=90s = window, >=10min = quota) — never provider names; a 429 with no signals keeps the historical default ladder unchanged. Window-class 429s use a gentle ladder capped at 5 minutes (new `AIG_RATE_LIMIT_WINDOW_STEPS_MS`, default `15s -> 30s -> 45s -> 1m -> 1.5m -> 2m -> 3m -> 5m`) so minute-style limits return to the pool quickly instead of staying dark for up to 30 minutes; long-lived-allowance 429s start at the 5-minute stage and cool the whole key on the FIRST such 429 (the allowance is account-wide, so letting every model climb its own ladder only multiplies doomed probes against one shared pool). Dispatch logs and per-attempt records gain `rate_limit_class=` (`window`/`quota`/`unknown`) alongside the existing `rate_limit_stage=`.
