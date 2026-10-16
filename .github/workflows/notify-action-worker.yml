@@ -1,0 +1,177 @@
+name: Notify Action Worker
+
+# Approved thin trigger. It only tells Action Worker that something changed; every fact is re-read
+# centrally. It runs no pull request code, checks out nothing and must stay byte-identical to the
+# approved template (see policies/security.json approved_workflows).
+#
+#   pull request opened, updated or reopened -> run-pr-governance
+#   pull request closed                      -> cancel-pr-work
+#   push to main                             -> run-intake (central CI, main write attestation,
+#                                               changed task projects and automatic deploys)
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: notify-action-worker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pull-request:
+    name: Notify pull request change
+    # Events Dependabot starts get no Actions secrets; central Intake covers those pull requests.
+    if: github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]'
+    # Resolved centrally (docs/RUNNER_POLICY.md); defaults to GitHub-hosted Linux.
+    runs-on: ${{ fromJSON(vars.AW_DISPATCH_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Dispatch central governance
+        if: github.event.action != 'closed'
+        env:
+          AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REQUEST_ID: pr-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          TARGET_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          set_status() {
+            local state="$1"
+            local description="$2"
+            local payload
+            payload="$(jq -cn \
+              --arg state "$state" \
+              --arg context "PR Governance" \
+              --arg description "$description" \
+              --arg target_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              '{state:$state, context:$context, description:$description, target_url:$target_url}')"
+            curl -fsS \
+              --request POST \
+              --header "Authorization: Bearer $TARGET_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$REPOSITORY/statuses/$HEAD_SHA" \
+              --data "$payload" >/dev/null
+          }
+
+          on_error() {
+            local code=$?
+            set +e
+            set_status failure "PR governance dispatch failed"
+            exit "$code"
+          }
+          trap on_error ERR
+
+          set_status pending "PR governance dispatch pending"
+
+          if [ -z "$AW_DISPATCH_TOKEN" ]; then
+            echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
+            false
+          fi
+
+          payload="$(
+            jq -cn \
+              --arg request_id "$REQUEST_ID" \
+              --arg repository "$REPOSITORY" \
+              --argjson pr_number "$PR_NUMBER" \
+              '{
+                event_type: "run-pr-governance",
+                client_payload: {
+                  schema_version: "1",
+                  request_id: $request_id,
+                  repository: $repository,
+                  pr_number: $pr_number
+                }
+              }'
+          )"
+
+          curl -fsS \
+            --retry 2 \
+            --retry-delay 1 \
+            --request POST \
+            --header "Authorization: Bearer $AW_DISPATCH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
+            --data "$payload"
+
+      - name: Cancel central work for the closed pull request
+        if: github.event.action == 'closed'
+        env:
+          AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REQUEST_ID: close-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [ -n "$AW_DISPATCH_TOKEN" ] || {
+            echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
+            exit 77
+          }
+
+          payload="$(
+            jq -cn \
+              --arg request_id "$REQUEST_ID" \
+              --arg repository "$REPOSITORY" \
+              --argjson pr_number "$PR_NUMBER" \
+              '{
+                event_type: "cancel-pr-work",
+                client_payload: {
+                  schema_version: "1",
+                  request_id: $request_id,
+                  repository: $repository,
+                  pr_number: $pr_number
+                }
+              }'
+          )"
+
+          curl -fsS \
+            --retry 2 \
+            --retry-delay 1 \
+            --request POST \
+            --header "Authorization: Bearer $AW_DISPATCH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
+            --data "$payload"
+
+  main:
+    name: Notify main change
+    if: github.event_name == 'push'
+    runs-on: ${{ fromJSON(vars.AW_DISPATCH_RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 3
+
+    steps:
+      - name: Wake Action Worker Intake
+        env:
+          AW_DISPATCH_TOKEN: ${{ secrets.AW_DISPATCH_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [ -n "$AW_DISPATCH_TOKEN" ] || {
+            echo "::error::AW_DISPATCH_TOKEN is not configured." >&2
+            exit 77
+          }
+
+          curl -fsS \
+            --retry 2 \
+            --retry-delay 1 \
+            --request POST \
+            --header "Authorization: Bearer $AW_DISPATCH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY_OWNER/action-worker/dispatches" \
+            --data '{"event_type":"run-intake"}'

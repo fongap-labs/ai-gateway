@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- ci: replace the deprecated dispatch-pr-governance workflow with the approved notify-action-worker bridge, so every push to main wakes central Intake and the Main Write Guard and CI Evidence statuses are written immediately.
+
 - feat: add a Blog link (https://www.fongap.com/) to the dashboard footer between Fongap Labs and GitHub.
 
 - perf: stop futile probes against quota-exhausted keys. `rateLimitWindowOf` now lets quota wording win over window wording, a window-classified 429 auto-promotes to the account quota ladder once its ladder reaches stage 3, a single model with three consecutive 429s widens the Tier 1 scope to the whole key, the Tier 1 probe gate opens after 15s instead of 5s, and no concurrent request may enter while a key is still proving recovery.
