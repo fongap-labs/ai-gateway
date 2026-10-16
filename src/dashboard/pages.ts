@@ -54,6 +54,8 @@ function shell({ title, body, nonce }: { title: string; body: string; nonce: str
   <div class="wrap footer-row">
     <span>© 2026 <a href="https://labs.fongap.com" target="_blank" rel="noopener noreferrer">Fongap Labs</a></span>
     <span class="footer-sep" aria-hidden="true">·</span>
+    <a href="https://www.fongap.com/" target="_blank" rel="noopener noreferrer">Blog</a>
+    <span class="footer-sep" aria-hidden="true">·</span>
     <a href="${GITHUB_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>
     <span class="footer-sep" aria-hidden="true">·</span>
     <a href="${DOCUMENTATION_URL}" target="_blank" rel="noopener noreferrer">Documentation</a>
