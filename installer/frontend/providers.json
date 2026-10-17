@@ -1,0 +1,138 @@
+{
+  "$comment": "Provider catalog consumed by installer/frontend/providers.js. Data only: adding a provider, logical model or access group is a data edit, never a code edit.",
+  "providers": [
+    {
+      "id": "nvidia",
+      "label": "NVIDIA NIM",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "key_hint": "nvapi-...",
+      "key_url": "https://build.nvidia.com/",
+      "models": {
+        "general-air": "deepseek-ai/deepseek-v3.1",
+        "code-pro": "qwen/qwen3-coder-480b"
+      }
+    },
+    {
+      "id": "zhipu",
+      "label": "智谱 GLM",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "key_hint": "zzz.id...",
+      "key_url": "https://open.bigmodel.cn/",
+      "models": {
+        "general-air": "glm-4.7",
+        "code-max": "glm-4.7"
+      }
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek 深度求索",
+      "base_url": "https://api.deepseek.com/v1",
+      "key_hint": "sk-...",
+      "key_url": "https://platform.deepseek.com/",
+      "models": {
+        "code-pro": "deepseek-chat",
+        "general-air": "deepseek-chat"
+      }
+    },
+    {
+      "id": "moonshot",
+      "label": "Moonshot / Kimi",
+      "base_url": "https://api.moonshot.cn/v1",
+      "key_hint": "sk-...",
+      "key_url": "https://platform.moonshot.cn/",
+      "models": {
+        "code-pro": "kimi-k2-0711-preview"
+      }
+    },
+    {
+      "id": "dashscope",
+      "label": "阿里云百炼 / Qwen",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "key_hint": "sk-...",
+      "key_url": "https://bailian.console.aliyun.com/",
+      "models": {
+        "code-pro": "qwen3-coder-plus"
+      }
+    },
+    {
+      "id": "siliconflow",
+      "label": "硅基流动 SiliconFlow",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "key_hint": "sk-...",
+      "key_url": "https://cloud.siliconflow.cn/",
+      "models": {
+        "general-air": "deepseek-ai/DeepSeek-V3",
+        "code-pro": "Qwen/Qwen3-Coder-480B-A35B"
+      }
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "key_hint": "sk-or-...",
+      "key_url": "https://openrouter.ai/keys",
+      "models": {
+        "code-pro": "qwen/qwen3-coder-480b"
+      }
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "key_hint": "gsk_...",
+      "key_url": "https://console.groq.com/keys",
+      "models": {
+        "general-air": "llama-3.3-70b-versatile"
+      }
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI (API)",
+      "base_url": "https://api.openai.com/v1",
+      "key_hint": "sk-...",
+      "key_url": "https://platform.openai.com/api-keys",
+      "models": {
+        "code-max": "gpt-5.1",
+        "general-ultra": "gpt-5.1"
+      }
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic (API)",
+      "base_url": "https://api.anthropic.com",
+      "key_hint": "sk-ant-...",
+      "key_url": "https://console.anthropic.com/settings/keys",
+      "models": {
+        "code-max": "claude-sonnet-4-5",
+        "general-ultra": "claude-sonnet-4-5"
+      }
+    },
+    {
+      "id": "google",
+      "label": "Google Gemini (API)",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "key_hint": "AIza...",
+      "key_url": "https://aistudio.google.com/apikey",
+      "models": {
+        "code-max": "gemini-2.5-pro",
+        "general-air": "gemini-2.5-flash"
+      }
+    },
+    {
+      "id": "custom",
+      "label": "自定义 / OpenAI 兼容",
+      "base_url": "",
+      "key_hint": "",
+      "key_url": "",
+      "models": {}
+    }
+  ],
+  "logical_models": ["general-air", "code-pro", "code-max", "general-ultra", "agent"],
+  "access_groups": [
+    { "id": "AIR", "label": "Air", "desc": "基础对话 / 轻量任务", "default_models": "general-air" },
+    { "id": "PRO", "label": "Pro", "desc": "编程 / 日常主力", "default_models": "code-pro" },
+    { "id": "MAX", "label": "Max", "desc": "高强度编程", "default_models": "code-max" },
+    { "id": "ULTRA", "label": "Ultra", "desc": "最强模型 / 复杂推理", "default_models": "general-ultra" },
+    { "id": "AGENT", "label": "Agent", "desc": "Agent 工具调用", "default_models": "agent" }
+  ]
+}
