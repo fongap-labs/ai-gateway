@@ -233,7 +233,7 @@ export async function collectMatrixObject(
   if (from === 'anthropic' && (options.seedInputTokens ?? 0) > 0) {
     collector.feed({ type: 'start', id: '', model: '', inputTokens: options.seedInputTokens });
   }
-  let terminalSeen = false;
+  let hasTerminal = false;
 
   const scanner = createSseScanner((data) => {
     const { events, terminal } = pushDecoder(decoder, from, data);
@@ -242,7 +242,7 @@ export async function collectMatrixObject(
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
       collector.feed(event);
     }
-    if (terminal) terminalSeen = true;
+    if (terminal) hasTerminal = true;
   });
 
   const reader = upstreamBody.getReader();
@@ -258,7 +258,7 @@ export async function collectMatrixObject(
       });
       if (done) break;
       scanner.push(textDecoder.decode(value, { stream: true }));
-      if (terminalSeen) {
+      if (hasTerminal) {
         await reader.cancel().catch(() => {});
         break;
       }
@@ -268,7 +268,7 @@ export async function collectMatrixObject(
     await reader.cancel().catch(() => {});
     throw error;
   }
-  if (!terminalSeen && !decoder.done) throw new Error('Upstream stream interrupted before terminal event.');
+  if (!hasTerminal && !decoder.done) throw new Error('Upstream stream interrupted before terminal event.');
 
   const reply = collector.finish(fallbackId);
   return { reply, object: replyToObject(reply, to), diagnostics: streamDiagnostics(reply, to) };
