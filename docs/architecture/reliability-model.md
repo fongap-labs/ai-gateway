@@ -229,7 +229,7 @@ max_attempts>=6 3 / 2 / 1，之后仅在剩余未用预算内进行有界复检
 
 ## 协议回退安全
 
-跨协议回退仍仅限于 OpenAI Chat Completions <-> Anthropic Messages。OpenAI Responses 仅支持 native。
+跨协议回退覆盖三个协议 surface 两两互转：OpenAI Chat Completions <-> Anthropic Messages 走直接桥接，涉及 OpenAI Responses 的路径经规范化的 IR 矩阵。它们共享同一套 budget/attempt/hedge 语义。
 
 转换保真度不被视为二元的成功/失败。`exact` 与 `portable` 的转换可以继续进行。`degraded` 的转换仅在损失属于表面性或已被明确认定为安全的情况下才可以继续。若转换会丢弃高风险的语义状态（例如 provider 原生工具的状态/历史、thinking 历史、上下文管理语义，或工具结果的错误含义），则在 dispatch 之前就会拒绝该回退。
 

@@ -37,7 +37,7 @@ npm run check:deploy
 
 - 协议与 surface 路由；
 - Chat Completions ↔ Anthropic Messages 回退；
-- OpenAI Responses 的 Native Only 行为；
+- OpenAI Responses 与其他协议 surface 的翻译矩阵行为；
 - 流式输出的首事件提交点；
 - Tier 1 的 P2C、亲和、热度保护、RPM 准入与限流恢复；
 - Tier 2/3 的选择与熔断状态；
@@ -54,12 +54,13 @@ npm run check:deploy
 
 ```json
 {
-  "anthropic:messages": ["openai:chat_completions"],
-  "openai:chat_completions": ["anthropic:messages"]
+  "anthropic:messages": ["openai:chat_completions", "openai:responses"],
+  "openai:chat_completions": ["anthropic:messages", "openai:responses"],
+  "openai:responses": ["anthropic:messages", "openai:chat_completions"]
 }
 ```
 
-OpenAI Responses 为仅 Native（Native Only）。转换回退与原始请求的 attempt 及墙钟预算共享；hedge 孪生请求不会跨协议。
+三个协议 surface 两两互转（经规范化 IR 矩阵），没有链式多跳路径。转换回退与原始请求的 attempt 及墙钟预算共享；hedge 孪生请求不会跨协议。
 
 转换诊断信息必须保持为分类化且不含敏感内容。请求体、提示词、JSON Schema、凭据以及客户端工具名称，不得进入诊断日志。
 

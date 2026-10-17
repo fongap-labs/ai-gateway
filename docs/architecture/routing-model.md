@@ -10,7 +10,7 @@ Tier 1 → Tier 2 → Tier 3
 
 Tier 1 是免费或实际上免费的容量，也是日常的主要层级。Tier 2 是订阅权益容量（通过 OAuth 接入的 Claude/Codex/Gemini 订阅）。Tier 3 是付费 API 容量，作为受保护的最终回退保留。
 
-OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽之后才会评估。OpenAI Responses 在协议转换方面仍为仅 Native（Native Only）。
+OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽之后才会评估。OpenAI Responses 在候选耗尽后同样参与跨协议翻译（经规范化的 IR 矩阵，与 Chat/Messages 回退同预算）。
 
 ## 模型注册表、Provider Registry 与节点
 

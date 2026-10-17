@@ -96,7 +96,7 @@ Tier 1 的访问密钥分组仅用于授权，不拥有调度优先级路径。T
 
 ## 转换归属
 
-`src/conversion/result.ts` 在直接转换器之外，补充保真度、诊断以及结构化输出策略。它不会引入通用的协议 IR，也不会使 OpenAI Responses 变得可转换。
+`src/conversion/result.ts` 在直接转换器与规范化 IR 矩阵之外，补充保真度、诊断以及结构化输出策略。`src/conversion/matrix/` 以内部 IR 为支点覆盖 Chat / Responses / Messages 的两两互转。
 
 ## Dashboard / 可观测性归属
 

@@ -166,7 +166,7 @@ flowchart TD
     auth -- 否 --> deny(["拒绝"])
     auth -- 是 --> s1["① 同协议候选池<br/>Tier 1 → 2 → 3"]
     s1 -- 成功 --> out(["按客户端协议返回"])
-    s1 -- 候选耗尽 --> s2["② 跨协议回退<br/>同一模型 · Chat ↔ Messages"]
+    s1 -- 候选耗尽 --> s2["② 跨协议回退<br/>同一模型 · Chat ↔ Messages ↔ Responses"]
     s2 -- 成功 --> out
     s2 -- 仍失败 --> s3["③ 兼容模型家族<br/>最多两轮"]
     s3 -- 成功 --> out
@@ -175,13 +175,13 @@ flowchart TD
     class s1,s2,s3 stage
 ```
 
-三步共享同一个 `max_attempts`（请求级硬上限）与时间预算。`/v1/responses` 只走原生路径，不参与第 ② 步。
+三步共享同一个 `max_attempts`（请求级硬上限）与时间预算。`/v1/responses` 优先原生路径，候选耗尽后同样参与第 ② 步的跨协议翻译。
 
 ### 支持的协议与可靠性
 
 | 能力 | 当前行为 |
 | --- | --- |
-| 协议 | OpenAI Chat Completions、OpenAI Responses（仅原生）、Anthropic Messages；Chat ↔ Messages 有界互转 |
+| 协议 | OpenAI Chat Completions、OpenAI Responses、Anthropic Messages；三者通过规范化 IR 矩阵两两互转（六条有向路径） |
 | 限流与故障 | 429 自适应冷却后单次探测恢复；模型 404 只隔离失败的映射 |
 | 重试与回退 | 所有尝试共享一套预算，`max_attempts` 为硬上限；流式输出开始后不再切换上游 |
 

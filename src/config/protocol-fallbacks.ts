@@ -29,11 +29,12 @@
 //                                valid operator choice that means "explicitly
 //                                turn off fallback for this route".
 //
-// Rationale for Default ON: the only supported conversions
-// (Anthropic Messages <-> OpenAI Chat Completions, bidirectional) are the safe
-// and widely-expected fallback for operators who carry both an Anthropic pool
-// and an OpenAI-compatible pool. Operators who want the legacy Native-Only
-// behavior can opt out with `AIG_PROTOCOL_FALLBACKS=disable`.
+// Rationale for Default ON: the Chat <-> Messages pair is the established
+// safe fallback for operators who carry both an Anthropic pool and an
+// OpenAI-compatible pool, and the Responses pairs go through the canonical IR
+// matrix with the same diagnostic vocabulary and conservative loss rules.
+// Operators who want the legacy Native-Only behavior can opt out with
+// `AIG_PROTOCOL_FALLBACKS=disable`.
 //
 // Only explicitly supported conversions are allowed. Unsupported conversions
 // produce blocking configuration errors (not warnings).
@@ -50,17 +51,29 @@ const PROTOCOL_SURFACES = new Map<string, Set<string>>([
 // Key: client route (protocol:surface), Value: array of allowed fallback targets.
 // A conversion is listed here ONLY after the full Request + Response + Stream +
 // Error Converter has been implemented and tested.
+//
+// Chat <-> Messages keeps the established pairwise converters. Every pair
+// involving Responses runs through the canonical IR matrix
+// (conversion/matrix/): Chat / Messages / Responses are mutually translatable
+// including streaming SSE, tool calls and reasoning, with effort <-> budget
+// thinking-level mapping.
 export const SUPPORTED_CONVERSIONS: Readonly<Record<string, string[]>> = Object.freeze({
-  'anthropic:messages': ['openai:chat_completions'],
-  'openai:chat_completions': ['anthropic:messages'],
+  'anthropic:messages': ['openai:chat_completions', 'openai:responses'],
+  'openai:chat_completions': ['anthropic:messages', 'openai:responses'],
+  'openai:responses': ['anthropic:messages', 'openai:chat_completions'],
 });
 
 // Built-in default chain. Applied when AIG_PROTOCOL_FALLBACKS is unset/empty.
 // The default is the only one allowed without an explicit operator JSON
 // value; see header for the three-mode contract.
+// Default ON covers all six directed pairs: native pools remain first, but an
+// exhausted native tier may serve a client from any other protocol pool that
+// the matrix can represent. Operators who want the legacy behavior for any
+// route can pin it explicitly, or opt out entirely with `disable`.
 export const DEFAULT_FALLBACK_CHAIN: Readonly<Record<string, string[]>> = Object.freeze({
-  'anthropic:messages': ['openai:chat_completions'],
-  'openai:chat_completions': ['anthropic:messages'],
+  'anthropic:messages': ['openai:chat_completions', 'openai:responses'],
+  'openai:chat_completions': ['anthropic:messages', 'openai:responses'],
+  'openai:responses': ['anthropic:messages', 'openai:chat_completions'],
 });
 
 // Magic literal that turns the default off. Compared case-insensitively after

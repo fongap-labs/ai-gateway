@@ -153,7 +153,7 @@ Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有
 
 ### OpenAI Responses 问题
 
-OpenAI Responses 为仅 Native（Native Only）。在当前的 provider 适配器下，只有使用 `provider: "openai"` 的节点才可以使用原生的 `/v1/responses` 路由。
+原生的 Responses 路由要求节点的 `provider` 解析到 OpenAI provider 适配器 (`provider: "openai"`)。若 native 候选已耗尽，Responses 客户端也可以回退到 Chat 或 Messages 上游（经规范化 IR 矩阵翻译，客户端仍收到 Responses 协议）。
 
 请确认：
 
