@@ -138,7 +138,7 @@ fn run_planner(
     for n in 1..=3u8 {
         let path = tmp.join(format!("tier{n}-nodes.json"));
         fs::write(&path, serde_json::to_string_pretty(&tiers[n as usize]).unwrap())
-            .map_err(|e| format!("写入 tier{n} 配置失败: {e}"))?;
+            .map_err(|e| format!("写入 tier{n} 配置失败：{e}"))?;
     }
     let secrets_path = tmp.join("node-secrets.json");
     fs::write(
@@ -252,9 +252,9 @@ pub fn generate_config(payload: WizardPayload, project_root: String) -> Result<G
 
     // Build wrangler.user.jsonc from the immutable wrangler.jsonc base.
     let base_raw = fs::read_to_string(root.join("wrangler.jsonc"))
-        .map_err(|e| format!("读取 wrangler.jsonc 失败: {e}"))?;
+        .map_err(|e| format!("读取 wrangler.jsonc 失败：{e}"))?;
     let mut base: serde_json::Value =
-        serde_json::from_str(&base_raw).map_err(|e| format!("解析 wrangler.jsonc 失败: {e}"))?;
+        serde_json::from_str(&base_raw).map_err(|e| format!("解析 wrangler.jsonc 失败：{e}"))?;
 
     // Remove inherit/keep_vars so the user config is self-contained.
     if let Some(obj) = base.as_object_mut() {
@@ -289,7 +289,7 @@ pub fn generate_config(payload: WizardPayload, project_root: String) -> Result<G
     let user_config_path = root.join("wrangler.user.jsonc");
     let pretty = serde_json::to_string_pretty(&base).unwrap();
     fs::write(&user_config_path, format!("{pretty}\n"))
-        .map_err(|e| format!("写入 wrangler.user.jsonc 失败: {e}"))?;
+        .map_err(|e| format!("写入 wrangler.user.jsonc 失败：{e}"))?;
 
     // Build the bulk secrets file for `wrangler deploy --secrets-file`.
     let mut bulk = serde_json::Map::new();

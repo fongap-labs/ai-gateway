@@ -79,7 +79,7 @@ fn run_streaming(
         }
     });
 
-    let status = child.wait().map_err(|e| format!("等待 wrangler 失败: {e}"))?;
+    let status = child.wait().map_err(|e| format!("等待 wrangler 失败：{e}"))?;
     let _ = out_handle.join();
     let _ = err_handle.join();
     let code = status.code().unwrap_or(1);
@@ -137,7 +137,7 @@ pub fn create_kv_namespace(project_root: String, title: String) -> Result<KvResu
         .args(["kv", "namespace", "create", name])
         .current_dir(&root)
         .output()
-        .map_err(|e| format!("无法创建 KV 命名空间: {e}"))?;
+        .map_err(|e| format!("无法创建 KV 命名空间：{e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     let combined = format!("{stdout}\n{stderr}");
@@ -203,7 +203,7 @@ pub async fn health_check(gateway_url: String, access_key: String) -> Result<Vec
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+        .map_err(|e| format!("HTTP 客户端初始化失败：{e}"))?;
     let key = access_key.trim();
 
     let mut results = Vec::new();

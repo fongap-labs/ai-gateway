@@ -221,7 +221,7 @@ function renderPrereq() {
   if (p.node_ok && state.projectRoot) {
     c.appendChild(el("div", { class: "alert alert-ok" }, "\u2713 环境就绪，可以继续。"));
   } else if (!p.node_ok) {
-    c.appendChild(el("div", { class: "alert alert-err" }, "未检测到 Node.js，请安装 Node.js 22.18+ 后重试。下载地址: https://nodejs.org/"));
+    c.appendChild(el("div", { class: "alert alert-err" }, "未检测到 Node.js，请安装 Node.js 22.18+ 后重试。下载地址 ", el("a", { href: "https://nodejs.org/", target: "_blank" }, "nodejs.org")));
   }
   return c;
 }
@@ -275,7 +275,7 @@ function renderCloudflare() {
         render();
       }
     },
-  }, state.busy ? "等待登录完成…" : "登录 Cloudflare (打开浏览器)"));
+  }, state.busy ? ("等待登录完成…") : "登录 Cloudflare (打开浏览器)"));
   c.appendChild(btns);
   return c;
 }
@@ -320,9 +320,9 @@ function renderBasics() {
               } catch (e) { state.error = String(e); state.busy = false; }
               render();
             },
-          }, state.busy ? "创建中…" : "一键创建（或获取已有 ID）"),
+          }, state.busy ? ("创建中…") : "一键创建（或获取已有 ID）"),
     ),
-    el("div", { class: "hint" }, state.kvCreated ? "\u2713 已自动创建并填入 ID" : "可手动粘贴已有 KV 命名空间的 32 位十六进制 ID，或点击一键创建。"),
+    el("div", { class: "hint" }, state.kvCreated ? ("\u2713 已自动创建并填入 ID") : "可手动粘贴已有 KV 命名空间的 32 位十六进制 ID，或点击一键创建。"),
   ));
 
   card.appendChild(el("div", { class: "field" },
@@ -376,7 +376,7 @@ function renderNodes() {
         });
         render();
       },
-    }, `+ 添加 Tier ${tier} 节点${tier === 1 ? " (必填)" : tier === 2 ? " (订阅, 可选)" : " (付费, 可选)"}`));
+    }, `+ 添加 Tier ${tier} 节点${tier === 1 ? (" (必填)") : tier === 2 ? (" (订阅, 可选)") : " (付费, 可选)"}`));
   }
   c.appendChild(addWrap);
 
@@ -424,7 +424,7 @@ function renderNodeCard(node, idx) {
   card.appendChild(el("div", { class: "field" },
     el("label", {}, "Base URL"),
     el("input", { type: "url", value: node.base_url, oninput: (e) => node.base_url = e.target.value.trim(), placeholder: "https://api.example.com/v1" }),
-    prov.key_url ? el("div", { class: "hint" }, `获取 API Key: `, el("a", { href: prov.key_url, target: "_blank" }, prov.key_url)) : null,
+    prov.key_url ? el("div", { class: "hint" }, `获取 API Key：`, el("a", { href: prov.key_url, target: "_blank" }, prov.key_url)) : null,
   ));
 
   // Tier 2 oauth toggle
@@ -532,7 +532,7 @@ function renderAccess() {
         el("div", { class: "field" },
           el("label", {}, "允许调用的模型 (逗号分隔)"),
           el("input", { type: "text", value: g.models, oninput: (e) => g.models = e.target.value, placeholder: "code-pro,general-air" }),
-          el("div", { class: "hint" }, allLogical.length ? `当前节点中可用的逻辑模型: ${allLogical.join(", ")}` : "请先在上游节点步骤添加模型映射。",
+          el("div", { class: "hint" }, allLogical.length ? `当前节点中可用的逻辑模型：${allLogical.join(", ")}` : "请先在上游节点步骤添加模型映射。",
           ),
         ),
       ));
@@ -580,7 +580,7 @@ function renderReview() {
     nc.appendChild(el("div", { class: "summary-grid" },
       el("div", { class: "key" }, "Base URL"), el("div", { class: "val" }, node.base_url || "(OAuth)"),
       el("div", { class: "key" }, "模型映射"), el("div", { class: "val" }, Object.entries(node.models).map(([l, u]) => `${l}\u2192${u}`).join(", ") || "(无)"),
-      el("div", { class: "key" }, "凭据"), el("div", { class: "val" }, node.oauth ? "(OAuth 订阅)" : "\u2022".repeat(8)),
+      el("div", { class: "key" }, "凭据"), el("div", { class: "val" }, !node.oauth ? "\u2022".repeat(8) : "(OAuth 订阅)"),
     ));
     c.appendChild(nc);
   }
@@ -626,9 +626,9 @@ function renderDeploy() {
     c.appendChild(el("button", {
       class: "btn btn-primary",
       onclick: startDeploy,
-    }, state.busy ? "部署中…" : "\u25b6 开始部署"));
+    }, state.busy ? ("部署中…") : "\u25b6 开始部署"));
   } else {
-    c.appendChild(el("div", { class: "alert alert-ok" }, `\u2713 部署完成！Worker: ${state.deployResult.worker_name}`));
+    c.appendChild(el("div", { class: "alert alert-ok" }, `\u2713 部署完成！Worker：${state.deployResult.worker_name}`));
     c.appendChild(el("div", { class: "card" },
       el("div", { class: "card-title" }, "生成结果"),
       el("div", { class: "summary-grid" },
@@ -726,7 +726,7 @@ function renderVerify() {
       } catch (e) { state.error = String(e); }
       state.busy = false; render();
     },
-  }, state.busy ? "验证中…" : "\u25b6 验证"));
+  }, state.busy ? ("验证中…") : "\u25b6 验证"));
 
   if (state.healthResults) {
     for (const r of state.healthResults) {
@@ -748,10 +748,10 @@ function renderVerify() {
     c.appendChild(el("div", { class: "card" },
       el("div", { class: "card-title" }, "客户端接入配置"),
       el("div", { class: "hint", style: "margin-bottom:12px" }, "将客户端的 base URL 指向网关，密钥使用网关访问密钥。"),
-      el("div", { class: "hint", style: "margin-bottom:4px;font-weight:600" }, "OpenAI 协议 (Chat Completions / Responses):"),
+      el("div", { class: "hint", style: "margin-bottom:4px;font-weight:600" }, "OpenAI 协议 (Chat Completions / Responses)："),
       el("div", { class: "code-block" },
         `OPENAI_BASE_URL=${state.publicUrl}/v1\nOPENAI_API_KEY=${firstGroup ? firstGroup.key : "<YOUR_GATEWAY_KEY>"}`),
-      el("div", { class: "hint", style: "margin-bottom:4px;font-weight:600" }, "Anthropic 协议 (Messages, 如 Claude Code):"),
+      el("div", { class: "hint", style: "margin-bottom:4px;font-weight:600" }, "Anthropic 协议 (Messages, 如 Claude Code)："),
       el("div", { class: "code-block" },
         `ANTHROPIC_BASE_URL=${state.publicUrl}\nANTHROPIC_AUTH_TOKEN=${firstGroup ? firstGroup.key : "<YOUR_GATEWAY_KEY>"}`),
     ));
