@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: make OpenAI Responses a first-class surface alongside Chat and Messages. A new `src/conversion/matrix/` canonically represents each protocol as an IR (request, response, stream error) with per-protocol parse/build, SSE decode/encode and fidelity diagnostics; whenever the fallback chain translates a pair involving Responses, the request and the upstream stream travel through that IR instead of failing with 404, while `Chat <-> Messages` keeps the existing direct bridge. The default fallback chain now covers every directed pair among the three protocols. Thinking survives translation (`reasoning_content` <-> reasoning items <-> thinking blocks; encrypted/redacted history passes through toward Anthropic and is dropped with explicit diagnostics elsewhere), reasoning effort maps to thinking budgets (`low/4096`, `medium/10000`, `high/24000`, `max/32000`), and per-upstream TTFT/usage accounting, hedging deadlines and first-event guards behave the same as on the native pair.
+
 - ci: replace the deprecated dispatch-pr-governance workflow with the approved notify-action-worker bridge, so every push to main wakes central Intake and the Main Write Guard and CI Evidence statuses are written immediately.
 
 - feat: add a Blog link (https://www.fongap.com/) to the dashboard footer between Fongap Labs and GitHub.
