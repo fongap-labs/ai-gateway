@@ -38,10 +38,16 @@
   "AIG_DASHBOARD_MODELS": "Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air",
   "AIG_PROTOCOL_FALLBACKS": {
     "anthropic:messages": [
-      "openai:chat_completions"
+      "openai:chat_completions",
+      "openai:responses"
     ],
     "openai:chat_completions": [
-      "anthropic:messages"
+      "anthropic:messages",
+      "openai:responses"
+    ],
+    "openai:responses": [
+      "anthropic:messages",
+      "openai:chat_completions"
     ]
   },
   "AIG_EDGE_CACHE_TTL_SEC": "14400",

@@ -97,11 +97,11 @@ AIG_TIER1_NODES_01='[
 # AIG_DASHBOARD_MODELS="Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air"
 
 # ============ Protocol fallback (optional) ============
-# Current supported conversion is bidirectional Anthropic Messages <-> OpenAI Chat.
-# OpenAI Responses is Native Only for protocol conversion.
-# Unset/empty uses the built-in bidirectional chain; "disable" turns conversion off;
+# All three protocol surfaces translate pairwise through the IR matrix:
+# Anthropic Messages <-> OpenAI Chat <-> OpenAI Responses (six directed pairs).
+# Unset/empty uses the built-in matrix chain; "disable" turns conversion off;
 # explicit JSON replaces the built-in mapping.
-# AIG_PROTOCOL_FALLBACKS='{"anthropic:messages":["openai:chat_completions"],"openai:chat_completions":["anthropic:messages"]}'
+# AIG_PROTOCOL_FALLBACKS='{"anthropic:messages":["openai:chat_completions","openai:responses"],"openai:chat_completions":["anthropic:messages","openai:responses"],"openai:responses":["anthropic:messages","openai:chat_completions"]}'
 
 # ============ Token-usage stream hint (optional, fail-open) ============
 # Ask OpenAI-compatible streaming upstreams to report usage in the final chunk.

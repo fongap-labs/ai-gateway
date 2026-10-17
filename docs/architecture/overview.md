@@ -64,7 +64,7 @@ Tier 1 → Tier 2 → Tier 3
 按协议输出响应 / 流
 ```
 
-OpenAI Chat Completions 与 Anthropic Messages 均为 Native 优先（Native First）。只有在 native 池耗尽后，才可能执行已配置的跨协议回退。OpenAI Responses 在协议转换方面为仅 Native（Native Only）。
+OpenAI Chat Completions、OpenAI Responses 与 Anthropic Messages 均为 Native 优先（Native First）。只有在 native 池耗尽后，才可能执行已配置的跨协议回退；三个 surface 两两互转，经由规范化 IR 矩阵完成。
 
 逻辑模型回退是独立的外层编排。封闭家族为 `Code-Max ↔ Code-Pro → Code-Ultra`、`Max ↔ Pro → Ultra`，以及单向的 `Air → Pro → Max → Ultra`。兼容家族最多评估两轮；所有轮次共享原始的 attempt、dispatch、hedge 与墙钟时间预算。`max_attempts` 仍是请求级硬上限，家族回退绝不会将其放大。
 
@@ -109,8 +109,7 @@ Dashboard           仅负责展示
 - 原生 OpenAI Chat 上游目标为 `/v1/chat/completions`。
 - 原生 OpenAI Responses 上游目标为 `/v1/responses`。
 - 原生 Anthropic Messages 上游目标为 `/v1/messages`。
-- 内置转换矩阵仅包含 OpenAI Chat Completions ↔ Anthropic Messages。
-- OpenAI Responses 不进入跨协议转换。
+- 内置转换矩阵覆盖三个协议 surface 两两互转（规范化 IR 矩阵，六条有向路径）。
 - `Code-Max` 与 `Code-Pro` 是首选可互换的 coding 别名；`Code-Ultra` 是家族级的更高层回退。
 - `Max` 与 `Pro` 是首选可互换的通用别名；`Ultra` 是家族级的更高层回退。
 - Code 别名绝不会回退到非 Code 别名。

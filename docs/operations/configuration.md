@@ -107,12 +107,13 @@ Tier 2 节点可以声明 `"auth": "oauth"`，用以标记一个订阅权益节�
 
 若某个 Provider 需要不同的线协议契约，应修改其在 `src/providers/` 中的 provider 适配器。不要在每个账号中重复声明结构性的协议/surface 字段。
 
-OpenAI Responses 仍为仅 Native（Native Only）。在转换安全的前提下，Chat/Messages 协议回退保持双向：
+OpenAI Responses 同样参与跨协议翻译；三个协议 surface 两两互转（规范化 IR 矩阵），内置默认链为：
 
 ```json
 {
-  "anthropic:messages": ["openai:chat_completions"],
-  "openai:chat_completions": ["anthropic:messages"]
+  "anthropic:messages": ["openai:chat_completions", "openai:responses"],
+  "openai:chat_completions": ["anthropic:messages", "openai:responses"],
+  "openai:responses": ["anthropic:messages", "openai:chat_completions"]
 }
 ```
 

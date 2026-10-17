@@ -9,6 +9,7 @@
 // in those modules rather than rebuilding a generic result engine here.
 
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
+import { handleMatrixSuccess, isMatrixConversion } from './success-matrix.ts';
 import { handleObjectSuccess } from './success-object.ts';
 import { handleStreamingSuccess } from './success-stream.ts';
 
@@ -23,6 +24,9 @@ export type SuccessArgs = {
 };
 
 export async function handleSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
+  if (isMatrixConversion(s.c.conversionContext)) {
+    return handleMatrixSuccess(s);
+  }
   if (s.c.clientWantsStream && s.upstreamWasStreaming) {
     return handleStreamingSuccess(s);
   }

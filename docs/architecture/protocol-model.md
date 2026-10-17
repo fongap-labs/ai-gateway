@@ -25,24 +25,28 @@ ai-gateway 支持两个协议族：OpenAI 与 Anthropic。账号级 Node Config 
 
 ## Native 优先（Native First）
 
-OpenAI Chat Completions 与 Anthropic Messages 始终优先尝试 native 节点。只有当 native 候选池耗尽且该路由已启用时，跨协议转换才会开始。
+三个协议 surface（OpenAI Chat Completions、OpenAI Responses、Anthropic Messages）始终优先尝试 native 节点。只有当 native 候选池耗尽且该路由已启用时，跨协议转换才会开始。
 
-内置的回退链如下：
+内置的回退链（六条有向路径）如下：
 
 ```json
 {
-  "anthropic:messages": ["openai:chat_completions"],
-  "openai:chat_completions": ["anthropic:messages"]
+  "anthropic:messages": ["openai:chat_completions", "openai:responses"],
+  "openai:chat_completions": ["anthropic:messages", "openai:responses"],
+  "openai:responses": ["anthropic:messages", "openai:chat_completions"]
 }
 ```
 
-`AIG_PROTOCOL_FALLBACKS=disable` 会禁用转换回退。显式的 JSON 映射会覆盖内置回退链。OpenAI Responses 始终为仅 Native（Native Only），不存在跨协议转换路由。
+`AIG_PROTOCOL_FALLBACKS=disable` 会禁用转换回退。显式的 JSON 映射会覆盖内置回退链。Responses ↔ Chat 与 Responses ↔ Messages 的回退经由规范化 IR 矩阵（见下文），与 Chat ↔ Messages 回退享有相同的保真度诊断与预算契约。
 
 回退不会重置请求。Native attempt 与转换回退共享同一个 `max_attempts`、tier-attempt 计数、dispatch 上限以及 `AIG_FAILOVER_BUDGET_MS` 墙钟预算。hedge 孪生请求仅从当前协议/surface 池中选择；不允许跨协议 hedge。
 
 ## 转换边界
 
-`src/conversion/` 包含唯一受支持的桥接方向的直接适配器：OpenAI Chat Completions ↔ Anthropic Messages。本项目有意不维护全协议的规范中间表示（canonical IR），也不会仅因为存在另一个原生 surface 就扩展转换矩阵。
+`src/conversion/` 的桥接分为两层：
+
+- 直接适配器：OpenAI Chat Completions ↔ Anthropic Messages（历史路径，语义直译）。
+- 规范化 IR 矩阵：`src/conversion/matrix/`，以内部规范化中间表示（canonical IR）为pivot，覆盖全部六条有向路径（三个 surface 两两互转）。矩阵在转换后端共享统一的请求/响应/流式/错误语义，并沿用同一套保真度诊断。
 
 转换属于语义层面的转换，并且可能有损。`src/conversion/result.ts` 中的结果包装器会明确报告这一点：
 
@@ -110,8 +114,12 @@ OpenAI 的 system/developer 语义可能需要映射或模拟，因为 Anthropic
 各协议的完成语义保持各自独立：
 
 - OpenAI Chat 在出现有意义的内容、推理或工具调用输出时提交。
-- OpenAI Responses 在受支持的响应输出增量上提交，且保持 native。
+- OpenAI Responses 在受支持的响应输出增量上提交。
 - Anthropic Messages 在有意义的文本、thinking 或工具输入增量上提交。
+
+矩阵转换的上游强制 `stream:true`：上游按 SSE 返回时走首事件守卫与流式翻译；上游返回 JSON（忽略流式标志）时，矩阵会将原生对象经 IR 转换后按客户端协议返回对象或合成 SSE 生命周期。
+
+思考（thinking）语义在矩阵中是可携带的：Chat 的 `reasoning_content`、Responses 的 reasoning 项与 Anthropic 的 thinking 块在 IR 中一一对应；加密/红acted 的思考历史（Anthropic `redacted_thinking`、Responses `encrypted_content`）在通往 Anthropic 的路径上原样透传，其他目标会通过 `thinking_history: dropped` 诊断显式报告。思考强度在请求侧按 Chat/Responses 的 `reasoning_effort` 与 Anthropic 的 thinking `budget_tokens` 映射（low/4096 · medium/10000 · high/24000 · max/32000，预留 1024 输出余量），超出物理上限的值会被钳制并报告诊断。
 
 ## 错误信封
 
@@ -128,7 +136,7 @@ OpenAI 的 system/developer 语义可能需要映射或模拟，因为 Anthropic
 | Provider Profile | 将 provider 名称映射为 protocol + 可路由 surface |
 | Protocol | 客户端校验与协议特定错误 |
 | Transport | 上游路径、头部、原生线协议行为 |
-| Conversion | 仅负责受支持的 Chat ↔ Messages 语义桥接 |
+| Conversion | Chat ↔ Messages 直接桥接，以及全部协议对共用的 IR 矩阵 |
 | Stream | 首事件守卫与流生命周期 |
 | Scheduler | 候选节点选择；绝不解析协议事件 |
 | Reliability | 失败状态；绝不负责请求结构转换 |

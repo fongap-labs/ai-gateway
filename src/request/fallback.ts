@@ -5,12 +5,14 @@
 //
 // Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
 // for the single source of truth):
-//   * Anthropic Messages -> OpenAI Chat Completions
-//   * OpenAI Chat Completions -> Anthropic Messages
+//   * Anthropic Messages -> OpenAI Chat Completions (legacy pairwise converter)
+//   * OpenAI Chat Completions -> Anthropic Messages (legacy pairwise converter)
+//   * all four directed pairs involving OpenAI Responses, via the canonical IR
+//     matrix (conversion/matrix/): Chat / Messages / Responses mutually
+//     translatable with streaming, tool calls and reasoning support.
 // Fallback follows the resolved PROTOCOL_FALLBACKS policy, including the
-// built-in bidirectional Chat/Messages default when the variable is unset.
-// OpenAI Responses is native-only (no fallback to other protocols), and there
-// is no Gemini conversion.
+// built-in matrix-wide default when the variable is unset. There is no Gemini
+// conversion.
 //
 // Contract:
 //   * Native-first: the native tier loop runs first and only when it
@@ -43,6 +45,8 @@
 //     dispatch, return a dedicated 502 instead of misreporting the condition as
 //     node cooldown/circuit exhaustion.
 
+import type { IrProtocol } from '../conversion/matrix/ir.ts';
+import { convertMatrixRequest, isMatrixPair } from '../conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../conversion/result.ts';
 import { convertAnthropicToOpenAIResult, convertOpenAIChatToAnthropicResult } from '../conversion/result.ts';
 import { ConversionError } from '../conversion/validation.ts';
@@ -55,10 +59,31 @@ import { computeTierCaps } from './tier-loop.ts';
 const HIGH_RISK_DROPPED_FEATURES = new Set([
   'provider_native_tool',
   'provider_native_tool_history',
-  'thinking_history',
   'context_management',
   'tool_result_error_marker',
 ]);
+
+/** client route -> canonical IR protocol. */
+function routeToIrProtocol(route: string): IrProtocol | null {
+  switch (route) {
+    case 'openai_chat':
+      return 'openai_chat';
+    case 'openai_responses':
+      return 'openai_responses';
+    case 'anthropic_messages':
+      return 'anthropic';
+    default:
+      return null;
+  }
+}
+
+/** fallback (protocol, surface) -> canonical IR protocol. */
+function fallbackToIrProtocol(fb: { protocol: string; surface: string }): IrProtocol | null {
+  if (fb.protocol === 'openai' && fb.surface === 'chat_completions') return 'openai_chat';
+  if (fb.protocol === 'openai' && fb.surface === 'responses') return 'openai_responses';
+  if (fb.protocol === 'anthropic' && fb.surface === 'messages') return 'anthropic';
+  return null;
+}
 
 type TierLoopRunner = (
   loopCtx: LoopContext,
@@ -109,7 +134,10 @@ export async function runFallbackChain({
       } else if (route === 'openai_chat' && fb.protocol === 'anthropic' && fb.surface === 'messages') {
         conversionResult = convertOpenAIChatToAnthropicResult(bodyJson);
       } else {
-        continue;
+        const from = routeToIrProtocol(route);
+        const to = fallbackToIrProtocol(fb);
+        if (!from || !to || !isMatrixPair(from, to)) continue;
+        conversionResult = convertMatrixRequest(from, to, bodyJson);
       }
     } catch (e) {
       if (e instanceof ConversionError) {
