@@ -15,7 +15,7 @@
 // reasoning (thinking) parts with optional thinking level, sampling stops and
 // usage. Everything beyond that belongs to ONE protocol and stays native.
 //
-// No client-controlled text may ever appear in diagnostics 鈥?only the fixed
+// No client-controlled text may ever appear in diagnostics - only the fixed
 // feature/action vocabulary defined in ../result.ts.
 
 export type IrProtocol = 'openai_chat' | 'openai_responses' | 'anthropic';
@@ -147,7 +147,7 @@ export class IrCollector {
         return;
       }
       case 'sig': {
-        // Attach the signature to a STILL-OPEN thinking part only 鈥?matching
+        // Attach the signature to a STILL-OPEN thinking part only - matching
         // the Anthropic stream lifecycle where signature_delta closes a block.
         const tail = this.parts[this.parts.length - 1];
         if (this.openKind === 'think' && tail && tail.type === 'thinking')

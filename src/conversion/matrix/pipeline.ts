@@ -6,7 +6,7 @@
 //
 // The legacy Chat <-> Anthropic conversion stays on the pairwise converters
 // (conversion/stream-converter.ts, conversion/anthropic-stream-*.ts) and is
-// deliberately NOT routed through this module 鈥?behavior preservation rules.
+// deliberately NOT routed through this module - behavior preservation rules.
 // Every pair involving `openai_responses` goes through the IR here.
 
 import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';

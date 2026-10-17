@@ -272,7 +272,7 @@ function assistantBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
       parts.push({ type: 'thinking', text: '', sealed: true });
       continue;
     }
-    // server_tool_use / advisor / etc. 鈥?provider-native history cannot be
+    // server_tool_use / advisor / etc. - provider-native history cannot be
     // represented on another protocol.
     diag.add({ feature: 'provider_native_tool_history', action: 'dropped' });
     parts.push({ type: 'text', text: '[provider-native tool output omitted in translation]' });
