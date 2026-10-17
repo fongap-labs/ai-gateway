@@ -30,8 +30,49 @@
 // (legacy key or AIG_ACCESS_MODELS_<GROUP>="*"), the entire catalog is
 // visible/callable. Otherwise the key's allowlist is intersected with the
 // catalog.
+//
+// Client-facing model spelling may differ from the configured catalog:
+// Claude Code appends the official context-length tag (for example
+// `Code-Ultra[1m]`), and clients disagree on casing. The Known Model
+// Catalog stays the single source of model existence; the helpers below
+// only resolve HOW a client string maps onto a catalog entry and never
+// invent a model the catalog does not know.
 
 type AuthzShape = { authorized?: boolean; allowAll?: boolean; allowlist?: ReadonlySet<string> };
+
+// Official Anthropic context-length suffix carried inside the model string by
+// Claude Code (`...[1m]` = the 1M-token context variant of the same model).
+const CONTEXT_LENGTH_SUFFIX = /\[[0-9]+m\]$/;
+
+/** Client model string without its context-length tag, if any. */
+export function clientModelCore(model: string): string {
+  return model.replace(CONTEXT_LENGTH_SUFFIX, '').trim();
+}
+
+/**
+ * Resolve a client-written model onto the exact catalog entry it names:
+ * context-length tags are stripped and casing differences collapse onto the
+ * configured spelling. Unknown models are returned unchanged so downstream
+ * fail-closed paths behave exactly as before.
+ */
+export function resolveClientModel(model: string, knownModels: ReadonlySet<string>): string {
+  const core = clientModelCore(model);
+  if (knownModels.has(core)) return core;
+  const lower = core.toLowerCase();
+  for (const entry of knownModels) {
+    if (entry.toLowerCase() === lower) return entry;
+  }
+  return core;
+}
+
+/** Catalog membership that forgives client-side casing differences. */
+function catalogHas(models: ReadonlySet<string>, value: string): boolean {
+  const lower = value.toLowerCase();
+  for (const model of models) {
+    if (model.toLowerCase() === lower) return true;
+  }
+  return false;
+}
 
 // Returns a sorted array of model names visible to the current key.
 export function filterVisibleModels(knownModels: ReadonlySet<string>, authz: AuthzShape): string[] {
@@ -46,7 +87,8 @@ export function filterVisibleModels(knownModels: ReadonlySet<string>, authz: Aut
 
 // Returns { allowed: boolean, status?: 401 | 403 | 404 }.
 // When allowed is false, `status` is 401/403/404 and the handler must return
-// that response without entering the scheduler.
+// that response without entering the scheduler. Membership checks forgive
+// client-side casing differences; the catalog still bounds every grant.
 export function authorizeModel(
   requestedModel: string,
   knownModels: ReadonlySet<string>,
@@ -62,13 +104,13 @@ export function authorizeModel(
   // Allow-all keys (legacy or AIG_ACCESS_MODELS_<GROUP>="*") are bounded
   // by the catalog: "*" means every KNOWN model, never any model string.
   if (authz.allowAll) {
-    return knownModels.has(requestedModel) ? { allowed: true } : { allowed: false, status: 404 };
+    return catalogHas(knownModels, requestedModel) ? { allowed: true } : { allowed: false, status: 404 };
   }
   // Per-key allowlist: the model must be in both the allowlist AND the
   // catalog. If it's in the allowlist but not the catalog, treat it as not
   // callable (404 — the model doesn't exist). If it's in the catalog but not
   // in the allowlist, treat it as 403.
-  const inAllowlist = authz.allowlist ? authz.allowlist.has(requestedModel) : false;
+  const inAllowlist = authz.allowlist ? catalogHas(authz.allowlist, requestedModel) : false;
   if (!inAllowlist) {
     // To avoid leaking whether an internal model exists, the handler
     // returns 403 for both "not in allowlist" and "model not in catalog
@@ -77,7 +119,7 @@ export function authorizeModel(
     // the catalog does not contain it.
     return { allowed: false, status: 403 };
   }
-  if (!knownModels.has(requestedModel)) {
+  if (!catalogHas(knownModels, requestedModel)) {
     return { allowed: false, status: 404 };
   }
   return { allowed: true };
