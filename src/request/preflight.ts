@@ -30,7 +30,7 @@ import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { TierMap } from '../types/scheduler.ts';
 import { authorize } from './auth.ts';
 import { gatewayError } from './errors.ts';
-import { authorizeModel, filterVisibleModels } from './model-authz.ts';
+import { authorizeModel, filterVisibleModels, resolveClientModel } from './model-authz.ts';
 import { modelFallbackCandidates } from './model-fallback.ts';
 import { jsonResponse } from './response-helpers.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
@@ -242,7 +242,6 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return { ok: false, response: gatewayError(request, env, route, 400, validationError, requestId) };
   }
 
-  const requestedModel = String(bodyJson.model || '');
   const clientWantsStream = bodyJson.stream === true;
   const fakeStream =
     route === 'openai_chat' &&
@@ -253,6 +252,11 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const gatewayConfigForAuth = loadGatewayConfig(env);
   const knownModels = collectKnownModels(gatewayConfigForAuth.nodes, env);
+  // Client spelling is normalized onto the configured catalog entry before
+  // authorization and routing: context-length tags (`...[1m]`) are dropped and
+  // casing differences collapse onto the configured spelling. Unknown models
+  // keep their raw spelling so the fail-closed 404/403 paths are unchanged.
+  const requestedModel = resolveClientModel(String(bodyJson.model || ''), knownModels);
   const modelAuthz = authorizeModel(requestedModel, knownModels, authResult);
   if (modelAuthz.allowed === false) {
     const denyStatus = modelAuthz.status;

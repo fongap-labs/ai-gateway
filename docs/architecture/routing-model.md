@@ -22,6 +22,15 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
 
 静态节点 `priority` 对 Tier 2/3 有意义，而 Tier 1 的 P2C 会有意忽略它。网关访问分组（Gateway access groups）只授权逻辑模型（access groups only authorize logical models）；它们不会影响 Tier 1 的候选评分。
 
+## 客户端模型拼写解析
+
+已知模型目录（Known Model Catalog）是模型存在性的唯一来源。客户端可接受的功能性拼写差异被视为**同一个**逻辑目录条目的别名（aliases），而不是不同的模型身份：
+
+- Claude Code 会把官方上下文长度标记写进模型字符串（例如 `Code-Ultra[1m]`，表示同一模型的 1M-token 变体）；客户端之间的大小写也可能不一致（如 `Code-Max` 与配置里的 `code-max`）。
+- preflight 在授权与路由之前，把客户端拼写解析到配置的目录条目上：剥掉 `[数字m]` 形态的上下文长度标记，并把大小写折叠到配置拼写。访问分组的 allowlist 匹配同样对大小写宽容。
+- 解析**绝不**发明目录里不存在的模型：客户端写出目录或该 key 的 allowlist 中没有的名字时，仍然走原来的 fail-closed 路径（未知模型 404、key 无权限 403），边界判定从不放宽。
+- 解析后的目录拼写会贯穿 fallback 规划与调度，且来自已知目录，fallback 和 family 语义不因拼写差异而改变。
+
 ## 逻辑模型家族回退
 
 逻辑模型回退独立于协议回退。协议回退改变同一逻辑模型的线协议/surface；家族回退改变逻辑模型本身，同时保留客户端路由与请求的模型标识。
