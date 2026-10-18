@@ -29,7 +29,7 @@ import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
 import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from './policies.ts';
 import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
 import type { RegistryEntry } from './registry.ts';
-import { loadModelRegistry } from './registry.ts';
+import { canonicalLogicalNames, loadModelRegistry } from './registry.ts';
 
 export const TIER_SHARD_PATTERN = /^AIG_TIER([123])_NODES_(\d{2})$/;
 export const SECRET_SHARD_PATTERN = /^AIG_TIER([123])_CREDENTIALS_(\d{2})$/;
@@ -163,7 +163,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
   const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   const seenIds = new Map<string, string>();
-  const nodes: RuntimeNode[] = [];
+  let nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedTierShards) {
     const tier = `tier-${shard.tierNumber}` as NodeTier;
@@ -201,6 +201,9 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
+  const canonical = canonicalizeNodeModels(nodes, env, diagnostics);
+  if (canonical.ambiguous) hasConflict = true;
+  nodes = canonical.nodes;
   diagnostics.push(...collectNodeModelDiagnostics(nodes, env));
   for (const [nodeId] of credentials) {
     if (!seenIds.has(nodeId)) diagnostics.push(`credential "${nodeId}" has no matching node config`);
@@ -363,6 +366,50 @@ function parsePriority(raw: unknown, nodeId: string, diagnostics: string[]): num
     return null;
   }
   return raw;
+}
+
+// Rekeys every node's model map onto the canonical catalog spelling, so one
+// logical model has one key on every node that serves it. A node that maps one
+// logical model to two different upstreams under different casings is ambiguous
+// and is excluded, the same way a duplicate node id is.
+function canonicalizeNodeModels(
+  nodes: RuntimeNode[],
+  env: Record<string, unknown>,
+  diagnostics: string[],
+): { nodes: RuntimeNode[]; ambiguous: boolean } {
+  let configured: string[] = [];
+  try {
+    configured = Object.keys(loadModelsConfig(env));
+  } catch {
+    /* config diagnostics own malformed MODELS_CONFIG */
+  }
+  const canonical = canonicalLogicalNames(
+    nodes.flatMap((node) => Object.keys(node.models)),
+    configured,
+  );
+  let ambiguous = false;
+  const kept: RuntimeNode[] = [];
+  for (const node of nodes) {
+    const models: Record<string, string> = {};
+    let conflict = false;
+    for (const [name, upstream] of Object.entries(node.models)) {
+      const logical = canonical.get(name.trim().toLowerCase()) ?? name;
+      if (models[logical] !== undefined && models[logical] !== upstream) {
+        diagnostics.push(
+          `node "${node.id}": logical model "${logical}" maps to two different upstream models under different casings; node excluded`,
+        );
+        conflict = true;
+        break;
+      }
+      models[logical] = upstream;
+    }
+    if (conflict) {
+      ambiguous = true;
+      continue;
+    }
+    kept.push({ ...node, models });
+  }
+  return { nodes: kept, ambiguous };
 }
 
 function normalizeModels(models: unknown, nodeId: string, diagnostics: string[]): Record<string, string> | null {

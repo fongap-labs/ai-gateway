@@ -114,22 +114,36 @@ export function servesModel(node: { models: Record<string, string> }, model: str
   return Object.hasOwn(node.models, model);
 }
 
+// One spelling per logical model, matched case-insensitively. The MODELS_CONFIG
+// spelling wins when declared there; otherwise the first spelling seen wins.
+// Node model keys are rekeyed onto these names, so casing differences between
+// operators never split one logical model into two catalog entries.
+export function canonicalLogicalNames(names: Iterable<string>, configured: Iterable<string> = []): Map<string, string> {
+  const canonical = new Map<string, string>();
+  for (const name of [...configured, ...names]) {
+    const key = name.trim().toLowerCase();
+    if (!canonical.has(key)) canonical.set(key, name.trim());
+  }
+  return canonical;
+}
+
 // One canonical Known Model Catalog: explicit node mappings + MODELS_CONFIG.
 export function collectKnownModels(
   nodes?: ReadonlyArray<{ models?: Record<string, string> } | null | undefined>,
   env?: Record<string, unknown>,
 ): Set<string> {
-  const set = new Set<string>();
+  const names: string[] = [];
   for (const n of nodes || []) {
-    for (const k of Object.keys(n?.models || {})) set.add(k);
+    names.push(...Object.keys(n?.models || {}));
   }
+  let configured: string[] = [];
   if (env) {
     try {
-      const models = loadModelsConfig(env);
-      for (const name of Object.keys(models)) set.add(name);
+      configured = Object.keys(loadModelsConfig(env));
     } catch {
       /* config diagnostics own malformed MODELS_CONFIG */
     }
   }
-  return set;
+  const canonical = canonicalLogicalNames(names, configured);
+  return new Set([...names, ...configured].map((name) => canonical.get(name.trim().toLowerCase()) ?? name.trim()));
 }
