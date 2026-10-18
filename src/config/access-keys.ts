@@ -55,8 +55,10 @@ function parseModelsField(
     .filter(Boolean))
     out.allowlist.add(p);
   if (knownModels) {
+    // Matched case-insensitively, the same as authorization: a casing-only difference is not a missing model.
+    const catalog = new Set([...knownModels].map((m) => m.toLowerCase()));
     for (const m of out.allowlist) {
-      if (!knownModels.has(m)) {
+      if (!catalog.has(m.toLowerCase())) {
         out.warnings.push(
           `AIG_ACCESS_MODELS_${group} references model "${m}" which is not in the Known Model Catalog (node models or AIG_MODELS_CONFIG)`,
         );

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix: an `AIG_ACCESS_MODELS_*` entry that differs from the catalog only by casing no longer logs a false "not in the Known Model Catalog" warning; the check is case-insensitive, as authorization is. A model that is really missing still warns.
+
 - fix: resolve one logical model written in two casings to one catalog entry on every node. A request for `Code-Max` matched no node when `AIG_MODELS_CONFIG` declared `Code-Max` and a node keyed `code-max`: the catalog kept both spellings, the client spelling resolved to the official one, and no node served it, so preflight returned 404 ("There's an issue with the selected model..." in Claude Code) while `code-max` worked. Node model keys are now rekeyed onto the canonical catalog spelling (the `AIG_MODELS_CONFIG` spelling first), and a node that maps one logical model to two different upstreams under different casings is excluded as a configuration error.
 
 - fix [security]: stop logging the OAuth node count in `config-cli check` output. CodeQL flagged it as clear-text logging of data derived from node config (`js/clear-text-logging`); the summary line now prints fixed text and the configured-credentials check is unchanged.
