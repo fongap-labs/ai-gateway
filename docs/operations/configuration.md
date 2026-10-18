@@ -92,6 +92,7 @@ Tier 2 节点可以声明 `"auth": "oauth"`，用以标记一个订阅权益节�
 
 - `auth: "oauth"` 仅在 Tier 2 节点上有效；在 Tier 1/3 节点上声明该字段属于配置错误。
 - 订阅节点不得在 `AIG_TIER{N}_CREDENTIALS_*` 中拥有静态凭据——每个节点只能有一个凭据来源。
+- 部署规划器（`plan-node-configuration` / `config-cli`）与运行时执行同样的规则：`auth:"oauth"` 仅限 Tier 2，订阅节点不需要静态凭据分片条目，且其 `base_url` 可交给 provider 内置订阅端点（anthropic、openai、google）。安装向导生成的 tier-2 配置已采用该形态。
 - 若未配置 `AIG_OAUTH_PROVIDERS` 与 `AIG_TOKEN_ENCRYPTION_KEY`，订阅节点将保持不可用（失败即关闭），且不会接收任何流量。
 - 接入方式：使用网关访问密钥打开 `/oauth/start?provider=<name>&node=<node-id>`；浏览器完成 provider 的授权同意后，将返回 `/oauth/callback/<name>`。
 

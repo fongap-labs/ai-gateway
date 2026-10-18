@@ -128,7 +128,7 @@ function runCheck(args) {
   if (Object.keys(tiers).length === 0) fail('at least one of --tier1/--tier2/--tier3 is required');
   for (const [n, nodes] of Object.entries(tiers)) {
     try {
-      assertNodesArray(nodes, `tier-${n}`);
+      assertNodesArray(nodes, `tier-${n}`, Number(n));
     } catch (e) {
       fail(e.message);
     }
@@ -145,20 +145,30 @@ function runCheck(args) {
   const policiesConfig = loadOptionalJSONMap(a.policies);
   if (policiesConfig && typeof policiesConfig !== 'object') fail('--policies must be a JSON object');
 
-  // Cross-validation: node without credential is an error; credential without
-  // node is a warning (orphan credentials are tolerated, never block deploy).
-  const nodeIds = new Set();
-  for (const tierNumber of [1, 2, 3]) for (const node of tiers[tierNumber] || []) nodeIds.add(node.id);
-  for (const id of Object.keys(secrets || {})) {
-    if (!nodeIds.has(id)) warn(`credential "${id}" has no matching node in any tier config`);
+  // Cross-validation: a static-credential node without a credential is an
+  // error; an OAuth subscription node must never carry one (the token store
+  // is its single credential source); a credential without a node is a
+  // warning (orphan credentials are tolerated, never block deploy).
+  const nodeById = new Map();
+  for (const tierNumber of [1, 2, 3]) {
+    for (const node of tiers[tierNumber] || []) nodeById.set(node.id, node);
   }
-  for (const id of nodeIds) {
+  for (const id of Object.keys(secrets || {})) {
+    if (!nodeById.has(id)) warn(`credential "${id}" has no matching node in any tier config`);
+  }
+  for (const [id, node] of nodeById) {
+    if (node.auth === 'oauth') {
+      if (id in (secrets || {})) {
+        fail(`node "${id}": auth:"oauth" nodes must not have a static credential; the OAuth token store is the single credential source`);
+      }
+      continue;
+    }
     if (!(id in (secrets || {}))) fail(`node "${id}" has no credential in the secrets file`);
   }
 
   // buildPlan rejects orphan credentials; feed it only matched credentials
   // so an orphan warning does not turn into an error.
-  const matchedSecrets = Object.fromEntries(Object.entries(secrets || {}).filter(([id]) => nodeIds.has(id)));
+  const matchedSecrets = Object.fromEntries(Object.entries(secrets || {}).filter(([id]) => nodeById.has(id)));
 
   let plan;
   try {
@@ -181,7 +191,12 @@ function runCheck(args) {
   if (policies) lines.push(`Policies: ${policies}`);
   lines.push('');
   lines.push(`Node secret shards: ${Object.keys(plan.secrets).length}`);
-  lines.push('All configured nodes have credentials.');
+  const oauthCount = [...nodeById.values()].filter((node) => node.auth === 'oauth').length;
+  if (oauthCount > 0) {
+    lines.push(`Static-credential nodes all have credentials; ${oauthCount} OAuth subscription node(s) use the token store.`);
+  } else {
+    lines.push('All configured nodes have credentials.');
+  }
   console.log(lines.join('\n'));
 }
 
@@ -202,7 +217,7 @@ function runShow(args) {
   }
   for (const [n, nodes] of Object.entries(tiers)) {
     try {
-      assertNodesArray(nodes, `tier-${n}`);
+      assertNodesArray(nodes, `tier-${n}`, Number(n));
     } catch (e) {
       fail(e.message);
     }
@@ -210,7 +225,7 @@ function runShow(args) {
   const map = nodeById(tiers);
   const sorted = [...map.values()].sort((a, b) => a.tier - b.tier || a.node.id.localeCompare(b.node.id));
   for (const { node, tier } of sorted) {
-    const credState = node.id in (secrets || {}) ? 'configured' : 'missing';
+    const credState = node.auth === 'oauth' ? 'oauth (token store)' : node.id in (secrets || {}) ? 'configured' : 'missing';
     const models = Object.keys(node.models || {}).join(', ') || '(wildcard)';
     const protocol = node.protocol || 'openai (implicit, deprecated)';
     const surfaces = Array.isArray(node.surfaces) ? node.surfaces.join(', ') : '(implicit default)';

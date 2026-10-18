@@ -91,6 +91,7 @@
       "base_url": "https://api.openai.com/v1",
       "key_hint": "sk-...",
       "key_url": "https://platform.openai.com/api-keys",
+      "tier2_oauth": true,
       "models": {
         "code-max": "gpt-5.1",
         "general-ultra": "gpt-5.1"
@@ -102,6 +103,7 @@
       "base_url": "https://api.anthropic.com",
       "key_hint": "sk-ant-...",
       "key_url": "https://console.anthropic.com/settings/keys",
+      "tier2_oauth": true,
       "models": {
         "code-max": "claude-sonnet-4-5",
         "general-ultra": "claude-sonnet-4-5"
@@ -113,6 +115,7 @@
       "base_url": "https://generativelanguage.googleapis.com",
       "key_hint": "AIza...",
       "key_url": "https://aistudio.google.com/apikey",
+      "tier2_oauth": true,
       "models": {
         "code-max": "gemini-2.5-pro",
         "general-air": "gemini-2.5-flash"
