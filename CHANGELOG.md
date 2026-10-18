@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- feat: carry thinking semantics across the Google Code Assist subscription path. `google-wire.ts` now maps `reasoning_effort` onto `thinkingConfig.thinkingBudget` (minimal/low 1024, medium 8192, high/xhigh/max 24576, so one budget map stays inside both Gemini 2.5 Pro and Flash ranges; `none` keeps the provider default and unknown vocabulary fails the request fail-closed, like the cross-surface matrix), requests `includeThoughts: true`, converts `thought: true` parts back into `reasoning_content` in both object and streaming responses, and reports `thoughtsTokenCount` as `completion_tokens_details.reasoning_tokens` added onto `completion_tokens`.
+
 - feat: make Tier 2 membership subscription nodes (Claude, ChatGPT, Gemini) a first-class wizard target. The deployment wizard's Tier 2 nodes now default to OAuth subscription mode with subscription-capable provider presets (anthropic, openai, google) sourced from the provider catalog data, the provider list narrows to those three in OAuth mode, and Base URL is no longer required for subscription nodes. The deployment planner (`node-config-shards`) and `config-cli` were aligned with the documented runtime contract: `auth:"oauth"` is a Tier-2-only marker, those nodes declare no static credential, and `base_url` may fall back to the provider's built-in subscription endpoint.
 
 - chore: externalize the deployment wizard's provider catalog into `installer/frontend/providers.json`. The installer frontend no longer hardcodes provider presets, logical models or access groups in JavaScript; adding a provider or model mapping is now a data edit in the JSON file, while `providers.js` only loads and resolves it at startup.

@@ -71,7 +71,28 @@ function extractText(content: unknown): string | null {
   return out;
 }
 
-function buildGenerationConfig(body: Record<string, unknown>): Record<string, unknown> | null {
+/** Reasoning effort -> Gemini thinkingConfig. Budgets stay inside the
+ *  published thinkingBudget range for both 2.5 Pro (128-32768) and 2.5 Flash
+ *  (0-24576), so one map serves every mapped model. 'none' keeps the
+ *  provider's default behavior (2.5 Pro cannot disable thinking); unknown
+ *  vocabulary fails the request, matching the cross-surface matrix. */
+const THINKING_BUDGETS: Readonly<Record<string, number>> = Object.freeze({
+  minimal: 1024,
+  low: 1024,
+  medium: 8192,
+  high: 24576,
+  xhigh: 24576,
+  max: 24576,
+});
+
+function resolveThinkingConfig(effort: string): Record<string, unknown> | null | false {
+  if (effort === 'none') return null;
+  const budget = THINKING_BUDGETS[effort];
+  if (budget === undefined) return false;
+  return { thinkingConfig: { thinkingBudget: budget, includeThoughts: true } };
+}
+
+function buildGenerationConfig(body: Record<string, unknown>): Record<string, unknown> | null | false {
   const cfg: Record<string, unknown> = {};
   const maxTokens = asNonNegativeInt(body.max_tokens) ?? asNonNegativeInt(body.max_completion_tokens);
   if (maxTokens !== null) cfg.maxOutputTokens = maxTokens;
@@ -92,6 +113,13 @@ function buildGenerationConfig(body: Record<string, unknown>): Record<string, un
   } else if (isRecord(format) && format.type === 'json_schema' && isRecord(format.json_schema) && isRecord(format.json_schema.schema)) {
     cfg.responseMimeType = 'application/json';
     cfg.responseSchema = format.json_schema.schema;
+  }
+  const effort = body.reasoning_effort;
+  if (effort !== undefined && effort !== null) {
+    if (typeof effort !== 'string') return false;
+    const thinking = resolveThinkingConfig(effort);
+    if (thinking === false) return false;
+    if (thinking) Object.assign(cfg, thinking);
   }
   return Object.keys(cfg).length === 0 ? null : cfg;
 }
@@ -269,6 +297,7 @@ export function openAIChatToCodeAssistEnvelope(body: Record<string, unknown> | n
   const request: Record<string, unknown> = { contents };
   if (systemParts.length > 0) request.systemInstruction = { parts: systemParts };
   const generationConfig = buildGenerationConfig(body);
+  if (generationConfig === false) return null;
   if (generationConfig) request.generationConfig = generationConfig;
   const toolsResult = buildTools(body.tools);
   if ('unsupported' in toolsResult && toolsResult.unsupported) return null;
@@ -302,7 +331,9 @@ function mapFinishReason(reason: unknown): string {
 function convertUsageMetadata(usage: unknown): Record<string, unknown> | null {
   if (!isRecord(usage)) return null;
   const prompt = asNonNegativeInt(usage.promptTokenCount);
-  const completion = asNonNegativeInt(usage.candidatesTokenCount) ?? asNonNegativeInt(usage.totalTokenCount) ?? 0;
+  const candidates = asNonNegativeInt(usage.candidatesTokenCount) ?? asNonNegativeInt(usage.totalTokenCount) ?? 0;
+  const thoughts = asNonNegativeInt(usage.thoughtsTokenCount);
+  const completion = candidates + (thoughts ?? 0);
   const total = asNonNegativeInt(usage.totalTokenCount) ?? (prompt ?? 0) + completion;
   if (prompt === null && total === null) return null;
   const out: Record<string, unknown> = {
@@ -312,6 +343,7 @@ function convertUsageMetadata(usage: unknown): Record<string, unknown> | null {
   };
   const cached = asNonNegativeInt(usage.cachedContentTokenCount);
   if (cached !== null) out.prompt_tokens_details = { cached_tokens: cached };
+  if (thoughts !== null) out.completion_tokens_details = { reasoning_tokens: thoughts };
   return out;
 }
 
@@ -345,13 +377,21 @@ export function codeAssistObjectToOpenAIChat(data: unknown): Record<string, unkn
   const content = isRecord(candidate.content) ? candidate.content : null;
   const parts = content && Array.isArray(content.parts) ? content.parts : [];
   let text = '';
+  let reasoning = '';
   let hasFunctionCall = false;
   for (const part of parts) {
-    if (isRecord(part) && typeof part.text === 'string') text += part.text;
-    else if (isRecord(part) && isRecord(part.functionCall)) hasFunctionCall = true;
+    if (!isRecord(part)) continue;
+    if (typeof part.text === 'string') {
+      if (part.thought === true) {
+        if (part.text) reasoning = reasoning ? `${reasoning}\n${part.text}` : part.text;
+      } else {
+        text += part.text;
+      }
+    } else if (isRecord(part.functionCall)) hasFunctionCall = true;
   }
-  if (text === '' && !hasFunctionCall) return null;
+  if (text === '' && reasoning === '' && !hasFunctionCall) return null;
   const message: Record<string, unknown> = { role: 'assistant', content: text === '' ? null : text };
+  if (reasoning) message.reasoning_content = reasoning;
   if (hasFunctionCall) {
     const toolCalls = buildToolCallsFromParts(parts);
     if (toolCalls === null) return null;
@@ -429,12 +469,13 @@ function processCodeAssistChunk(state: StreamState, controller: ReadableStreamDe
         if (typeof part.text === 'string' && part.text) {
           emitRoleHeader(state, controller);
           state.emittedAny = true;
+          const delta: Record<string, unknown> = part.thought === true ? { reasoning_content: part.text } : { content: part.text };
           emitChunk(controller, {
             id: state.messageId,
             object: 'chat.completion.chunk',
             created: Math.floor(Date.now() / 1000),
             model: state.model,
-            choices: [{ index: 0, delta: { content: part.text }, finish_reason: null }],
+            choices: [{ index: 0, delta, finish_reason: null }],
           });
         } else if (isRecord(part.functionCall) && typeof part.functionCall.name === 'string') {
           emitRoleHeader(state, controller);
