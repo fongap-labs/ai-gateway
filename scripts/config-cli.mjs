@@ -191,9 +191,10 @@ function runCheck(args) {
   if (policies) lines.push(`Policies: ${policies}`);
   lines.push('');
   lines.push(`Node secret shards: ${Object.keys(plan.secrets).length}`);
-  const oauthCount = [...nodeById.values()].filter((node) => node.auth === 'oauth').length;
-  if (oauthCount > 0) {
-    lines.push(`Static-credential nodes all have credentials; ${oauthCount} OAuth subscription node(s) use the token store.`);
+  // Only a fixed message is printed: the OAuth node count is derived from node config and is not logged.
+  const hasOauthNodes = [...nodeById.values()].some((node) => node.auth === 'oauth');
+  if (hasOauthNodes) {
+    lines.push('Static-credential nodes all have credentials; OAuth subscription nodes use the token store.');
   } else {
     lines.push('All configured nodes have credentials.');
   }
