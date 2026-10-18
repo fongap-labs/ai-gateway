@@ -82,7 +82,9 @@ export function filterVisibleModels(knownModels: ReadonlySet<string>, authz: Aut
   if (!authz.allowlist || authz.allowlist.size === 0) return [];
   // Hoist: property narrowing does not survive into the filter closure.
   const allowlist = authz.allowlist;
-  return [...knownModels].filter((m) => allowlist.has(m)).sort();
+  // Same casing-tolerant membership as authorizeModel, so a model that passes
+  // authorization is also callable (visible == callable).
+  return [...knownModels].filter((m) => catalogHas(allowlist, m)).sort();
 }
 
 // Returns { allowed: boolean, status?: 401 | 403 | 404 }.
