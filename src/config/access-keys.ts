@@ -133,7 +133,9 @@ export function filterVisibleModels(
   if (!configuredModels) return [];
   if (keyEntry?.allowAll) return [...configuredModels].sort();
   if (!keyEntry?.allowlist) return [];
-  return [...configuredModels].filter((m) => keyEntry.allowlist?.has(m) === true).sort();
+  // Casing-tolerant, matching authorizeModel: a model callers may request is also listed.
+  const allowed = new Set([...keyEntry.allowlist].map((m) => m.toLowerCase()));
+  return [...configuredModels].filter((m) => allowed.has(m.toLowerCase())).sort();
 }
 
 export function __resetAccessKeysCacheForTests(): void {
