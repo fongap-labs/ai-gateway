@@ -202,7 +202,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   }
 
   const canonical = canonicalizeNodeModels(nodes, env, diagnostics);
-  if (canonical.ambiguous) hasConflict = true;
+  if (canonical.isAmbiguous) hasConflict = true;
   nodes = canonical.nodes;
   diagnostics.push(...collectNodeModelDiagnostics(nodes, env));
   for (const [nodeId] of credentials) {
@@ -376,7 +376,7 @@ function canonicalizeNodeModels(
   nodes: RuntimeNode[],
   env: Record<string, unknown>,
   diagnostics: string[],
-): { nodes: RuntimeNode[]; ambiguous: boolean } {
+): { nodes: RuntimeNode[]; isAmbiguous: boolean } {
   let configured: string[] = [];
   try {
     configured = Object.keys(loadModelsConfig(env));
@@ -387,29 +387,29 @@ function canonicalizeNodeModels(
     nodes.flatMap((node) => Object.keys(node.models)),
     configured,
   );
-  let ambiguous = false;
+  let isAmbiguous = false;
   const kept: RuntimeNode[] = [];
   for (const node of nodes) {
     const models: Record<string, string> = {};
-    let conflict = false;
+    let isConflict = false;
     for (const [name, upstream] of Object.entries(node.models)) {
       const logical = canonical.get(name.trim().toLowerCase()) ?? name;
       if (models[logical] !== undefined && models[logical] !== upstream) {
         diagnostics.push(
           `node "${node.id}": logical model "${logical}" maps to two different upstream models under different casings; node excluded`,
         );
-        conflict = true;
+        isConflict = true;
         break;
       }
       models[logical] = upstream;
     }
-    if (conflict) {
-      ambiguous = true;
+    if (isConflict) {
+      isAmbiguous = true;
       continue;
     }
     kept.push({ ...node, models });
   }
-  return { nodes: kept, ambiguous };
+  return { nodes: kept, isAmbiguous };
 }
 
 function normalizeModels(models: unknown, nodeId: string, diagnostics: string[]): Record<string, string> | null {
