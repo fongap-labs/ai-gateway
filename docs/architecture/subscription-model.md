@@ -115,6 +115,8 @@ type SubscriptionWire = {
 
 CCH 计费块签名（CLIProxyAPI 额外的偏执防护层）不属于主流 Anthropic 的整形方式，本项目未实现。
 
+思考（thinking）语义在订阅链路上同样可携带：anthropic 订阅自带 `interleaved-thinking` beta 标志，openai 订阅走原生 Responses 的 reasoning 参数；google 订阅在 `google-wire.ts` 中把请求侧的 `reasoning_effort` 映射为 `thinkingConfig.thinkingBudget`（minimal/low → 1024，medium → 8192，high/xhigh/max → 24576，`none` 保持 provider 默认；未知取值按 fail-closed 拒绝），并声明 `includeThoughts: true`；响应侧把 `thought: true` 的部分转回 `reasoning_content`（对象与流式相同），usage 中的 `thoughtsTokenCount` 会计入 `completion_tokens` 并以 `completion_tokens_details.reasoning_tokens` 上报。
+
 ## 新增订阅适配器
 
 扩展流程有意保持精简。若要接入一个拥有自身线协议契约、OAuth 接入或订阅后端的新 provider，需要：
