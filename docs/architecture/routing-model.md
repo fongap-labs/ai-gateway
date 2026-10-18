@@ -30,6 +30,7 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
 - preflight 在授权与路由之前，把客户端拼写解析到配置的目录条目上：剥掉 `[数字m]` 形态的上下文长度标记，并把大小写折叠到配置拼写。访问分组的 allowlist 匹配同样对大小写宽容。
 - 解析**绝不**发明目录里不存在的模型：客户端写出目录或该 key 的 allowlist 中没有的名字时，仍然走原来的 fail-closed 路径（未知模型 404、key 无权限 403），边界判定从不放宽。
 - 解析后的目录拼写会贯穿 fallback 规划与调度，且来自已知目录，fallback 和 family 语义不因拼写差异而改变。
+- 同一逻辑模型在 `AIG_MODELS_CONFIG` 与各节点 `models` 中若仅大小写不同，会归并为一个目录条目：规范拼写优先取 `AIG_MODELS_CONFIG` 中的写法，否则取首次出现的写法；各节点的 `models` 键随之改写为规范拼写。同一节点把两种写法映射到不同上游时，该节点被视为配置歧义并被排除。
 
 ## 逻辑模型家族回退
 
