@@ -169,7 +169,7 @@ for (const removedExample of ['config/tier2-nodes.example.json', 'config/node-se
 assert.ok(fs.existsSync(path.join(root, 'config/worker-vars.example.json')));
 
 const tier1 = parseJsonFile(path.join(root, 'config/tier1-nodes.example.json'));
-assertNodesArray(tier1, 'config/tier1-nodes.example.json');
+assertNodesArray(tier1, 'config/tier1-nodes.example.json', 1);
 assert.ok(tier1.length >= 2, 'Tier 1 example should demonstrate multiple free-capacity nodes');
 for (const n of tier1) {
   for (const required of ['id', 'provider', 'base_url', 'models']) {

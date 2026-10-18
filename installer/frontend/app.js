@@ -363,17 +363,22 @@ function renderNodes() {
     addWrap.appendChild(el("button", {
       class: "btn btn-sm",
       onclick: () => {
-        const prov = providerById("nvidia");
-        state.nodes.push({
-          tier,
-          id: `node-${Date.now().toString(36).slice(-4)}-${tier}`,
-          provider: prov.id,
-          base_url: prov.base_url,
-          priority: 10,
-          models: {},
-          credential: "",
-          oauth: false,
-        });
+  // Tier 2 defaults to OAuth subscription mode (membership benefits:
+  // Claude / ChatGPT / Gemini), driven by the tier2_oauth flag in
+  // providers.json.
+  const subscriptionProvider = PROVIDERS.find((p) => p.tier2_oauth);
+  const tier2Oauth = tier === 2 && !!subscriptionProvider;
+  const prov = tier === 2 && subscriptionProvider ? subscriptionProvider : providerById("nvidia");
+  state.nodes.push({
+    tier,
+    id: `node-${Date.now().toString(36).slice(-4)}-${tier}`,
+    provider: prov.id,
+    base_url: prov.base_url,
+    priority: 10,
+    models: { ...prov.models },
+    credential: "",
+    oauth: tier2Oauth,
+  });
         render();
       },
     }, `+ 添加 Tier ${tier} 节点${tier === 1 ? (" (必填)") : tier === 2 ? (" (订阅, 可选)") : " (付费, 可选)"}`));
@@ -398,6 +403,15 @@ function renderNodeCard(node, idx) {
     el("button", { class: "btn btn-sm btn-danger", onclick: () => { state.nodes.splice(idx, 1); render(); } }, "删除"),
   ));
 
+  // OAuth subscription nodes may only use providers with a built-in
+  // subscription endpoint (anthropic / openai / google).
+  const oauthProviders = PROVIDERS.filter((p) => p.tier2_oauth);
+  if (node.oauth && !oauthProviders.some((p) => p.id === node.provider)) {
+    if (oauthProviders.length > 0) node.provider = oauthProviders[0].id;
+    else node.oauth = false;
+  }
+  const providerChoices = node.oauth ? oauthProviders : PROVIDERS;
+
   // Provider select
   card.appendChild(el("div", { class: "field-row" },
     el("div", { class: "field" },
@@ -412,7 +426,7 @@ function renderNodeCard(node, idx) {
           }
           render();
         },
-      }, ...PROVIDERS.map((p) => el("option", { value: p.id, selected: p.id === node.provider }, p.label))),
+      }, ...providerChoices.map((p) => el("option", { value: p.id, selected: p.id === node.provider }, p.label))),
     ),
     el("div", { class: "field" },
       el("label", {}, "节点 ID"),
@@ -420,12 +434,17 @@ function renderNodeCard(node, idx) {
     ),
   ));
 
-  // Base URL
-  card.appendChild(el("div", { class: "field" },
-    el("label", {}, "Base URL"),
-    el("input", { type: "url", value: node.base_url, oninput: (e) => node.base_url = e.target.value.trim(), placeholder: "https://api.example.com/v1" }),
-    prov.key_url ? el("div", { class: "hint" }, `获取 API Key：`, el("a", { href: prov.key_url, target: "_blank" }, prov.key_url)) : null,
-  ));
+  // Base URL (static credential nodes only; OAuth subscription nodes use
+  // the provider's built-in subscription endpoint)
+  if (!node.oauth) {
+    card.appendChild(el("div", { class: "field" },
+      el("label", {}, "Base URL"),
+      el("input", { type: "url", value: node.base_url, oninput: (e) => node.base_url = e.target.value.trim(), placeholder: "https://api.example.com/v1" }),
+      prov.key_url ? el("div", { class: "hint" }, `获取 API Key：`, el("a", { href: prov.key_url, target: "_blank" }, prov.key_url)) : null,
+    ));
+  } else {
+    card.appendChild(el("div", { class: "hint" }, "OAuth 订阅通过 provider 内置订阅端点连接 (anthropic、openai、google)，无需 Base URL。"));
+  }
 
   // Tier 2 oauth toggle
   if (node.tier === 2) {
@@ -437,7 +456,7 @@ function renderNodeCard(node, idx) {
         el("div", { class: "switch" }),
         el("div", {},
           el("strong", {}, "OAuth 订阅模式"),
-          el("div", { class: "hint" }, "Claude/Codex/Gemini 订阅权益。开启后无需 API Key，部署后通过 OAuth 引导连接。"),
+          el("div", { class: "hint" }, "支持 Claude (anthropic)、ChatGPT (openai)、Gemini (google) 订阅权益。开启后无需 API Key，部署后通过 OAuth 引导连接。"),
         ),
       ),
     ));
@@ -796,7 +815,7 @@ function canAdvance() {
   switch (state.step) {
     case 0: return state.prereq && state.prereq.node_ok && state.projectRoot;
     case 2: return state.workerName && state.kvNamespaceId && state.publicUrl.startsWith("https://");
-    case 3: return state.nodes.some((n) => n.tier === 1) && state.nodes.every((n) => n.id && n.provider && (n.oauth || n.credential) && Object.keys(n.models).length > 0);
+    case 3: return state.nodes.some((n) => n.tier === 1) && state.nodes.every((n) => n.id && n.provider && Object.keys(n.models).length > 0 && (n.oauth ? providerById(n.provider).tier2_oauth === true : !!n.credential));
     case 4: return state.accessGroups.some((g) => g.enabled && g.key && g.models);
     case 5: return true;
     default: return true;
