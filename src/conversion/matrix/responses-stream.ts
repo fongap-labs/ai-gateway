@@ -62,7 +62,7 @@ export class ResponsesStreamDecoder {
     try {
       payload = JSON.parse(raw);
     } catch {
-      return { events: [], terminal: false };
+      throw new Error('Malformed upstream SSE JSON');
     }
     if (!isRecord(payload)) return { events: [], terminal: false };
     if (typeof payload.type !== 'string') return { events: [], terminal: false };

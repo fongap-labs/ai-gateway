@@ -37,17 +37,19 @@ export class AnthropicStreamDecoder {
       case 'message_start': {
         const message = isRecord(payload.message) ? payload.message : {};
         const usage = isRecord(message.usage) ? message.usage : {};
-        return {
-          events: [
-            {
-              type: 'start',
-              id: typeof message.id === 'string' ? message.id : '',
-              model: typeof message.model === 'string' ? message.model : '',
-              ...(Number.isFinite(usage.input_tokens) ? { inputTokens: Number(usage.input_tokens) } : {}),
-            },
-          ],
-          terminal: false,
-        };
+        const events: IrEvent[] = [
+          {
+            type: 'start',
+            id: typeof message.id === 'string' ? message.id : '',
+            model: typeof message.model === 'string' ? message.model : '',
+            ...(Number.isFinite(usage.input_tokens) ? { inputTokens: Number(usage.input_tokens) } : {}),
+          },
+        ];
+        // Report the raw message_start usage too: it is the only place the
+        // cache_creation / cache_read counters arrive, and per-attempt token
+        // accounting needs them even though the client-side usage is rebuilt.
+        if (isRecord(message.usage)) events.push({ type: 'usage', raw: message.usage });
+        return { events, terminal: false };
       }
       case 'content_block_start': {
         const index = Number(payload.index) || 0;

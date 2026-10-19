@@ -120,7 +120,7 @@ function anthroParseStructured(body: Record<string, unknown>, diag: MatrixDiag):
   if (!isRecord(outputConfig.format)) throw new ConversionError('conversion_not_supported: output_config.format must be an object');
   assertFields(outputConfig.format, ['type', 'schema'], 'output_config.format');
   if (outputConfig.format.type !== 'json_schema' || !isRecord(outputConfig.format.schema)) {
-    throw new ConversionError('conversion_not_supported: only output_config.format type json_schema is supported');
+    throw new ConversionError('conversion_not_supported: invalid output_config.format');
   }
   diag.add({ feature: 'structured_output', action: 'emulated', strategy: 'prompt' });
   return outputConfig.format.schema as Record<string, unknown>;
@@ -140,10 +140,10 @@ function normalizeAnthropicEffort(value: string): IrEffortOrUndefined {
   return value as IrEffortOrUndefined;
 }
 
-function systemToIr(body: Record<string, unknown>): string {
+function systemToIr(body: Record<string, unknown>): string[] {
   const system = body.system;
-  if (system === undefined || system === null) return '';
-  if (typeof system === 'string') return system;
+  if (system === undefined || system === null) return [];
+  if (typeof system === 'string') return system ? [system] : [];
   if (!Array.isArray(system)) throw new ConversionError('conversion_not_supported: invalid system');
   const parts: string[] = [];
   for (const block of system) {
@@ -154,7 +154,7 @@ function systemToIr(body: Record<string, unknown>): string {
       parts.push(block.text);
     } else throw new ConversionError('conversion_not_supported: unsupported system block');
   }
-  return parts.join('\n');
+  return parts.length ? [parts.join('\n')] : [];
 }
 
 function systemMessageParts(content: unknown): IrPart[] {
@@ -229,7 +229,7 @@ function userBlocksToParts(content: unknown): IrPart[] {
       parts.push({ type: 'tool_result', callId: block.tool_use_id, text, images, ...(block.is_error === true ? { isError: true } : {}) });
       continue;
     }
-    throw new ConversionError(`conversion_not_supported: user block "${String(block.type)}"`);
+    throw new ConversionError(`conversion_not_supported: user content.${String(block.type)}`);
   }
   return parts;
 }
@@ -267,7 +267,8 @@ function assistantBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
       continue;
     }
     if (block.type === 'tool_use') {
-      assertFields(block, ['type', 'id', 'name', 'input', ...IGNORABLE_FIELDS], 'tool_use');
+      // caller / toolset_name are Anthropic routing hints with no Chat or Responses meaning: dropped.
+      assertFields(block, ['type', 'id', 'name', 'input', 'caller', 'toolset_name', ...IGNORABLE_FIELDS], 'tool_use');
       if (typeof block.id !== 'string' || !block.id || typeof block.name !== 'string' || !block.name) {
         throw new ConversionError('conversion_not_supported: invalid tool_use block');
       }
@@ -293,10 +294,16 @@ function assistantBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
       parts.push({ type: 'thinking', text: '', sealed: true, data: block.data });
       continue;
     }
-    // server_tool_use / advisor / etc. - provider-native history cannot be
-    // represented on another protocol. Dropped silently, matching the legacy
-    // validator that accepted then discarded these blocks.
-    diag.add({ feature: 'provider_native_tool_history', action: 'dropped' });
+    // Advisor history is provider-native and droppable; any other server tool
+    // (web_search, ...) or unknown block fails closed, as the legacy validator did.
+    if (block.type === 'server_tool_use' && block.name !== 'advisor') {
+      throw new ConversionError('conversion_not_supported: server_tool_use blocks not supported');
+    }
+    if (block.type === 'server_tool_use' || block.type === 'advisor_tool_result') {
+      diag.add({ feature: 'provider_native_tool_history', action: 'dropped' });
+      continue;
+    }
+    throw new ConversionError(`conversion_not_supported: ${String(block.type)} blocks not supported`);
   }
   return parts;
 }
@@ -342,7 +349,6 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     ...(effort === undefined ? {} : { effort }),
     ...(structured ? { structuredOutputSchema: structured } : {}),
   };
-  if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
   if (body.temperature !== undefined && (typeof body.temperature !== 'number' || body.temperature < 0 || body.temperature > 1)) {
     throw new ConversionError('conversion_not_supported: temperature must be between 0 and 1');
   }
@@ -365,12 +371,13 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     }
   }
   // A forced tool that was dropped with the provider-native pool (advisor,
-  // web_search, ...) cannot be represented on the target; the legacy converter
-  // rejected these up front and cross-protocol fallback keeps doing so.
-  if (request.toolChoice?.startsWith('name:')) {
+  // web_search, ...) cannot be represented on the target; reject it like the
+  // legacy converter so cross-protocol fallback never degrades silently.
+  if (request.toolChoice?.startsWith('name:') && Array.isArray(body.tools)) {
     const forced = request.toolChoice.slice('name:'.length);
-    if (!request.tools.some((tool) => tool.name === forced)) {
-      throw new ConversionError(`conversion_not_supported: tool_choice references provider-native or unknown tool ${forced}`);
+    const kept = new Set(request.tools.map((tool) => tool.name));
+    if (!kept.has(forced) && body.tools.some((tool) => isRecord(tool) && tool.name === forced)) {
+      throw new ConversionError(`conversion_not_supported: tool_choice references Anthropic-only server tool ${forced}`);
     }
   }
 
@@ -379,7 +386,11 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     if (!isRecord(raw)) throw new ConversionError('conversion_not_supported: messages entry is not an object');
     assertFields(raw, ['role', 'content', 'tool_use_id', 'output_config'], 'message');
     if (raw.role === 'user') {
-      request.messages.push({ role: 'user', parts: userBlocksToParts(raw.content) });
+      request.messages.push({
+        role: 'user',
+        parts: userBlocksToParts(raw.content),
+        ...(typeof raw.content === 'string' ? { stringContent: true } : {}),
+      });
       continue;
     }
     if (raw.role === 'tool') {
@@ -436,23 +447,20 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
     const blocks = buildMessageBlocks(message, diag);
     const previous = messages[messages.length - 1];
     if (previous && previous.role === message.role) {
-      previous.content = [...(previous.content as unknown[]), ...blocks];
+      previous.content = [...contentBlocksOf(previous.content), ...blocks];
       continue;
     }
-    messages.push({ role: message.role, content: blocks });
+    messages.push({ role: message.role, content: message.stringContent ? stringOrBlocks(blocks) : blocks });
   }
   if (messages.length === 0) throw new ConversionError('conversion_not_supported: translated conversation is empty');
   out.messages = messages;
 
   // Anthropic system is a top-level field; text-only system survives.
-  if (ir.system) out.system = [{ type: 'text', text: ir.system }];
-
-  if (ir.structuredOutputSchema) {
-    out.system = [
-      ...(Array.isArray(out.system) ? (out.system as unknown[]) : []),
-      { type: 'text', text: structuredOutputInstruction(ir.structuredOutputSchema) },
-    ];
-  }
+  const systemSegments = [...ir.system];
+  if (ir.structuredOutputSchema) systemSegments.push(structuredOutputInstruction(ir.structuredOutputSchema));
+  // One segment stays a plain string; several become text blocks (the legacy shape).
+  if (systemSegments.length === 1) out.system = systemSegments[0];
+  else if (systemSegments.length > 1) out.system = systemSegments.map((text) => ({ type: 'text', text }));
 
   let maxTokens = ir.maxTokens;
   if (maxTokens == null) {
@@ -505,6 +513,20 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   return out;
 }
 
+/** Block list for a message already on the wire, whichever shape it was first written in. */
+function contentBlocksOf(content: unknown): unknown[] {
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
+  return content as unknown[];
+}
+
+/** A plain-text string source stays a string on the wire. */
+function stringOrBlocks(blocks: Record<string, unknown>[]): unknown {
+  const [only] = blocks;
+  if (blocks.length === 0) return '';
+  if (blocks.length === 1 && only?.type === 'text') return only.text;
+  return blocks;
+}
+
 function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<string, unknown>[] {
   const blocks: Record<string, unknown>[] = [];
   for (const part of message.parts) {
@@ -542,9 +564,10 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
     }
     if (part.type === 'tool_result') {
       diag.add({ feature: 'tool_results', action: 'mapped' });
-      const content: unknown[] = [{ type: 'text', text: part.text }];
-      const contentBlocks = [...content, ...part.images.map((image) => ({ type: 'image', source: imageSource(image) }))];
-      blocks.push({ type: 'tool_result', tool_use_id: part.callId, content: contentBlocks, ...(part.isError ? { is_error: true } : {}) });
+      const imageBlocks = part.images.map((image) => ({ type: 'image', source: imageSource(image) }));
+      // Text-only tool results stay a plain string (the legacy shape).
+      const content = imageBlocks.length ? [{ type: 'text', text: part.text }, ...imageBlocks] : part.text;
+      blocks.push({ type: 'tool_result', tool_use_id: part.callId, content, ...(part.isError ? { is_error: true } : {}) });
     }
   }
   return blocks;
@@ -555,7 +578,7 @@ function imageSource(part: IrImagePart): Record<string, unknown> {
   return { type: 'url', url: part.url };
 }
 
-type IrMessageLike = { role: 'user' | 'assistant' | 'system'; parts: IrPart[] };
+type IrMessageLike = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
 
 // ---- Whole-object round trips ---------------------------------------------
 
@@ -623,7 +646,7 @@ export function anthropicObjectToIr(data: Record<string, unknown>): { reply: IrR
       });
       continue;
     }
-    diag.add({ feature: 'response_content_type', action: 'dropped' });
+    throw new ConversionError(`conversion_not_supported: unsupported Anthropic response content type "${String(block.type)}"`);
   }
   return {
     reply: {
