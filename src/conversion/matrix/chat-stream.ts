@@ -8,9 +8,8 @@
 // first choice (the gateway drives single-turn agent traffic).
 //
 // ChatStreamEncoder: IR events -> Chat completion chunks for a Chat client.
-// Mirrors the legacy anthropic-stream-to-openai-chat lifecycle: assistant
-// role chunk, delta chunks (`content` / `reasoning_content` / `tool_calls`
-// index-scoped), finish chunk with usage rollup, then `[DONE]`.
+// Assistant role chunk, delta chunks (`content` / `reasoning_content` /
+// `tool_calls` index-scoped), finish chunk with usage rollup, then `[DONE]`.
 
 import { chatStopFromIr, chatStopToIr, chatToolId } from './chat.ts';
 import type { IrEvent, IrReply } from './ir.ts';

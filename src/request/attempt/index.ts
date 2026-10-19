@@ -14,7 +14,7 @@
 //   success.ts         thin success-finalization dispatcher
 //   success-stream.ts  first-event guard, stream passthrough/transforms,
 //                      commit/lifecycle wiring
-//   success-object.ts  complete-object assembly, conversion/synthesis,
+//   success-object.ts  complete-object assembly/synthesis (native path),
 //                      embedded-error and post-header result handling
 //   outcome.ts         AttemptOutcome construction, failure/rotate/stop,
 //                      logical attempt vs dispatch accounting

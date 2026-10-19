@@ -4,10 +4,11 @@
 // Translation-matrix pipeline: the per-protocol adapters (chat / anthropic /
 // responses and their streams) are the leaves; this module is the routing hub.
 //
-// The legacy Chat <-> Anthropic conversion stays on the pairwise converters
-// (conversion/stream-converter.ts, conversion/anthropic-stream-*.ts) and is
-// deliberately NOT routed through this module - behavior preservation rules.
-// Every pair involving `openai_responses` goes through the IR here.
+// Every directed pair among the three protocols travels through the IR here.
+// The legacy pairwise converters that once served Chat <-> Anthropic were
+// absorbed: the matrix adapters now cover their semantics (same defaults,
+// same rejection contract), so there is a single decode/encode path for every
+// gateway translation.
 
 import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
@@ -28,11 +29,11 @@ export { ConversionError };
 
 const MATRIX_PROTOCOLS: readonly IrProtocol[] = ['openai_chat', 'openai_responses', 'anthropic'];
 
-/** True only for directed pairs the matrix owns (all pairs involving Responses). */
+/** True for every directed pair the matrix owns (all distinct protocol pairs). */
 export function isMatrixPair(from: IrProtocol, to: IrProtocol): boolean {
   if (from === to) return false;
   if (!MATRIX_PROTOCOLS.includes(from) || !MATRIX_PROTOCOLS.includes(to)) return false;
-  return from === 'openai_responses' || to === 'openai_responses';
+  return true;
 }
 
 // ---- Request translation ----------------------------------------------------

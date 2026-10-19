@@ -5,13 +5,15 @@
 // protocol (`fallbackProtocol`/`fallbackSurface`), the matrix decode/encode
 // round-trip produces the client protocol. Non-streaming clients are served
 // from the collected reply (the upstream is ALWAYS forced into streaming for
-// matrix conversions by convertMatrixRequest).
+// matrix conversions by convertMatrixRequest). Every cross-protocol pair is
+// matrix-owned; native passes carry no conversion context and never land here.
 
 import { attemptFirstEventTimeoutMs } from '../../config/timeouts.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
 import { isRecord } from '../../conversion/matrix/ir.ts';
 import {
   collectMatrixObject,
+  isMatrixPair,
   openMatrixStream,
   replyFromNativeObject,
   replyToObject,
@@ -32,13 +34,13 @@ import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordNodeSuccess, re
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 
-/** True when this conversion context is owned by the IR matrix (Responses pairs). */
+/** True when this conversion context is owned by the IR matrix (any pair). */
 export function isMatrixConversion(conversionContext: ConversionContext | null | undefined): boolean {
   if (!conversionContext) return false;
   const from = protocolToIr(conversionContext.clientRoute);
   const to = fallbackToIr(conversionContext.fallbackProtocol, conversionContext.fallbackSurface);
   if (!from || !to) return false;
-  return from === 'openai_responses' || to === 'openai_responses';
+  return isMatrixPair(from, to);
 }
 
 function protocolToIr(route: string): IrProtocol | null {

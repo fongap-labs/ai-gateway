@@ -8,8 +8,7 @@
 //
 // The decoder closes itself on `message_stop` / `error`; keep-alive ping
 // payloads are ignored. The encoder buffers the reply tail (stop reason and
-// usage rollup) until finish(reply) is called - exactly the legacy
-// stream-converter lifecycle.
+// usage rollup) until finish(reply) is called.
 
 import { anthropicStopFromIr, anthropicStopToIr } from './anthropic.ts';
 import type { IrEvent, IrReply } from './ir.ts';

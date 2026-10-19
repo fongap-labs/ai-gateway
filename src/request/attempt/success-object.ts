@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { convertAnthropicResponseToOpenAIChat } from '../../conversion/anthropic-response-to-openai-chat.ts';
-import { convertOpenAIToAnthropicResponse } from '../../conversion/openai-to-anthropic.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { corsHeaders, safeReadErrorBody, trimDiagnostic } from '../../protocol/http.ts';
 import { synthesizeSseFromCompletion } from '../../protocol/openai.ts';
@@ -38,7 +36,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
   detach();
 
   // ---- OpenAI Responses (non-stream, NATIVE) ----
-  if (route === 'openai_responses' && !c.conversionContext) {
+  if (route === 'openai_responses') {
     try {
       let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
       if (upstreamWasStreaming) data = await collectResponsesObject(upstream, request.signal, c.attemptDeadlineMs);
@@ -102,69 +100,8 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     }
   }
 
-  // ---- OpenAI chat (non-stream, CROSS-PROTOCOL FALLBACK) ----
-  if (route === 'openai_chat' && c.conversionContext) {
-    try {
-      let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
-      if (upstreamWasStreaming) data = await collectAnthropicMessageObject(upstream, request.signal, c.attemptDeadlineMs);
-      else data = JSON.parse(await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs));
-      if (data && typeof data === 'object' && (data.type === 'error' || data.error)) {
-        const status = Number(data.error?.status) >= 400 && Number(data.error?.status) < 600 ? Math.trunc(Number(data.error?.status)) : 502;
-        const message = data.error?.message || 'Upstream returned an embedded error.';
-        const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, message);
-        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
-        recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(message, 200) });
-        if (classification.action === 'stop') {
-          return {
-            response: buildClientErrorResponse(
-              request,
-              env,
-              route,
-              requestId,
-              requestedModel,
-              status,
-              JSON.stringify(data),
-              state,
-              exposeUpstreamInfo,
-            ),
-          };
-        }
-        return { rotate: true, kind: classification.kind };
-      }
-      if (!isAnthropicMessageMeaningful(data)) {
-        const classification = classifyEmptyResponse();
-        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
-        recordOutcome(state, node, classification, c, {
-          latencyMs,
-          status: upstream.status,
-          diagnostic: 'cross-protocol Anthropic message carried no meaningful output',
-        });
-        return { rotate: true, kind: classification.kind };
-      }
-      const converted = convertAnthropicResponseToOpenAIChat(data);
-      converted.model = requestedModel;
-      recordNodeSuccess(c, node, latencyMs);
-      // Persist the raw Anthropic usage, not the client-facing converted shape.
-      recordTokens(c, node, data?.usage);
-      if (clientWantsStream) return { response: synthesizeSseFromCompletion(converted, env, request, extraHeaders) };
-      return { response: jsonResponse(200, converted, env, request, extraHeaders) };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (request.signal?.aborted) {
-        recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
-        return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
-      }
-      if (c.hedgeAbort?.signal.aborted) {
-        return hedgeLoserOutcome(c, node, 'object', latencyMs);
-      }
-      const classification = classifyPostHeadersFailure(error);
-      recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
-      return { rotate: true, kind: classification.kind };
-    }
-  }
-
   // ---- OpenAI chat (non-stream, NATIVE) ----
-  if (route === 'openai_chat' && !c.conversionContext) {
+  if (route === 'openai_chat') {
     if (fakeStream || (upstreamWasStreaming && !clientWantsStream)) {
       try {
         const data = await collectOpenAIStreamObject(upstream, request.signal, c.attemptDeadlineMs);
@@ -250,67 +187,6 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     recordNodeSuccess(c, node, latencyMs);
     if (data && typeof data === 'object') data.model = requestedModel;
     return { response: synthesizeSseFromCompletion(data, env, request, extraHeaders) };
-  }
-
-  // ---- Anthropic messages (non-stream, CROSS-PROTOCOL FALLBACK) ----
-  if (route === 'anthropic_messages' && c.conversionContext) {
-    try {
-      let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
-      if (upstreamWasStreaming) data = await collectOpenAIStreamObject(upstream, request.signal, c.attemptDeadlineMs);
-      else data = JSON.parse(await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs));
-      if (data && typeof data === 'object' && data.error) {
-        const status = Number(data.error?.status) >= 400 && Number(data.error?.status) < 600 ? Math.trunc(Number(data.error?.status)) : 502;
-        const message = data.error?.message || 'Upstream returned an embedded error.';
-        const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, message);
-        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
-        recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(message, 200) });
-        if (classification.action === 'stop') {
-          return {
-            response: buildClientErrorResponse(
-              request,
-              env,
-              route,
-              requestId,
-              requestedModel,
-              status,
-              JSON.stringify(data),
-              state,
-              exposeUpstreamInfo,
-            ),
-          };
-        }
-        return { rotate: true, kind: classification.kind };
-      }
-      if (!isOpenAIChatCompletionMeaningful(data)) {
-        const classification = classifyEmptyResponse();
-        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
-        recordOutcome(state, node, classification, c, {
-          latencyMs,
-          status: upstream.status,
-          diagnostic: 'cross-protocol OpenAI Chat completion carried no meaningful output',
-        });
-        return { rotate: true, kind: classification.kind };
-      }
-      const converted = convertOpenAIToAnthropicResponse(data);
-      converted.model = requestedModel;
-      recordNodeSuccess(c, node, latencyMs);
-      // Persist raw OpenAI usage; conversion is only a client-facing concern.
-      recordTokens(c, node, data?.usage);
-      if (clientWantsStream) return { response: synthesizeAnthropicFromMessage(converted, { ...extraHeaders, ...corsHeaders(request, env) }) };
-      return { response: jsonResponse(200, converted, env, request, extraHeaders) };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (request.signal?.aborted) {
-        recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
-        return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
-      }
-      if (c.hedgeAbort?.signal.aborted) {
-        return hedgeLoserOutcome(c, node, 'object', latencyMs);
-      }
-      const classification = classifyPostHeadersFailure(error);
-      recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
-      return { rotate: true, kind: classification.kind };
-    }
   }
 
   // ---- Anthropic messages (non-stream, NATIVE) ----

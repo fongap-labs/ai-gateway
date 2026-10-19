@@ -156,11 +156,23 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     ...(typeof body.parallel_tool_calls === 'boolean' ? { parallelToolCalls: body.parallel_tool_calls } : {}),
   };
   if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
+  if (body.temperature !== undefined && (typeof body.temperature !== 'number' || body.temperature < 0 || body.temperature > 1)) {
+    throw new ConversionError('conversion_not_supported: temperature must be between 0 and 1');
+  }
+  if (body.top_p !== undefined && (typeof body.top_p !== 'number' || body.top_p < 0 || body.top_p > 1)) {
+    throw new ConversionError('conversion_not_supported: top_p must be between 0 and 1');
+  }
+  if (body.stream !== undefined && typeof body.stream !== 'boolean') {
+    throw new ConversionError('conversion_not_supported: stream must be boolean');
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) {
+    throw new ConversionError('conversion_not_supported: tools must be an array');
+  }
 
   if (!Array.isArray(body.messages)) throw new ConversionError('conversion_not_supported: messages must be an array');
   for (const raw of body.messages) {
     if (!isRecord(raw)) throw new ConversionError('conversion_not_supported: messages entry is not an object');
-    assertFields(raw, ['role', 'content', 'tool_calls', 'tool_call_id', 'reasoning', 'reasoning_content'], 'message');
+    assertFields(raw, ['role', 'content', 'tool_calls', 'tool_call_id', 'status', 'is_error', 'reasoning', 'reasoning_content'], 'message');
     const role = raw.role;
     if (role === 'system' || role === 'developer') {
       request.system = joinSystem(request.system, raw.content);
@@ -203,13 +215,17 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     if (role === 'tool') {
       const callId = typeof raw.tool_call_id === 'string' ? raw.tool_call_id : '';
       if (!callId) throw new ConversionError('conversion_not_supported: tool message missing tool_call_id');
-      if (raw.is_error !== undefined) {
-        diag.add({ feature: 'tool_result_error_marker', action: 'dropped' });
+      if (raw.is_error !== undefined && typeof raw.is_error !== 'boolean') {
+        throw new ConversionError('conversion_not_supported: tool message is_error must be a boolean');
       }
+      if (raw.status !== undefined && typeof raw.status !== 'string') {
+        throw new ConversionError('conversion_not_supported: tool message status must be a string');
+      }
+      const isError = raw.is_error === true || (typeof raw.status === 'string' && raw.status !== 'success');
       const messages = request.messages;
       const images: IrImagePart[] = [];
       const text = toolMessageText(raw.content, images);
-      const result: IrPart = { type: 'tool_result', callId, text, images, isError: raw.is_error === true };
+      const result: IrPart = { type: 'tool_result', callId, text, images, isError };
       messages.push({ role: 'user', parts: [result] });
       continue;
     }

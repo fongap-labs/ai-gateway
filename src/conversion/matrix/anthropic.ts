@@ -157,6 +157,27 @@ function systemToIr(body: Record<string, unknown>): string {
   return parts.join('\n');
 }
 
+function systemMessageParts(content: unknown): IrPart[] {
+  if (content === undefined || content === null) return [];
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
+  if (!Array.isArray(content)) throw new ConversionError('conversion_not_supported: system message content must be text');
+  const parts: IrPart[] = [];
+  for (const block of content) {
+    if (typeof block === 'string') {
+      parts.push({ type: 'text', text: block });
+      continue;
+    }
+    if (isRecord(block) && block.type === 'text') {
+      assertFields(block, ['type', 'text', ...IGNORABLE_FIELDS], 'system message block');
+      if (typeof block.text !== 'string') throw new ConversionError('conversion_not_supported: non-text system message block');
+      parts.push({ type: 'text', text: block.text });
+      continue;
+    }
+    throw new ConversionError('conversion_not_supported: system message content must be text');
+  }
+  return parts;
+}
+
 function imagePartFromAnthropic(source: unknown): IrImagePart {
   if (!isRecord(source)) throw new ConversionError('conversion_not_supported: invalid image source');
   assertFields(source, ['type', 'url', 'media_type', 'data'], 'image source');
@@ -273,9 +294,9 @@ function assistantBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
       continue;
     }
     // server_tool_use / advisor / etc. - provider-native history cannot be
-    // represented on another protocol.
+    // represented on another protocol. Dropped silently, matching the legacy
+    // validator that accepted then discarded these blocks.
     diag.add({ feature: 'provider_native_tool_history', action: 'dropped' });
-    parts.push({ type: 'text', text: '[provider-native tool output omitted in translation]' });
   }
   return parts;
 }
@@ -293,7 +314,12 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   const choice = anthroToolChoice(body);
   const thinkingEffort = anthroThinking(body);
   const maxTokens = typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : null;
-  if (maxTokens == null) throw new ConversionError('conversion_not_supported: max_tokens is required');
+  if (body.max_tokens !== undefined && body.max_tokens !== null && (typeof body.max_tokens !== 'number' || body.max_tokens <= 0)) {
+    throw new ConversionError('conversion_not_supported: max_tokens must be a positive number');
+  }
+  // Anthropic REQUIRES max_tokens on /v1/messages; the legacy default-path
+  // converter tolerated omission with a 1024 default and cross-protocol
+  // fallback keeps that tolerance (buildAnthropicRequest applies the default).
   const effortFromConfig = parseEffortFromOutputConfig(body);
   const effort = thinkingEffort ?? effortFromConfig ?? undefined;
 
@@ -307,19 +333,82 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     maxTokens,
     temperature: typeof body.temperature === 'number' ? body.temperature : null,
     topP: typeof body.top_p === 'number' ? body.top_p : null,
-    stop: Array.isArray(body.stop_sequences) && body.stop_sequences.every((s) => typeof s === 'string') ? (body.stop_sequences as string[]) : [],
+    stop:
+      typeof body.stop_sequences === 'string'
+        ? [body.stop_sequences]
+        : Array.isArray(body.stop_sequences) && body.stop_sequences.every((s) => typeof s === 'string')
+          ? (body.stop_sequences as string[])
+          : [],
     ...(effort === undefined ? {} : { effort }),
     ...(structured ? { structuredOutputSchema: structured } : {}),
   };
   if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
-  if (request.stop.length && !Array.isArray(body.stop_sequences)) throw new ConversionError('conversion_not_supported: invalid stop_sequences');
+  if (body.temperature !== undefined && (typeof body.temperature !== 'number' || body.temperature < 0 || body.temperature > 1)) {
+    throw new ConversionError('conversion_not_supported: temperature must be between 0 and 1');
+  }
+  if (body.top_p !== undefined && (typeof body.top_p !== 'number' || body.top_p < 0 || body.top_p > 1)) {
+    throw new ConversionError('conversion_not_supported: top_p must be between 0 and 1');
+  }
+  if (body.stream !== undefined && typeof body.stream !== 'boolean') {
+    throw new ConversionError('conversion_not_supported: stream must be boolean');
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) {
+    throw new ConversionError('conversion_not_supported: tools must be an array');
+  }
+  if (body.stop_sequences !== undefined && body.stop_sequences !== null) {
+    if (Array.isArray(body.stop_sequences)) {
+      if (!body.stop_sequences.every((s) => typeof s === 'string')) {
+        throw new ConversionError('conversion_not_supported: invalid stop_sequences');
+      }
+    } else if (typeof body.stop_sequences !== 'string') {
+      throw new ConversionError('conversion_not_supported: invalid stop_sequences');
+    }
+  }
+  // A forced tool that was dropped with the provider-native pool (advisor,
+  // web_search, ...) cannot be represented on the target; the legacy converter
+  // rejected these up front and cross-protocol fallback keeps doing so.
+  if (request.toolChoice?.startsWith('name:')) {
+    const forced = request.toolChoice.slice('name:'.length);
+    if (!request.tools.some((tool) => tool.name === forced)) {
+      throw new ConversionError(`conversion_not_supported: tool_choice references provider-native or unknown tool ${forced}`);
+    }
+  }
 
   if (!Array.isArray(body.messages)) throw new ConversionError('conversion_not_supported: messages must be an array');
   for (const raw of body.messages) {
     if (!isRecord(raw)) throw new ConversionError('conversion_not_supported: messages entry is not an object');
-    assertFields(raw, ['role', 'content', 'tool_use_id'], 'message');
+    assertFields(raw, ['role', 'content', 'tool_use_id', 'output_config'], 'message');
     if (raw.role === 'user') {
       request.messages.push({ role: 'user', parts: userBlocksToParts(raw.content) });
+      continue;
+    }
+    if (raw.role === 'tool') {
+      // Non-standard role some OpenAI-style clients emit through Anthropic
+      // gateways; same semantics as a tool_result wait inside a user message.
+      const callId = typeof raw.tool_use_id === 'string' ? raw.tool_use_id : '';
+      if (!callId) throw new ConversionError('conversion_not_supported: tool message missing tool_use_id');
+      const images: IrImagePart[] = [];
+      request.messages.push({ role: 'user', parts: [{ type: 'tool_result', callId, text: toolResultText(raw.content, images), images }] });
+      continue;
+    }
+    if (raw.role === 'system') {
+      // Mid-conversation system runs are legal on the wire (mode switches);
+      // keep them positionally as system IR messages, mirroring the legacy
+      // converter's message-level support for message.output_config effort.
+      if (raw.output_config !== undefined) {
+        if (!isRecord(raw.output_config)) throw new ConversionError('conversion_not_supported: message.output_config must be an object');
+        assertFields(raw.output_config, ['effort'], 'message.output_config');
+        const msgEffort = raw.output_config.effort;
+        if (msgEffort === undefined || msgEffort === null) {
+          // tolerated no-op, like the legacy converter
+        } else if (typeof msgEffort === 'string' && EFFORT_VALUES.includes(msgEffort as (typeof EFFORT_VALUES)[number])) {
+          if (request.effort === undefined) request.effort = normalizeAnthropicEffort(msgEffort);
+          else diag.add({ feature: 'effort_control', action: 'dropped' });
+        } else {
+          throw new ConversionError(`conversion_not_supported: message.output_config.effort "${String(msgEffort)}"`);
+        }
+      }
+      request.messages.push({ role: 'system', parts: systemMessageParts(raw.content) });
       continue;
     }
     if (raw.role === 'assistant') {
@@ -387,11 +476,20 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   if (ir.stop.length) out.stop_sequences = ir.stop;
   if (ir.tools.length) {
     diag.add({ feature: 'function_tools', action: 'mapped' });
-    out.tools = ir.tools.map((tool) => ({
-      name: tool.name,
-      ...(tool.description ? { description: tool.description } : {}),
-      input_schema: isRecord(tool.schema) ? tool.schema : {},
-    }));
+    // Anthropic requires object-shaped input schemas; the legacy converter
+    // enforced/forced `type: 'object'` up front rather than shipping a request
+    // the upstream would reject.
+    out.tools = ir.tools.map((tool) => {
+      const schema = isRecord(tool.schema) ? tool.schema : {};
+      if (schema.type !== undefined && schema.type !== 'object') {
+        throw new ConversionError('conversion_not_supported: tool schema must describe an object');
+      }
+      return {
+        name: tool.name,
+        ...(tool.description ? { description: tool.description } : {}),
+        input_schema: { ...schema, type: 'object' },
+      };
+    });
   }
   if (ir.toolChoice || ir.parallelToolCalls === false) {
     const choice: Record<string, unknown> = {};
@@ -419,12 +517,15 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
       continue;
     }
     if (part.type === 'thinking') {
-      if (part.sealed || !part.text) {
+      // Anthropic API rejects thinking blocks whose signature cannot be
+      // verified; reasoning summaries picked up from other protocols carry no
+      // signature, so they are history that this target cannot legally keep.
+      if (part.sealed || !part.text || !part.signature) {
         diag.add({ feature: 'thinking_history', action: 'dropped' });
         continue;
       }
       diag.add({ feature: 'thinking_history', action: 'mapped' });
-      blocks.push({ type: 'thinking', thinking: part.text, ...(part.signature ? { signature: part.signature } : {}) });
+      blocks.push({ type: 'thinking', thinking: part.text, signature: part.signature });
       continue;
     }
     if (part.type === 'tool_call') {
