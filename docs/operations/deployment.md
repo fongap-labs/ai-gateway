@@ -154,8 +154,6 @@ D1 迁移不会因 Worker 回滚而被事务性地撤销。因此，迁移变更
 
 本地直接部署仍是运营者路径，与受治理的 GitHub 生产路径相互独立：
 
-- `scripts/install.sh` / `scripts/install.ps1`——首次引导；
-
 - `npm run deploy`——从已配置好的检出副本直接部署；
 - `npm run cf:login`、`npm run cf:whoami`、`npm run tail`——Cloudflare 运营者命令。
 
