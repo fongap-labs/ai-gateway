@@ -335,9 +335,10 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
   const { system, messages } = inputValueToMessages(body.input, diag);
   const instructions = typeof body.instructions === 'string' ? body.instructions : '';
   if (instructions) diag.add({ feature: 'system_role', action: 'mapped' });
+  const joinedSystem = instructions && system ? `${instructions}\n${system}` : instructions || system;
   const request: IrRequest = {
     model: typeof body.model === 'string' && body.model.trim() ? body.model : '',
-    system: instructions && system ? `${instructions}\n${system}` : instructions || system,
+    system: joinedSystem ? [joinedSystem] : [],
     messages,
     tools: responsesTools(body, diag),
     toolChoice: responsesToolChoice(body),
@@ -350,7 +351,7 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
     ...(typeof body.parallel_tool_calls === 'boolean' ? { parallelToolCalls: body.parallel_tool_calls } : {}),
   };
   if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
-  if (messages.length === 0 && !request.system) throw new ConversionError('conversion_not_supported: input is empty');
+  if (messages.length === 0 && request.system.length === 0) throw new ConversionError('conversion_not_supported: input is empty');
   return { request, diag };
 }
 
@@ -358,7 +359,8 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
 
 export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
   const out: Record<string, unknown> = { model: ir.model };
-  if (ir.system) out.instructions = ir.system;
+  const instructions = ir.system.join('\n');
+  if (instructions) out.instructions = instructions;
   const input: Record<string, unknown>[] = [];
   for (const message of ir.messages) {
     if (message.role === 'system') {

@@ -2,9 +2,10 @@
 
 ## [Unreleased]
 
-- fix: protocol translation: null tool_choice/reasoning_effort accepted; response_format standard fields allowed; image/data URI handling improved; redacted thinking data preserved; system duplication fixed; top-level system/developer read; custom tool/local_shell support added; chat stream usage and finish_reason handling; tool_result.is_error diagnosed.
+- fix: protocol translation legacy absorption — all six directed pairs among Chat, Anthropic and Responses now use the IR matrix (per-protocol parse/build + SSE decode/encode + fidelity diagnostics). The legacy pairwise Chat ⇄ Anthropic converters were removed; their semantics (defaults, rejection contract) are replicated inside the matrix so behavior is preserved for the default cross-protocol path. Thinking survives translation (reasoning_content ↔ reasoning items ↔ thinking blocks; encrypted/redacted history passes toward Anthropic and is dropped with explicit diagnostics elsewhere). Reasoning effort maps to thinking budgets (low/4096, medium/10000, high/24000, max/32000). Per-upstream TTFT/usage accounting, hedging deadlines and first-event guards behave the same as on the native pair.
 
-- fix: an `AIG_ACCESS_MODELS_*` entry that differs from the catalog only by casing no longer logs a false "not in the Known Model Catalog" warning; the check is case-insensitive, as authorization is. A model that is really missing still warns.
+- fix: protocol translation: null tool_choice/reasoning_effort accepted; response_format standard fields allowed; image and data URI handling improved; redacted thinking data preserved; system duplication fixed; top-level system/developer read; custom tool/local_shell support in Responses; chat stream usage and finish_reason handling; tool_result.is_error diagnosed.
+
 
 - fix: resolve one logical model written in two casings to one catalog entry on every node. A request for `Code-Max` matched no node when `AIG_MODELS_CONFIG` declared `Code-Max` and a node keyed `code-max`: the catalog kept both spellings, the client spelling resolved to the official one, and no node served it, so preflight returned 404 ("There's an issue with the selected model..." in Claude Code) while `code-max` worked. Node model keys are now rekeyed onto the canonical catalog spelling (the `AIG_MODELS_CONFIG` spelling first), and a node that maps one logical model to two different upstreams under different casings is excluded as a configuration error.
 

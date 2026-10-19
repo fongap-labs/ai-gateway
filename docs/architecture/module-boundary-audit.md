@@ -30,7 +30,7 @@ All material P1/P2 ownership findings from the baseline audit are resolved（基
 | `request` | 中等 | 成功拆分之后良好 | 保持 `success.ts` 精简；协议特定的分支保持可见。 |
 | `transport` | 低 | 良好 | 线路/路径判断保留在此处。 |
 | `protocol` | 低/中等 | 良好 | 保持协议语义明确。 |
-| `conversion` | 中等的内部重复 | 良好 | 保持明确的 Chat ↔ Messages 转换；不建立通用 IR（no universal IR）。 |
+| `conversion` | 低（IR 矩阵收编后） | 良好 | 所有跨协议对统一走 `conversion/matrix/` 的 IR 表示（per-protocol parse/build + SSE decode/encode + 保真诊断）；曾经并存的 pairwise Chat ↔ Messages 转换器已被矩阵吸收，不再保留第二套翻译路径。native 直通（同协议）不经过矩阵。 |
 | `stream` | 中等的机械性重复 | 良好 | OpenAI/Anthropic 状态机保持独立。 |
 | `observability` | 中等，有意的查询/写入并行 | 良好 | 将已交付与物理上游的计费保持为两个独立概念。 |
 | `runtime` | 低 | 良好 | 仅只读投影。 |

@@ -63,7 +63,8 @@ export type IrThinkingPart = {
 
 export type IrPart = { type: 'text'; text: string } | IrImagePart | IrToolCallPart | IrToolResultPart | IrThinkingPart;
 
-export type IrMessage = { role: 'user' | 'assistant' | 'system'; parts: IrPart[] };
+/** `stringContent` marks a user message whose source content was a plain string (kept a string on the wire). */
+export type IrMessage = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
 
 export type IrTool = { name: string; description?: string; schema: unknown; strict?: boolean };
 
@@ -75,7 +76,8 @@ export type IrToolChoice = 'auto' | 'none' | 'required' | `name:${string}`;
 
 export type IrRequest = {
   model: string;
-  system: string;
+  /** System text segments in source order: one per system/developer item or top-level system. */
+  system: string[];
   messages: IrMessage[];
   tools: IrTool[];
   toolChoice?: IrToolChoice;

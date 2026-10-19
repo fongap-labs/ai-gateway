@@ -5,7 +5,7 @@
 // and whole-object round trips. Streaming decode/encode lives in
 // chat-stream.ts; this module only handles bodies.
 
-import { ConversionError } from '../validation.ts';
+import { ConversionError, parseToolArguments } from '../validation.ts';
 import { MatrixDiag } from './diag.ts';
 import { type IrEffort, type IrImagePart, type IrPart, type IrReply, type IrRequest, type IrStop, isRecord, normalizeEffort } from './ir.ts';
 
@@ -27,13 +27,6 @@ const CHAT_ALLOWED_FIELDS = [
   'reasoning_effort',
   'parallel_tool_calls',
   'response_format',
-  'metadata',
-  'user',
-  'seed',
-  'frequency_penalty',
-  'presence_penalty',
-  'n',
-  'store',
 ] as const;
 
 const IMAGE_URL_TYPE_FIELDS = new Set(['url', 'detail']);
@@ -53,7 +46,7 @@ function chatToolChoice(body: Record<string, unknown>): IrRequest['toolChoice'] 
     throw new ConversionError(`conversion_not_supported: tool_choice "${raw}"`);
   }
   if (!isRecord(raw)) throw new ConversionError('conversion_not_supported: tool_choice must be a string or object');
-  assertFields(raw, ['type', 'function', 'tool'], 'tool_choice');
+  assertFields(raw, ['type', 'function', 'tool', 'name'], 'tool_choice');
   if (raw.type === 'function' && isRecord(raw.function)) {
     if (typeof raw.function.name !== 'string' || !raw.function.name) {
       throw new ConversionError('conversion_not_supported: tool_choice.function.name is required');
@@ -73,13 +66,12 @@ function chatParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrRequ
       continue;
     }
     const fn = rawTool.function;
-    assertFields(fn, ['name', 'description', 'parameters', 'strict'], 'tools.function');
+    assertFields(fn, ['name', 'description', 'parameters'], 'tools.function');
     if (typeof fn.name !== 'string' || !fn.name) throw new ConversionError('conversion_not_supported: tool.function.name is required');
     tools.push({
       name: fn.name,
       ...(typeof fn.description === 'string' ? { description: fn.description } : {}),
       schema: isRecord(fn.parameters) ? fn.parameters : {},
-      ...(fn.strict === true ? { strict: fn.strict as boolean } : {}),
     });
   }
   return tools;
@@ -122,24 +114,20 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
   const diag = new MatrixDiag();
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
   if (body.user !== undefined) diag.add({ feature: 'user_field', action: 'dropped' });
-  for (const field of ['seed', 'frequency_penalty', 'presence_penalty', 'store'] as const) {
-    if (body[field] !== undefined) diag.add({ feature: 'chat_sampling_extra', action: 'dropped' });
-  }
-  if (isRecord(body.n) || (typeof body.n === 'number' && body.n !== 1)) diag.add({ feature: 'chat_n_choices', action: 'dropped' });
 
   const structured = chatStructuredSchema(body, diag);
   const effort = parseChatEffort(body);
-  const topLevelSystem = typeof body.system === 'string' ? body.system : '';
-  const topLevelDeveloper = Array.isArray(body.developer)
-    ? body.developer
-        .map((d) => (typeof d === 'string' ? d : isRecord(d) && typeof d.content === 'string' ? d.content : ''))
-        .filter(Boolean)
-        .join('\n')
-    : '';
-  const combinedSystem = [topLevelSystem, topLevelDeveloper].filter(Boolean).join('\n\n');
+  const system: string[] = [];
+  if (typeof body.system === 'string' && body.system) system.push(body.system);
+  if (Array.isArray(body.developer)) {
+    for (const d of body.developer) {
+      const text = typeof d === 'string' ? d : isRecord(d) && typeof d.content === 'string' ? d.content : '';
+      if (text) system.push(text);
+    }
+  }
   const request: IrRequest = {
     model: typeof body.model === 'string' && body.model.trim() ? body.model : '',
-    system: combinedSystem,
+    system,
     messages: [],
     tools: chatParseTools(body, diag),
     toolChoice: chatToolChoice(body),
@@ -156,19 +144,36 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     ...(typeof body.parallel_tool_calls === 'boolean' ? { parallelToolCalls: body.parallel_tool_calls } : {}),
   };
   if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
+  if (body.temperature !== undefined && (typeof body.temperature !== 'number' || body.temperature < 0 || body.temperature > 1)) {
+    throw new ConversionError('conversion_not_supported: temperature must be between 0 and 1');
+  }
+  if (body.top_p !== undefined && (typeof body.top_p !== 'number' || body.top_p < 0 || body.top_p > 1)) {
+    throw new ConversionError('conversion_not_supported: top_p must be between 0 and 1');
+  }
+  if (body.stream !== undefined && typeof body.stream !== 'boolean') {
+    throw new ConversionError('conversion_not_supported: stream must be boolean');
+  }
+  if (body.tools !== undefined && !Array.isArray(body.tools)) {
+    throw new ConversionError('conversion_not_supported: tools must be an array');
+  }
 
   if (!Array.isArray(body.messages)) throw new ConversionError('conversion_not_supported: messages must be an array');
   for (const raw of body.messages) {
     if (!isRecord(raw)) throw new ConversionError('conversion_not_supported: messages entry is not an object');
-    assertFields(raw, ['role', 'content', 'tool_calls', 'tool_call_id', 'reasoning', 'reasoning_content'], 'message');
+    assertFields(raw, ['role', 'content', 'tool_calls', 'tool_call_id', 'status', 'is_error', 'reasoning', 'reasoning_content'], 'message');
     const role = raw.role;
     if (role === 'system' || role === 'developer') {
-      request.system = joinSystem(request.system, raw.content);
+      const text = systemText(raw.content);
+      if (text) request.system.push(text);
       continue;
     }
     if (role === 'user') {
       const images: IrPart[] = [];
-      request.messages.push({ role: 'user', parts: chatContentParts(raw.content, images, diag) });
+      request.messages.push({
+        role: 'user',
+        parts: chatContentParts(raw.content, images, diag),
+        ...(typeof raw.content === 'string' ? { stringContent: true } : {}),
+      });
       continue;
     }
     if (role === 'assistant') {
@@ -195,6 +200,8 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
         }
         if (typeof tc.function.arguments !== 'string')
           throw new ConversionError('conversion_not_supported: tool_call arguments must be a JSON string');
+        // Arguments must decode to a JSON object; anything else cannot be replayed on the target.
+        parseToolArguments(tc.function.arguments);
         parts.push({ type: 'tool_call', id, name: tc.function.name, args: tc.function.arguments });
       }
       request.messages.push({ role: 'assistant', parts });
@@ -203,13 +210,17 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     if (role === 'tool') {
       const callId = typeof raw.tool_call_id === 'string' ? raw.tool_call_id : '';
       if (!callId) throw new ConversionError('conversion_not_supported: tool message missing tool_call_id');
-      if (raw.is_error !== undefined) {
-        diag.add({ feature: 'tool_result_error_marker', action: 'dropped' });
+      if (raw.is_error !== undefined && typeof raw.is_error !== 'boolean') {
+        throw new ConversionError('conversion_not_supported: tool message is_error must be a boolean');
       }
+      if (raw.status !== undefined && typeof raw.status !== 'string') {
+        throw new ConversionError('conversion_not_supported: tool message status must be a string');
+      }
+      const isError = raw.is_error === true || (typeof raw.status === 'string' && raw.status !== 'success');
       const messages = request.messages;
       const images: IrImagePart[] = [];
       const text = toolMessageText(raw.content, images);
-      const result: IrPart = { type: 'tool_result', callId, text, images, isError: raw.is_error === true };
+      const result: IrPart = { type: 'tool_result', callId, text, images, isError };
       messages.push({ role: 'user', parts: [result] });
       continue;
     }
@@ -235,7 +246,7 @@ function toolMessageText(content: unknown, images: IrImagePart[]): string {
   return parts.join('\n');
 }
 
-function joinSystem(existing: string, content: unknown): string {
+function systemText(content: unknown): string {
   let text = '';
   if (typeof content === 'string') text = content;
   else if (Array.isArray(content)) {
@@ -245,7 +256,7 @@ function joinSystem(existing: string, content: unknown): string {
       else throw new ConversionError('conversion_not_supported: system content must be text');
     }
   }
-  return existing ? `${existing}\n${text}` : text;
+  return text;
 }
 
 function chatStop(value: unknown): string[] {
@@ -303,9 +314,10 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
     }
   };
 
-  if (ir.system) {
+  const systemJoined = ir.system.join('\n');
+  if (systemJoined) {
     diag.add({ feature: 'system_role', action: 'mapped' });
-    messages.push({ role: 'system', content: ir.system });
+    messages.push({ role: 'system', content: systemJoined });
   }
   if (ir.structuredOutputSchema) {
     messages.push({ role: 'system', content: structuredOutputInstruction(ir.structuredOutputSchema) });
@@ -313,15 +325,22 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
 
   for (const message of ir.messages) {
     if (message.role === 'system') {
+      // Legacy contract: a mid-conversation system run becomes its own plain user message.
       flushToolResults();
-      pendingUserParts.push({
-        type: 'text',
-        text: `<system-reminder>${message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('\n')}</system-reminder>`,
-      });
-      diag.add({ feature: 'mid_conversation_system', action: 'emulated' });
+      flushUserParts();
+      messages.push({ role: 'user', content: message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('\n') });
+      diag.add({ feature: 'mid_conversation_system', action: 'mapped' });
       continue;
     }
     if (message.role === 'user') {
+      // A plain-text string user message stays a string on the wire (the legacy shape).
+      const [only] = message.parts;
+      if (message.stringContent && message.parts.length === 1 && only?.type === 'text' && only.text) {
+        flushToolResults();
+        flushUserParts();
+        messages.push({ role: 'user', content: only.text });
+        continue;
+      }
       for (const part of message.parts) {
         if (part.type === 'tool_result') pendingToolResults.push({ callId: part.callId, part });
         else if (part.type === 'text' && part.text) {
@@ -342,12 +361,11 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
     const msg: Record<string, unknown> = { role: 'assistant', content: '' };
     let content = '';
     const toolCalls: Record<string, unknown>[] = [];
-    const reasoning: string[] = [];
     for (const part of message.parts) {
       if (part.type === 'text') content += part.text;
       else if (part.type === 'thinking') {
-        if (part.text) reasoning.push(part.text);
-        else if (part.sealed) diag.add({ feature: 'thinking_history', action: 'dropped' });
+        // Prior-turn reasoning is not replayed to Chat upstreams (legacy contract).
+        diag.add({ feature: 'thinking_history', action: 'dropped' });
       } else if (part.type === 'tool_call') {
         diag.add({ feature: 'tool_calls', action: 'mapped' });
         toolCalls.push({ id: toolCallIdForChat(part.id), type: 'function', function: { name: part.name, arguments: ensureJsonArgs(part.args) } });
@@ -357,7 +375,6 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
       }
     }
     msg.content = content;
-    if (reasoning.length) msg.reasoning_content = reasoning.join('');
     if (toolCalls.length) msg.tool_calls = toolCalls;
     messages.push(msg);
   }
@@ -476,7 +493,8 @@ export function chatObjectToIr(data: Record<string, unknown>): { reply: IrReply;
   if (typeof message.refusal === 'string' && message.refusal) parts.push({ type: 'text', text: message.refusal });
   for (const tc of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
     if (!isRecord(tc)) continue;
-    if (tc.type !== 'function' || !isRecord(tc.function)) {
+    // Chat clients may omit `type` on a response tool call; only an explicit non-function type is dropped.
+    if ((tc.type !== undefined && tc.type !== 'function') || !isRecord(tc.function)) {
       diag.add({ feature: 'tool_calls', action: 'dropped' });
       continue;
     }

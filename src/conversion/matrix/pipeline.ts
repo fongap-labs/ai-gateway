@@ -4,10 +4,11 @@
 // Translation-matrix pipeline: the per-protocol adapters (chat / anthropic /
 // responses and their streams) are the leaves; this module is the routing hub.
 //
-// The legacy Chat <-> Anthropic conversion stays on the pairwise converters
-// (conversion/stream-converter.ts, conversion/anthropic-stream-*.ts) and is
-// deliberately NOT routed through this module - behavior preservation rules.
-// Every pair involving `openai_responses` goes through the IR here.
+// Every directed pair among the three protocols travels through the IR here.
+// The legacy pairwise converters that once served Chat <-> Anthropic were
+// absorbed: the matrix adapters now cover their semantics (same defaults,
+// same rejection contract), so there is a single decode/encode path for every
+// gateway translation.
 
 import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
@@ -28,11 +29,11 @@ export { ConversionError };
 
 const MATRIX_PROTOCOLS: readonly IrProtocol[] = ['openai_chat', 'openai_responses', 'anthropic'];
 
-/** True only for directed pairs the matrix owns (all pairs involving Responses). */
+/** True for every directed pair the matrix owns (all distinct protocol pairs). */
 export function isMatrixPair(from: IrProtocol, to: IrProtocol): boolean {
   if (from === to) return false;
   if (!MATRIX_PROTOCOLS.includes(from) || !MATRIX_PROTOCOLS.includes(to)) return false;
-  return from === 'openai_responses' || to === 'openai_responses';
+  return true;
 }
 
 // ---- Request translation ----------------------------------------------------
@@ -100,7 +101,7 @@ export function openMatrixStream(
   from: IrProtocol,
   to: IrProtocol,
   fallbackId: string,
-  options: { onUpstreamUsage?: (usage: unknown) => void } = {},
+  options: { onUpstreamUsage?: (usage: unknown) => void; seedInputTokens?: number } = {},
 ): MatrixStreamHandle {
   const collector = new IrCollector();
   const decoder = makeDecoder(from);
@@ -118,8 +119,13 @@ export function openMatrixStream(
         throw upstreamReportedError(event.message);
       }
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
-      collector.feed(event);
-      enqueue(controller, textEncoder, encoder.write(event));
+      // A caller-known input count fills in when the upstream start event carries none.
+      const seeded =
+        event.type === 'start' && event.inputTokens === undefined && options.seedInputTokens !== undefined
+          ? { ...event, inputTokens: options.seedInputTokens }
+          : event;
+      collector.feed(seeded);
+      enqueue(controller, textEncoder, encoder.write(seeded));
     }
     if (terminal && !finalReply) {
       finalReply = collector.finish(fallbackId);
@@ -132,7 +138,9 @@ export function openMatrixStream(
 }
 
 function upstreamReportedError(message: string): Error {
-  return new Error(`upstream stream error: ${message || 'unknown'}`);
+  // Upstream detail is not echoed to the client; the fallback log keeps the request id.
+  void message;
+  return new Error('Upstream stream error');
 }
 
 // ---- Native object -> IR (>providers that ignore stream:true) ----------------
@@ -189,18 +197,19 @@ function pushDecoder(
   from: IrProtocol,
   data: string,
 ): { events: IrEvent[]; terminal: boolean } {
+  // The chat decoder owns [DONE] so its terminal flag (read by the SSE driver) is set.
+  if (decoder instanceof ChatStreamDecoder) return decoder.push(data);
   if (data === '[DONE]') return { events: [], terminal: true };
   if (from === 'anthropic') {
     let payload: unknown;
     try {
       payload = JSON.parse(data);
     } catch {
-      return { events: [], terminal: false };
+      throw new Error('Malformed upstream SSE JSON');
     }
     if (decoder instanceof AnthropicStreamDecoder) return decoder.push(payload);
     return { events: [], terminal: false };
   }
-  if (decoder instanceof ChatStreamDecoder) return decoder.push(data);
   if (decoder instanceof ResponsesStreamDecoder) return decoder.push(data);
   return { events: [], terminal: false };
 }
@@ -306,7 +315,7 @@ export function replyToChatObject(reply: IrReply): Record<string, unknown> {
   if (reasoning.length) message.reasoning_content = reasoning.join('');
   if (toolCalls.length) message.tool_calls = toolCalls;
   return {
-    id: `chatcmpl-${reply.id || 'translated'}`,
+    id: reply.id || 'chatcmpl-translated',
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model: reply.model,

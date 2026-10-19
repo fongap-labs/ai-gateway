@@ -4,12 +4,11 @@
 // Protocol Fallback Orchestration.
 //
 // Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
-// for the single source of truth):
-//   * Anthropic Messages -> OpenAI Chat Completions (legacy pairwise converter)
-//   * OpenAI Chat Completions -> Anthropic Messages (legacy pairwise converter)
-//   * all four directed pairs involving OpenAI Responses, via the canonical IR
-//     matrix (conversion/matrix/): Chat / Messages / Responses mutually
-//     translatable with streaming, tool calls and reasoning support.
+// for the single source of truth): every directed pair among OpenAI Chat
+// Completions, Anthropic Messages and OpenAI Responses travels through the
+// canonical IR matrix (conversion/matrix/) — streaming, tool calls and
+// reasoning survive translation. The former legacy pairwise Chat <-> Messages
+// converters were absorbed into that matrix. There is no Gemini conversion.
 // Fallback follows the resolved PROTOCOL_FALLBACKS policy, including the
 // built-in matrix-wide default when the variable is unset. There is no Gemini
 // conversion.
@@ -48,7 +47,6 @@
 import type { IrProtocol } from '../conversion/matrix/ir.ts';
 import { convertMatrixRequest, isMatrixPair } from '../conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../conversion/result.ts';
-import { convertAnthropicToOpenAIResult, convertOpenAIChatToAnthropicResult } from '../conversion/result.ts';
 import { ConversionError } from '../conversion/validation.ts';
 import { getLogger } from '../observability/logger.ts';
 import type { ConversionContext, LoopContext } from '../types/request.ts';
@@ -126,19 +124,14 @@ export async function runFallbackChain({
     const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface };
     let conversionResult: ConversionResult;
     try {
-      if (route === 'anthropic_messages' && fb.protocol === 'openai' && fb.surface === 'chat_completions') {
-        // Unknown OpenAI-compatible targets intentionally keep the established
-        // prompt structured-output strategy. Native/tool modes require positive
-        // capability evidence and are not inferred from provider names here.
-        conversionResult = convertAnthropicToOpenAIResult(bodyJson);
-      } else if (route === 'openai_chat' && fb.protocol === 'anthropic' && fb.surface === 'messages') {
-        conversionResult = convertOpenAIChatToAnthropicResult(bodyJson);
-      } else {
-        const from = routeToIrProtocol(route);
-        const to = fallbackToIrProtocol(fb);
-        if (!from || !to || !isMatrixPair(from, to)) continue;
-        conversionResult = convertMatrixRequest(from, to, bodyJson);
-      }
+      const from = routeToIrProtocol(route);
+      const to = fallbackToIrProtocol(fb);
+      if (!from || !to || !isMatrixPair(from, to)) continue;
+      // Structured output on chat/messages targets keeps the conservative
+      // prompt strategy: the matrix adapters embed the JSON instruction
+      // themselves and native/tool modes require positive capability
+      // evidence that cross-protocol fallback cannot assume here.
+      conversionResult = convertMatrixRequest(from, to, bodyJson);
     } catch (e) {
       if (e instanceof ConversionError) {
         conversionRejectedCount++;

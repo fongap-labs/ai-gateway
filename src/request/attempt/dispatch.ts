@@ -131,7 +131,9 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   } else {
     // openai_responses -> native /v1/responses body
     // anthropic_messages -> native /v1/messages body
-    // cross-protocol fallback to a non-chat surface (future use)
+    // Matrix-converted bodies already force stream:true upstream; every
+    // non-chat surface (and any unrecognized surface) lands here unchanged
+    // beyond the model rewrite.
     outboundObject = { ...sourceBody, model: upstreamModel };
   }
   // Ask the OpenAI-chat upstream to report usage in the final streaming chunk.

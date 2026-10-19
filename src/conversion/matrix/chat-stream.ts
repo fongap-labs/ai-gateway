@@ -8,9 +8,8 @@
 // first choice (the gateway drives single-turn agent traffic).
 //
 // ChatStreamEncoder: IR events -> Chat completion chunks for a Chat client.
-// Mirrors the legacy anthropic-stream-to-openai-chat lifecycle: assistant
-// role chunk, delta chunks (`content` / `reasoning_content` / `tool_calls`
-// index-scoped), finish chunk with usage rollup, then `[DONE]`.
+// Assistant role chunk, delta chunks (`content` / `reasoning_content` /
+// `tool_calls` index-scoped), finish chunk with usage rollup, then `[DONE]`.
 
 import { chatStopFromIr, chatStopToIr, chatToolId } from './chat.ts';
 import type { IrEvent, IrReply } from './ir.ts';
@@ -38,9 +37,13 @@ export class ChatStreamDecoder {
     try {
       payload = JSON.parse(raw);
     } catch {
-      return { events: [], terminal: false };
+      throw new Error('Malformed upstream SSE JSON');
     }
     if (!isRecord(payload)) return { events: [], terminal: false };
+    if (payload.type === 'error' || isRecord(payload.error)) {
+      const err = isRecord(payload.error) ? payload.error : {};
+      return { events: [{ type: 'error', message: typeof err.message === 'string' ? err.message : '' }], terminal: true };
+    }
     const events: IrEvent[] = [];
     if (!this.started) {
       this.started = true;
@@ -104,10 +107,11 @@ export class ChatStreamEncoder {
     switch (event.type) {
       case 'start': {
         this.started = true;
-        this.id = event.id ? `chatcmpl-${event.id}` : '';
+        // Upstream ids pass through unchanged, as the OpenAI Chat client expects.
+        this.id = event.id;
         this.model = event.model;
         this.createdAt = Math.floor(Date.now() / 1000);
-        return [this.chunk({ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null })];
+        return [this.chunk({ index: 0, delta: { role: 'assistant' }, finish_reason: null })];
       }
       case 'think':
         if (!this.ensureStarted()) return [];
@@ -135,27 +139,18 @@ export class ChatStreamEncoder {
   }
 
   finish(reply: IrReply): string[] {
-    const chunks: string[] = [];
     const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
     const promptTokens =
       typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : typeof raw.input_tokens === 'number' ? raw.input_tokens : reply.inputTokens;
     const completionTokens =
       typeof raw.completion_tokens === 'number' ? raw.completion_tokens : typeof raw.output_tokens === 'number' ? raw.output_tokens : 0;
-    if (Number.isFinite(promptTokens) || Number.isFinite(completionTokens)) {
-      chunks.push(
-        this.chunk({
-          index: 0,
-          delta: {},
-          finish_reason: null,
-          usage: {
-            prompt_tokens: promptTokens ?? 0,
-            completion_tokens: completionTokens ?? 0,
-            total_tokens: (promptTokens ?? 0) + (completionTokens ?? 0),
-          },
-        }),
-      );
+    const prompt = Number.isFinite(promptTokens) ? promptTokens : 0;
+    const completion = Number.isFinite(completionTokens) ? completionTokens : 0;
+    // Wire order matches OpenAI: finish_reason chunk, then the usage-only chunk, then [DONE].
+    const chunks = [this.chunk({ index: 0, delta: {}, finish_reason: chatStopFromIr(reply.stop) })];
+    if (prompt > 0 || completion > 0) {
+      chunks.push(this.usageChunk({ prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion }));
     }
-    chunks.push(this.chunk({ index: 0, delta: {}, finish_reason: chatStopFromIr(reply.stop) }));
     chunks.push('data: [DONE]\n\n');
     return chunks;
   }
@@ -166,6 +161,18 @@ export class ChatStreamEncoder {
     this.id = this.id || 'chatcmpl-translated';
     this.createdAt = Math.floor(Date.now() / 1000);
     return true;
+  }
+
+  /** Usage rides on a root-level chunk with no choices, as the OpenAI stream defines it. */
+  private usageChunk(usage: Record<string, unknown>): string {
+    return `data: ${JSON.stringify({
+      id: this.id || 'chatcmpl-translated',
+      object: 'chat.completion.chunk',
+      created: this.createdAt,
+      model: this.model,
+      choices: [],
+      usage,
+    })}\n\n`;
   }
 
   private chunk(choiceDelta: Record<string, unknown>): string {
@@ -199,8 +206,9 @@ export class ChatStreamEncoder {
 export function chatUsageFromRaw(reply: IrReply): Record<string, unknown> {
   const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
   if (raw.prompt_tokens !== undefined) return raw;
+  // Client-facing usage carries only the three Chat counters; cache and other
+  // provider fields reach per-attempt accounting through the upstream usage hook.
   return {
-    ...raw,
     prompt_tokens: Number.isFinite(raw.input_tokens) ? raw.input_tokens : reply.inputTokens || 0,
     completion_tokens: Number.isFinite(raw.output_tokens) ? raw.output_tokens : 0,
     total_tokens: Number.isFinite(raw.total_tokens) ? raw.total_tokens : (Number(raw.input_tokens) || 0) + (Number(raw.output_tokens) || 0),
