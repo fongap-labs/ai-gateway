@@ -89,8 +89,10 @@ export class ResponsesStreamDecoder {
         return this.outputItemAdded(payload);
       case 'response.output_item.done': {
         const index = Number(payload.output_index);
+        const item = isRecord(payload.item) ? payload.item : {};
+        const events = item.type === 'function_call' ? this.toolArgumentsFallback(this.open.get(index), item.arguments) : [];
         this.open.delete(index);
-        return { events: [], terminal: false };
+        return { events, terminal: false };
       }
       case 'response.content_part.added':
       case 'response.content_part.done':
@@ -107,17 +109,20 @@ export class ResponsesStreamDecoder {
       case 'response.reasoning_text.done':
       case 'response.reasoning_summary_text.done':
         return this.textDoneFallback(payload, 'think', typeof payload.text === 'string' ? payload.text : '');
-      case 'response.function_call_arguments.delta':
-        if (this.openTool(payload))
-          return { events: [{ type: 'tool_args', args: typeof payload.delta === 'string' ? payload.delta : '' }], terminal: false };
-        return { events: [], terminal: false };
+      case 'response.function_call_arguments.delta': {
+        const state = this.resolve(payload);
+        if (state?.type !== 'tool') return { events: [], terminal: false };
+        state.streamed = true;
+        return { events: [{ type: 'tool_args', args: typeof payload.delta === 'string' ? payload.delta : '' }], terminal: false };
+      }
       case 'response.function_call_arguments.done':
-        return { events: [], terminal: false };
+        return { events: this.toolArgumentsFallback(this.resolve(payload), payload.arguments), terminal: false };
       case 'response.completed':
       case 'response.incomplete': {
         this.terminal = true;
         const response = isRecord(payload.response) ? payload.response : {};
-        const stop: IrStop = this.sawTool ? 'tool' : payload.type === 'response.incomplete' ? 'length' : 'stop';
+        // A truncated reply is never a finished tool turn: its open call may carry cut-off arguments.
+        const stop: IrStop = payload.type === 'response.incomplete' ? 'length' : this.sawTool ? 'tool' : 'stop';
         const events: IrEvent[] = [{ type: 'stop', stop }];
         if (isRecord(response.usage)) events.push({ type: 'usage', raw: response.usage });
         return { events, terminal: true };
@@ -154,19 +159,19 @@ export class ResponsesStreamDecoder {
     switch (item.type) {
       case 'function_call': {
         this.sawTool = true;
-        const state: OpenItem = { type: 'tool', itemId, streamed: true };
+        // `streamed` tells whether arguments were already emitted, so a later `.done` event can fill in what deltas never carried.
+        const state: OpenItem = { type: 'tool', itemId, streamed: false };
         this.open.set(index, state);
         if (itemId) this.byItemId.set(itemId, state);
-        return {
-          events: [
-            {
-              type: 'tool_start',
-              id: typeof item.call_id === 'string' && item.call_id ? item.call_id : itemId,
-              name: typeof item.name === 'string' ? item.name : '',
-            },
-          ],
-          terminal: false,
-        };
+        const events: IrEvent[] = [
+          {
+            type: 'tool_start',
+            id: typeof item.call_id === 'string' && item.call_id ? item.call_id : itemId,
+            name: typeof item.name === 'string' ? item.name : '',
+          },
+        ];
+        events.push(...this.toolArgumentsFallback(state, item.arguments));
+        return { events, terminal: false };
       }
       case 'message': {
         const state: OpenItem = { type: 'text', itemId, streamed: false };
@@ -217,9 +222,11 @@ export class ResponsesStreamDecoder {
     return { events: [{ type, text }], terminal: false };
   }
 
-  private openTool(payload: Record<string, unknown>): boolean {
-    const state = this.resolve(payload);
-    return !!state && state.type === 'tool';
+  /** Emit complete arguments carried by a non-delta event, unless deltas already delivered them. */
+  private toolArgumentsFallback(state: OpenItem | undefined, args: unknown): IrEvent[] {
+    if (state?.type !== 'tool' || state.streamed || typeof args !== 'string' || !args) return [];
+    state.streamed = true;
+    return [{ type: 'tool_args', args }];
   }
 }
 
