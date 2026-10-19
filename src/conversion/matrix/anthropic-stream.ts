@@ -126,6 +126,7 @@ export class AnthropicStreamDecoder {
 export class AnthropicStreamEncoder {
   private open: OpenBlock = null;
   private blockIndex = -1;
+  private toolArgsSeen = false;
 
   /** Translate one IR event into zero or more client SSE chunks. */
   write(event: IrEvent): string[] {
@@ -181,6 +182,7 @@ export class AnthropicStreamEncoder {
         const out = this.closeChunks();
         this.blockIndex += 1;
         this.open = 'tool';
+        this.toolArgsSeen = false;
         out.push(
           sse('content_block_start', {
             type: 'content_block_start',
@@ -192,6 +194,7 @@ export class AnthropicStreamEncoder {
       }
       case 'tool_args':
         if (this.open !== 'tool') return [];
+        this.toolArgsSeen = true;
         return [
           sse('content_block_delta', {
             type: 'content_block_delta',
@@ -252,7 +255,14 @@ export class AnthropicStreamEncoder {
 
   private closeChunks(): string[] {
     if (this.open === null) return [];
-    const out = [sse('content_block_stop', { type: 'content_block_stop', index: this.blockIndex })];
+    const out: string[] = [];
+    // A call without arguments still streams one (empty) input delta on the real wire.
+    if (this.open === 'tool' && !this.toolArgsSeen) {
+      out.push(
+        sse('content_block_delta', { type: 'content_block_delta', index: this.blockIndex, delta: { type: 'input_json_delta', partial_json: '' } }),
+      );
+    }
+    out.push(sse('content_block_stop', { type: 'content_block_stop', index: this.blockIndex }));
     this.open = null;
     return out;
   }
