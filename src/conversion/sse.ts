@@ -9,6 +9,9 @@ export function convertSseStream(
   body: ReadableStream<Uint8Array> | null | undefined,
   onData: (data: string, controller: ReadableStreamDefaultController<Uint8Array>) => void,
   isTerminal: () => boolean,
+  // Called when the upstream closes before a terminal event; returning true accepts
+  // the close as a complete reply (it may enqueue the closing frames first).
+  onEnd?: (controller: ReadableStreamDefaultController<Uint8Array>) => boolean,
 ): ReadableStream<Uint8Array> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let cancelled = false;
@@ -37,7 +40,7 @@ export function convertSseStream(
             scanner.push(decoder.decode(value, { stream: true }));
           }
           if (cancelled) return;
-          if (!isTerminal()) throw new Error('Upstream stream interrupted before terminal event');
+          if (!isTerminal() && !onEnd?.(controller)) throw new Error('Upstream stream interrupted before terminal event');
           controller.close();
         } catch (error) {
           if (!cancelled) controller.error(error);

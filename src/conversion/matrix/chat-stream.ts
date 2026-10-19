@@ -20,11 +20,21 @@ type OpenToolCall = { id: string; name: string; started: boolean; index: number 
 export class ChatStreamDecoder {
   private started = false;
   private terminal = false;
+  private finished = false;
   private readonly openTools = new Map<string, OpenToolCall>();
   private nextToolIdSeed = 0;
 
   get done(): boolean {
     return this.terminal;
+  }
+
+  /**
+   * True once a `finish_reason` was seen. Providers differ on what follows it:
+   * a usage-only chunk and `[DONE]` (OpenAI), or a plain close with no sentinel.
+   * A close after the finish is therefore a complete reply, not an interruption.
+   */
+  get finishedReply(): boolean {
+    return this.finished;
   }
 
   push(raw: string): { events: IrEvent[]; terminal: boolean } {
@@ -90,6 +100,16 @@ export class ChatStreamDecoder {
     }
     if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
       events.push({ type: 'stop', stop: chatStopToIr(choice.finish_reason) });
+      this.finished = true;
+      // Usage normally rides on a later chunk with empty choices (include_usage), so the
+      // reply is only sealed here when this chunk already carries it; otherwise the
+      // trailing usage chunk or `[DONE]` seals it.
+      if (isRecord(payload.usage)) this.terminal = true;
+      return { events, terminal: this.terminal };
+    }
+    // After the finish, the first usage-bearing chunk completes the reply.
+    if (this.finished && isRecord(payload.usage)) {
+      this.terminal = true;
       return { events, terminal: true };
     }
     return { events, terminal: false };

@@ -41,7 +41,15 @@ const ANTHROPIC_ALLOWED_FIELDS = [
   'context_management',
   'cache_control',
   'mcp_servers',
+  'service_tier',
+  'speed',
+  'inference_geo',
+  'container',
 ] as const;
+
+// Delivery hints (priority tier, fast mode, data residency) steer the Anthropic
+// serving path only; no Chat or Responses equivalent exists, so they are dropped.
+const REQUEST_HINT_FIELDS = ['service_tier', 'speed', 'inference_geo'] as const;
 
 const IGNORABLE_FIELDS = ['cache_control'] as const;
 
@@ -60,8 +68,9 @@ function anthroParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrTo
   const tools: IrTool[] = [];
   for (const rawTool of Array.isArray(body.tools) ? body.tools : []) {
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
-    if (!rawTool.type && typeof rawTool.name === 'string') {
-      assertFields(rawTool, ['name', 'description', 'input_schema', ...TOOL_HINT_FIELDS, ...IGNORABLE_FIELDS], 'tool');
+    // `type: "custom"` is the explicit spelling of a plain client function tool.
+    if ((!rawTool.type || rawTool.type === 'custom') && typeof rawTool.name === 'string') {
+      assertFields(rawTool, ['type', 'name', 'description', 'input_schema', ...TOOL_HINT_FIELDS, ...IGNORABLE_FIELDS], 'tool');
       // Tool hints have no Chat or Responses equivalent; report that they were dropped.
       if (TOOL_HINT_FIELDS.some((field) => rawTool[field] !== undefined)) diag.add({ feature: 'tool_hints', action: 'dropped' });
       if (!rawTool.name || !isRecord(rawTool.input_schema))
@@ -101,8 +110,11 @@ function anthroThinking(body: Record<string, unknown>): IrEffortOrUndefined {
   const thinking = body.thinking;
   if (thinking === undefined || thinking === null) return undefined;
   if (!isRecord(thinking)) throw new ConversionError('conversion_not_supported: thinking must be an object');
-  assertFields(thinking, ['type', 'budget_tokens'], 'thinking');
+  // `display` only chooses how Anthropic returns thinking text; it carries no semantics to translate.
+  assertFields(thinking, ['type', 'budget_tokens', 'display'], 'thinking');
   if (thinking.type === 'disabled') return null;
+  // Adaptive thinking has no fixed budget: the model decides, steered by output_config.effort.
+  if (thinking.type === 'adaptive') return undefined;
   if (thinking.type === 'enabled') {
     const budget = typeof thinking.budget_tokens === 'number' ? thinking.budget_tokens : 0;
     if (!budget) throw new ConversionError('conversion_not_supported: thinking.budget_tokens is required');
@@ -218,7 +230,7 @@ function userBlocksToParts(content: unknown): IrPart[] {
       continue;
     }
     if (block.type === 'image') {
-      assertFields(block, ['type', 'source'], 'image block');
+      assertFields(block, ['type', 'source', ...IGNORABLE_FIELDS], 'image block');
       parts.push(imagePartFromAnthropic(block.source));
       continue;
     }
@@ -248,7 +260,7 @@ function toolResultText(content: unknown, images: IrImagePart[]): string {
       if (typeof part.text !== 'string') throw new ConversionError('conversion_not_supported: non-text tool_result part');
       texts.push(part.text);
     } else if (isRecord(part) && part.type === 'image') {
-      assertFields(part, ['type', 'source'], 'tool_result image');
+      assertFields(part, ['type', 'source', ...IGNORABLE_FIELDS], 'tool_result image');
       images.push(imagePartFromAnthropic(part.source));
       texts.push('[image attached to the tool result]');
     } else throw new ConversionError(`conversion_not_supported: tool_result part "${String(isRecord(part) ? part.type : part)}"`);
@@ -318,6 +330,10 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
   if (body.context_management !== undefined) diag.add({ feature: 'context_management', action: 'dropped' });
   if (body.mcp_servers !== undefined) diag.add({ feature: 'provider_native_tool', action: 'dropped' });
+  // A container belongs to the server-side code-execution tool; it cannot be carried over.
+  if (body.container !== undefined && body.container !== null) diag.add({ feature: 'provider_native_tool', action: 'dropped' });
+  if (REQUEST_HINT_FIELDS.some((field) => body[field] !== undefined && body[field] !== null))
+    diag.add({ feature: 'request_hints', action: 'dropped' });
   const structured = anthroParseStructured(body, diag);
 
   const choice = anthroToolChoice(body);
