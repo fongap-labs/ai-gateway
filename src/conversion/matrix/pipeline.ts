@@ -127,13 +127,27 @@ export function openMatrixStream(
       collector.feed(seeded);
       enqueue(controller, textEncoder, encoder.write(seeded));
     }
-    if (terminal && !finalReply) {
-      finalReply = collector.finish(fallbackId);
-      enqueue(controller, textEncoder, encoder.finish(finalReply));
-    }
+    if (terminal) sealReply(controller);
   };
 
-  const clientStream = convertSseStream(upstreamBody, onData, () => decoder.done);
+  const sealReply = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+    if (finalReply) return;
+    finalReply = collector.finish(fallbackId);
+    enqueue(controller, textEncoder, encoder.finish(finalReply));
+  };
+
+  // A Chat upstream that closes right after its finish chunk (no usage chunk, no
+  // `[DONE]`) still delivered a complete reply; seal it instead of erroring the client.
+  const clientStream = convertSseStream(
+    upstreamBody,
+    onData,
+    () => decoder.done,
+    (controller) => {
+      if (!endsCleanly(decoder)) return false;
+      sealReply(controller);
+      return true;
+    },
+  );
   return { clientStream, collector, from, to, replyIfDone: () => finalReply, diagnostics: () => streamDiagnostics(finalReply, to) };
 }
 
@@ -214,6 +228,11 @@ function pushDecoder(
   return { events: [], terminal: false };
 }
 
+/** A close without the terminal sentinel is complete only for a Chat reply that already finished. */
+function endsCleanly(decoder: ChatStreamDecoder | AnthropicStreamDecoder | ResponsesStreamDecoder): boolean {
+  return decoder instanceof ChatStreamDecoder && decoder.finishedReply;
+}
+
 function streamDiagnostics(reply: IrReply | null, to: IrProtocol): readonly ConversionDiagnostic[] {
   const diagnostics: ConversionDiagnostic[] = [];
   const sealed = reply?.parts.some((part) => part.type === 'thinking' && part.sealed) ?? false;
@@ -277,7 +296,7 @@ export async function collectMatrixObject(
     await reader.cancel().catch(() => {});
     throw error;
   }
-  if (!hasTerminal && !decoder.done) throw new Error('Upstream stream interrupted before terminal event.');
+  if (!hasTerminal && !decoder.done && !endsCleanly(decoder)) throw new Error('Upstream stream interrupted before terminal event.');
 
   const reply = collector.finish(fallbackId);
   return { reply, object: replyToObject(reply, to), diagnostics: streamDiagnostics(reply, to) };

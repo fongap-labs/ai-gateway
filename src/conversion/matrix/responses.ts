@@ -7,7 +7,17 @@
 
 import { ConversionError } from '../validation.ts';
 import { MatrixDiag } from './diag.ts';
-import { type IrImagePart, type IrPart, type IrReply, type IrRequest, type IrStop, type IrTool, isRecord, normalizeEffort } from './ir.ts';
+import {
+  type IrDocumentPart,
+  type IrImagePart,
+  type IrPart,
+  type IrReply,
+  type IrRequest,
+  type IrStop,
+  type IrTool,
+  isRecord,
+  normalizeEffort,
+} from './ir.ts';
 
 export { ConversionError };
 
@@ -374,6 +384,7 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
     if (message.role === 'user') {
       const content: Record<string, unknown>[] = [];
       const pendingImages: IrImagePart[] = [];
+      const pendingDocuments: IrDocumentPart[] = [];
       const flushContent = () => {
         if (content.length) {
           input.push({ type: 'message', role: 'user', content: [...content] });
@@ -381,13 +392,17 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
         }
       };
       const flushImages = () => {
-        if (pendingImages.length) {
+        if (pendingImages.length || pendingDocuments.length) {
           input.push({
             type: 'message',
             role: 'user',
-            content: pendingImages.map((image) => ({ type: 'input_image', image_url: imageUrlOf(image) })),
+            content: [
+              ...pendingImages.map((image) => ({ type: 'input_image', image_url: imageUrlOf(image) })),
+              ...pendingDocuments.map(inputFilePart),
+            ],
           });
           pendingImages.length = 0;
+          pendingDocuments.length = 0;
         }
       };
       for (const part of message.parts) {
@@ -401,12 +416,17 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
           content.push({ type: 'input_image', image_url: imageUrlOf(part) });
           continue;
         }
+        if (part.type === 'document') {
+          content.push(inputFilePart(part));
+          continue;
+        }
         if (part.type === 'tool_result') {
           diag.add({ feature: 'tool_results', action: 'mapped' });
           if (part.isError) diag.add({ feature: 'tool_result_error_marker', action: 'dropped' });
           flushContent();
           input.push({ type: 'function_call_output', call_id: part.callId, output: part.text });
           for (const image of part.images) pendingImages.push(image);
+          for (const document of part.documents ?? []) pendingDocuments.push(document);
           continue;
         }
         diag.add({ feature: 'thinking_history', action: 'dropped' });
@@ -479,6 +499,10 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
 }
 
 export const RESPONSES_DEFAULT_MAX_OUTPUT_TOKENS = 1024;
+
+function inputFilePart(part: IrDocumentPart): Record<string, unknown> {
+  return { type: 'input_file', ...(part.filename ? { filename: part.filename } : {}), file_data: `data:${part.mediaType};base64,${part.data}` };
+}
 
 function imageUrlOf(part: IrImagePart): string {
   if (part.url) return part.url;

@@ -11,6 +11,7 @@ import { MatrixDiag } from './diag.ts';
 import {
   budgetToEffort,
   effortToBudget,
+  type IrDocumentPart,
   type IrImagePart,
   type IrPart,
   type IrReply,
@@ -41,9 +42,18 @@ const ANTHROPIC_ALLOWED_FIELDS = [
   'context_management',
   'cache_control',
   'mcp_servers',
+  'service_tier',
+  'speed',
+  'inference_geo',
+  'container',
 ] as const;
 
-const IGNORABLE_FIELDS = ['cache_control'] as const;
+// Delivery hints (priority tier, fast mode, data residency) steer the Anthropic
+// serving path only; no Chat or Responses equivalent exists, so they are dropped.
+const REQUEST_HINT_FIELDS = ['service_tier', 'speed', 'inference_geo'] as const;
+
+// `citations` echoes earlier cited output back; it steers nothing on a Chat or Responses target.
+const IGNORABLE_FIELDS = ['cache_control', 'citations'] as const;
 
 const TOOL_HINT_FIELDS = ['allowed_callers', 'defer_loading', 'strict', 'input_examples', 'eager_input_streaming'] as const;
 
@@ -60,8 +70,9 @@ function anthroParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrTo
   const tools: IrTool[] = [];
   for (const rawTool of Array.isArray(body.tools) ? body.tools : []) {
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
-    if (!rawTool.type && typeof rawTool.name === 'string') {
-      assertFields(rawTool, ['name', 'description', 'input_schema', ...TOOL_HINT_FIELDS, ...IGNORABLE_FIELDS], 'tool');
+    // `type: "custom"` is the explicit spelling of a plain client function tool.
+    if ((!rawTool.type || rawTool.type === 'custom') && typeof rawTool.name === 'string') {
+      assertFields(rawTool, ['type', 'name', 'description', 'input_schema', ...TOOL_HINT_FIELDS, ...IGNORABLE_FIELDS], 'tool');
       // Tool hints have no Chat or Responses equivalent; report that they were dropped.
       if (TOOL_HINT_FIELDS.some((field) => rawTool[field] !== undefined)) diag.add({ feature: 'tool_hints', action: 'dropped' });
       if (!rawTool.name || !isRecord(rawTool.input_schema))
@@ -101,8 +112,11 @@ function anthroThinking(body: Record<string, unknown>): IrEffortOrUndefined {
   const thinking = body.thinking;
   if (thinking === undefined || thinking === null) return undefined;
   if (!isRecord(thinking)) throw new ConversionError('conversion_not_supported: thinking must be an object');
-  assertFields(thinking, ['type', 'budget_tokens'], 'thinking');
+  // `display` only chooses how Anthropic returns thinking text; it carries no semantics to translate.
+  assertFields(thinking, ['type', 'budget_tokens', 'display'], 'thinking');
   if (thinking.type === 'disabled') return null;
+  // Adaptive thinking has no fixed budget: the model decides, steered by output_config.effort.
+  if (thinking.type === 'adaptive') return undefined;
   if (thinking.type === 'enabled') {
     const budget = typeof thinking.budget_tokens === 'number' ? thinking.budget_tokens : 0;
     if (!budget) throw new ConversionError('conversion_not_supported: thinking.budget_tokens is required');
@@ -201,7 +215,34 @@ function imagePartFromAnthropic(source: unknown): IrImagePart {
   throw new ConversionError('conversion_not_supported: unsupported image source');
 }
 
-function userBlocksToParts(content: unknown): IrPart[] {
+/**
+ * Anthropic `document` block. Inline base64 documents travel as a document part; a
+ * plain-text source is just text. URL and content-block sources have no portable
+ * inline form and fail closed.
+ */
+function documentFromAnthropic(block: Record<string, unknown>, diag: MatrixDiag): IrPart {
+  assertFields(block, ['type', 'source', 'title', 'context', ...IGNORABLE_FIELDS], 'document block');
+  const source = block.source;
+  if (!isRecord(source)) throw new ConversionError('conversion_not_supported: invalid document source');
+  if (source.type === 'text') {
+    assertFields(source, ['type', 'media_type', 'data'], 'document source');
+    if (typeof source.data !== 'string') throw new ConversionError('conversion_not_supported: document text source data is required');
+    diag.add({ feature: 'document', action: 'emulated' });
+    return { type: 'text', text: source.data };
+  }
+  if (source.type === 'base64') {
+    assertFields(source, ['type', 'media_type', 'data'], 'document source');
+    const data = typeof source.data === 'string' ? source.data : '';
+    if (!data) throw new ConversionError('conversion_not_supported: document source data is required');
+    const mediaType = typeof source.media_type === 'string' && source.media_type ? source.media_type : 'application/pdf';
+    const title = typeof block.title === 'string' ? block.title.trim() : '';
+    diag.add({ feature: 'document', action: 'mapped' });
+    return { type: 'document', mediaType, data, filename: title || (mediaType === 'application/pdf' ? 'document.pdf' : 'document') };
+  }
+  throw new ConversionError(`conversion_not_supported: document source "${String(source.type)}"`);
+}
+
+function userBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
   if (typeof content === 'string') return [{ type: 'text', text: content }];
   if (!Array.isArray(content)) throw new ConversionError('conversion_not_supported: invalid user content');
   const parts: IrPart[] = [];
@@ -218,8 +259,12 @@ function userBlocksToParts(content: unknown): IrPart[] {
       continue;
     }
     if (block.type === 'image') {
-      assertFields(block, ['type', 'source'], 'image block');
+      assertFields(block, ['type', 'source', ...IGNORABLE_FIELDS], 'image block');
       parts.push(imagePartFromAnthropic(block.source));
+      continue;
+    }
+    if (block.type === 'document') {
+      parts.push(documentFromAnthropic(block, diag));
       continue;
     }
     if (block.type === 'tool_result') {
@@ -227,8 +272,16 @@ function userBlocksToParts(content: unknown): IrPart[] {
       if (typeof block.tool_use_id !== 'string' || !block.tool_use_id)
         throw new ConversionError('conversion_not_supported: tool_result.tool_use_id is required');
       const images: IrImagePart[] = [];
-      const text = toolResultText(block.content, images);
-      parts.push({ type: 'tool_result', callId: block.tool_use_id, text, images, ...(block.is_error === true ? { isError: true } : {}) });
+      const documents: IrDocumentPart[] = [];
+      const text = toolResultText(block.content, { images, documents }, diag);
+      parts.push({
+        type: 'tool_result',
+        callId: block.tool_use_id,
+        text,
+        images,
+        ...(documents.length ? { documents } : {}),
+        ...(block.is_error === true ? { isError: true } : {}),
+      });
       continue;
     }
     throw new ConversionError(`conversion_not_supported: user content.${String(block.type)}`);
@@ -236,7 +289,7 @@ function userBlocksToParts(content: unknown): IrPart[] {
   return parts;
 }
 
-function toolResultText(content: unknown, images: IrImagePart[]): string {
+function toolResultText(content: unknown, extras: { images: IrImagePart[]; documents: IrDocumentPart[] }, diag: MatrixDiag): string {
   if (content === undefined || content === null) return '';
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) throw new ConversionError('conversion_not_supported: non-text tool_result content');
@@ -248,9 +301,20 @@ function toolResultText(content: unknown, images: IrImagePart[]): string {
       if (typeof part.text !== 'string') throw new ConversionError('conversion_not_supported: non-text tool_result part');
       texts.push(part.text);
     } else if (isRecord(part) && part.type === 'image') {
-      assertFields(part, ['type', 'source'], 'tool_result image');
-      images.push(imagePartFromAnthropic(part.source));
+      assertFields(part, ['type', 'source', ...IGNORABLE_FIELDS], 'tool_result image');
+      extras.images.push(imagePartFromAnthropic(part.source));
       texts.push('[image attached to the tool result]');
+    } else if (isRecord(part) && part.type === 'document') {
+      const document = documentFromAnthropic(part, diag);
+      if (document.type === 'document') {
+        extras.documents.push(document);
+        texts.push('[document attached to the tool result]');
+      } else if (document.type === 'text') texts.push(document.text);
+    } else if (isRecord(part) && part.type === 'tool_reference') {
+      // Tool-search result marker: the loaded tool is not callable on the target, keep a readable trace.
+      assertFields(part, ['type', 'tool_name', ...IGNORABLE_FIELDS], 'tool_reference');
+      diag.add({ feature: 'tool_reference', action: 'emulated' });
+      texts.push(typeof part.tool_name === 'string' && part.tool_name ? `[tool reference: ${part.tool_name}]` : '[tool reference]');
     } else throw new ConversionError(`conversion_not_supported: tool_result part "${String(isRecord(part) ? part.type : part)}"`);
   }
   return texts.join('\n');
@@ -318,6 +382,10 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
   if (body.context_management !== undefined) diag.add({ feature: 'context_management', action: 'dropped' });
   if (body.mcp_servers !== undefined) diag.add({ feature: 'provider_native_tool', action: 'dropped' });
+  // A container belongs to the server-side code-execution tool; it cannot be carried over.
+  if (body.container !== undefined && body.container !== null) diag.add({ feature: 'provider_native_tool', action: 'dropped' });
+  if (REQUEST_HINT_FIELDS.some((field) => body[field] !== undefined && body[field] !== null))
+    diag.add({ feature: 'request_hints', action: 'dropped' });
   const structured = anthroParseStructured(body, diag);
 
   const choice = anthroToolChoice(body);
@@ -396,7 +464,7 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     if (raw.role === 'user') {
       request.messages.push({
         role: 'user',
-        parts: userBlocksToParts(raw.content),
+        parts: userBlocksToParts(raw.content, diag),
         ...(typeof raw.content === 'string' ? { stringContent: true } : {}),
       });
       continue;
@@ -407,7 +475,9 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
       const callId = typeof raw.tool_use_id === 'string' ? raw.tool_use_id : '';
       if (!callId) throw new ConversionError('conversion_not_supported: tool message missing tool_use_id');
       const images: IrImagePart[] = [];
-      request.messages.push({ role: 'user', parts: [{ type: 'tool_result', callId, text: toolResultText(raw.content, images), images }] });
+      const documents: IrDocumentPart[] = [];
+      const text = toolResultText(raw.content, { images, documents }, diag);
+      request.messages.push({ role: 'user', parts: [{ type: 'tool_result', callId, text, images, ...(documents.length ? { documents } : {}) }] });
       continue;
     }
     if (raw.role === 'system') {
