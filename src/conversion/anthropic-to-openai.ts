@@ -4,8 +4,9 @@
 // Anthropic Messages request -> OpenAI Chat Completions request converter.
 
 import { assertFields, assertSampling, ConversionError, isRecord } from './validation.ts';
+import { DEFAULT_MAX_TOKENS } from './openai-chat-request-to-anthropic.ts';
 
-export { ConversionError };
+export { ConversionError, DEFAULT_MAX_TOKENS };
 
 function unsupportedBlock(type: unknown): never {
   throw new ConversionError(`conversion_not_supported: ${type} blocks not supported`);
@@ -99,19 +100,33 @@ function convertUserContent(blocks: unknown): string | Record<string, unknown> |
   const parts: Array<Record<string, unknown>> = [];
   for (const block of blocks) {
     if (!isRecord(block)) unsupportedBlock('invalid');
-    assertFields(
-      block,
-      block.type === 'tool_result'
-        ? ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS]
-        : ['type', 'text', ...SAFELY_IGNORABLE_FIELDS],
-      'user content',
-    );
-    if (block.type === 'text') parts.push({ type: 'text', text: block.text || '' });
-    else if (block.type === 'tool_result') {
+    if (block.type === 'text') {
+      assertFields(block, ['type', 'text', ...SAFELY_IGNORABLE_FIELDS], 'user content');
+      parts.push({ type: 'text', text: block.text || '' });
+    } else if (block.type === 'tool_result') {
+      assertFields(block, ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS], 'user content');
       if (typeof block.tool_use_id !== 'string' || !block.tool_use_id) unsupportedBlock('invalid tool_result');
       if (block.is_error !== undefined && typeof block.is_error !== 'boolean') unsupportedBlock('invalid tool_result.is_error');
       const text = extractToolResultText(block.content);
       parts.push({ role: 'tool', tool_call_id: block.tool_use_id, content: text });
+    } else if (block.type === 'image') {
+      assertFields(block, ['type', 'source', ...SAFELY_IGNORABLE_FIELDS], 'user content');
+      const source = block.source;
+      if (!isRecord(source)) unsupportedBlock('invalid image source');
+      assertFields(source, ['type', 'url', 'media_type', 'data'], 'image source');
+      let url: string;
+      if (source.type === 'url') {
+        url = source.url || '';
+        if (!url) unsupportedBlock('image source url is required');
+      } else if (source.type === 'base64') {
+        const data = source.data || '';
+        if (!data) unsupportedBlock('image source data is required');
+        const mediaType = typeof source.media_type === 'string' ? source.media_type : 'image/png';
+        url = `data:${mediaType};base64,${data}`;
+      } else {
+        unsupportedBlock('unsupported image source type');
+      }
+      parts.push({ type: 'image_url', image_url: { url } });
     } else {
       unsupportedBlock(block.type);
     }
@@ -250,7 +265,11 @@ export function convertAnthropicToOpenAIRequest(body: Record<string, unknown>): 
 
   const out: Record<string, unknown> = {};
   if (body.model !== undefined) out.model = body.model;
-  if (body.max_tokens !== undefined) out.max_tokens = body.max_tokens;
+  if (body.max_tokens !== undefined) {
+    out.max_tokens = body.max_tokens;
+  } else {
+    out.max_tokens = DEFAULT_MAX_TOKENS;
+  }
   if (body.temperature !== undefined) out.temperature = body.temperature;
   if (body.top_p !== undefined) out.top_p = body.top_p;
   if (body.stream !== undefined) out.stream = body.stream;
