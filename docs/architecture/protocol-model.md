@@ -119,6 +119,8 @@ OpenAI 的 system/developer 语义可能需要映射或模拟，因为 Anthropic
 
 以下 Anthropic 专有输入不会拒绝回退：`thinking.type:"adaptive"`（无固定预算，强度仍由 `output_config.effort` 映射）、`thinking.display`、`type:"custom"` 工具（即普通函数工具）、内容块上的 `cache_control`；`service_tier`、`speed`、`inference_geo` 仅影响 Anthropic 的服务路径，会以 `request_hints: dropped` 诊断丢弃。`container` 属于服务端代码执行工具，按 `provider_native_tool` 丢弃并受高风险规则约束。
 
+Anthropic 的 `document` 块：内联 base64 文档映射为 Chat 的 `file` 部分或 Responses 的 `input_file` 部分（用户消息与工具结果中均可），纯文本来源转为文本（`emulated`）；URL 与 content 来源没有可移植的内联形式，转换失败而不是猜测。工具结果中的 `tool_reference` 以文本占位表示（`emulated`），内容块上的 `citations` 被忽略。
+
 ## 响应与流式转换
 
 回退同时涵盖请求方向与响应方向。转换后的上游响应会以**客户端原始协议的信封**返回。

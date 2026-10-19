@@ -7,7 +7,17 @@
 
 import { ConversionError, parseToolArguments } from '../validation.ts';
 import { MatrixDiag } from './diag.ts';
-import { type IrEffort, type IrImagePart, type IrPart, type IrReply, type IrRequest, type IrStop, isRecord, normalizeEffort } from './ir.ts';
+import {
+  type IrDocumentPart,
+  type IrEffort,
+  type IrImagePart,
+  type IrPart,
+  type IrReply,
+  type IrRequest,
+  type IrStop,
+  isRecord,
+  normalizeEffort,
+} from './ir.ts';
 
 export { ConversionError };
 
@@ -304,6 +314,10 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
         pendingUserParts.push({ type: 'text', text: '[image attached from a tool result]' });
         pendingUserParts.push({ type: 'image_url', image_url: { url: image.url } });
       }
+      for (const document of r.part.documents ?? []) {
+        pendingUserParts.push({ type: 'text', text: '[document attached from a tool result]' });
+        pendingUserParts.push(chatFilePart(document));
+      }
     }
     pendingToolResults = [];
   };
@@ -349,6 +363,9 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
         } else if (part.type === 'image') {
           flushToolResults();
           pendingUserParts.push({ type: 'image_url', image_url: { url: imageRef(part) } });
+        } else if (part.type === 'document') {
+          flushToolResults();
+          pendingUserParts.push(chatFilePart(part));
         } else if (part.type === 'thinking') {
           diag.add({ feature: 'thinking_in_user_message', action: 'dropped' });
         }
@@ -409,6 +426,13 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
     if (ir.effort === 'max') diag.add({ feature: 'effort_control', action: 'emulated' });
   }
   return out;
+}
+
+function chatFilePart(part: IrDocumentPart): Record<string, unknown> {
+  return {
+    type: 'file',
+    file: { ...(part.filename ? { filename: part.filename } : {}), file_data: `data:${part.mediaType};base64,${part.data}` },
+  };
 }
 
 function imageRef(part: IrPart): string {

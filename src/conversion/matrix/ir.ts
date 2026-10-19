@@ -34,6 +34,14 @@ export type IrImagePart = {
   data?: string; // base64 payload when the image was inline (`data:` / base64)
 };
 
+/** Inline document (PDF and the like) attached by the client; carried only as base64. */
+export type IrDocumentPart = {
+  type: 'document';
+  mediaType: string;
+  data: string;
+  filename?: string;
+};
+
 export type IrToolCallPart = {
   type: 'tool_call';
   id: string;
@@ -48,6 +56,7 @@ export type IrToolResultPart = {
   text: string;
   isError?: boolean;
   images: IrImagePart[];
+  documents?: IrDocumentPart[];
 };
 
 export type IrThinkingPart = {
@@ -61,7 +70,7 @@ export type IrThinkingPart = {
   data?: string;
 };
 
-export type IrPart = { type: 'text'; text: string } | IrImagePart | IrToolCallPart | IrToolResultPart | IrThinkingPart;
+export type IrPart = { type: 'text'; text: string } | IrImagePart | IrDocumentPart | IrToolCallPart | IrToolResultPart | IrThinkingPart;
 
 /** `stringContent` marks a user message whose source content was a plain string (kept a string on the wire). */
 export type IrMessage = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
