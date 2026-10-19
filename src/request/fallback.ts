@@ -54,12 +54,12 @@ import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from './errors.ts';
 import { computeTierCaps } from './tier-loop.ts';
 
-const HIGH_RISK_DROPPED_FEATURES = new Set([
-  'provider_native_tool',
-  'provider_native_tool_history',
-  'context_management',
-  'tool_result_error_marker',
-]);
+// Dropped features that change what the upstream is asked to do, so the target
+// is refused rather than served degraded. Tool-result error flags and context
+// management hints are NOT here: the failure text stays in the tool result
+// content, and context management only steers the client's own pruning. Both
+// still surface as `dropped` diagnostics (fidelity `degraded`).
+const HIGH_RISK_DROPPED_FEATURES = new Set(['provider_native_tool', 'provider_native_tool_history']);
 
 /** client route -> canonical IR protocol. */
 function routeToIrProtocol(route: string): IrProtocol | null {
