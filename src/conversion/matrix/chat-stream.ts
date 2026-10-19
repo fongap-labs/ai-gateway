@@ -239,9 +239,15 @@ export function chatUsageFromRaw(reply: IrReply): Record<string, unknown> {
   if (raw.prompt_tokens !== undefined) return raw;
   // Client-facing usage carries only the three Chat counters; cache and other
   // provider fields reach per-attempt accounting through the upstream usage hook.
+  // An Anthropic-shaped tail usage (message_delta) carries only output_tokens;
+  // the input count then lives in reply.inputTokens (from message_start), so the
+  // total must be derived from the RESOLVED prompt/completion values, not from
+  // the raw object that may be missing input_tokens.
+  const promptTokens = Number.isFinite(raw.input_tokens) ? raw.input_tokens : reply.inputTokens || 0;
+  const completionTokens = Number.isFinite(raw.output_tokens) ? raw.output_tokens : 0;
   return {
-    prompt_tokens: Number.isFinite(raw.input_tokens) ? raw.input_tokens : reply.inputTokens || 0,
-    completion_tokens: Number.isFinite(raw.output_tokens) ? raw.output_tokens : 0,
-    total_tokens: Number.isFinite(raw.total_tokens) ? raw.total_tokens : (Number(raw.input_tokens) || 0) + (Number(raw.output_tokens) || 0),
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: Number.isFinite(raw.total_tokens) ? raw.total_tokens : promptTokens + completionTokens,
   };
 }
