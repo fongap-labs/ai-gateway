@@ -3,8 +3,8 @@
 //
 // Anthropic Messages request -> OpenAI Chat Completions request converter.
 
-import { assertFields, assertSampling, ConversionError, isRecord } from './validation.ts';
 import { DEFAULT_MAX_TOKENS } from './openai-chat-request-to-anthropic.ts';
+import { assertFields, assertSampling, ConversionError, isRecord } from './validation.ts';
 
 export { ConversionError, DEFAULT_MAX_TOKENS };
 
