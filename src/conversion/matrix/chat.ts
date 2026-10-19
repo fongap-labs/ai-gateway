@@ -85,7 +85,7 @@ function chatParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrRequ
   return tools;
 }
 
-function chatContentParts(content: unknown, images: IrPart[]): IrPart[] {
+function chatContentParts(content: unknown, images: IrPart[], diag: MatrixDiag): IrPart[] {
   if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
   if (!Array.isArray(content)) throw new ConversionError('conversion_not_supported: content must be a string or parts array');
   const parts: IrPart[] = [];
@@ -168,7 +168,7 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     }
     if (role === 'user') {
       const images: IrPart[] = [];
-      request.messages.push({ role: 'user', parts: chatContentParts(raw.content, images) });
+      request.messages.push({ role: 'user', parts: chatContentParts(raw.content, images, diag) });
       continue;
     }
     if (role === 'assistant') {
@@ -180,7 +180,7 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
             ? raw.reasoning
             : null;
       if (reasoning) parts.push({ type: 'thinking', text: reasoning });
-      parts.push(...chatContentParts(typeof raw.content === 'string' ? raw.content : Array.isArray(raw.content) ? raw.content : '', []));
+      parts.push(...chatContentParts(typeof raw.content === 'string' ? raw.content : Array.isArray(raw.content) ? raw.content : '', [], diag));
       for (const tc of Array.isArray(raw.tool_calls) ? raw.tool_calls : []) {
         if (!isRecord(tc)) throw new ConversionError('conversion_not_supported: tool_calls entry is not an object');
         if (tc.type !== 'function' || !isRecord(tc.function)) {
