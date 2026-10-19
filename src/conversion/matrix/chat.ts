@@ -131,7 +131,10 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
   const effort = parseChatEffort(body);
   const topLevelSystem = typeof body.system === 'string' ? body.system : '';
   const topLevelDeveloper = Array.isArray(body.developer)
-    ? body.developer.map(d => typeof d === 'string' ? d : (isRecord(d) && typeof d.content === 'string' ? d.content : '')).filter(Boolean).join('\n')
+    ? body.developer
+        .map((d) => (typeof d === 'string' ? d : isRecord(d) && typeof d.content === 'string' ? d.content : ''))
+        .filter(Boolean)
+        .join('\n')
     : '';
   const combinedSystem = [topLevelSystem, topLevelDeveloper].filter(Boolean).join('\n\n');
   const request: IrRequest = {
