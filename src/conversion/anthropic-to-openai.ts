@@ -100,11 +100,18 @@ function convertUserContent(blocks: unknown): string | Record<string, unknown> |
   const parts: Array<Record<string, unknown>> = [];
   for (const block of blocks) {
     if (!isRecord(block)) unsupportedBlock('invalid');
+    assertFields(
+      block,
+      block.type === 'tool_result'
+        ? ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS]
+        : block.type === 'image'
+          ? ['type', 'source', ...SAFELY_IGNORABLE_FIELDS]
+          : ['type', 'text', ...SAFELY_IGNORABLE_FIELDS],
+      'user content',
+    );
     if (block.type === 'text') {
-      assertFields(block, ['type', 'text', ...SAFELY_IGNORABLE_FIELDS], 'user content');
       parts.push({ type: 'text', text: block.text || '' });
     } else if (block.type === 'tool_result') {
-      assertFields(block, ['type', 'tool_use_id', 'content', 'is_error', ...SAFELY_IGNORABLE_FIELDS], 'user content');
       if (typeof block.tool_use_id !== 'string' || !block.tool_use_id) unsupportedBlock('invalid tool_result');
       if (block.is_error !== undefined && typeof block.is_error !== 'boolean') unsupportedBlock('invalid tool_result.is_error');
       const text = extractToolResultText(block.content);
@@ -116,7 +123,7 @@ function convertUserContent(blocks: unknown): string | Record<string, unknown> |
       assertFields(source, ['type', 'url', 'media_type', 'data'], 'image source');
       let url: string;
       if (source.type === 'url') {
-        url = source.url || '';
+        url = typeof source.url === 'string' ? source.url : '';
         if (!url) unsupportedBlock('image source url is required');
       } else if (source.type === 'base64') {
         const data = source.data || '';

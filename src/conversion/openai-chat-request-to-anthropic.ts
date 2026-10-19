@@ -92,8 +92,8 @@ function convertUserContent(content: unknown): string | Array<Record<string, unk
       if (!url) throw new ConversionError('conversion_not_supported: image_url.url is required');
       let source: Record<string, unknown>;
       if (url.startsWith('data:')) {
-        const [header, data] = url.split(',', 2);
-        const mediaType = header.split(';')[0].replace('data:', '') || 'image/png';
+        const [header = '', data = ''] = url.split(',', 2);
+        const mediaType = header.split(';')[0]?.replace('data:', '') || 'image/png';
         source = { type: 'base64', media_type: mediaType, data: data || '' };
       } else {
         source = { type: 'url', url };
