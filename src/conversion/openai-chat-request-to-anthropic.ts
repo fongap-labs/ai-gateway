@@ -90,7 +90,15 @@ function convertUserContent(content: unknown): string | Array<Record<string, unk
       assertFields(iu, ['url'], 'image_url');
       const url = typeof iu.url === 'string' ? iu.url : '';
       if (!url) throw new ConversionError('conversion_not_supported: image_url.url is required');
-      parts.push({ type: 'image', source: { type: 'url', url } });
+      let source: Record<string, unknown>;
+      if (url.startsWith('data:')) {
+        const [header = '', data = ''] = url.split(',', 2);
+        const mediaType = header.split(';')[0]?.replace('data:', '') || 'image/png';
+        source = { type: 'base64', media_type: mediaType, data: data || '' };
+      } else {
+        source = { type: 'url', url };
+      }
+      parts.push({ type: 'image', source });
     } else if (part.type === 'input_audio' || part.type === 'file') {
       throw new ConversionError(`conversion_not_supported: content type "${part.type}" is not supported`);
     } else {
@@ -239,7 +247,7 @@ export function convertOpenAIChatRequestToAnthropic(body: Record<string, unknown
   //   required-> { type: 'any' }
   //   none    -> { type: 'none' }
   //   { type: 'tool', name } / { type: 'function', function } -> { type: 'tool', name }
-  if (body.tool_choice !== undefined) {
+  if (body.tool_choice !== undefined && body.tool_choice !== null) {
     out.tool_choice = mapToolChoice(body.tool_choice);
   }
 

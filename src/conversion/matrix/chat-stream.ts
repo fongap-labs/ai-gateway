@@ -87,6 +87,7 @@ export class ChatStreamDecoder {
     }
     if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
       events.push({ type: 'stop', stop: chatStopToIr(choice.finish_reason) });
+      return { events, terminal: true };
     }
     return { events, terminal: false };
   }
@@ -134,7 +135,27 @@ export class ChatStreamEncoder {
   }
 
   finish(reply: IrReply): string[] {
-    const chunks: string[] = [this.chunk({ index: 0, delta: {}, finish_reason: chatStopFromIr(reply.stop) })];
+    const chunks: string[] = [];
+    const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
+    const promptTokens =
+      typeof raw.prompt_tokens === 'number' ? raw.prompt_tokens : typeof raw.input_tokens === 'number' ? raw.input_tokens : reply.inputTokens;
+    const completionTokens =
+      typeof raw.completion_tokens === 'number' ? raw.completion_tokens : typeof raw.output_tokens === 'number' ? raw.output_tokens : 0;
+    if (Number.isFinite(promptTokens) || Number.isFinite(completionTokens)) {
+      chunks.push(
+        this.chunk({
+          index: 0,
+          delta: {},
+          finish_reason: null,
+          usage: {
+            prompt_tokens: promptTokens ?? 0,
+            completion_tokens: completionTokens ?? 0,
+            total_tokens: (promptTokens ?? 0) + (completionTokens ?? 0),
+          },
+        }),
+      );
+    }
+    chunks.push(this.chunk({ index: 0, delta: {}, finish_reason: chatStopFromIr(reply.stop) }));
     chunks.push('data: [DONE]\n\n');
     return chunks;
   }

@@ -47,6 +47,18 @@ function responsesTools(body: Record<string, unknown>, diag: MatrixDiag): IrTool
   const tools: IrTool[] = [];
   for (const rawTool of Array.isArray(body.tools) ? body.tools : []) {
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
+    if (rawTool.type === 'custom') {
+      // Codex custom tools (e.g., apply_patch) → declare as function with {"input": string} param
+      const name = rawTool.name;
+      if (typeof name !== 'string' || !name) continue;
+      diag.add({ feature: 'custom_tool', action: 'mapped' });
+      tools.push({
+        name,
+        description: typeof rawTool.description === 'string' ? rawTool.description : '',
+        schema: { type: 'object', properties: { input: { type: 'string' } }, required: ['input'] },
+      });
+      continue;
+    }
     if (rawTool.type !== 'function') {
       diag.add({ feature: 'provider_native_tool', action: 'dropped' });
       continue;
@@ -181,8 +193,41 @@ function inputValueToMessages(
         pushMessage('assistant', parts);
         continue;
       }
+      case 'custom_tool_call': {
+        assertFields(item, ['type', 'call_id', 'name', 'input', 'id'], 'custom_tool_call');
+        if (typeof item.name !== 'string' || !item.name) throw new ConversionError('conversion_not_supported: custom_tool_call.name is required');
+        pushMessage('assistant', [
+          {
+            type: 'tool_call',
+            id:
+              typeof item.call_id === 'string' && item.call_id ? item.call_id : `call_${typeof item.id === 'string' ? item.id : crypto.randomUUID()}`,
+            name: item.name,
+            args: JSON.stringify({ input: item.input }),
+          },
+        ]);
+        continue;
+      }
+      case 'custom_tool_call_output': {
+        assertFields(item, ['type', 'call_id', 'output', 'id'], 'custom_tool_call_output');
+        if (typeof item.call_id !== 'string' || !item.call_id)
+          throw new ConversionError('conversion_not_supported: custom_tool_call_output.call_id is required');
+        pushMessage('user', [{ type: 'tool_result', callId: item.call_id, text: functionCallOutputToText(item.output, diag), images: [] }]);
+        continue;
+      }
+      case 'local_shell_call': {
+        const action = item.action;
+        const text = action ? `[local_shell] ${JSON.stringify(action)}` : '[local_shell]';
+        pushMessage('assistant', [{ type: 'text', text }]);
+        continue;
+      }
+      case 'local_shell_call_output': {
+        const output = item.output;
+        const text = typeof output === 'string' ? output : JSON.stringify(output);
+        pushMessage('user', [{ type: 'text', text: `[local_shell output] ${text}` }]);
+        continue;
+      }
       default:
-        throw new ConversionError(`conversion_not_supported: input item type "${String(item.type)}"`);
+        diag.add({ feature: 'unknown_input_item', action: 'dropped' });
     }
   }
   return { system, messages };
@@ -304,8 +349,6 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
     ...(structured ? { structuredOutputSchema: structured } : {}),
     ...(typeof body.parallel_tool_calls === 'boolean' ? { parallelToolCalls: body.parallel_tool_calls } : {}),
   };
-  if (request.system && system) request.system = `${request.system}\n${system}`;
-  else if (system) request.system = system;
   if (!request.model) throw new ConversionError('conversion_not_supported: model is required');
   if (messages.length === 0 && !request.system) throw new ConversionError('conversion_not_supported: input is empty');
   return { request, diag };
