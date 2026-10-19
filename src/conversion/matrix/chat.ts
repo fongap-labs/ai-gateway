@@ -36,7 +36,7 @@ const CHAT_ALLOWED_FIELDS = [
   'store',
 ] as const;
 
-const IMAGE_URL_TYPE_FIELDS = new Set(['url']);
+const IMAGE_URL_TYPE_FIELDS = new Set(['url', 'detail']);
 
 function assertFields(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
   for (const [key, v] of Object.entries(value)) {
@@ -98,7 +98,11 @@ function chatContentParts(content: unknown, images: IrPart[]): IrPart[] {
     if (part.type === 'text') parts.push({ type: 'text', text: typeof part.text === 'string' ? part.text : '' });
     else if (part.type === 'image_url') {
       const iu = isRecord(part.image_url) ? part.image_url : {};
-      assertFields(iu, [...IMAGE_URL_TYPE_FIELDS], 'image_url');
+      for (const key of Object.keys(iu)) {
+        if (!IMAGE_URL_TYPE_FIELDS.has(key)) {
+          diag.add({ feature: 'image_url_extra', action: 'dropped' });
+        }
+      }
       const url = typeof iu.url === 'string' ? iu.url : '';
       if (!url) throw new ConversionError('conversion_not_supported: image_url.url is required');
       const image: IrPart = { type: 'image', url };
@@ -125,9 +129,14 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
 
   const structured = chatStructuredSchema(body, diag);
   const effort = parseChatEffort(body);
+  const topLevelSystem = typeof body.system === 'string' ? body.system : '';
+  const topLevelDeveloper = Array.isArray(body.developer)
+    ? body.developer.map(d => typeof d === 'string' ? d : (isRecord(d) && typeof d.content === 'string' ? d.content : '')).filter(Boolean).join('\n')
+    : '';
+  const combinedSystem = [topLevelSystem, topLevelDeveloper].filter(Boolean).join('\n\n');
   const request: IrRequest = {
     model: typeof body.model === 'string' && body.model.trim() ? body.model : '',
-    system: '',
+    system: combinedSystem,
     messages: [],
     tools: chatParseTools(body, diag),
     toolChoice: chatToolChoice(body),
@@ -191,10 +200,13 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
     if (role === 'tool') {
       const callId = typeof raw.tool_call_id === 'string' ? raw.tool_call_id : '';
       if (!callId) throw new ConversionError('conversion_not_supported: tool message missing tool_call_id');
+      if (raw.is_error !== undefined) {
+        diag.add({ feature: 'tool_result_error_marker', action: 'dropped' });
+      }
       const messages = request.messages;
       const images: IrImagePart[] = [];
       const text = toolMessageText(raw.content, images);
-      const result: IrPart = { type: 'tool_result', callId, text, images };
+      const result: IrPart = { type: 'tool_result', callId, text, images, isError: raw.is_error === true };
       messages.push({ role: 'user', parts: [result] });
       continue;
     }
@@ -241,7 +253,7 @@ function chatStop(value: unknown): string[] {
 }
 
 function parseChatEffort(body: Record<string, unknown>): IrEffort | null | undefined {
-  if (body.reasoning_effort === undefined) return undefined;
+  if (body.reasoning_effort == null) return undefined;
   const effort = normalizeEffort(body.reasoning_effort);
   if (effort === undefined) throw new ConversionError(`conversion_not_supported: reasoning_effort "${String(body.reasoning_effort)}"`);
   return effort;
@@ -250,12 +262,12 @@ function parseChatEffort(body: Record<string, unknown>): IrEffort | null | undef
 function chatStructuredSchema(body: Record<string, unknown>, diag: MatrixDiag): { schema: Record<string, unknown> } | null {
   if (body.response_format === undefined) return null;
   if (!isRecord(body.response_format)) throw new ConversionError('conversion_not_supported: response_format must be an object');
-  assertFields(body.response_format, ['type', 'json_schema'], 'response_format');
+  assertFields(body.response_format, ['type', 'json_schema', 'name', 'description', 'strict'], 'response_format');
   if (body.response_format.type !== 'json_schema')
     throw new ConversionError('conversion_not_supported: only response_format type json_schema is supported');
   const js = body.response_format.json_schema;
   if (!isRecord(js)) throw new ConversionError('conversion_not_supported: response_format.json_schema must be an object');
-  assertFields(js, ['schema'], 'response_format.json_schema');
+  assertFields(js, ['schema', 'name', 'description', 'strict'], 'response_format.json_schema');
   if (!isRecord(js.schema)) throw new ConversionError('conversion_not_supported: response_format.json_schema.schema must be an object');
   diag.add({ feature: 'structured_output', action: 'emulated', strategy: 'prompt' });
   return { schema: js.schema };

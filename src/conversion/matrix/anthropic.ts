@@ -269,7 +269,7 @@ function assistantBlocksToParts(content: unknown, diag: MatrixDiag): IrPart[] {
       assertFields(block, ['type', 'data', ...IGNORABLE_FIELDS], 'redacted_thinking');
       if (typeof block.data !== 'string') throw new ConversionError('conversion_not_supported: invalid redacted_thinking block');
       diag.add({ feature: 'thinking_history', action: 'dropped' });
-      parts.push({ type: 'thinking', text: '', sealed: true });
+      parts.push({ type: 'thinking', text: '', sealed: true, data: block.data });
       continue;
     }
     // server_tool_use / advisor / etc. - provider-native history cannot be
