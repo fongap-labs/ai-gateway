@@ -131,6 +131,7 @@ export function buildBudgetExhaustedResponse(
     dispatches: state.dispatches,
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...conversionRejectedDetails(state),
     ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
@@ -205,6 +206,7 @@ export function buildExhaustedResponse(
     dispatches: state.dispatches,
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...conversionRejectedDetails(state),
     ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
@@ -346,6 +348,12 @@ function extractErrorMessage(text: string | Uint8Array | null | undefined): stri
   } catch {
     return trimDiagnostic(raw, 300);
   }
+}
+
+// Fallback targets skipped by conversion never dispatch, so they leave no failure kind. Only the
+// count is reported; the reason can quote client-controlled names and stays in the server log.
+function conversionRejectedDetails(state: LoopState): { conversion_rejected?: number } {
+  return state.conversionRejections ? { conversion_rejected: state.conversionRejections } : {};
 }
 
 function familyFailureSetIsRetryable(failureKinds?: Partial<Record<FailureKind, number>>): boolean {

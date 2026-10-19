@@ -23,6 +23,7 @@ export class ChatStreamDecoder {
   private finished = false;
   private readonly openTools = new Map<string, OpenToolCall>();
   private nextToolIdSeed = 0;
+  private lastToolKey: string | null = null;
 
   get done(): boolean {
     return this.terminal;
@@ -74,7 +75,8 @@ export class ChatStreamDecoder {
 
     for (const call of Array.isArray(delta.tool_calls) ? delta.tool_calls : []) {
       if (!isRecord(call)) continue;
-      const key = String(Number.isFinite(call.index) ? call.index : this.nextToolIdSeed + 1);
+      const key = this.toolKeyOf(call);
+      this.lastToolKey = key;
       let open = this.openTools.get(key);
       if (!open) {
         open = {
@@ -113,6 +115,15 @@ export class ChatStreamDecoder {
       return { events, terminal: true };
     }
     return { events, terminal: false };
+  }
+
+  // Upstreams identify a call across fragments in different ways: an index, a repeated id,
+  // or nothing at all for an argument continuation. Without an index an id names the call,
+  // and a bare fragment continues the most recent one.
+  private toolKeyOf(call: Record<string, unknown>): string {
+    if (Number.isFinite(call.index)) return String(call.index);
+    if (typeof call.id === 'string' && call.id) return `id:${call.id}`;
+    return this.lastToolKey ?? String(this.nextToolIdSeed + 1);
   }
 }
 

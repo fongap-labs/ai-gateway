@@ -200,6 +200,7 @@ export async function runFallbackChain({
     if (fbResult) return fbResult;
   }
 
+  state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
   if (conversionRejectedCount > 0 && convertedTargetCount === 0 && state.dispatches === 0) {
     return gatewayError(request, env, route, 502, 'Configured protocol fallback cannot represent this request.', requestId, {
       requested_model: requestedModel,

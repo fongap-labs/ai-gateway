@@ -135,6 +135,12 @@ OpenAI Chat 上游的完成边界：`finish_reason` 之后，尾随的 usage 帧
 - OpenAI Responses 在受支持的响应输出增量上提交。
 - Anthropic Messages 在有意义的文本、thinking 或工具输入增量上提交。
 
+流式翻译中，工具调用的归属与结束遵循以下规则：
+
+- Responses 上游的工具参数既可能以 `function_call_arguments.delta` 增量到达，也可能只出现在 `function_call_arguments.done`、`output_item.done` 或 `output_item.added` 中；已通过增量送出的参数不会重复。
+- Chat 上游的工具调用分片优先按 `index` 归属；没有 `index` 时，重复出现的 `id` 属于同一个调用，既无 `index` 也无 `id` 的续传分片属于最近一个调用。多个调用的分片相互交错（先打开多个调用、再交替发送参数）不受支持：参数按到达时刻归入当前最近打开的调用。
+- 携带工具调用的回复以工具轮次结束（Anthropic `tool_use`），即使 Chat 上游报告的是普通 `stop`；被截断的回复（Chat `length`、Responses `incomplete`）保持 `max_tokens`，绝不会被当作已完成的工具调用。
+
 矩阵转换的上游强制 `stream:true`：上游按 SSE 返回时走首事件守卫与流式翻译；上游返回 JSON（忽略流式标志）时，矩阵会将原生对象经 IR 转换后按客户端协议返回对象或合成 SSE 生命周期。
 
 思考（thinking）语义在矩阵中是可携带的：Chat 的 `reasoning_content`、Responses 的 reasoning 项与 Anthropic 的 thinking 块在 IR 中一一对应；加密/红acted 的思考历史（Anthropic `redacted_thinking`、Responses `encrypted_content`）在通往 Anthropic 的路径上原样透传，其他目标会通过 `thinking_history: dropped` 诊断显式报告。思考强度在请求侧按 Chat/Responses 的 `reasoning_effort` 与 Anthropic 的 thinking `budget_tokens` 映射（low/4096 · medium/10000 · high/24000 · max/32000，预留 1024 输出余量），超出物理上限的值会被钳制并报告诊断。
@@ -146,6 +152,7 @@ OpenAI Chat 上游的完成边界：`finish_reason` 之后，尾随的 usage 帧
 - OpenAI Chat 客户端收到 OpenAI 格式的错误。
 - Anthropic Messages 客户端收到 Anthropic 格式的错误。
 - 转换失败会在无效的目标请求被 dispatch 之前，以网关转换失败的形式上报。
+- 原生尝试已经 dispatch、而某个回退目标随后被转换拒绝时，耗尽响应（含故障转移预算耗尽）的 `error.details.conversion_rejected` 给出被拒绝的转换次数。只报告次数：原因文本可能引用客户端可控的名称，仅保留在 `fallback_conversion_skipped` 服务器日志中。
 
 ## 职责边界
 
