@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capability for the installer window","local":true,"windows":["main"],"permissions":["core:default","opener:default","core:event:allow-listen","core:event:allow-emit","core:event:allow-unlisten"]}}

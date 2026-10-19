@@ -6,8 +6,6 @@
 
 | 用途 | 入口点 |
 | --- | --- |
-| 首次本地引导 | `scripts/install.sh` / `scripts/install.ps1` |
-| 重新配置已有的本地/运营者部署 | `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` |
 | 直接进行本地代码部署 | `npm run deploy` |
 | 本地 Worker 开发 | `npm run dev` |
 | Cloudflare 登录 / 身份 / 日志 tail | `npm run cf:login`、`npm run cf:whoami`、`npm run tail` |
@@ -51,4 +49,4 @@
 - D1 schema 变更 → `migrations/`
 - 长期有效的设计与策略文档 → `docs/`
 
-当已有受支持的入口点承担某项操作时，不要新增兼容别名，例如 `setup-and-deploy.*`、`update.*` 或重复的 `deploy.*` 包装器。
+当已有受支持的入口点承担某项操作时，不要新增兼容别名，例如 `setup-and-deploy.*`、`install.*`、`reconfigure.*`、`update.*` 或重复的 `deploy.*` 包装器。

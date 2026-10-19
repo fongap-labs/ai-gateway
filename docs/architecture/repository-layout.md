@@ -29,8 +29,6 @@ tests/                       （不存在）测试套件位于 action-worker：t
 scripts/                     仓库/运营者/CI 工具
 ├── README.md                受支持的工具入口与边界
 ├── cloudflare-wrangler.mjs  唯一的 Wrangler 版本锁定 + 直接的 CLI/部署行为
-├── install.*                首次本地引导
-├── reconfigure.*            已有运营者配置的更新
 ├── config-cli.mjs           配置检查/差异 CLI
 ├── node-config-shards.mjs   节点配置规划/分片
 ├── plan-node-configuration.mjs
@@ -64,12 +62,10 @@ docs/                        长期有效的当前文档
 
 ## 工具入口归属
 
-- 首次本地引导：`scripts/install.sh` / `scripts/install.ps1`。
-- 已有的本地/运营者重新配置：`scripts/reconfigure.sh` / `scripts/reconfigure.ps1`。
 - 直接的本地代码部署：`npm run deploy`。
 - Wrangler 登录、身份、tail、开发与部署调用均通过 `scripts/cloudflare-wrangler.mjs` 路由。
 - `scripts/cloudflare-wrangler.mjs` 是仓库中唯一的 Wrangler 版本锁定所有者。
-- 诸如 `setup-and-deploy.*`、`update.*` 以及重复的 `deploy.*` 包装器等兼容别名不是独立职责，不应被重新引入。
+- 诸如 `setup-and-deploy.*`、`install.*`、`reconfigure.*`、`update.*` 以及重复的 `deploy.*` 包装器等兼容别名不是独立职责，不应被重新引入。
 - `wrangler.jsonc` 是受版本控制的基线；运营者特定的配置应放在被 git 忽略的 `wrangler.user.jsonc` 中。
 
 生产部署仍由 GitHub Actions 负责，而非任何本地脚本。

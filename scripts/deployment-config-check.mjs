@@ -20,10 +20,6 @@ assert.ok(Array.isArray(config.triggers?.crons) && config.triggers.crons.include
 assert.ok(fs.existsSync(path.join(root, 'package-lock.json')), 'package-lock.json is required for npm ci');
 
 const tooling = [
-  'scripts/install.sh',
-  'scripts/install.ps1',
-  'scripts/reconfigure.sh',
-  'scripts/reconfigure.ps1',
   'scripts/node-config-shards.mjs',
   'scripts/plan-node-configuration.mjs',
   'scripts/cloudflare-wrangler.mjs',
@@ -33,36 +29,7 @@ const tooling = [
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
 assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider adapter registry must be single-sourced');
 
-for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
-  const source = read(file);
-  assert.match(source, /--secrets-file/);
-  assert.match(source, /keep-vars/);
-  assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /TIER1_AFFINITY/);
-  assert.match(source, /cloudflare-wrangler\.mjs/);
-  assert.match(source, /wrangler\.user\.jsonc/);
-}
-for (const file of ['scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
-  const source = read(file);
-  assert.match(source, /--secrets-file/);
-  assert.match(source, /plan-node-configuration\.mjs/);
-  assert.match(source, /TIER1_AFFINITY/);
-  assert.match(source, /cloudflare-wrangler\.mjs/);
-}
-
-const accessGroups = [...KEY_GROUPS];
 const accessGroupPattern = KEY_GROUPS.join('|');
-for (const file of ['scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
-  const source = read(file);
-  for (const group of accessGroups) assert.ok(source.includes(group), `${file} must expose ${group}`);
-  assert.match(source, /AIG_ACCESS_KEY_/);
-  assert.match(source, /AIG_ACCESS_MODELS_/);
-}
-for (const file of ['scripts/install.sh', 'scripts/install.ps1']) {
-  const source = read(file);
-  assert.match(source, /At least one Gateway Access Group Key/);
-  assert.doesNotMatch(source, /AIG_ACCESS_MODELS_[^\n]*[=:][^\n]*["']\*["']/);
-}
 
 const pkg = JSON.parse(read('package.json'));
 for (const scriptName of ['deploy', 'tail', 'cf:login', 'cf:whoami']) {
@@ -72,7 +39,7 @@ assert.match(pkg.scripts?.deploy || '', /cloudflare-wrangler\.mjs\s+deploy/);
 
 const wranglerTool = read('scripts/cloudflare-wrangler.mjs');
 assert.match(wranglerTool, /wrangler@4\.114\.0/, 'Wrangler pin has one tooling owner');
-for (const file of ['package.json', 'scripts/install.sh', 'scripts/install.ps1', 'scripts/reconfigure.sh', 'scripts/reconfigure.ps1']) {
+for (const file of ['package.json']) {
   assert.doesNotMatch(read(file), /wrangler@\d+\.\d+\.\d+/, `${file} must not duplicate the Wrangler pin`);
 }
 for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry-run', 'TIER1_AFFINITY']) {
@@ -85,6 +52,10 @@ for (const removed of [
   'scripts/update.ps1',
   'scripts/setup-and-deploy.sh',
   'scripts/setup-and-deploy.ps1',
+  'scripts/install.sh',
+  'scripts/install.ps1',
+  'scripts/reconfigure.sh',
+  'scripts/reconfigure.ps1',
 ]) {
   assert.equal(fs.existsSync(path.join(root, removed)), false, `${removed} must not return as duplicate lifecycle tooling`);
 }

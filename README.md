@@ -66,7 +66,7 @@ flowchart LR
 
 > **费用**：部署会使用你的 Cloudflare 账户（如 Workers、KV），是否产生费用取决于你的 Cloudflare 计划，请以其当前计费为准。网关按 Tier 1 → 2 → 3 的顺序使用容量，Tier 3 是按量计费的付费 API，只在前两层不可用或耗尽时才会被使用。Tier 2 订阅请按各服务商的订阅条款使用。
 
-### 2. 获取代码并安装
+### 2. 获取代码并部署
 
 在终端中依次运行（每行一步）：
 
@@ -74,23 +74,23 @@ flowchart LR
 git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
 npm ci                        # 安装依赖，严格按锁文件版本
-sh scripts/install.sh         # 交互式配置并部署（Windows 使用 scripts/install.ps1）
+npm run cf:login              # 首次需要登录 Cloudflare
+npm run config:check -- --tier1 <tier1.json> --secrets <secrets.json>  # 校验节点配置
+npm run deploy                # 部署到 Cloudflare Workers
 ```
 
-安装脚本会依次询问以下内容：
+部署前需要准备：
 
 | 步骤 | 你需要提供 | 说明 |
 | --- | --- | --- |
-| 1 | Worker 名称 | 直接回车使用默认值 |
-| 2 | KV 命名空间 ID | 先在 Cloudflare 控制台创建 KV 命名空间，复制它的 ID |
+| 1 | Worker 名称 | 直接使用 `wrangler.jsonc` 默认值，或在 `wrangler.user.jsonc` 中覆盖 |
+| 2 | KV 命名空间 ID | 先在 Cloudflare 控制台创建 KV 命名空间，复制它的 ID，写入 `wrangler.user.jsonc` 的 `kv_namespaces` |
 | 3 | 节点配置文件（JSON） | Tier 1 必填，Tier 2、3 可留空；可参考 [`config/tier1-nodes.example.json`](config/tier1-nodes.example.json) |
 | 4 | 节点凭据文件（JSON） | 必填。形如 `{ "节点 id": "上游 Key" }`，只保存在本机，不要提交到 Git |
 | 5 | 网关访问密钥与模型列表 | 每个分组一把密钥（至少一组），并为该分组填写 `AIG_ACCESS_MODELS_*` 模型列表（CSV，必填）。密钥生成方式：`node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))'` |
 | 6 | 网关公网地址 | `https://` 开头，用于 OAuth 与仪表盘 |
 
-安装脚本还会在 Cloudflare 未登录时引导 `wrangler login`，并执行完整的 `npm run validate:merge`，耗时可能较长。脚本会自动生成订阅 token 的加密密钥，无需手动填写。
-
-最后，脚本会询问部署后的网关地址：填写后会自动请求 `/health` 与 `/v1/models` 进行验证；留空则跳过，需要自行完成下面的第 3 步。
+`npm run deploy` 会执行 `npm run validate:merge` 完整校验，耗时可能较长。订阅 token 的加密密钥需手动生成并作为 Secret 配置。
 
 ### 3. 验证部署
 
