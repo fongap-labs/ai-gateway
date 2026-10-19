@@ -62,6 +62,8 @@ function anthroParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrTo
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
     if (!rawTool.type && typeof rawTool.name === 'string') {
       assertFields(rawTool, ['name', 'description', 'input_schema', ...TOOL_HINT_FIELDS, ...IGNORABLE_FIELDS], 'tool');
+      // Tool hints have no Chat or Responses equivalent; report that they were dropped.
+      if (TOOL_HINT_FIELDS.some((field) => rawTool[field] !== undefined)) diag.add({ feature: 'tool_hints', action: 'dropped' });
       if (!rawTool.name || !isRecord(rawTool.input_schema))
         throw new ConversionError('conversion_not_supported: tool requires name and input_schema');
       tools.push({
@@ -319,6 +321,12 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   const structured = anthroParseStructured(body, diag);
 
   const choice = anthroToolChoice(body);
+  // Parallel-tool, thinking and effort controls are carried through the IR (mapped, not dropped).
+  if (isRecord(body.tool_choice) && body.tool_choice.disable_parallel_tool_use !== undefined) {
+    diag.add({ feature: 'parallel_tool_control', action: 'mapped' });
+  }
+  if (isRecord(body.thinking) && body.thinking.type === 'enabled') diag.add({ feature: 'thinking_control', action: 'mapped' });
+  if (isRecord(body.output_config) && body.output_config.effort !== undefined) diag.add({ feature: 'effort_control', action: 'mapped' });
   const thinkingEffort = anthroThinking(body);
   const maxTokens = typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : null;
   if (body.max_tokens !== undefined && body.max_tokens !== null && (typeof body.max_tokens !== 'number' || body.max_tokens <= 0)) {
