@@ -69,6 +69,18 @@ type ConversionResult = {
 
 诊断信息使用固定分类，例如 `mapped`、`dropped`、`emulated` 与 `defaulted`。诊断中绝不能包含请求文本、提示词、schema、凭据、私有工具名称或其他客户端可控的敏感值。
 
+### 高风险丢失（回退拒绝）
+
+跨协议回退在转换后会检查诊断。若某项被丢弃的特性会改变上游实际收到的请求语义，则该回退目标会被拒绝，而不是降级后发出。当前高风险集合为：
+
+- `provider_native_tool`：服务端工具（如 `web_search`）在目标协议中没有等价表示；
+- `provider_native_tool_history`：历史中的服务端工具调用与结果。
+
+以下被丢弃的特性不会拒绝回退，仅使保真度降为 `degraded` 并保留诊断：
+
+- `tool_result_error_marker`：工具结果的失败标记在 Chat 中没有对应字段，失败文本仍保留在工具结果内容中；
+- `context_management`：仅是客户端侧上下文编辑（如清理旧工具结果）的提示，不改变消息内容。
+
 ## 结构化输出
 
 结构化输出转换采用保守的能力顺序：
