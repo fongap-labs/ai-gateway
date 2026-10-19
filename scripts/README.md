@@ -7,7 +7,7 @@
 | 用途 | 入口点 |
 | --- | --- |
 | 首次本地引导 | `scripts/install.sh` / `scripts/install.ps1` |
-| 重新配置已有的本地/运营者部署 | `scripts/reconfigure.sh` / `scripts/reconfigure.ps1` |
+
 | 直接进行本地代码部署 | `npm run deploy` |
 | 本地 Worker 开发 | `npm run dev` |
 | Cloudflare 登录 / 身份 / 日志 tail | `npm run cf:login`、`npm run cf:whoami`、`npm run tail` |

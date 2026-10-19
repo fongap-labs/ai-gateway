@@ -78,7 +78,7 @@ function checkAffinityKvBinding(configSource) {
   }
 }
 
-// `npm run deploy` and installer/reconfigure flows all pass through this
+// `npm run deploy` flows all pass through this
 // wrapper. A real local deploy must uphold migration-before-code ordering;
 // `deploy --dry-run` remains local and non-mutating.
 if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {

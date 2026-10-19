@@ -30,7 +30,7 @@ scripts/                     仓库/运营者/CI 工具
 ├── README.md                受支持的工具入口与边界
 ├── cloudflare-wrangler.mjs  唯一的 Wrangler 版本锁定 + 直接的 CLI/部署行为
 ├── install.*                首次本地引导
-├── reconfigure.*            已有运营者配置的更新
+
 ├── config-cli.mjs           配置检查/差异 CLI
 ├── node-config-shards.mjs   节点配置规划/分片
 ├── plan-node-configuration.mjs
@@ -65,7 +65,7 @@ docs/                        长期有效的当前文档
 ## 工具入口归属
 
 - 首次本地引导：`scripts/install.sh` / `scripts/install.ps1`。
-- 已有的本地/运营者重新配置：`scripts/reconfigure.sh` / `scripts/reconfigure.ps1`。
+
 - 直接的本地代码部署：`npm run deploy`。
 - Wrangler 登录、身份、tail、开发与部署调用均通过 `scripts/cloudflare-wrangler.mjs` 路由。
 - `scripts/cloudflare-wrangler.mjs` 是仓库中唯一的 Wrangler 版本锁定所有者。

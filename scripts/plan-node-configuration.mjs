@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Node-configuration deployment planner shared by install / reconfigure.
+// Node-configuration deployment planner.
 //
 //   validate --tier1 FILE [--tier2 FILE] [--tier3 FILE] [--secrets FILE]
 //       Validate node config files and (optionally) cross-check credentials.
