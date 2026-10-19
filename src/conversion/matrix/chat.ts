@@ -17,6 +17,7 @@ import {
   type IrStop,
   isRecord,
   normalizeEffort,
+  stopWithToolCalls,
 } from './ir.ts';
 
 export { ConversionError };
@@ -537,7 +538,7 @@ export function chatObjectToIr(data: Record<string, unknown>): { reply: IrReply;
       id: typeof data.id === 'string' ? data.id : '',
       model: typeof data.model === 'string' ? data.model : '',
       parts,
-      stop: chatStopToIr(choice.finish_reason),
+      stop: stopWithToolCalls(chatStopToIr(choice.finish_reason), parts),
       rawUsage: isRecord(data.usage) ? data.usage : null,
       inputTokens: 0,
     },

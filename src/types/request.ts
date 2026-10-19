@@ -77,6 +77,8 @@ export type LoopState = {
   // src/reliability/classify.ts. Partial because kinds are accumulated
   // incrementally — an empty `{}` is a valid initial state.
   failureKinds: Partial<Record<FailureKind, number>>;
+  /** Fallback targets the request was rejected for by conversion, across all passes. */
+  conversionRejections?: number;
   logger: GatewayLogger;
   requestId: string;
   maxAttempts: number;

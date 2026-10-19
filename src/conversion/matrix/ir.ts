@@ -211,8 +211,23 @@ export class IrCollector {
 
   finish(idFallback: string): IrReply {
     if (!this.id) this.id = idFallback;
-    return { id: this.id, model: this.model, parts: this.parts, stop: this.stop, rawUsage: this.rawUsage, inputTokens: this.inputTokens };
+    return {
+      id: this.id,
+      model: this.model,
+      parts: this.parts,
+      stop: stopWithToolCalls(this.stop, this.parts),
+      rawUsage: this.rawUsage,
+      inputTokens: this.inputTokens,
+    };
   }
+}
+
+/**
+ * A reply that carries tool calls ends in a tool turn. Some Chat upstreams report a plain
+ * `stop` for it; a truncated reply (`length`) keeps its own reason.
+ */
+export function stopWithToolCalls(stop: IrStop, parts: readonly IrPart[]): IrStop {
+  return stop === 'stop' && parts.some((part) => part.type === 'tool_call') ? 'tool' : stop;
 }
 
 // ---- Thinking level mapping ------------------------------------------------
