@@ -197,12 +197,13 @@ function inputValueToMessages(
         assertFields(item, ['type', 'call_id', 'name', 'input', 'id'], 'custom_tool_call');
         if (typeof item.name !== 'string' || !item.name) throw new ConversionError('conversion_not_supported: custom_tool_call.name is required');
         pushMessage('assistant', [
-          {
+        {
             type: 'tool_call',
-            id: typeof item.call_id === 'string' && item.call_id ? item.call_id : `call_${typeof item.id === 'string' ? item.id : crypto.randomUUID()}`,
+            id:
+                typeof item.call_id === 'string' && item.call_id ? item.call_id : `call_${typeof item.id === 'string' ? item.id : crypto.randomUUID()}`,
             name: item.name,
             args: JSON.stringify({ input: item.input }),
-          },
+        },
         ]);
         continue;
       }
