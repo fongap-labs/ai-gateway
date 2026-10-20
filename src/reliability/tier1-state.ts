@@ -827,6 +827,13 @@ export function recordTier1QuotaReport(
     account.quotaState = 'exhausted_until';
   } else if (remaining === 0 || (ratio !== null ? ratio <= 0.1 : remaining <= 1)) {
     account.quotaState = 'near_limit';
+    // A zero tail with no usable reset marker cannot prove when the window
+    // refills. Keep the near_limit score demotion but drop the hard
+    // reservation gate: pinning it at zero would deny admission forever.
+    if (account.quotaResetAt <= now) {
+      if (signal.remainingRequests === 0) account.quotaRemainingRequests = null;
+      if (signal.remainingTokens === 0) account.quotaRemainingTokens = null;
+    }
   } else {
     account.quotaState = 'normal';
     if (account.quotaResetAt <= now) account.quotaResetAt = 0;

@@ -53,28 +53,43 @@ function parseNonNegativeInt(raw: string | null): number | undefined {
   return Math.trunc(value);
 }
 
-// OpenAI reset headers carry a duration like "1s" / "500ms" / plain seconds;
-// Anthropic reset headers carry remaining seconds. Both resolve to ms-from-now.
+const DURATION_UNIT_MS: Record<string, number> = { h: 3_600_000, m: 60_000, s: 1_000, ms: 1 };
+
+// Go-style compound durations ("1h0m0s", "6m30s", "500ms") must be summed;
+// treating them as plain seconds yields an absurd float or NaN.
+function parseCompoundDurationMs(trimmed: string): number | undefined {
+  const tokens = [...trimmed.matchAll(/(\d+(?:\.\d+)?)(ms|h|m|s)/g)];
+  if (!tokens.length || tokens.map((token) => token[0]).join('') !== trimmed) return undefined;
+  let total = 0;
+  for (const token of tokens) {
+    const value = Number(token[1]);
+    const unit = DURATION_UNIT_MS[token[2] ?? ''];
+    if (!Number.isFinite(value) || unit === undefined) return undefined;
+    total += value * unit;
+  }
+  return Number.isFinite(total) && total > 0 ? total : undefined;
+}
+
+// OpenAI reset headers carry a duration ("1s" / "500ms" / "1h0m0s") or plain
+// seconds; Anthropic reset headers carry remaining seconds. An absolute epoch
+// (10-digit seconds or 13-digit ms) must be recognized BEFORE plain seconds:
+// reading "1729400000" as seconds would push the reset ~55 years into the future.
 function parseResetToMs(raw: string | null, now: number): number | undefined {
   if (raw === null) return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
-  // Duration in seconds (most common): "120", "1s", "500ms".
-  const msMatch = /^(\d+(?:\.\d+)?)ms$/.exec(trimmed);
-  if (msMatch) {
-    const ms = Number(msMatch[1]);
-    return Number.isFinite(ms) && ms > 0 ? now + ms : undefined;
-  }
-  const secMatch = /^(\d+(?:\.\d+)?)s?$/.exec(trimmed);
-  if (secMatch) {
-    const sec = Number(secMatch[1]);
-    return Number.isFinite(sec) && sec > 0 ? now + sec * 1000 : undefined;
-  }
+  const compoundMs = parseCompoundDurationMs(trimmed);
+  if (compoundMs !== undefined) return now + compoundMs;
   // Absolute epoch (seconds or ms).
   if (/^\d{9,16}$/.test(trimmed)) {
     const value = Number(trimmed);
     const epochMs = value > 1e12 ? value : value * 1000;
     return epochMs > now ? epochMs : undefined;
+  }
+  const secMatch = /^(\d+(?:\.\d+)?)$/.exec(trimmed);
+  if (secMatch) {
+    const sec = Number(secMatch[1]);
+    return Number.isFinite(sec) && sec > 0 ? now + sec * 1000 : undefined;
   }
   const parsed = Date.parse(trimmed);
   return Number.isFinite(parsed) && parsed > now ? parsed : undefined;
