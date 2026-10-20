@@ -322,11 +322,13 @@ export function releaseTier1Slot(accountId: string, token: Tier1ReleaseToken | n
     // Restore the unconfirmed request reservation unless the lease was settled
     // with actual usage. Abort / pre-execution failure / hedge loss before
     // settlement give the reservation back; a settled lease has already
-    // confirmed consumption. Over-restore (a missed settle) only makes a node
-    // look healthier and falls back to the reactive 429 path — never a leak.
-    if (!token.settled && token.quotaReserved > 0 && account.quotaRemainingRequests !== null && account.quotaReservedInFlight > 0) {
-      account.quotaRemainingRequests++;
+    // confirmed consumption. The reservation counter is released even when the
+    // projected remaining count was dropped (a zero tail without a reset
+    // marker), otherwise every aborted lease would subtract one request from
+    // every later provider report and drain a healthy window.
+    if (!token.settled && token.quotaReserved > 0 && account.quotaReservedInFlight > 0) {
       account.quotaReservedInFlight--;
+      if (account.quotaRemainingRequests !== null) account.quotaRemainingRequests++;
     }
   }
   return true;
@@ -485,6 +487,13 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
   }
   if (kind === 'server') {
     return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'server', reason: kind };
+  }
+  if (kind === 'upstream_200_non_json_body' || kind === 'upstream_200_no_meaningful_output') {
+    // A structurally broken 200 response keeps the documented short cooldown.
+    // Without it the node is re-picked immediately and the broken upstream is
+    // hammered again inside the same request.
+    const short = Math.min(Math.max(0, classification?.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
+    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: short, backoff: 'default', reason: kind };
   }
   return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'default', reason: kind || 'unknown' };
 }
@@ -811,7 +820,11 @@ export function recordTier1QuotaReport(
   }
   if (typeof signal.resetAtMs === 'number' && Number.isFinite(signal.resetAtMs) && signal.resetAtMs > now) {
     account.quotaResetAt = signal.resetAtMs;
-  } else if (signal.remainingRequests === 0 || signal.remainingTokens === 0) {
+  } else if (account.quotaResetAt <= now && (signal.remainingRequests === 0 || signal.remainingTokens === 0)) {
+    // Only forget a reset instant that is already in the past. A report without
+    // a reset marker must not erase a reset instant a previous report proved,
+    // or the exhausted gate and its Retry-After would be lost while the
+    // window is still closed.
     account.quotaResetAt = 0;
   }
   if (typeof signal.source === 'string' && signal.source) account.quotaSource = signal.source;

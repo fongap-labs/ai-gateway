@@ -15,6 +15,7 @@ import {
   type IrReply,
   type IrRequest,
   type IrStop,
+  inlineDataUrlImage,
   isRecord,
   normalizeEffort,
   stopWithToolCalls,
@@ -108,7 +109,7 @@ function chatContentParts(content: unknown, images: IrPart[], diag: MatrixDiag):
       }
       const url = typeof iu.url === 'string' ? iu.url : '';
       if (!url) throw new ConversionError('conversion_not_supported: image_url.url is required');
-      const image: IrPart = { type: 'image', url };
+      const image: IrPart = inlineDataUrlImage(url);
       images.push(image);
       parts.push(image);
     } else if (part.type === 'refusal') {
@@ -123,8 +124,6 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
   if (!isRecord(body)) throw new ConversionError('conversion_not_supported: request body is not an object');
   assertFields(body, CHAT_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
-  if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
-  if (body.user !== undefined) diag.add({ feature: 'user_field', action: 'dropped' });
 
   const structured = chatStructuredSchema(body, diag);
   const effort = parseChatEffort(body);
@@ -249,7 +248,7 @@ function toolMessageText(content: unknown, images: IrImagePart[]): string {
     if (typeof part === 'string') parts.push(part);
     else if (isRecord(part) && part.type === 'text') parts.push(typeof part.text === 'string' ? part.text : '');
     else if (isRecord(part) && part.type === 'image_url' && isRecord(part.image_url) && typeof part.image_url.url === 'string') {
-      const image: IrImagePart = { type: 'image', url: part.image_url.url };
+      const image: IrImagePart = inlineDataUrlImage(part.image_url.url);
       images.push(image);
       parts.push('[image included in tool result]');
     } else throw new ConversionError('conversion_not_supported: non-text tool message content part');

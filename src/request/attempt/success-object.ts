@@ -23,6 +23,25 @@ import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recor
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 
+/**
+ * Status for an Anthropic error body delivered inside HTTP 200. Anthropic
+ * states the class of the failure in `error.type`; without a mapping every
+ * such body would look like a server failure and would be rotated.
+ */
+function anthropicEmbeddedErrorStatus(data: Record<string, unknown>): number {
+  const error = data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>) : {};
+  const numeric = Number(error.status);
+  if (Number.isFinite(numeric) && numeric >= 400 && numeric < 600) return Math.trunc(numeric);
+  const type = String(error.type || '').toLowerCase();
+  if (type.includes('invalid_request')) return 400;
+  if (type.includes('authentication')) return 401;
+  if (type.includes('permission')) return 403;
+  if (type.includes('not_found')) return 404;
+  if (type.includes('request_too_large')) return 413;
+  if (type.includes('rate_limit')) return 429;
+  return 502;
+}
+
 export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach, upstreamWasStreaming } = s;
   const { request, env, requestId, route, node, requestedModel, clientWantsStream, fakeStream, limits, exposeUpstreamInfo, state } = c;
@@ -196,12 +215,17 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     else data = JSON.parse(await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs));
     if (data && typeof data === 'object' && (data.type === 'error' || data.error)) {
       const message = data.error?.message || 'Upstream returned an embedded error.';
-      const classification = classifyUpstreamStatus(502, upstream.headers, env, undefined, message);
+      // An Anthropic error body carries its class in `error.type`, not in a
+      // status field. Mapping it keeps a client-side rejection out of the
+      // server-failure class, so the request is not rotated and the node is
+      // not penalized for the client's mistake.
+      const status = anthropicEmbeddedErrorStatus(data);
+      const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, message);
       recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
-      recordOutcome(state, node, classification, c, { latencyMs, status: 502, diagnostic: trimDiagnostic(message, 200) });
+      recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(message, 200) });
       if (classification.action === 'stop') {
         return {
-          response: buildClientErrorResponse(request, env, route, requestId, requestedModel, 502, JSON.stringify(data), state, exposeUpstreamInfo),
+          response: buildClientErrorResponse(request, env, route, requestId, requestedModel, status, JSON.stringify(data), state, exposeUpstreamInfo),
         };
       }
       return { rotate: true, kind: classification.kind };

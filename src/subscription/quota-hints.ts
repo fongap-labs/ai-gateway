@@ -63,8 +63,8 @@ export function hintFromSecondsHeaders(headers: Headers, names: readonly string[
   return best;
 }
 
-/** Body JSON fields carrying seconds-until-reset (e.g. resets_in_seconds
- *  on Anthropic quota errors) or absolute reset instants. */
+/** Body JSON fields carrying an ABSOLUTE reset instant (epoch seconds / ms /
+ *  ISO). Relative "seconds until reset" markers use hintFromSecondsBody. */
 export function hintFromResetBody(body: string, fields: readonly string[]): number | null {
   if (!body) return null;
   let parsed: unknown;
@@ -86,6 +86,33 @@ export function hintFromResetBody(body: string, fields: readonly string[]): numb
           : raw * 1000 // epoch seconds or ms
         : parseResetValue(String(raw));
     if (at !== null && (best === null || at > best)) best = at;
+  }
+  return best;
+}
+
+/** Body JSON fields carrying SECONDS UNTIL the window resets (e.g.
+ *  `resets_in_seconds`). The value is relative, so it must never be read as an
+ *  epoch instant: a relative marker parsed as an epoch lands in 1970 (or in the
+ *  far future) and the hint is dropped. */
+export function hintFromSecondsBody(body: string, fields: readonly string[]): number | null {
+  if (!body) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  let best: number | null = null;
+  for (const field of fields) {
+    const raw = record[field];
+    if (typeof raw !== 'string' && typeof raw !== 'number') continue;
+    const seconds = Number(String(raw).trim());
+    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    const ms = seconds * 1000;
+    if (ms > QUOTA_HINT_MAX_MS) continue;
+    if (best === null || ms > best) best = ms;
   }
   return best;
 }

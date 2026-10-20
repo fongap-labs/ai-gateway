@@ -15,6 +15,7 @@ import {
   type IrRequest,
   type IrStop,
   type IrTool,
+  inlineDataUrlImage,
   isRecord,
   normalizeEffort,
 } from './ir.ts';
@@ -195,9 +196,9 @@ function inputValueToMessages(
           if (isRecord(block) && block.type === 'reasoning_text' && typeof block.text === 'string')
             parts.push({ type: 'thinking', text: block.text });
         }
-        if (item.encrypted_content !== undefined) {
+        if (typeof item.encrypted_content === 'string' && item.encrypted_content) {
           diag.add({ feature: 'thinking_history', action: 'dropped' });
-          parts.push({ type: 'thinking', text: '', sealed: true });
+          parts.push({ type: 'thinking', text: '', sealed: true, data: item.encrypted_content });
         }
         if (parts.length === 0) diag.add({ feature: 'thinking_history', action: 'dropped' });
         pushMessage('assistant', parts);
@@ -277,7 +278,7 @@ function inputContentParts(content: unknown, diag: MatrixDiag): IrPart[] {
       assertFields(block, ['type', 'image_url', 'detail'], 'input_image');
       const url = typeof block.image_url === 'string' ? block.image_url : '';
       if (!url) throw new ConversionError('conversion_not_supported: input_image.image_url is required');
-      parts.push({ type: 'image', url });
+      parts.push(inlineDataUrlImage(url));
       continue;
     }
     throw new ConversionError(`conversion_not_supported: user content type "${String(block.type)}"`);
@@ -539,9 +540,9 @@ export function responsesObjectToIr(data: Record<string, unknown>): { reply: IrR
         if (isRecord(summary) && summary.type === 'summary_text' && typeof summary.text === 'string' && summary.text)
           parts.push({ type: 'thinking', text: summary.text });
       }
-      if (item.encrypted_content !== undefined) {
+      if (typeof item.encrypted_content === 'string' && item.encrypted_content) {
         diag.add({ feature: 'thinking_history', action: 'dropped' });
-        parts.push({ type: 'thinking', text: '', sealed: true });
+        parts.push({ type: 'thinking', text: '', sealed: true, data: item.encrypted_content });
       }
       continue;
     }

@@ -105,6 +105,12 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   } = c;
   const attemptStartMs = Date.now();
   c.attemptStartMs = attemptStartMs;
+  // One settlement holder per physical dispatch. Every terminal path of this
+  // attempt (success, failure, hedge loss, client abort) settles through it, so
+  // the physical attempt is written to the token statistics exactly once. The
+  // holder is created here, before any copy of this context is made, so a copy
+  // (the model-family fallback rewrites the node) still settles THIS attempt.
+  c.attemptSettlement = { observedUsage: null, settled: false };
   // For cross-protocol fallback the upstream protocol/surface come from the
   // conversion context (the fallback target), NOT from the node's native
   // protocol. The transport must use the FALLBACK protocol so the right

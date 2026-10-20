@@ -250,7 +250,11 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     return { response: jsonResponse(200, object, env, request, extraHeaders) };
   } catch (error) {
     if (request.signal?.aborted) {
-      recordTokens(c, node, upstreamUsage);
+      // The client received no model output, so this attempt is a physical
+      // upstream attempt only. Recording it as delivered would inflate the
+      // public request counter and the TTFT evidence with a request that never
+      // completed. The usage observed on the wire is still settled through the
+      // attempt's upstream-attempt accounting.
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - (c.attemptStartMs as number), status: guarded.status });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
     }
