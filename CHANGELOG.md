@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- feat: make documentation link show deployment ID (first 7 chars of AIG_BUILD_SHA uppercase) or timestamp (YYYYMMddhhnn) when deployment ID unavailable
 
 - fix: Chat and Responses upstream streams translated for an Anthropic client no longer lose or misreport tool calls. Responses tool-call arguments delivered only on a `.done` event or on `output_item.added` are kept (and never repeated when deltas already carried them), an `incomplete` Responses stream ends as `max_tokens` instead of a finished `tool_use` with cut-off arguments, a Chat reply that carries tool calls ends as `tool_use` even when the upstream says `finish_reason: "stop"`, and Chat tool-call fragments without an `index` continue the call they belong to (a repeated id, or the open call for a bare argument fragment) instead of becoming a second broken call. Fragments interleaved across calls are still attributed to the call opened last.
 
