@@ -249,4 +249,4 @@ flowchart TD
 
 ## 许可
 
-MIT License，详见 [LICENSE](LICENSE)。
+Apache License 2.0，详见 [LICENSE](LICENSE)。
