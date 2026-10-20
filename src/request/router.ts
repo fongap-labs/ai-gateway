@@ -17,6 +17,11 @@ export function normalizePath(pathname: string | undefined): string {
   return (
     String(pathname || '/')
       .replace(/\/+$/, '')
+      // Anthropic SDK clients (Claude Code, etc.) append "/v1/messages" to the
+      // configured base URL. An operator who set the base to "https://host/v1"
+      // therefore produces "/v1/v1/messages"; fold the doubled prefix back so
+      // the route matches instead of 404ing on a harmless config slip.
+      .replace(/^\/v1\/v1\//, '/v1/')
       .toLowerCase() || '/'
   );
 }
