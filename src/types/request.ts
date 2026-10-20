@@ -131,6 +131,20 @@ export type LoopContext = {
 };
 
 /**
+ * Physical-attempt settlement state. One holder per physical upstream dispatch:
+ * it records the usage report observed on the wire and whether the attempt was
+ * already written to the token statistics. The holder is shared by reference
+ * between copies of the same attempt context (a model-family fallback copies
+ * the context to rewrite the node), so the attempt is settled exactly once.
+ */
+export type AttemptSettlement = {
+  /** Usage reported by the upstream for this attempt, merged across events. */
+  observedUsage: unknown;
+  /** True once the attempt was written to the token statistics. */
+  settled: boolean;
+};
+
+/**
  * Dispatch context for a single attempt. Passed by the tier loop to
  * attempt.ts via dispatchWithHedge. Carries everything one upstream
  * dispatch needs: the chosen node, the request descriptor, budget
@@ -185,6 +199,8 @@ export type AttemptContext = {
   ttftMs?: number;
   upstreamProtocol?: Protocol;
   surface?: Surface;
+  /** Settlement holder of THIS physical attempt; created when the attempt starts. */
+  attemptSettlement?: AttemptSettlement;
 };
 
 /**

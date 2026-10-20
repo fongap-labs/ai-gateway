@@ -529,6 +529,13 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   const messages: Record<string, unknown>[] = [];
   for (const message of ir.messages) {
     const blocks = buildMessageBlocks(message, diag);
+    // Anthropic requires at least one content block per message. A turn whose
+    // every part was dropped (an empty assistant turn, a reasoning-only turn
+    // this target cannot keep) would be sent as an invalid empty content list.
+    if (blocks.length === 0) {
+      diag.add({ feature: 'empty_turn', action: 'dropped' });
+      continue;
+    }
     const previous = messages[messages.length - 1];
     if (previous && previous.role === message.role) {
       previous.content = [...contentBlocksOf(previous.content), ...blocks];
@@ -623,6 +630,15 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
       continue;
     }
     if (part.type === 'thinking') {
+      // A sealed block (Anthropic redacted_thinking, Responses
+      // encrypted_content) carries an opaque payload the target can replay
+      // verbatim. Anthropic accepts it as a redacted_thinking block, so the
+      // reasoning history survives the translation instead of being dropped.
+      if (part.sealed && part.data) {
+        diag.add({ feature: 'thinking_history', action: 'mapped' });
+        blocks.push({ type: 'redacted_thinking', data: part.data });
+        continue;
+      }
       // Anthropic API rejects thinking blocks whose signature cannot be
       // verified; reasoning summaries picked up from other protocols carry no
       // signature, so they are history that this target cannot legally keep.
@@ -717,8 +733,12 @@ export function anthropicObjectToIr(data: Record<string, unknown>): { reply: IrR
       continue;
     }
     if (block.type === 'redacted_thinking') {
-      diag.add({ feature: 'thinking_history', action: 'dropped' });
-      parts.push({ type: 'thinking', text: '', sealed: true });
+      // The sealed payload is opaque but replayable: keep it so a client that
+      // replays the reasoning history (or a target that accepts
+      // encrypted_content) receives the original blob instead of an empty one.
+      const data = typeof block.data === 'string' ? block.data : '';
+      diag.add({ feature: 'thinking_history', action: data ? 'mapped' : 'dropped' });
+      parts.push({ type: 'thinking', text: '', sealed: true, ...(data ? { data } : {}) });
       continue;
     }
     if (block.type === 'tool_use') {

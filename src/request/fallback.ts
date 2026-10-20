@@ -119,6 +119,9 @@ export async function runFallbackChain({
     if (state.logicalAttempts >= policy.maxAttempts) break;
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
     if (remainingBudgetMs <= 0) {
+      // The rejected conversions are part of the answer the client gets, even
+      // when the request runs out of wall-clock budget.
+      state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
       return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
     }
     const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface };

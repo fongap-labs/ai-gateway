@@ -15,13 +15,30 @@ import { chatStopFromIr, chatStopToIr, chatToolId } from './chat.ts';
 import type { IrEvent, IrReply } from './ir.ts';
 import { isRecord } from './ir.ts';
 
-type OpenToolCall = { id: string; name: string; started: boolean; index: number };
+type OpenToolCall = {
+  /** The id the client sees. Synthesized when the upstream sent none. */
+  id: string;
+  name: string;
+  started: boolean;
+  index: number;
+  pending: string[];
+  /** The upstream's tool-call index, when it sent one. */
+  upstreamIndex: number | null;
+  /** The upstream's tool-call id, when it sent one. */
+  upstreamId: string;
+  /** True while `id` is a generated placeholder that a later fragment may replace. */
+  syntheticId: boolean;
+};
 
 export class ChatStreamDecoder {
   private started = false;
   private terminal = false;
   private finished = false;
   private readonly openTools = new Map<string, OpenToolCall>();
+  /** Upstream tool-call index -> the open call it belongs to. */
+  private readonly indexToKey = new Map<string, string>();
+  /** Upstream tool-call id -> the open call it belongs to. */
+  private readonly idToKey = new Map<string, string>();
   private nextToolIdSeed = 0;
   private lastToolKey: string | null = null;
 
@@ -42,7 +59,8 @@ export class ChatStreamDecoder {
     if (this.terminal) return { events: [], terminal: false };
     if (raw === '[DONE]') {
       this.terminal = true;
-      return { events: [], terminal: true };
+      const flushed = this.flushDeferredTools();
+      return { events: flushed, terminal: true };
     }
     let payload: unknown;
     try {
@@ -77,30 +95,56 @@ export class ChatStreamDecoder {
       if (!isRecord(call)) continue;
       const key = this.toolKeyOf(call);
       this.lastToolKey = key;
+      const fragmentName = isRecord(call.function) && typeof call.function.name === 'string' ? call.function.name : '';
       let open = this.openTools.get(key);
       if (!open) {
         open = {
           id: typeof call.id === 'string' && call.id ? call.id : chatToolId(call.id),
-          name: isRecord(call.function) && typeof call.function.name === 'string' ? call.function.name : '',
+          name: fragmentName,
           started: false,
           index: this.openTools.size,
+          pending: [],
+          upstreamIndex: null,
+          upstreamId: '',
+          syntheticId: !(typeof call.id === 'string' && call.id),
         };
         this.nextToolIdSeed += 1;
         this.openTools.set(key, open);
       }
-      if (!open.started) {
-        open.started = true;
-        if (isRecord(call.function) && typeof call.function.name === 'string' && call.function.name) open.name = call.function.name;
-        if (!open.id && !open.name) open.name = 'tool';
-        events.push({ type: 'tool_start', id: open.id, name: open.name });
-      } else if (isRecord(call.function) && typeof call.function.name === 'string' && call.function.name && !open.name) {
-        open.name = call.function.name;
+      // Learn the identities the upstream used for this call. A later fragment
+      // may carry the id the first fragment omitted; the client then sees the
+      // upstream's id instead of a generated placeholder.
+      if (typeof call.id === 'string' && call.id && !open.upstreamId) {
+        open.upstreamId = call.id;
+        this.idToKey.set(call.id, key);
+        if (open.syntheticId) {
+          open.id = call.id;
+          open.syntheticId = false;
+        }
       }
-      if (isRecord(call.function) && typeof call.function.arguments === 'string' && call.function.arguments) {
-        events.push({ type: 'tool_args', args: call.function.arguments });
+      if (Number.isFinite(call.index)) {
+        const upstreamIndex = Math.trunc(Number(call.index));
+        if (open.upstreamIndex === null) {
+          open.upstreamIndex = upstreamIndex;
+          this.indexToKey.set(String(upstreamIndex), key);
+        }
       }
+      if (fragmentName && !open.name) {
+        open.name = fragmentName;
+      }
+      // tool_start carries the call name on the wire for every target; hold the
+      // event until the name is known and keep the argument fragments buffered
+      // in order, so a nameless first fragment cannot leak an empty tool name.
+      const args = isRecord(call.function) && typeof call.function.arguments === 'string' && call.function.arguments ? call.function.arguments : '';
+      if (!open.name) {
+        if (args) open.pending.push(args);
+        continue;
+      }
+      if (!open.started) events.push(...openToolStartEvents(open));
+      if (args) events.push({ type: 'tool_args', args });
     }
     if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
+      events.push(...this.flushDeferredTools());
       events.push({ type: 'stop', stop: chatStopToIr(choice.finish_reason) });
       this.finished = true;
       // Usage normally rides on a later chunk with empty choices (include_usage), so the
@@ -112,17 +156,62 @@ export class ChatStreamDecoder {
     // After the finish, the first usage-bearing chunk completes the reply.
     if (this.finished && isRecord(payload.usage)) {
       this.terminal = true;
+      events.push(...this.flushDeferredTools());
       return { events, terminal: true };
     }
     return { events, terminal: false };
   }
 
+  /** Any call that never learned its name while holding fragments still needs a
+   *  complete tool_start/tool_args pair on the wire; fall back to a synthetic name. */
+  private flushDeferredTools(): IrEvent[] {
+    const events: IrEvent[] = [];
+    for (const open of this.openTools.values()) {
+      if (!open.started) events.push(...openToolStartEvents(open));
+    }
+    return events;
+  }
+
   // Upstreams identify a call across fragments in different ways: an index, a repeated id,
   // or nothing at all for an argument continuation. Without an index an id names the call,
-  // and a bare fragment continues the most recent one.
+  // and a bare fragment continues the most recent one. A fragment may also carry only
+  // ONE of the two identities (an index on the continuation, the id on the first
+  // fragment): such a fragment is bound to the single open call that is still
+  // unidentified, so one call never becomes two.
   private toolKeyOf(call: Record<string, unknown>): string {
-    if (Number.isFinite(call.index)) return String(call.index);
-    if (typeof call.id === 'string' && call.id) return `id:${call.id}`;
+    const rawIndex = Number.isFinite(call.index) ? Math.trunc(Number(call.index)) : null;
+    const callId = typeof call.id === 'string' && call.id ? call.id : '';
+    const indexKey = rawIndex !== null ? String(rawIndex) : '';
+
+    if (indexKey) {
+      const mapped = this.indexToKey.get(indexKey);
+      if (mapped && this.openTools.has(mapped)) return mapped;
+    }
+    if (callId) {
+      const mapped = this.idToKey.get(callId);
+      if (mapped && this.openTools.has(mapped)) return mapped;
+    }
+
+    if (indexKey || callId) {
+      const candidates = [...this.openTools.entries()].filter(([, open]) =>
+        indexKey ? open.upstreamIndex === null && (!callId || !open.upstreamId || open.upstreamId === callId) : !open.upstreamId,
+      );
+      if (candidates.length === 1) {
+        const [key, open] = candidates[0] as [string, OpenToolCall];
+        if (indexKey) {
+          open.upstreamIndex = rawIndex;
+          this.indexToKey.set(indexKey, key);
+        }
+        if (callId && !open.upstreamId) {
+          open.upstreamId = callId;
+          this.idToKey.set(callId, key);
+        }
+        return key;
+      }
+    }
+
+    if (callId) return `id:${callId}`;
+    if (indexKey) return indexKey;
     return this.lastToolKey ?? String(this.nextToolIdSeed + 1);
   }
 }
@@ -231,6 +320,20 @@ export class ChatStreamEncoder {
   private toolCallDelta(index: number, fields: Record<string, unknown>): Record<string, unknown> {
     return { index, ...fields };
   }
+}
+
+/** Finalizes a deferred tool call: emits tool_start (with the synthetic name fallback)
+ *  followed by the concatenated argument fragments held while the name was unknown. */
+function openToolStartEvents(open: OpenToolCall): IrEvent[] {
+  open.started = true;
+  if (!open.name) open.name = 'tool';
+  const events: IrEvent[] = [{ type: 'tool_start', id: open.id, name: open.name }];
+  if (open.pending.length) {
+    const args = open.pending.join('');
+    open.pending.length = 0;
+    events.push({ type: 'tool_args', args });
+  }
+  return events;
 }
 
 /** Recast usage between Chat naming (prompt/completion) and Responses naming (input/output). */

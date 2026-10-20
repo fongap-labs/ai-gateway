@@ -150,9 +150,13 @@ export function buildModelFallbackPlan(
   const rounds = buildModelFallbackRounds(requestedModel, knownModels);
   if (!family) return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
 
-  const isPrefixedFamily = family.requestedKey !== family.requestedTier;
+  // A family with no configured sibling keeps the requested model's original
+  // single-model behaviour, and the request policy owns the attempt budget.
+  // This holds for bare families (Ultra/Max/Pro/Air) exactly as it does for
+  // prefixed ones (Code-Ultra/...): without a sibling there is nothing to
+  // spread the budget over, so the policy's own budget applies.
   const hasConfiguredSibling = (rounds[0] ?? []).some((model) => keyOf(model) !== family.requestedKey);
-  if (isPrefixedFamily && !hasConfiguredSibling) {
+  if (!hasConfiguredSibling) {
     return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
   }
 

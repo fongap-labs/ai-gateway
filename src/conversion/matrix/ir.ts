@@ -72,6 +72,34 @@ export type IrThinkingPart = {
 
 export type IrPart = { type: 'text'; text: string } | IrImagePart | IrDocumentPart | IrToolCallPart | IrToolResultPart | IrThinkingPart;
 
+// An inline image only travels as a data URI. Anthropic targets need the
+// payload split out (`base64` source), while Chat/Responses targets keep the
+// URI itself, so the IR carries both and each builder picks its shape.
+const DATA_URL_IMAGE = /^data:([^;,]+)(;base64)?,(.*)$/s;
+
+/** Parse an inline `data:` image URI into an IR image part. */
+export function inlineDataUrlImage(url: string): IrImagePart {
+  const match = DATA_URL_IMAGE.exec(url);
+  if (!match) return { type: 'image', url };
+  const mediaType = match[1] ?? 'image/png';
+  if (match[2]) {
+    const data = decodeURIComponentSafe(match[3] ?? '');
+    if (data) return { type: 'image', url, mediaType, data };
+  }
+  return { type: 'image', url };
+}
+
+// Data URLs are ASCII base64; percent decoding is a no-op for valid ones and a
+// recovery path for sloppy producers. decodeURIComponent throws on stray
+// percent signs, so fall back to the raw payload.
+function decodeURIComponentSafe(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /** `stringContent` marks a user message whose source content was a plain string (kept a string on the wire). */
 export type IrMessage = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
 

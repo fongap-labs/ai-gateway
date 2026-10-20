@@ -20,6 +20,7 @@
 // Unknown fields, credential material, alternate model shapes, and numeric
 // strings are configuration errors.
 
+import { loadOAuthProviders } from '../oauth/provider-configs.ts';
 import { getProviderAdapter, providerWire } from '../providers/registry.ts';
 import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
@@ -74,6 +75,10 @@ function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
     const pname = mcfg?.policy?.policy || 'default';
     if (!policies[pname]) diags.push(`AIG_MODELS_CONFIG: model "${model}" references unknown policy "${pname}"`);
   }
+  // A rejected AIG_OAUTH_PROVIDERS entry silently falls back to the built-in
+  // client, so the operator's client would never be used. Surface the parse
+  // error instead of letting it disappear.
+  loadOAuthProviders(env, diags);
   return diags;
 }
 
@@ -290,7 +295,11 @@ function buildRuntimeNode(
     return null;
   }
 
-  const provider = typeof rec.provider === 'string' ? rec.provider.trim() : '';
+  // Provider names are identifiers, not display strings: the provider registry
+  // looks them up case-insensitively, but the OAuth provider configuration and
+  // the onboarding routes compare them verbatim. A node configured as
+  // "Anthropic" would otherwise load as ready and never authenticate.
+  const provider = typeof rec.provider === 'string' ? rec.provider.trim().toLowerCase() : '';
   if (!provider) {
     diagnostics.push(`node "${id}": provider is required and must be a non-empty string`);
     return null;

@@ -30,11 +30,17 @@ import {
 } from '../../reliability/tier1-state.ts';
 import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../types/node.ts';
-import type { AttemptContext } from '../../types/request.ts';
+import type { AttemptContext, AttemptSettlement } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 
-const observedAttemptUsage = new WeakMap<object, unknown>();
-const settledAttemptUsage = new WeakSet<object>();
+// One settlement holder per physical upstream dispatch. The holder travels by
+// reference with the attempt context, so a context copy (a model-family
+// fallback rewrites the node) still settles the SAME attempt exactly once
+// instead of persisting a second physical attempt for one dispatch.
+function settlementOf(c: AttemptContext): AttemptSettlement {
+  if (!c.attemptSettlement) c.attemptSettlement = { observedUsage: null, settled: false };
+  return c.attemptSettlement;
+}
 
 function logicalModelOf(c: AttemptContext): string {
   return c.state?.requestedModel ?? c.requestedModel;
@@ -48,9 +54,11 @@ function ensureDeliveredTtft(c: AttemptContext): void {
 }
 
 export function observeUpstreamAttemptUsage(c: AttemptContext, usage: unknown): void {
-  if (!c || settledAttemptUsage.has(c as object) || usage == null) return;
-  const merged = mergeReportedUsage(observedAttemptUsage.get(c as object), usage);
-  if (normalizeTokenUsage(merged)) observedAttemptUsage.set(c as object, merged);
+  if (!c || usage == null) return;
+  const settlement = settlementOf(c);
+  if (settlement.settled) return;
+  const merged = mergeReportedUsage(settlement.observedUsage, usage);
+  if (normalizeTokenUsage(merged)) settlement.observedUsage = merged;
 }
 
 export function recordTier1NonStreamTtft(c: AttemptContext, node: RuntimeNode, data: unknown, isMeaningful: (data: unknown) => boolean): void {
@@ -60,10 +68,11 @@ export function recordTier1NonStreamTtft(c: AttemptContext, node: RuntimeNode, d
 }
 
 export function recordTokens(c: AttemptContext, node: RuntimeNode, usage: unknown): void {
-  if (settledAttemptUsage.has(c as object)) return;
+  const settlement = settlementOf(c);
+  if (settlement.settled) return;
   observeUpstreamAttemptUsage(c, usage);
-  const reportedUsage = observedAttemptUsage.get(c as object) ?? usage;
-  settledAttemptUsage.add(c as object);
+  const reportedUsage = settlement.observedUsage ?? usage;
+  settlement.settled = true;
   ensureDeliveredTtft(c);
   const logicalModel = logicalModelOf(c);
   recordTokenUsage({ model: logicalModel, tier: node.tier, provider: node.provider, nodeId: node.id, usage: reportedUsage });
@@ -71,10 +80,11 @@ export function recordTokens(c: AttemptContext, node: RuntimeNode, usage: unknow
 }
 
 export function recordUndeliveredUpstreamAttempt(c: AttemptContext, node: RuntimeNode, usage?: unknown): void {
-  if (settledAttemptUsage.has(c as object)) return;
+  const settlement = settlementOf(c);
+  if (settlement.settled) return;
   if (usage !== undefined) observeUpstreamAttemptUsage(c, usage);
-  settledAttemptUsage.add(c as object);
-  const observed = observedAttemptUsage.get(c as object) ?? null;
+  settlement.settled = true;
+  const observed = settlement.observedUsage ?? null;
   const logicalModel = logicalModelOf(c);
   const task = persistUpstreamAttemptUsage(c.env, observed, Date.now(), logicalModel).catch((err) => {
     const scope = String(err?.scope || '').includes('model') ? 'upstream-model' : 'upstream-global';
@@ -130,7 +140,7 @@ export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyM
     recordTier1UpstreamModelServed(node.id, upstreamModelOf(node, logicalModel));
     // Confirm the quota lease with actual delivered usage before release; a
     // settled lease is not restored, so the request reservation is consumed.
-    const observed = observedAttemptUsage.get(c as object);
+    const observed = settlementOf(c).observedUsage;
     const consumed = normalizeTokenUsage(observed)?.total ?? 0;
     settleTier1Quota(node.id, c.tier1ReleaseToken, consumed);
     releaseTier1Slot(node.id, c.tier1ReleaseToken);

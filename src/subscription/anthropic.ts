@@ -16,7 +16,7 @@
 // of the mainstream shape and is not implemented here.
 
 import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
-import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsHeaders } from './quota-hints.ts';
+import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsBody, hintFromSecondsHeaders } from './quota-hints.ts';
 import type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionFailureView, SubscriptionPreparedRequest } from './types.ts';
 
 export const CLAUDE_OAUTH_REQUIRED_BETAS: readonly string[] = Object.freeze([
@@ -36,7 +36,8 @@ const CLAUDE_RESET_HEADERS = Object.freeze([
   'anthropic-ratelimit-input-tokens-reset',
   'anthropic-ratelimit-output-tokens-reset',
 ]);
-const CLAUDE_RESET_BODY_FIELDS = Object.freeze(['resets_in_seconds', 'reset_at', 'resets_at']);
+const CLAUDE_RESET_BODY_FIELDS = Object.freeze(['reset_at', 'resets_at']);
+const CLAUDE_RESET_SECONDS_BODY_FIELDS = Object.freeze(['resets_in_seconds']);
 
 export const claudeSubscriptionAdapter: SubscriptionAdapter = {
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null {
@@ -63,7 +64,8 @@ export const claudeSubscriptionAdapter: SubscriptionAdapter = {
 
   quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {
     if (failure.status !== 429) return null;
-    const relative = hintFromSecondsHeaders(failure.headers, CLAUDE_RESET_HEADERS);
+    const relative =
+      hintFromSecondsHeaders(failure.headers, CLAUDE_RESET_HEADERS) ?? hintFromSecondsBody(failure.body, CLAUDE_RESET_SECONDS_BODY_FIELDS);
     const fromBody = hintFromResetBody(failure.body, CLAUDE_RESET_BODY_FIELDS);
     const resetAt = hintFromResetHeaders(failure.headers, CLAUDE_RESET_HEADERS, now) ?? fromBody;
     return capHint(resetAt, relative, now);

@@ -94,7 +94,9 @@ async function purgeInBackground(ctx: OAuthRouteContext, env: GatewayEnv): Promi
 function lookupNode(ctx: OAuthRouteContext, provider: string, nodeId: string): { found: boolean; providerMatches: boolean } {
   const node = ctx.tier2Nodes.find((c) => c.id === nodeId);
   if (!node) return { found: false, providerMatches: false };
-  return { found: true, providerMatches: node.provider === provider && node.auth === 'oauth' };
+  // Provider names are identifiers: the node stores the canonical spelling, so
+  // the requested provider is compared case-insensitively.
+  return { found: true, providerMatches: node.provider === provider.toLowerCase() && node.auth === 'oauth' };
 }
 
 type TokenExchangePayload = { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; account_id?: unknown };
