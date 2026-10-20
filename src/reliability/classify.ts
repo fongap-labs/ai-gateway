@@ -112,16 +112,16 @@ export function retryHintFromBody(body: unknown, now: number = Date.now(), maxMs
 // Horizon words that also appear in plan/billing boilerplate ("check your plan and
 // billing details") are deliberately NOT horizon evidence.
 const HORIZON_WORDING =
-  /\b(?:daily|per[ _-]?day|per[ _-]?hour|hourly|per[ _-]?week|weekly|per[ _-]?month|monthly|credits?|balance|usage limit|plan limit|usage cap|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty[ -]?four)[ -]?(?:hours?|hrs?|h))\b|PerDay|PerHour|PerWeek|PerMonth|每日|每天|每周|每月|本月|小时|使用上限|用量|余额|欠费|积分|套餐/i;
-const MINUTE_WORDING = /per[ _-]?minute|per[ _-]?second|\b(?:rpm|tpm|itpm|otpm)\b|每分钟|每秒/i;
-const GENERIC_QUOTA_WORDING = /\b(?:quota|billing)\b|额度|配额|限额/i;
+  /\b(?:daily|per[ _-]?day|per[ _-]?hour|hourly|per[ _-]?week|weekly|per[ _-]?month|monthly|credits?|balance|usage limit|plan limit|usage cap|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty[ -]?four)[ -]?(?:hours?|hrs?|h))\b|PerDay|PerHour|PerWeek|PerMonth|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\u5468|\u6bcf\u6708|\u672c\u6708|\u5c0f\u65f6|\u4f7f\u7528\u4e0a\u9650|\u7528\u91cf|\u4f59\u989d|\u6b20\u8d39|\u79ef\u5206|\u5957\u9910/i;
+const MINUTE_WORDING = /per[ _-]?minute|per[ _-]?second|\b(?:rpm|tpm|itpm|otpm)\b|\u6bcf\u5206\u949f|\u6bcf\u79d2/i;
+const GENERIC_QUOTA_WORDING = /\b(?:quota|billing)\b|\u989d\u5ea6|\u914d\u989d|\u9650\u989d/i;
 const GENERIC_WINDOW_WORDING =
   /\b(?:too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b|\u901f\u7387\u9650\u5236|\u8bf7\u6c42\u9891\u7387|\u8bf7\u6c42\u8fc7\u4e8e\u9891\u7e41|\u5e76\u53d1|\u8bbf\u95ee\u91cf\u8fc7\u5927/i;
 // "exhausted" proves a limit ran out but not its horizon: only a WEAK long-lived
 // hint after minute-window wording has been ruled out. "inference tpm exhausted"
 // stays a window, while "plan limit exhausted" (caught above) and a bare
 // "exhausted" read as a long-lived allowance.
-const WEAK_QUOTA_WORDING = /\bexhausted\b|用完|用尽|耗尽/i;
+const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d/i;
 
 // An explicit provider-stated wait is itself a classification signal when the
 // wording says nothing: a minute-and-a-half or less can only be a short window,
