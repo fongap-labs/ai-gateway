@@ -3,7 +3,7 @@
   "private": true,
   "description": "AI API gateway on Cloudflare Workers that turns fragmented, failure-prone providers and keys into one stable OpenAI/Anthropic-compatible endpoint — maximizing low-cost capacity through smart routing and tiered failover.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.18.0"
   },
