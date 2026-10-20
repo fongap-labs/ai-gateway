@@ -46,6 +46,7 @@ const ANTHROPIC_ALLOWED_FIELDS = [
   'speed',
   'inference_geo',
   'container',
+  'betas',
 ] as const;
 
 // Delivery hints (priority tier, fast mode, data residency) steer the Anthropic
@@ -380,6 +381,11 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   assertFields(body, ANTHROPIC_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
+  // Beta feature flags (Claude Code sends e.g. context-management /
+  // interleaved-thinking) steer provider-native behavior; a native Anthropic
+  // pass forwards them untouched, while cross-protocol targets cannot honor
+  // them, so the conversion reports the drop instead of rejecting the request.
+  if (body.betas !== undefined && body.betas !== null) diag.add({ feature: 'betas', action: 'dropped' });
   if (body.context_management !== undefined) diag.add({ feature: 'context_management', action: 'dropped' });
   if (body.mcp_servers !== undefined) diag.add({ feature: 'provider_native_tool', action: 'dropped' });
   // A container belongs to the server-side code-execution tool; it cannot be carried over.
