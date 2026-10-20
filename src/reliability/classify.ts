@@ -8,7 +8,7 @@
 // Rules of scope: every failure here is NODE-local. Never punish a provider,
 // tier, or the whole gateway for one node's 429/401.
 
-import { clampRetryAfterMs, getLimits, parseRetryAfterMs } from '../config/timeouts.ts';
+import { clampRetryAfterMs, getLimits, parseRetryAfterMs, QUOTA_RETRY_AFTER_MAX_MS } from '../config/timeouts.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingErrorCode } from '../types/upstream-processing.ts';
 
@@ -60,44 +60,68 @@ const CLIENT_STOP_STATUSES = new Set([413, 415, 422]);
 const BODY_RETRY_HINT =
   /(?:try again|retry|resets?|available again)\s*(?:in|after)\s+((?:\d+(?:\.\d+)?\s*(?:ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])\s*)+)/i;
 const BODY_RETRY_UNIT = /(\d+(?:\.\d+)?)\s*(ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])/gi;
+// "resets at 2026-10-20T15:00:00Z": an absolute reset instant. Only a timestamp that
+// carries its own zone is read; a bare local time has no safe interpretation.
+const BODY_RESET_AT =
+  /(?:resets?|available|try again|retry)\s*(?:at|on|after|until)\s*:?\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/i;
 
-export function retryHintFromBody(body: unknown): number {
-  const match = BODY_RETRY_HINT.exec(String(body || ''));
-  if (!match?.[1]) return 0;
-  let total = 0;
-  for (const part of match[1].matchAll(BODY_RETRY_UNIT)) {
-    const value = Number(part[1]);
-    const unit = String(part[2]).toLowerCase();
-    if (!Number.isFinite(value)) return 0;
-    if (unit === 'ms') total += value;
-    else if (unit.startsWith('h')) total += value * 3_600_000;
-    else if (unit.startsWith('m')) total += value * 60_000;
-    else total += value * 1_000;
+/**
+ * Wait the response text asks for, in ms. A 429 that names a long-lived allowance
+ * may state hours ("resets in 4 hours"), so the ceiling is the caller's: it keeps
+ * the 10-minute Retry-After window by default and widens it once the 429 is known
+ * to be a long-lived allowance.
+ */
+export function retryHintFromBody(body: unknown, now: number = Date.now(), maxMs?: number): number {
+  const text = String(body || '');
+  const clamp = (ms: number) => (maxMs === undefined ? clampRetryAfterMs(ms) : Math.min(Math.max(Math.round(ms), 1_000), maxMs));
+  const match = BODY_RETRY_HINT.exec(text);
+  if (match?.[1]) {
+    let total = 0;
+    for (const part of match[1].matchAll(BODY_RETRY_UNIT)) {
+      const value = Number(part[1]);
+      const unit = String(part[2]).toLowerCase();
+      if (!Number.isFinite(value)) return 0;
+      if (unit === 'ms') total += value;
+      else if (unit.startsWith('h')) total += value * 3_600_000;
+      else if (unit.startsWith('m')) total += value * 60_000;
+      else total += value * 1_000;
+    }
+    return total > 0 ? clamp(total) : 0;
   }
-  return total > 0 ? clampRetryAfterMs(total) : 0;
+  const absolute = BODY_RESET_AT.exec(text);
+  if (absolute?.[1]) {
+    const at = Date.parse(absolute[1].replace(' ', 'T'));
+    if (Number.isFinite(at) && at > now) return clamp(at - now);
+  }
+  return 0;
 }
 
-// Long-lived allowances (daily / plan window / credits / points) versus short per-minute
-// limits, from wording alone. Deliberately conservative: text that says neither
-// stays unclassified and keeps the default ladder. Chinese wording is matched by
-// code point escapes so the source stays English-only.
-const QUOTA_WORDING =
-  /\b(?:quota|daily|per[ -]day|per[ -]hour|per[ -]week|weekly|credits?|balance|billing|usage limit|plan limit)\b|\u989d\u5ea6|\u914d\u989d|\u79ef\u5206|\u9650\u989d|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\u5468|\u6bcf\s*\d+\s*\u5c0f\u65f6|\u4f59\u989d|\u6b20\u8d39/i;
-const WINDOW_WORDING = /\b(?:per[ -]minute|per[ -]second|rpm|tpm|itpm|otpm|too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b/i;
+// Long-lived allowances (daily / hourly / plan window / credits) versus short
+// per-minute limits, from wording alone. Deliberately conservative: text that says
+// neither stays unclassified and keeps the default ladder. Chinese wording is
+// matched by code point escapes so the source stays English-only.
+//
+// Three tiers of evidence, strongest first:
+//   * a stated horizon ("per day", "5-hour", "credits", "plan limit") names how long
+//     the limit lasts;
+//   * a stated minute unit ("per minute", "rpm", "tpm") names a short window;
+//   * generic words ("quota", "rate limit", "too many requests") only say a limit
+//     was hit. Gemini-style "You exceeded your current quota ... PerMinute ... retry
+//     in 28s" is a per-minute limit that merely uses the word quota, so a generic
+//     quota word must not outweigh an explicit minute unit or a short wait hint.
+// Horizon words that also appear in plan/billing boilerplate ("check your plan and
+// billing details") are deliberately NOT horizon evidence.
+const HORIZON_WORDING =
+  /\b(?:daily|per[ _-]?day|per[ _-]?hour|hourly|per[ _-]?week|weekly|per[ _-]?month|monthly|credits?|balance|usage limit|plan limit|usage cap|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty[ -]?four)[ -]?(?:hours?|hrs?|h))\b|PerDay|PerHour|PerWeek|PerMonth|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\u5468|\u6bcf\u6708|\u672c\u6708|\u5c0f\u65f6|\u4f7f\u7528\u4e0a\u9650|\u7528\u91cf|\u4f59\u989d|\u6b20\u8d39|\u79ef\u5206|\u5957\u9910/i;
+const MINUTE_WORDING = /per[ _-]?minute|per[ _-]?second|\b(?:rpm|tpm|itpm|otpm)\b|\u6bcf\u5206\u949f|\u6bcf\u79d2/i;
+const GENERIC_QUOTA_WORDING = /\b(?:quota|billing)\b|\u989d\u5ea6|\u914d\u989d|\u9650\u989d/i;
+const GENERIC_WINDOW_WORDING =
+  /\b(?:too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b|\u901f\u7387\u9650\u5236|\u8bf7\u6c42\u9891\u7387|\u8bf7\u6c42\u8fc7\u4e8e\u9891\u7e41|\u5e76\u53d1|\u8bbf\u95ee\u91cf\u8fc7\u5927/i;
 // "exhausted" proves a limit ran out but not its horizon: only a WEAK long-lived
 // hint after minute-window wording has been ruled out. "inference tpm exhausted"
 // stays a window, while "plan limit exhausted" (caught above) and a bare
 // "exhausted" read as a long-lived allowance.
 const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d/i;
-
-export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined {
-  const text = String(body || '');
-  if (!text) return undefined;
-  if (QUOTA_WORDING.test(text)) return 'quota';
-  if (WINDOW_WORDING.test(text)) return 'window';
-  if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
-  return undefined;
-}
 
 // An explicit provider-stated wait is itself a classification signal when the
 // wording says nothing: a minute-and-a-half or less can only be a short window,
@@ -106,14 +130,44 @@ export function rateLimitWindowOf(body: unknown): 'window' | 'quota' | undefined
 const WINDOW_HINT_CEILING_MS = 90_000;
 const QUOTA_HINT_FLOOR_MS = 600_000;
 
+/**
+ * Short window versus long-lived allowance, from the response wording. `hintMs` is
+ * the provider's own explicit wait (0 when it gave none); it only arbitrates
+ * ambiguous wording, never overrides a stated minute unit or horizon on its own.
+ */
+export function rateLimitWindowOf(body: unknown, hintMs: number = 0): 'window' | 'quota' | undefined {
+  const text = String(body || '');
+  if (!text) return undefined;
+  const isShortHint = hintMs > 0 && hintMs <= WINDOW_HINT_CEILING_MS;
+  const hasHorizon = HORIZON_WORDING.test(text);
+  const hasMinute = MINUTE_WORDING.test(text);
+  if (hasHorizon && !hasMinute) return 'quota';
+  if (hasMinute && !hasHorizon) return 'window';
+  // Both a horizon and a minute unit are named (a response listing every limit of
+  // the plan): a wait beyond the minute window proves the long one, otherwise lean
+  // to the window. The lean is the self-correcting side: a daily limit mistaken for
+  // a window is promoted to the long-allowance ladder after a few short probes,
+  // while a minute limit mistaken for a long allowance would idle the key for
+  // minutes on every incident.
+  if (hasHorizon && hasMinute) return hintMs > WINDOW_HINT_CEILING_MS ? 'quota' : 'window';
+  if (GENERIC_QUOTA_WORDING.test(text)) return isShortHint ? 'window' : 'quota';
+  if (GENERIC_WINDOW_WORDING.test(text)) return 'window';
+  if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
+  return undefined;
+}
+
 function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number, body: unknown = ''): FailureClassification {
   const limits = getLimits(env);
-  const retryAfterMs = parseRetryAfterMs(headers, now) || retryHintFromBody(body);
-  let rateLimitWindow = rateLimitWindowOf(body);
-  if (!rateLimitWindow && retryAfterMs > 0) {
-    if (retryAfterMs <= WINDOW_HINT_CEILING_MS) rateLimitWindow = 'window';
-    else if (retryAfterMs >= QUOTA_HINT_FLOOR_MS) rateLimitWindow = 'quota';
+  // Read the provider's wait with the long-allowance ceiling first: classification
+  // needs its real magnitude, and only a long-lived allowance keeps more than the
+  // ordinary 10-minute window of it.
+  const longHintMs = parseRetryAfterMs(headers, now, QUOTA_RETRY_AFTER_MAX_MS) || retryHintFromBody(body, now, QUOTA_RETRY_AFTER_MAX_MS);
+  let rateLimitWindow = rateLimitWindowOf(body, longHintMs);
+  if (!rateLimitWindow && longHintMs > 0) {
+    if (longHintMs <= WINDOW_HINT_CEILING_MS) rateLimitWindow = 'window';
+    else if (longHintMs >= QUOTA_HINT_FLOOR_MS) rateLimitWindow = 'quota';
   }
+  const retryAfterMs = longHintMs <= 0 ? 0 : rateLimitWindow === 'quota' ? longHintMs : clampRetryAfterMs(longHintMs);
   return {
     kind: KIND.RATE_LIMIT,
     action: 'rotate',

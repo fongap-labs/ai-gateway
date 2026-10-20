@@ -9,7 +9,7 @@ import { loadGatewayConfig } from '../config/nodes.ts';
 import { getPolicy, loadPoliciesConfig } from '../config/policies.ts';
 import { collectKnownModels } from '../config/registry.ts';
 import type { Limits } from '../config/timeouts.ts';
-import { getLimits } from '../config/timeouts.ts';
+import { getLimits, requestSizeAllowanceMs } from '../config/timeouts.ts';
 import { dashboardResponse } from '../dashboard/pages.ts';
 import { readmeStatusSvgResponse } from '../dashboard/readme-status.ts';
 import { handleOAuthRoute } from '../oauth/routes.ts';
@@ -345,7 +345,9 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   const policy = getPolicy(requestedModel, loadModelsConfig(env), loadPoliciesConfig(env));
-  const failoverBudgetMs = policy.failoverBudgetMs ?? limits.failoverBudgetMs;
+  // A large prompt needs proportionally more wall-clock time for prefill, so the
+  // request budget grows with its size instead of timing out healthy upstreams.
+  const failoverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);
   return {
     ok: true,
     request,

@@ -73,10 +73,12 @@ type ConversionResult = {
 
 跨协议回退在转换后会检查诊断。若某项被丢弃的特性会改变上游实际收到的请求语义，则该回退目标会被拒绝，而不是降级后发出。当前高风险集合为：
 
-- `provider_native_tool`：服务端工具（如 `web_search`）在目标协议中没有等价表示；
+- `provider_native_tool`：请求的工具面完全由服务端工具（如 `web_search`）构成、或带有 `mcp_servers` / `container`，在目标协议中没有等价表示，丢弃后请求就不再是原来的请求；强制指定（`tool_choice`）某个服务端工具同样直接拒绝；
 - `provider_native_tool_history`：历史中的服务端工具调用与结果。
 
 以下被丢弃的特性不会拒绝回退，仅使保真度降为 `degraded` 并保留诊断：
+
+- `provider_native_tool_definition`：请求同时带有可移植的函数工具时，随之出现的服务端工具定义（advisor、tool search、`web_search` 等）被丢弃。Claude Code 的每一轮请求都把这类可选的服务端工具与自己的函数工具列在一起；目标模型只是少了一项能力，不会被告知这些工具存在，也不会被伪装成函数暴露出去；
 
 - `tool_result_error_marker`：工具结果的失败标记在 Chat 中没有对应字段，失败文本仍保留在工具结果内容中；
 - `context_management`：仅是客户端侧上下文编辑（如清理旧工具结果）的提示，不改变消息内容。

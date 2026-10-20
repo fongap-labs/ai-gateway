@@ -9,7 +9,7 @@
 // network / client-abort outcomes. Success handling lives in success.ts;
 // the hedge race lives in hedge.ts.
 
-import { attemptBudgetWindowMs, attemptHeadersTimeoutMs } from '../../config/timeouts.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
@@ -42,6 +42,15 @@ const DIAGNOSTIC_BYTES = 4096;
 // AttemptContext and AttemptOutcome are defined in src/types/request.ts
 // (the cross-module source of truth). attempt.ts receives its context from
 // handler.ts via dispatchWithHedge(args, tierNodes).
+
+/**
+ * True when the upstream is asked for one buffered JSON reply. A matrix
+ * translation always asks the upstream to stream, and a streaming client or the
+ * stream guard (fakeStream) makes the upstream stream as well.
+ */
+export function isBufferedUpstreamReply(c: Pick<AttemptContext, 'conversionContext' | 'clientWantsStream' | 'fakeStream'>): boolean {
+  return !c.conversionContext && !c.clientWantsStream && !c.fakeStream;
+}
 
 // ---- One attempt against one node -----------------------------------------
 
@@ -229,18 +238,27 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     if (hedgeAbort.signal.aborted) onHedgeAbort();
     else hedgeAbort.signal.addEventListener('abort', onHedgeAbort, { once: true });
   }
+  // A large prompt legitimately waits longer for its first byte (prefill), and a
+  // buffered (non-stream) reply sends no headers until generation has finished,
+  // so for it the header wait IS the generation wait and is bounded by the
+  // attempt window instead of the streaming-oriented header timeout. Otherwise
+  // every non-stream completion longer than the header timeout fails here, fails
+  // over to an equally slow node and ends in a 504.
+  const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
+  const isBufferedReply = isBufferedUpstreamReply(c);
   let attemptHeadersTimeout: number;
   if (c.hedgedAttempt && c.attemptDeadlineMs) {
-    attemptHeadersTimeout = attemptHeadersTimeoutMs(
-      policy.headersTimeoutMs ?? limits.headersTimeoutMs,
-      Math.max(1, c.attemptDeadlineMs - Date.now()),
-      1,
-    );
+    const windowMs = Math.max(1, c.attemptDeadlineMs - Date.now());
+    attemptHeadersTimeout = attemptHeadersTimeoutMs(isBufferedReply ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs, windowMs, 1);
   } else {
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
     const attemptBudgetMs = attemptBudgetWindowMs(remainingBudgetMs, remainingDispatchableAttempts);
     c.attemptDeadlineMs = Date.now() + attemptBudgetMs;
-    attemptHeadersTimeout = attemptHeadersTimeoutMs(policy.headersTimeoutMs ?? limits.headersTimeoutMs, attemptBudgetMs, 1);
+    attemptHeadersTimeout = attemptHeadersTimeoutMs(
+      isBufferedReply ? Math.max(configuredHeadersMs, attemptBudgetMs) : configuredHeadersMs,
+      attemptBudgetMs,
+      1,
+    );
   }
   const timeoutId = setTimeout(() => {
     hasHeadersTimeoutHit = true;

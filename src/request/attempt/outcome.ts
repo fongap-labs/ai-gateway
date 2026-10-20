@@ -7,11 +7,14 @@
 // rotate / stop outcomes, the logical-attempt vs dispatch charge rules,
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
+import { clampRetryAfterMs } from '../../config/timeouts.ts';
 import { trimDiagnostic } from '../../protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
+  ADAPTIVE_429_QUOTA_STEPS_MS,
   ADAPTIVE_429_WINDOW_STEPS_MS,
   adaptive429StepsFromEnv,
+  clearAdaptive429State,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,
 } from '../../reliability/adaptive-429.ts';
@@ -129,6 +132,7 @@ export function recordOutcome(
     if (classification.action !== 'neutral') {
       const upstreamModel = upstreamModelOf(node, state.requestedModel);
       let tier1RetryAfterMs = classification.retryAfterMs || 0;
+      let tier1RateLimitClass: string | undefined = classification.rateLimitWindow;
       if (classification.requestTooLarge) recordTier1Oversize(node.id, state.requestedModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
@@ -141,31 +145,39 @@ export function recordOutcome(
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const now = Date.now();
 
-        // Determine the adaptive-429 ladder to use. If classifier says 'window' but
-        // the model/account ladder already reached stage >= 3, the limit is effectively
-        // a long-lived quota — promote to quota ladder (default steps, startStage=5)
-        // and widen scope to account.
+        // Determine the adaptive-429 ladder to use. A window-classified 429 climbs
+        // the gentle window ladder; a quota-classified one the long-allowance
+        // ladder (it already cools the whole key). A window 429 whose ladder
+        // reaches stage >= 3 is effectively a long-lived allowance: promote it to
+        // the quota ladder and widen the scope to the account.
+        const quotaSteps = () => adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_QUOTA_STEPS_MS, ADAPTIVE_429_QUOTA_STEPS_MS);
         let ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
         const isWindowLadder = classification.rateLimitWindow === 'window';
+        const isQuotaLadder = classification.rateLimitWindow === 'quota';
         let ladderSteps = isWindowLadder
           ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_WINDOW_STEPS_MS, ADAPTIVE_429_WINDOW_STEPS_MS)
-          : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
-        // Only a quota-classified account 429 starts at the quota stage; a
-        // window 429 must climb the gentle window ladder from stage 1 even when
-        // the observed scope is account-wide.
-        let startStage = !isWindowLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
+          : isQuotaLadder
+            ? quotaSteps()
+            : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+        // An unclassified account-wide 429 keeps the historical quota start stage
+        // on the default ladder; a window 429 climbs from stage 1 even when the
+        // observed scope is account-wide.
+        let startStage = !isWindowLadder && !isQuotaLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
         let isWindowClassified = isWindowLadder;
 
         if (isWindowClassified && tier1RateLimitScope === 'model') {
           // Check the model ladder stage for potential promotion
           const modelAdaptive = snapshotAdaptive429State(node.provider, node.id, now, state.requestedModel);
           if (modelAdaptive.stage >= 3) {
-            // Promote: treat as quota, use account ladder with quota settings
             tier1RateLimitScope = 'account';
             ladderModel = '';
-            ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
-            startStage = ADAPTIVE_429_QUOTA_START_STAGE;
+            ladderSteps = quotaSteps();
+            startStage = 1;
             isWindowClassified = false;
+            tier1RateLimitClass = 'quota';
+            // The long-allowance ladder starts from its first step, not from the
+            // window ladder's stage.
+            clearAdaptive429State(node.provider, node.id);
           }
         }
 
@@ -173,9 +185,11 @@ export function recordOutcome(
           // Window-classified but already account-scoped: check account ladder
           const accountAdaptive = snapshotAdaptive429State(node.provider, node.id, now, '');
           if (accountAdaptive.stage >= 3) {
-            ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
-            startStage = ADAPTIVE_429_QUOTA_START_STAGE;
+            ladderSteps = quotaSteps();
+            startStage = 1;
             isWindowClassified = false;
+            tier1RateLimitClass = 'quota';
+            clearAdaptive429State(node.provider, node.id);
           }
         }
 
@@ -192,9 +206,10 @@ export function recordOutcome(
         tier1RateLimitStage = adaptive429.stage;
         tier1RateLimitCooldownMs = adaptive429.cooldown_remaining_ms;
       }
-      const t1Class = classifyTier1Failure(tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope } : classification, {
-        retryAfterMs: tier1RetryAfterMs,
-      });
+      const t1Class = classifyTier1Failure(
+        tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope, rateLimitClass: tier1RateLimitClass } : classification,
+        { retryAfterMs: tier1RetryAfterMs },
+      );
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : state.requestedModel;
       applyTier1Outcome(node.id, tier1ModelKey, t1Class);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
@@ -205,9 +220,14 @@ export function recordOutcome(
     recordNeutralEnd(node.id);
   } else {
     applyHealthPenalty(node.id, classification.kind);
+    // The paid-API reserve (Tier 3) keeps the ordinary Retry-After ceiling; only
+    // Tier 1 learns long-lived allowances and Tier 2 subscription windows are
+    // extended by the adapter's own reset hint.
+    const nodeCooldownMs = classification.cooldownMs || 0;
     recordFailure(node.id, {
       counted: classification.counted,
-      cooldownMs: classification.cooldownMs || 0,
+      cooldownMs:
+        node.tier === 'tier-3' && classification.kind === KIND.RATE_LIMIT && nodeCooldownMs > 0 ? clampRetryAfterMs(nodeCooldownMs) : nodeCooldownMs,
       reason: classification.kind,
       explicitRetryAfter: classification.explicitRetryAfter,
     });

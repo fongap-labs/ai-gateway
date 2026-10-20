@@ -124,7 +124,9 @@ export async function runFallbackChain({
       state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
       return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
     }
-    const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface };
+    // bodyChars keeps the size-aware timeouts and oversize memory working on the
+    // fallback pass; a translated request is as large as the client's.
+    const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface, bodyChars: loopCtx.bodyChars };
     let conversionResult: ConversionResult;
     try {
       const from = routeToIrProtocol(route);

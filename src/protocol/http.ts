@@ -220,9 +220,13 @@ export function trimDiagnostic(text: unknown, limit: number = 600): string {
 
 // Terminal-error intent header: tells SDKs (Codex / Claude) NOT to auto-retry a
 // request the gateway already resolved — the gateway has internally rotated
-// across nodes, so a client-side blind retry risks re-executing a tool call.
-// Rate-limit (429) and capacity (503) responses stay retryable via Retry-After.
-export function shouldNotRetryHeaders(status: number): Record<string, string> {
-  if (status === 429 || status === 503) return {};
+// across nodes, so a client-side blind retry risks repeating work the gateway
+// already spent its budget on. Rate-limit (429) and capacity (503) responses stay
+// retryable via Retry-After. `isRetryable` marks a pre-commit failure that was
+// purely transient (a spent failover budget, or only timeouts / 5xx / 429 across
+// every attempt): nothing was delivered to the client, so a retry cannot repeat a
+// tool call, and by then the cooldown state steers it to capacity that recovered.
+export function shouldNotRetryHeaders(status: number, isRetryable: boolean = false): Record<string, string> {
+  if (status === 429 || status === 503 || isRetryable) return {};
   return { 'x-should-retry': 'false' };
 }

@@ -78,6 +78,7 @@ export function gatewayError(
   details?: Record<string, unknown>,
   extraHeaders?: Record<string, string>,
   gatewayCode: string | null = null,
+  isRetryable: boolean = false,
 ): Response {
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
@@ -93,14 +94,23 @@ export function gatewayError(
           'request-id': requestId || '',
           'x-request-id': requestId || '',
           ...(extraHeaders || {}),
-          ...shouldNotRetryHeaders(status),
+          ...shouldNotRetryHeaders(status, isRetryable),
           ...corsHeaders(request, env),
         },
       },
     );
   }
   if (route === 'openai_responses') {
-    return responsesErrorResponse(request, env, status, message, requestId, responsesDiagnosticHeaders(details, extraHeaders), gatewayCode);
+    return responsesErrorResponse(
+      request,
+      env,
+      status,
+      message,
+      requestId,
+      responsesDiagnosticHeaders(details, extraHeaders),
+      gatewayCode,
+      isRetryable,
+    );
   }
   return new Response(JSON.stringify({ error: { message, ...(details ? { details } : {}) } }), {
     status,
@@ -109,7 +119,7 @@ export function gatewayError(
       'cache-control': 'no-store',
       'x-request-id': requestId || '',
       ...(extraHeaders || {}),
-      ...shouldNotRetryHeaders(status),
+      ...shouldNotRetryHeaders(status, isRetryable),
       ...corsHeaders(request, env),
     },
   });
@@ -144,6 +154,7 @@ export function buildBudgetExhaustedResponse(
     details,
     undefined,
     GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED,
+    true,
   );
 }
 
@@ -219,6 +230,7 @@ export function buildExhaustedResponse(
     details,
     retryAfterSec ? { 'retry-after': String(retryAfterSec) } : undefined,
     gatewayCode,
+    !nothingAttempted && familyFailureSetIsRetryable(state.failureKinds),
   );
 }
 

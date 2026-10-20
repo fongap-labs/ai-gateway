@@ -39,6 +39,7 @@ export function responsesErrorResponse(
   requestId?: string,
   extraHeaders?: Record<string, string>,
   gatewayCode: string | null = null,
+  isRetryable: boolean = false,
 ): Response {
   // Keep the OpenAI/Codex body contract untouched (`error.code === null`).
   // Gateway-specific classification is diagnostics metadata, so expose it as
@@ -52,7 +53,7 @@ export function responsesErrorResponse(
       'x-request-id': requestId || '',
       ...(extraHeaders || {}),
       ...(gatewayCode ? { 'x-gateway-error-code': gatewayCode } : {}),
-      ...shouldNotRetryHeaders(status),
+      ...shouldNotRetryHeaders(status, isRetryable),
       ...corsHeaders(request, env),
     },
   });
