@@ -10,6 +10,7 @@
 import { trimDiagnostic } from '../../protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
+  ADAPTIVE_429_WINDOW_STEPS_MS,
   adaptive429StepsFromEnv,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,
@@ -145,9 +146,15 @@ export function recordOutcome(
         // a long-lived quota — promote to quota ladder (default steps, startStage=5)
         // and widen scope to account.
         let ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
-        let ladderSteps = adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
-        let startStage = tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
-        let isWindowClassified = classification.rateLimitWindow === 'window';
+        const isWindowLadder = classification.rateLimitWindow === 'window';
+        let ladderSteps = isWindowLadder
+          ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_WINDOW_STEPS_MS, ADAPTIVE_429_WINDOW_STEPS_MS)
+          : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
+        // Only a quota-classified account 429 starts at the quota stage; a
+        // window 429 must climb the gentle window ladder from stage 1 even when
+        // the observed scope is account-wide.
+        let startStage = !isWindowLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
+        let isWindowClassified = isWindowLadder;
 
         if (isWindowClassified && tier1RateLimitScope === 'model') {
           // Check the model ladder stage for potential promotion

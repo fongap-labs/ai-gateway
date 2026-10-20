@@ -115,7 +115,12 @@ export async function maintainUsageStats(env: GatewayEnv, now: number = Date.now
   const { aggregateHourlyToDaily, aggregateDailyToWeekly } = await import('./aggregation.ts');
   const aggDaily = await aggregateHourlyToDaily(env, now).catch((e) => ({ error: e?.message || e }));
   const aggWeekly = await aggregateDailyToWeekly(env, now).catch((e) => ({ error: e?.message || e }));
-  const cleanup = await cleanupUsageRetention(env, now).catch((e) => ({ error: e?.message || e }));
+  // Never delete source rows when their rollup failed: a failed daily pass
+  // followed by hourly cleanup would destroy the only copy of that data.
+  const aggregationFailed = 'error' in aggDaily || 'error' in aggWeekly;
+  const cleanup = aggregationFailed
+    ? { skipped: true, reason: 'aggregation failed; retention cleanup deferred' }
+    : await cleanupUsageRetention(env, now).catch((e) => ({ error: e?.message || e }));
   const modelCleanup = await cleanupModelStats(env);
   return { aggDaily, aggWeekly, cleanup, modelCleanup };
 }

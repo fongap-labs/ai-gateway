@@ -12,7 +12,7 @@
 import type { D1PreparedStatement } from '../../types/cloudflare.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
 import { getUtcWeekStartUtcMs } from '../time-buckets.ts';
-import { isoDayUtc8, TABLE, TABLE_DAILY, TABLE_WEEKLY, tokenStatsD1 } from './keys.ts';
+import { HOURLY_RETENTION_MS, isoDayUtc8, TABLE, TABLE_DAILY, TABLE_WEEKLY, tokenStatsD1 } from './keys.ts';
 
 type AggregateRow = {
   input: number;
@@ -132,11 +132,16 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
     const rows = Array.isArray(result?.results) ? result.results : [];
 
     const byDay = new Map<string, AggregateRow>();
+    // Once hourly rows start expiring, a day rebuilt from what is left would
+    // overwrite the already-finalized daily row with a partial total. Only
+    // re-aggregate days whose hourly data is still fully inside retention.
+    const cutoffDay = isoDayUtc8(now - HOURLY_RETENTION_MS);
     for (const row of rows) {
       if (!row || typeof row.hour !== 'string') continue;
       const timestamp = Date.parse(row.hour);
       if (!Number.isFinite(timestamp)) continue;
       const day = isoDayUtc8(timestamp);
+      if (day <= cutoffDay) continue;
       byDay.set(day, addRow(byDay.get(day) || emptyAggregate(), row));
     }
 

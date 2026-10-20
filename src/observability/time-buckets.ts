@@ -61,7 +61,7 @@ export function getUtcWeekBucket(date: number | Date = Date.now()): string {
 export function getUtcWeekStartUtcMs(date: number | Date = Date.now()): number {
   const t = typeof date === 'number' ? date : date.getTime();
   const d = new Date(t);
-  const dow = (new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getUTCDay() + 6) % 7;
+  const dow = (d.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
   const dayMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   return dayMs - dow * DAY_MS;
 }

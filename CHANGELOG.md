@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- fix: keep rate-limit recovery aligned with the reported limit horizon. A 429 classified as a short window now climbs the gentle window ladder (and no longer starts at the quota stage just because its scope is account-wide), Go-style compound reset durations and absolute epoch reset headers resolve to the correct instant (a 10-digit epoch was read as seconds), minute-window wording wins over the weak exhausted hint, a zero quota tail without a reset marker no longer denies admission forever, and the UTC week boundary no longer shifts by one day on hosts east of UTC. Daily rollups stop rebuilding finalized days whose hourly rows have started expiring, and retention cleanup is skipped when aggregation fails so source rows are not deleted before their rollup succeeds.
 - fix: preserve streamed text and reasoning when translating into Responses events, treat a Chat stream that closes after `finish_reason` as complete, capture trailing usage before finishing a non-stream assembly, release slot and quota accounting when matrix assembly returns empty or aborts, record usage before settling quota on non-stream successes, and rewrite the logical model on matrix-translated streams.
 - feat: make documentation link show deployment ID (first 7 chars of AIG_BUILD_SHA uppercase) or timestamp (YYYYMMddhhnn) when deployment ID unavailable, and point the link to `https://github.com/fongap-labs/ai-gateway/tree/<id>/docs`
 
