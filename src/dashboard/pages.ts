@@ -25,7 +25,7 @@ const GH_ICON = `<a class="github" href="${GITHUB_URL}" target="_blank" rel="noo
   <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
 </svg><span>GitHub</span></a>`;
 
-function shell({ title, body, nonce }: { title: string; body: string; nonce: string }): string {
+function shell({ title, body, nonce, docLabel = 'Documentation' }: { title: string; body: string; nonce: string; docLabel?: string }): string {
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="AI Gateway — One endpoint. Built for upstream change.">
@@ -58,7 +58,7 @@ function shell({ title, body, nonce }: { title: string; body: string; nonce: str
     <span class="footer-sep" aria-hidden="true">·</span>
     <a href="${GITHUB_URL}" target="_blank" rel="noopener noreferrer">GitHub</a>
     <span class="footer-sep" aria-hidden="true">·</span>
-    <a href="${DOCUMENTATION_URL}" target="_blank" rel="noopener noreferrer">Documentation</a>
+    <a href="${DOCUMENTATION_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(docLabel)}</a>
   </div>
 </footer>
 
@@ -119,7 +119,7 @@ function showTip(target){
     if(top<sr.top)top=sr.top+4;
     if(top+th>sr.bottom)top=sr.bottom-th-4;
     if(left<sr.left)left=sr.left+4;
-    if(left+tw>sr.right)left=sr.right-tw-4;
+    if(left+tw>window.innerWidth-4)left=window.innerWidth-tw-4;
   }
   tipEl.style.left=left+'px';tipEl.style.top=top+'px';
 }
@@ -144,9 +144,23 @@ root.addEventListener('focusout',function(e){
 export async function dashboardResponse(request: Request, env: Record<string, unknown>): Promise<Response> {
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-  try {
-    const gatewayEnv = env as GatewayEnv;
+  // Compute documentation label based on deployment ID or timestamp
+  const gatewayEnv = env as GatewayEnv;
+  const buildSha = String(gatewayEnv?.AIG_BUILD_SHA ?? '').trim();
+  let docLabel = 'Documentation';
+  if (/^[0-9a-f]{7,}$/i.test(buildSha)) {
+    docLabel = buildSha.slice(0, 7).toUpperCase();
+  } else {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(now.getUTCDate()).padStart(2, '0');
+    const hour = String(now.getUTCHours()).padStart(2, '0');
+    const minute = String(now.getUTCMinutes()).padStart(2, '0');
+    docLabel = `${year}${month}${day}${hour}${minute}`;
+  }
 
+  try {
     const config = loadGatewayConfig(gatewayEnv);
     const now = Date.now();
     const stats = await getCachedDashboardStats(gatewayEnv, now);
@@ -185,7 +199,7 @@ export async function dashboardResponse(request: Request, env: Record<string, un
       quickHtml,
     ].join('\n');
 
-    return htmlResponse(shell({ title: 'AI Gateway', body, nonce }), { nonce });
+    return htmlResponse(shell({ title: 'AI Gateway', body, nonce, docLabel }), { nonce });
   } catch (e) {
     try {
       console.error('[dashboard] dashboardResponse error:', (e as Error)?.message || e, (e as Error)?.stack || '');
@@ -200,7 +214,7 @@ export async function dashboardResponse(request: Request, env: Record<string, un
     </div>
   </section>`;
 
-    return htmlResponse(shell({ title: 'AI Gateway', body, nonce }), { status: 500, nonce });
+    return htmlResponse(shell({ title: 'AI Gateway', body, nonce, docLabel }), { status: 500, nonce });
   }
 }
 
