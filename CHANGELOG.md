@@ -3,6 +3,9 @@
 ## [Unreleased]
 - feat: make documentation link show deployment ID (first 7 chars of AIG_BUILD_SHA uppercase) or timestamp (YYYYMMddhhnn) when deployment ID unavailable
 
+- fix: the request router folds a doubled `/v1/v1` prefix emitted by Claude Code so an `ANTHROPIC_BASE_URL` set to `https://host/v1` still matches `/v1/messages` instead of returning 404.
+- fix: Anthropic request parsing tolerates the `betas` array sent by Claude Code 2.1.x (context-management, interleaved-thinking) and reports it as a dropped diagnostic on cross-protocol targets instead of rejecting the whole request.
+- fix: Chat usage accounting derives `total_tokens` from the resolved prompt plus completion tokens when an Anthropic `message_delta` tail usage carries only `output_tokens`, instead of using the missing `input_tokens`.
 - fix: Chat and Responses upstream streams translated for an Anthropic client no longer lose or misreport tool calls. Responses tool-call arguments delivered only on a `.done` event or on `output_item.added` are kept (and never repeated when deltas already carried them), an `incomplete` Responses stream ends as `max_tokens` instead of a finished `tool_use` with cut-off arguments, a Chat reply that carries tool calls ends as `tool_use` even when the upstream says `finish_reason: "stop"`, and Chat tool-call fragments without an `index` continue the call they belong to (a repeated id, or the open call for a bare argument fragment) instead of becoming a second broken call. Fragments interleaved across calls are still attributed to the call opened last.
 
 - fix: when the native attempt was dispatched and a cross-protocol fallback target is then rejected by conversion, the exhaustion error now reports `details.conversion_rejected` (a count only). Previously the client saw only the native failures, and the skipped fallback was visible only in the `fallback_conversion_skipped` server log.
