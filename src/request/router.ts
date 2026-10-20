@@ -14,16 +14,25 @@ export type DetectedRoute =
   | 'other';
 
 export function normalizePath(pathname: string | undefined): string {
-  return (
-    String(pathname || '/')
-      .replace(/\/+$/, '')
-      // Anthropic SDK clients (Claude Code, etc.) append "/v1/messages" to the
-      // configured base URL. An operator who set the base to "https://host/v1"
-      // therefore produces "/v1/v1/messages"; fold the doubled prefix back so
-      // the route matches instead of 404ing on a harmless config slip.
-      .replace(/^\/v1\/v1\//, '/v1/')
-      .toLowerCase() || '/'
-  );
+  const raw = String(pathname || '/');
+  // 1) Normalize: collapse redundant slashes, decode, drop query strings, lowercase.
+  let normalized = raw;
+  try {
+    // Parse against a dummy host to extract the pathname, which also resolves
+    // doubled slashes, percent-encoded separators, and query strings.
+    const url = new URL(raw, 'http://x');
+    normalized = url.pathname;
+  } catch {
+    // Non-standard input (for example a bare path without a host) falls back to the raw value.
+    normalized = raw;
+  }
+  // 2) Strip trailing slashes and lowercase.
+  normalized = normalized.replace(/\/+$/, '').toLowerCase();
+  // 3) Fold the doubled /v1/v1/ prefix emitted by the Anthropic SDK.
+  if (normalized.startsWith('/v1/v1/')) {
+    normalized = normalized.replace(/^\/v1\/v1\//, '/v1/');
+  }
+  return normalized || '/';
 }
 
 export function detectRoute(method: string, pathname: string): DetectedRoute {
