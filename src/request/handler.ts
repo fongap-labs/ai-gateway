@@ -161,6 +161,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     clientWantsStream,
     fakeStream,
     bodyJson,
+    bodyChars: reqDescriptor.bodyChars,
     limits,
     exposeUpstreamInfo,
     state,

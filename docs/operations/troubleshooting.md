@@ -137,6 +137,14 @@ Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有
 
 请求级的 `AIG_FAILOVER_BUDGET_MS` 已耗尽，或在墙钟预算之内已无安全的 attempt 可用。在增大预算之前，请先检查上游的 header/首事件延迟、已尝试的故障域，以及回退/hedge 的活动情况。
 
+最常见的三个原因：
+
+- **非流式请求生成时间长**：上游在生成结束前不发响应头，响应头等待因此就是整段生成时间。网关对非流式请求使用 attempt 窗口而不是 `AIG_UPSTREAM_HEADER_TIMEOUT_MS`；客户端若能改用流式（`stream: true`），首事件守卫还能更早发现故障。
+- **大提示词**：上下文越长，上游 prefill 越慢。请求体超过 50000 字符后，网关已自动放宽预算与超时；`failure_kinds` 里仍以 `headers_timeout` / `first_event_timeout` 为主时，再考虑通过策略的 `headers_timeout_ms`、`first_event_timeout_ms`、`failover_budget_ms` 为该模型单独放宽。
+- **hedge 过早重复发送**：每个请求都出现 `hedge:` 日志，说明 3 秒的内置延迟对这类负载偏短。检查 `AIG_HEDGE_DELAY_MS` 是否被显式设置（显式值不会自适应），或把该模型的策略 `hedge.enabled` 设为 `false`。
+
+请求预算耗尽的 504，以及每次 attempt 都只是瞬时失败（超时、5xx、429）的 502，不会带 `x-should-retry: false`：此时没有任何内容送达客户端，重发不会重复工具调用，且冷却状态会把重试引向已恢复的容量，所以 Claude Code、OpenAI SDK 等客户端会自动重试。含有非瞬时失败（上游拒绝请求、模型不存在、协议转换不被支持）的 502 仍带 `x-should-retry: false`。
+
 ## 模型问题
 
 ### 模型未列出或不可用
@@ -148,6 +156,10 @@ Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有
 ### Claude Code / Anthropic Messages 回退问题
 
 原生的 Anthropic 路由要求节点的 `provider` 解析到 Anthropic provider 适配器。若 native 候选已耗尽且回退已启用，请求可能会被转换为 OpenAI Chat。
+
+部署里完全没有 Anthropic 节点时，每个 Claude Code 请求都走这条回退路径。Claude Code 的每一轮请求都会带上 advisor、tool search 之类的可选服务端工具定义；只要请求里还有普通函数工具，这些定义会被丢弃（诊断为 `provider_native_tool_definition`），请求照常发出。以下情况仍会返回 502 `conversion_not_supported`（服务端日志中的 `fallback_conversion_skipped` 给出原因）：工具面完全由服务端工具构成（例如只有 `web_search` 的搜索子请求）、`tool_choice` 强制指定了服务端工具、请求带有 `mcp_servers` 或 `container`、历史中含有 `web_search` 的 `server_tool_use` 块。
+
+Claude Code 还会用小模型（默认是 Haiku 系列）做标题、摘要等后台请求。网关只会路由已知模型目录里的模型，所以请设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL`（或 `ANTHROPIC_SMALL_FAST_MODEL`）指向网关已配置的模型，否则这些请求会返回 404 `Model not found for this key.`。
 
 转换桥接刻意不做完整的 Anthropic 语义模拟。诸如 thinking 历史/控制、上下文管理控制、provider 原生工具以及部分工具提示等特性，可能会被降级或被拒绝。调试时，转换诊断会以固定的类别暴露信息，而不包含请求内容。
 

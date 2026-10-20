@@ -277,6 +277,10 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 
 当 429 被分类为短期窗口类（分钟级限流，依据响应措辞或不超过 90 秒的显式等待提示）时，Tier 1 改用封顶 5 分钟的温和阶梯 `15s -> 30s -> 45s -> 1m -> 1.5m -> 2m -> 3m -> 5m`；若要修改该阶梯，请将 `AIG_RATE_LIMIT_WINDOW_STEPS_MS` 设置为同样格式的逗号分隔毫秒数（默认阶梯、长期配额起步与分类规则见[可靠性模型](../architecture/reliability-model.md#429-处理)）。同样地，缺失或格式错误的值会保持内置窗口阶梯。
 
+当 429 被分类为长期配额类（小时级、日级窗口，依据响应措辞，或不低于 10 分钟的显式等待提示）时，Tier 1 使用长期配额阶梯 `5m -> 10m -> 20m -> 40m -> 1h -> 2h -> 3h -> 5h`，并让整个 key 一起冷却。这类窗口要等 provider 重置才会恢复，所以阶梯一直延伸到 5 小时窗口的长度；provider 自己声明的等待（`Retry-After`、正文里的 "resets in 4 hours"）在这类 429 上最多保留 6 小时，而不是被截成 10 分钟。若要修改该阶梯，请将 `AIG_RATE_LIMIT_QUOTA_STEPS_MS` 设置为同样格式的逗号分隔毫秒数，例如 `600000,3600000,18000000`；缺失或格式错误的值会保持内置阶梯。
+
+超时与 hedge 的内置默认值会随请求体大小和回复方式自适应（参见[可靠性模型](../architecture/reliability-model.md#随请求体大小自适应)与[路由模型](../architecture/routing-model.md#hedge)）：请求体超过 50000 字符后，请求预算、响应头等待和首事件等待每 25000 字符各增加 1 秒（上限 45 秒）；非流式请求的响应头等待改为整个 attempt 窗口；内置的 3 秒 hedge 延迟会随大提示词、主节点的 TTFT 以及非流式回复（至少 10 秒）而推后。显式设置 `AIG_HEDGE_DELAY_MS` 或策略的 `hedge.delay_ms` 会按原值使用。
+
 `AIG_IS_SUBSCRIPTION_ENABLED`（布尔值，默认为 `true`）用于开启或关闭 Tier 2 订阅代理。设为 `false` 时，标记为 `auth: "oauth"` 的节点不会被加载，且每个 `/oauth/*` 路由都会返回 404。`AIG_PUBLIC_DASHBOARD`（布尔值，默认为 `true`）决定是否在 `/` 提供仪表盘、在 `/readme-status.svg` 提供徽章；设为 `false` 时两者均返回 404。`AIG_DIAGNOSTICS_GROUPS`（以逗号分隔的 key 分组，默认为空）将 `/health` 与 `/metrics` 限制为所列分组；设置之后，其他任何有效 key 都会收到 403，而 `/v1/models` 仍对所有 key 开放。
 
 其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP`、`AIG_DASHBOARD_MODELS`、`AIG_OAUTH_PROVIDERS` 与 `AIG_OAUTH_ADMIN_GROUPS`（参见 [Tier 2 订阅](#tier-2-订阅oauth)）。

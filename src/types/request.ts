@@ -112,6 +112,8 @@ export type LoopContext = {
   fakeStream: boolean;
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
+  /** Client request body size in characters; fallback descriptors carry it too. */
+  bodyChars?: number;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   state: LoopState;

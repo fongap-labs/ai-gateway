@@ -69,6 +69,7 @@ function assertFields(value: Record<string, unknown>, allowed: readonly string[]
 
 function anthroParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrTool[] {
   const tools: IrTool[] = [];
+  let nativeToolCount = 0;
   for (const rawTool of Array.isArray(body.tools) ? body.tools : []) {
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
     // `type: "custom"` is the explicit spelling of a plain client function tool.
@@ -85,9 +86,17 @@ function anthroParseTools(body: Record<string, unknown>, diag: MatrixDiag): IrTo
       });
       continue;
     }
-    // Provider-native server tools (web_search, advisor, ...) have no
-    // portable function form: report them so the caller can gate the route.
-    diag.add({ feature: 'provider_native_tool', action: 'dropped' });
+    // Provider-native server tools (web_search, advisor, tool search, ...) have
+    // no portable function form and are dropped from the target request.
+    nativeToolCount++;
+  }
+  if (nativeToolCount > 0) {
+    // Claude Code lists optional server tools (advisor, tool search) next to its
+    // own function tools in every turn. While portable function tools remain, the
+    // target model merely cannot call the server tool, which is a capability loss
+    // and not a changed request. Only a request whose entire tool surface was
+    // native depends on those tools, so only that case keeps the high-risk gate.
+    diag.add({ feature: tools.length > 0 ? 'provider_native_tool_definition' : 'provider_native_tool', action: 'dropped' });
   }
   return tools;
 }

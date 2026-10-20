@@ -21,14 +21,16 @@
 // The default and stable built-ins hedge Tier 1 only, while fast and
 // long-reasoning explicitly disable it.
 
+import { adaptiveHedgeDelayMs } from '../../config/timeouts.ts';
 import { classifyHedgeUnknown } from '../../reliability/classify.ts';
+import { getTier1ModelPerf } from '../../reliability/tier1-state.ts';
 import { pickCandidate } from '../../scheduler/scheduler.ts';
 import { pickTier1Candidate } from '../../scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import type { PickedCandidate } from '../../types/scheduler.ts';
 import { cryptoRng } from '../../utils/crypto-rng.ts';
-import { attemptNode } from './dispatch.ts';
+import { attemptNode, isBufferedUpstreamReply } from './dispatch.ts';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -58,7 +60,19 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   if (!hedgePolicy || hedgePolicy.enabled === false) return attemptNode(args);
   const tierKey: 'tier1' | 'tier2' | 'tier3' = `tier${args.tierNumber}`;
   if (hedgePolicy.tiers && !hedgePolicy.tiers.includes(tierKey)) return attemptNode(args);
-  const hedgeDelayMs = hedgePolicy.delayMs ?? args.limits.hedgeDelayMs;
+  // The built-in delay adapts to what is known about this request: a large
+  // prompt or a primary whose TTFT is already long would otherwise be hedged on
+  // nearly every call, doubling upstream load (and rate-limit pressure) for
+  // requests that were healthy. An operator-set delay is used as written.
+  const configuredDelayMs = hedgePolicy.delayMs ?? args.limits.hedgeDelayMs;
+  const hedgeDelayMs =
+    hedgePolicy.delayMs !== undefined || args.limits.isHedgeDelayExplicit || configuredDelayMs <= 0
+      ? configuredDelayMs
+      : adaptiveHedgeDelayMs(configuredDelayMs, {
+          bodyChars: args.reqDescriptor.bodyChars,
+          ttftEwmaMs: args.tierNumber === 1 ? getTier1ModelPerf(args.node.id, args.state.requestedModel)?.ttftEwma : null,
+          isBuffered: isBufferedUpstreamReply(args),
+        });
   const maxHedges = args.limits.maxHedgesPerRequest ?? 1;
   if (hedgeDelayMs <= 0 || maxHedges <= 0) return attemptNode(args);
 

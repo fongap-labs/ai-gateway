@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { attemptFirstEventTimeoutMs } from '../../config/timeouts.ts';
+import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { classifyClientAbort, classifyFirstEventFailure } from '../../reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
@@ -36,7 +36,8 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     const remainingRequestBudgetMs =
       (c.failoverBudgetMs ?? limits.failoverBudgetMs) - (Date.now() - (c.requestStartMs || (s.attemptStartMs as number) || Date.now()));
     const remainingAttemptBudgetMs = (c.attemptDeadlineMs ?? Date.now()) - Date.now();
-    const effectiveFirstEventTimeoutMs = policy?.firstEventTimeoutMs ?? limits.firstEventTimeoutMs;
+    const effectiveFirstEventTimeoutMs =
+      (policy?.firstEventTimeoutMs ?? limits.firstEventTimeoutMs) + requestSizeAllowanceMs(c.reqDescriptor.bodyChars);
     const firstEventTimeout = attemptFirstEventTimeoutMs(
       effectiveFirstEventTimeoutMs,
       Math.min(remainingRequestBudgetMs, remainingAttemptBudgetMs),

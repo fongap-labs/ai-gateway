@@ -20,6 +20,12 @@ const LIMITS = Object.fromEntries(RUNTIME_TUNABLES.map((v) => [v.name, { min: v.
 // upstream cannot park a node for hours via one header.
 const RETRY_AFTER_MIN_MS = 1_000;
 const RETRY_AFTER_MAX_MS = 600_000;
+// A 429 that names a long-lived allowance (an hourly plan window, a daily cap)
+// states a wait of hours, and clamping that to ten minutes only buys a futile
+// probe every ten minutes. Once a response is known to be such an allowance its
+// wait is honoured up to this ceiling (the same ceiling subscription reset hints
+// use), which still stops a broken upstream from parking a key for days.
+export const QUOTA_RETRY_AFTER_MAX_MS = 6 * 3_600_000;
 
 // Floors for phase-local waits. These are not request-wide admission limits;
 // the absolute attempt deadline and remaining request budget still win.
@@ -33,6 +39,43 @@ export const MIN_ATTEMPT_FIRST_EVENT_MS = 5_000;
 // equal-share value so later candidates are never starved completely.
 export const MIN_FAILOVER_RESERVE_MS = 5_000;
 
+// Prefill time grows with prompt size: a coding agent sending a few hundred
+// thousand characters of context legitimately waits tens of seconds for the first
+// token, and a timeout tuned for a short chat turn kills that healthy upstream,
+// fails over to an equally slow one and ends in a 504. The base timeouts and the
+// failover budget therefore grow by one second per SIZE_ALLOWANCE_CHARS_PER_SEC
+// characters above SIZE_ALLOWANCE_FREE_CHARS, up to SIZE_ALLOWANCE_MAX_MS.
+export const SIZE_ALLOWANCE_FREE_CHARS = 50_000;
+export const SIZE_ALLOWANCE_CHARS_PER_SEC = 25_000;
+export const SIZE_ALLOWANCE_MAX_MS = 45_000;
+
+export function requestSizeAllowanceMs(bodyChars: number | undefined | null): number {
+  if (typeof bodyChars !== 'number' || !Number.isFinite(bodyChars) || bodyChars <= SIZE_ALLOWANCE_FREE_CHARS) return 0;
+  const allowance = Math.floor(((bodyChars - SIZE_ALLOWANCE_FREE_CHARS) / SIZE_ALLOWANCE_CHARS_PER_SEC) * 1_000);
+  return Math.min(SIZE_ALLOWANCE_MAX_MS, allowance);
+}
+
+// A reactive hedge duplicates the request on a second key. The built-in delay is
+// a floor for short chat turns; a prompt that is known to be slow (large body, or
+// a primary whose observed TTFT is already long) must not be hedged on nearly
+// every call, which would double upstream load and burn rate-limit headroom on
+// requests that were healthy. An operator-set delay is never adapted.
+export const HEDGE_ADAPTIVE_MAX_MS = 20_000;
+// A buffered (non-stream) reply cannot commit before generation ends, so a hedge
+// earlier than this would fire on nearly every such request.
+export const HEDGE_BUFFERED_MIN_MS = 10_000;
+
+export function adaptiveHedgeDelayMs(
+  configuredMs: number,
+  { bodyChars, ttftEwmaMs, isBuffered }: { bodyChars?: number | null; ttftEwmaMs?: number | null; isBuffered?: boolean },
+): number {
+  let delay = configuredMs;
+  const expectedTtft = typeof ttftEwmaMs === 'number' && Number.isFinite(ttftEwmaMs) && ttftEwmaMs > 0 ? 2 * ttftEwmaMs : 0;
+  delay = Math.max(delay, Math.min(HEDGE_ADAPTIVE_MAX_MS, expectedTtft), Math.min(HEDGE_ADAPTIVE_MAX_MS, requestSizeAllowanceMs(bodyChars)));
+  if (isBuffered) delay = Math.max(delay, HEDGE_BUFFERED_MIN_MS);
+  return Math.round(delay);
+}
+
 export type Limits = {
   headersTimeoutMs: number;
   firstEventTimeoutMs: number;
@@ -42,6 +85,8 @@ export type Limits = {
   maxBodyBytes: number;
   failoverBudgetMs: number;
   hedgeDelayMs: number;
+  /** True when the operator set AIG_HEDGE_DELAY_MS; an explicit delay is never adapted. */
+  isHedgeDelayExplicit: boolean;
   maxHedgesPerRequest: number;
   gatewayKeyRpm: number;
   edgeCacheTtlSec: number;
@@ -159,6 +204,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_HEDGE_DELAY_MS.max,
       LIMITS.AIG_HEDGE_DELAY_MS.def,
     ),
+    isHedgeDelayExplicit: readEnv(env, 'AIG_HEDGE_DELAY_MS') !== undefined,
     maxHedgesPerRequest: clampInt(
       readEnv(env, 'AIG_REQUEST_HEDGE_MAX'),
       LIMITS.AIG_REQUEST_HEDGE_MAX.min,
@@ -188,17 +234,18 @@ export function clampRetryAfterMs(ms: number): number {
   return Math.min(Math.max(Math.round(ms), RETRY_AFTER_MIN_MS), RETRY_AFTER_MAX_MS);
 }
 
-// Returns milliseconds clamped to [RETRY_AFTER_MIN_MS, RETRY_AFTER_MAX_MS], or 0 when absent/invalid.
-export function parseRetryAfterMs(headers: Headers, now: number = Date.now()): number {
+// Returns milliseconds clamped to [RETRY_AFTER_MIN_MS, maxMs], or 0 when absent/invalid.
+// maxMs defaults to the ordinary 10-minute ceiling.
+export function parseRetryAfterMs(headers: Headers, now: number = Date.now(), maxMs: number = RETRY_AFTER_MAX_MS): number {
   const value = headers?.get('retry-after');
   if (!value) return 0;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(Math.max(Math.round(seconds * 1000), RETRY_AFTER_MIN_MS), RETRY_AFTER_MAX_MS);
+    return Math.min(Math.max(Math.round(seconds * 1000), RETRY_AFTER_MIN_MS), maxMs);
   }
   const dateMs = Date.parse(value);
   if (Number.isFinite(dateMs)) {
-    return Math.min(Math.max(dateMs - now, RETRY_AFTER_MIN_MS), RETRY_AFTER_MAX_MS);
+    return Math.min(Math.max(dateMs - now, RETRY_AFTER_MIN_MS), maxMs);
   }
   return 0;
 }

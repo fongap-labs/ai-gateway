@@ -8,7 +8,7 @@
 // matrix conversions by convertMatrixRequest). Every cross-protocol pair is
 // matrix-owned; native passes carry no conversion context and never land here.
 
-import { attemptFirstEventTimeoutMs } from '../../config/timeouts.ts';
+import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
 import { isRecord } from '../../conversion/matrix/ir.ts';
 import {
@@ -146,7 +146,8 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     const remainingRequestBudgetMs =
       (c.failoverBudgetMs ?? limits.failoverBudgetMs) - (Date.now() - (c.requestStartMs || (s.attemptStartMs as number) || Date.now()));
     const remainingAttemptBudgetMs = (c.attemptDeadlineMs ?? Date.now()) - Date.now();
-    const effectiveFirstEventTimeoutMs = policy?.firstEventTimeoutMs ?? limits.firstEventTimeoutMs;
+    const effectiveFirstEventTimeoutMs =
+      (policy?.firstEventTimeoutMs ?? limits.firstEventTimeoutMs) + requestSizeAllowanceMs(c.reqDescriptor.bodyChars);
     const firstEventTimeout = attemptFirstEventTimeoutMs(
       effectiveFirstEventTimeoutMs,
       Math.min(remainingRequestBudgetMs, remainingAttemptBudgetMs),

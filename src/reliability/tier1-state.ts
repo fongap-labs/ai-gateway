@@ -75,6 +75,10 @@ export type Tier1ModelRuntime = {
   scopeAmbiguous429: boolean;
   rateLimitRecoveryPending: boolean;
   rateLimitRecoveryUntil: number;
+  // The current rate-limit cooldown is a long-lived allowance (hourly/daily
+  // window). Such a window belongs to this one credential, so it is not woken
+  // early when a sibling key recovers.
+  cooldownIsQuota: boolean;
 };
 
 export type Tier1QuotaState = 'normal' | 'near_limit' | 'exhausted_until';
@@ -93,6 +97,8 @@ export type Tier1AccountRuntime = {
   scopeAmbiguous429: boolean;
   rateLimitRecoveryPending: boolean;
   rateLimitRecoveryUntil: number;
+  // See Tier1ModelRuntime.cooldownIsQuota.
+  accountCooldownIsQuota: boolean;
   // Logical models that recently took a 429 on this account (model -> last time).
   // Two distinct models limited inside the window is the evidence that the limit
   // belongs to the whole account, not to one upstream model.
@@ -137,6 +143,8 @@ export type Tier1FailureInput =
       cooldownMs?: number;
       retryAfterMs?: number;
       rateLimitScope?: string;
+      /** 'quota' for a long-lived allowance; any other value is a short window. */
+      rateLimitClass?: string;
       streamReason?: unknown;
     }
   | null
@@ -150,6 +158,8 @@ export type Tier1Outcome = {
   cooldownMs?: number;
   backoff?: 'rate_limit' | 'timeout' | 'server' | 'default';
   scopeAmbiguous?: boolean;
+  /** True when a rate-limit cooldown reflects a long-lived allowance. */
+  isQuota?: boolean;
 };
 
 const accounts = new Map<string, Tier1AccountRuntime>();
@@ -171,6 +181,7 @@ function newModelRuntime(): Tier1ModelRuntime {
     scopeAmbiguous429: false,
     rateLimitRecoveryPending: false,
     rateLimitRecoveryUntil: 0,
+    cooldownIsQuota: false,
   };
 }
 
@@ -187,6 +198,7 @@ function newAccountRuntime(accountId: string): Tier1AccountRuntime {
     scopeAmbiguous429: false,
     rateLimitRecoveryPending: false,
     rateLimitRecoveryUntil: 0,
+    accountCooldownIsQuota: false,
     recentRateLimitedModels: new Map(),
     oversizeCeilings: new Map(),
     upstreamModelMisses: new Map(),
@@ -477,6 +489,7 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
       backoff: 'rate_limit',
       reason: kind,
       scopeAmbiguous: !classification?.rateLimitScope,
+      isQuota: classification?.rateLimitClass === 'quota',
     };
   }
   if (kind === 'client' || kind === 'client_abort') {
@@ -527,12 +540,16 @@ export function wakeTier1ProviderSiblings(provider: string, recoveredAccountId: 
   const woken: string[] = [];
   for (const [id, account] of accounts) {
     if (id === recoveredAccountId || account.provider !== provider || account.accountDisabled) continue;
-    if (account.accountCooldownReason === 'rate_limit' && account.accountCooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS) {
+    if (
+      account.accountCooldownReason === 'rate_limit' &&
+      !account.accountCooldownIsQuota &&
+      account.accountCooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS
+    ) {
       account.accountCooldownUntil = now;
       woken.push(id);
     }
     const model = account.models.get(modelId);
-    if (model?.cooldownReason === 'rate_limit' && model.cooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS) {
+    if (model?.cooldownReason === 'rate_limit' && !model.cooldownIsQuota && model.cooldownUntil - now >= TIER1_SIBLING_WAKE_MIN_REMAINING_MS) {
       model.cooldownUntil = now;
       if (!woken.includes(id)) woken.push(id);
     }
@@ -640,6 +657,7 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
       if (outcome.scopeAmbiguous) account.scopeAmbiguous429 = true;
       account.accountCooldownUntil = Math.max(account.accountCooldownUntil, now + cooldownMs);
       account.accountCooldownReason = outcome.reason;
+      account.accountCooldownIsQuota = outcome.isQuota === true;
       account.rateLimitRecoveryPending = true;
       account.rateLimitRecoveryUntil = 0;
       return;
@@ -667,6 +685,7 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
     if (rateLimited) {
       model.rateLimitRecoveryPending = true;
       model.rateLimitRecoveryUntil = 0;
+      model.cooldownIsQuota = outcome.isQuota === true;
     }
     if (halfOpenFailure || thresholdReached) {
       model.failureState = FAILURE_STATE.COOLDOWN;
@@ -692,6 +711,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
     account.scopeAmbiguous429 = false;
     account.rateLimitRecoveryPending = false;
     account.rateLimitRecoveryUntil = 0;
+    account.accountCooldownIsQuota = false;
   }
 
   model.consecutiveFailures = 0;
@@ -705,6 +725,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
     model.scopeAmbiguous429 = false;
     model.rateLimitRecoveryPending = false;
     model.rateLimitRecoveryUntil = 0;
+    model.cooldownIsQuota = false;
   }
   if (model.failureState === FAILURE_STATE.HALF_OPEN) {
     model.halfOpenSuccesses++;

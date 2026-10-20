@@ -30,6 +30,16 @@ export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([15_000, 30_000, 60_
 // here would only waste the provider's free capacity.
 export const ADAPTIVE_429_WINDOW_STEPS_MS = Object.freeze([15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 180_000, 300_000] as const);
 
+// A 429 that names a long-lived allowance (an hourly plan window, a daily cap) stays
+// exhausted until the provider's window rolls over, which can be hours away. Probing
+// such a key every few minutes buys nothing but a failed request each time, so this
+// ladder starts at the 5-minute stage and keeps stretching to the longest window
+// seen in practice (5 hours). Any success clears it, so a key whose window rolled
+// over early is back in the pool at the next probe.
+export const ADAPTIVE_429_QUOTA_STEPS_MS = Object.freeze([
+  300_000, 600_000, 1_200_000, 2_400_000, 3_600_000, 7_200_000, 10_800_000, 18_000_000,
+] as const);
+
 export const ADAPTIVE_429_TRUSTED_HINT_STAGES = 2;
 // A 429 whose text names a long-lived allowance (daily limit, plan window, credits)
 // will not clear in 15 seconds, so the ladder starts here (5 minutes on the default
