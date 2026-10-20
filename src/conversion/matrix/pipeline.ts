@@ -409,7 +409,9 @@ export function replyToResponsesObject(reply: IrReply): Record<string, unknown> 
     } else if (part.type === 'thinking') {
       if (part.sealed) {
         flushOpen();
-        output.push({ type: 'reasoning', id: `rs_${itemSeed++}`, encrypted_content: part.data || '' });
+        // A sealed block without a payload carries no replayable content: an
+        // empty reasoning item would be a lie about what the upstream returned.
+        if (part.data) output.push({ type: 'reasoning', id: `rs_${itemSeed++}`, encrypted_content: part.data });
       } else if (part.text) {
         flushOpen();
         open = { type: 'think', id: `rs_${itemSeed++}`, text: part.text };

@@ -16,7 +16,15 @@ import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';
 import type { IrEvent, IrReply, IrStop } from './ir.ts';
 import { isRecord } from './ir.ts';
 
-type OpenItem = { type: 'text' | 'think' | 'tool' | 'other'; itemId: string; index: number; streamed: boolean };
+type OpenItem = {
+  type: 'text' | 'think' | 'tool' | 'other';
+  itemId: string;
+  index: number;
+  streamed: boolean;
+  /** True when the COMPLETE arguments were already emitted (e.g. from the
+   *  `output_item.added` event), so later argument deltas must not repeat them. */
+  argsEmitted?: boolean;
+};
 
 function responsesUsageFromRaw(reply: IrReply): Record<string, unknown> {
   const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
@@ -115,6 +123,10 @@ export class ResponsesStreamDecoder {
       case 'response.function_call_arguments.delta': {
         const state = this.resolve(payload);
         if (state?.type !== 'tool') return { events: [], terminal: false };
+        // The complete arguments may already have been delivered by the
+        // `output_item.added` event. Repeating them here would hand the client
+        // duplicated JSON arguments.
+        if (state.argsEmitted) return { events: [], terminal: false };
         state.streamed = true;
         return { events: [{ type: 'tool_args', args: typeof payload.delta === 'string' ? payload.delta : '' }], terminal: false };
       }
@@ -227,8 +239,9 @@ export class ResponsesStreamDecoder {
 
   /** Emit complete arguments carried by a non-delta event, unless deltas already delivered them. */
   private toolArgumentsFallback(state: OpenItem | undefined, args: unknown): IrEvent[] {
-    if (state?.type !== 'tool' || state.streamed || typeof args !== 'string' || !args) return [];
+    if (state?.type !== 'tool' || state.streamed || state.argsEmitted || typeof args !== 'string' || !args) return [];
     state.streamed = true;
+    state.argsEmitted = true;
     return [{ type: 'tool_args', args }];
   }
 }

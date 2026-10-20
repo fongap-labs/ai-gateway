@@ -15,7 +15,7 @@
 //     instructions pass through verbatim.
 
 import type { ResolvedSubscriptionCredential } from '../oauth/resolve.ts';
-import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsHeaders } from './quota-hints.ts';
+import { capHint, hintFromResetBody, hintFromResetHeaders, hintFromSecondsBody, hintFromSecondsHeaders } from './quota-hints.ts';
 import type { SubscriptionAdapter, SubscriptionDispatchContext, SubscriptionFailureView, SubscriptionPreparedRequest } from './types.ts';
 
 const CODEX_ORIGINATOR = 'codex-tui';
@@ -29,7 +29,8 @@ const CODEX_RESET_HEADERS = Object.freeze([
   'x-ratelimit-reset-requests',
   'x-ratelimit-reset-tokens',
 ]);
-const CODEX_RESET_BODY_FIELDS = Object.freeze(['resets_in_seconds', 'reset_at', 'resets_at']);
+const CODEX_RESET_BODY_FIELDS = Object.freeze(['reset_at', 'resets_at']);
+const CODEX_RESET_SECONDS_BODY_FIELDS = Object.freeze(['resets_in_seconds']);
 
 export const codexSubscriptionAdapter: SubscriptionAdapter = {
   prepare(ctx: SubscriptionDispatchContext): SubscriptionPreparedRequest | null {
@@ -51,7 +52,8 @@ export const codexSubscriptionAdapter: SubscriptionAdapter = {
   quotaResetHint(failure: SubscriptionFailureView, now: number): number | null {
     if (failure.status !== 429) return null;
     const resetAt = hintFromResetHeaders(failure.headers, CODEX_RESET_HEADERS, now) ?? hintFromResetBody(failure.body, CODEX_RESET_BODY_FIELDS);
-    const relative = hintFromSecondsHeaders(failure.headers, CODEX_RESET_HEADERS);
+    const relative =
+      hintFromSecondsHeaders(failure.headers, CODEX_RESET_HEADERS) ?? hintFromSecondsBody(failure.body, CODEX_RESET_SECONDS_BODY_FIELDS);
     return capHint(resetAt, relative, now);
   },
 

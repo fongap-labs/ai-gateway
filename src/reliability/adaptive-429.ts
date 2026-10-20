@@ -171,7 +171,11 @@ export function nextAdaptive429CooldownMs(
 /** Clear only after a real recovery request succeeds. */
 export function clearAdaptive429State(provider: string, keyId: string, modelId: string = ''): void {
   states.delete(scopeKey(provider, keyId, modelId));
-  if (modelId === '') clearMaxModelStageForKey(provider, keyId);
+  // A recovery resets the ladder for this key, whatever scope it recovered on:
+  // keeping the highest stage any model ladder reached would let a later
+  // quota-classified 429 inherit a stale stage and start far above the
+  // documented quota start stage.
+  clearMaxModelStageForKey(provider, keyId);
 }
 
 export function snapshotAdaptive429State(provider: string, keyId: string, now: number = Date.now(), modelId: string = '') {
