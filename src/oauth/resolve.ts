@@ -136,6 +136,21 @@ async function resolveOnce(env: Record<string, unknown>, node: RuntimeNode): Pro
 
   const refreshed = await refreshAccessToken(env, node.provider, stored.refreshToken);
   if (!refreshed.ok) {
+    // Another isolate may have rotated the refresh token first and invalidated
+    // ours, so the provider rejects a token that is actually still usable
+    // through the winner's row. Reload before failing: the persisted
+    // authority is the winner's credential, and a rejected refresh must not
+    // poison a healthy subscription with a failed status and a negative cache.
+    let winner: StoredSubscriptionToken | null = null;
+    try {
+      winner = await loadSubscriptionToken(env, node.id);
+    } catch {
+      winner = null;
+    }
+    if (winner && winner.expiresAt > now + REFRESH_MARGIN_MS) {
+      cacheToken(node.id, winner.accessToken, winner.expiresAt, winner.accountId);
+      return { ok: true, token: winner.accessToken, accountId: winner.accountId };
+    }
     await markTokenStatus(env, node.id, 'refresh_failed').catch(() => {});
     resolutionFailures.set(node.id, { until: now + RESOLUTION_FAILURE_TTL_MS, reason: 'refresh_failed' });
     return { ok: false, reason: 'refresh_failed' };

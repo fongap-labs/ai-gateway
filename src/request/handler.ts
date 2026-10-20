@@ -142,6 +142,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     requestedModel,
     nodes: config.nodes,
     knownModels,
+    tierAttemptsUsed: {},
   };
 
   const tier1Session = resolveTier1SessionId(request);
@@ -336,7 +337,9 @@ async function runTierLoop(
     knownModels,
     futureAttemptReserve,
   } = loopCtx;
-  const tierCaps = overrideTierCaps ?? computeTierCaps(tiers, reqDescriptor, state.attempted, policy, knownModels, policy.maxInFlight ?? null);
+  const tierCaps =
+    overrideTierCaps ??
+    computeTierCaps(tiers, reqDescriptor, state.attempted, policy, knownModels, policy.maxInFlight ?? null, state.tierAttemptsUsed);
   for (const tierNumber of TIER_ORDER) {
     const cap = tierCaps[tierNumber] ?? 0;
     let usedInTier = 0;
@@ -413,7 +416,13 @@ async function runTierLoop(
         },
         tiers[tierNumber],
       );
-      if (outcome.budgetCharged) usedInTier++;
+      if (outcome.budgetCharged) {
+        usedInTier++;
+        // `tier_attempts` is a request-wide cap: remember what this tier spent
+        // so a later protocol-fallback or model-family pass only gets the rest.
+        state.tierAttemptsUsed = state.tierAttemptsUsed ?? {};
+        state.tierAttemptsUsed[tierNumber] = (state.tierAttemptsUsed[tierNumber] ?? 0) + 1;
+      }
       if (outcome.response) return outcome.response;
       if (outcome.stop) break;
     }

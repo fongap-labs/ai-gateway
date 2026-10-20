@@ -17,6 +17,9 @@ export const TIER1_OUTLIER_MULTIPLIER = 4;
 export const TIER1_OUTLIER_CONSECUTIVE_THRESHOLD = 2;
 
 export const TIER1_FAILURE_THRESHOLD = 3;
+// A half-open model needs two consecutive successful observations before it is
+// treated as healthy again: one success proves the node answers, two prove the
+// answer was not a fluke.
 export const TIER1_HALF_OPEN_SUCCESS_THRESHOLD = 2;
 export const TIER1_COOLDOWN_DEFAULT_MS = 30_000;
 export const TIER1_COOLDOWN_MAX_MS = 1_800_000;
@@ -32,9 +35,6 @@ const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.na
 // stores the supplied deadline and controls the post-cooldown recovery probe;
 // it must never invent a second rate-limit ladder.
 export const TIER1_429_PROBE_GATE_MS = 15_000;
-// Single-model escalation: when one model on an account sees this many consecutive
-// 429s without any 2xx success between them, the scope widens to the whole account.
-export const TIER1_429_SINGLE_MODEL_ESCALATION_STREAK = 3;
 // A 429 is blamed on the model that received it. Only when a second distinct model
 // on the same account is limited inside this window does the cooldown widen to the
 // whole account (an account-wide quota looks exactly like that).
@@ -571,10 +571,9 @@ function exceedsOversizeCeiling(account: Tier1AccountRuntime, modelId: string, r
  * Default is the model, so one limited upstream model does not take the healthy
  * models of the same key out of the pool. The account is blamed when it is
  * already on the account-wide ladder, or when a second distinct model on it is
- * rate limited within TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS, OR when a single
- * model has accumulated TIER1_429_SINGLE_MODEL_ESCALATION_STREAK consecutive
- * 429s without any successful response in between. Records the observation;
- * call it exactly once per 429.
+ * rate limited within TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS. A quota-classified
+ * 429 is account-wide by nature and never reaches this decision.
+ * Records the observation; call it exactly once per 429.
  */
 export function decideTier1RateLimitScope(accountId: string, modelId: string, now: number = Date.now()): 'model' | 'account' {
   const account = getTier1Account(accountId);
@@ -584,8 +583,6 @@ export function decideTier1RateLimitScope(accountId: string, modelId: string, no
   }
   account.recentRateLimitedModels.set(modelId, now);
   if (account.consecutiveRateLimits > 0 || account.accountCooldownUntil > now) return 'account';
-  const model = account.models.get(modelId);
-  if (model && model.consecutiveRateLimits >= TIER1_429_SINGLE_MODEL_ESCALATION_STREAK) return 'account';
   return account.recentRateLimitedModels.size >= TIER1_429_ACCOUNT_ESCALATION_MODELS ? 'account' : 'model';
 }
 
@@ -830,15 +827,22 @@ export function recordTier1QuotaReport(
   if (typeof signal.source === 'string' && signal.source) account.quotaSource = signal.source;
 
   const remaining = signal.remainingRequests ?? signal.remainingTokens;
-  const limit = signal.limitRequests ?? signal.limitTokens;
   if (remaining === undefined) return true;
-  const ratio = typeof limit === 'number' && limit > 0 ? remaining / limit : null;
+  // Classify on the WORSE of the reported tails. A key whose token window is
+  // spent is not healthy even when its request window still has room, and the
+  // other way round; a single tail must never hide the exhausted one.
+  const tails = [quotaTailRatio(signal.remainingRequests, signal.limitRequests), quotaTailRatio(signal.remainingTokens, signal.limitTokens)].filter(
+    (tail): tail is number => tail !== null,
+  );
+  if (tails.length === 0) return true;
+  const worstTail = Math.min(...tails);
+  const exhausted = tails.some((tail) => tail === 0);
   // Classification semantics match the ratio writer exactly: zero remaining
   // with a known reset is exhausted; a zero-or-tiny tail is near_limit even
   // without a reset marker; otherwise normal.
-  if (remaining === 0 && account.quotaResetAt > now) {
+  if (exhausted && account.quotaResetAt > now) {
     account.quotaState = 'exhausted_until';
-  } else if (remaining === 0 || (ratio !== null ? ratio <= 0.1 : remaining <= 1)) {
+  } else if (exhausted || worstTail <= 0.1) {
     account.quotaState = 'near_limit';
     // A zero tail with no usable reset marker cannot prove when the window
     // refills. Keep the near_limit score demotion but drop the hard
@@ -852,6 +856,19 @@ export function recordTier1QuotaReport(
     if (account.quotaResetAt <= now) account.quotaResetAt = 0;
   }
   return true;
+}
+
+/**
+ * Ratio of a reported quota tail against its ceiling. A tail without a
+ * ceiling is absolute: zero is exhausted, one or less is a near-limit tail,
+ * anything larger counts as healthy.
+ */
+function quotaTailRatio(remaining: number | undefined, limit: number | undefined): number | null {
+  if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return null;
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) return remaining / limit;
+  if (remaining <= 0) return 0;
+  if (remaining <= 1) return 0.1;
+  return 1;
 }
 
 function modelDiagnosticState(model: Tier1ModelRuntime | null | undefined, now: number): string {

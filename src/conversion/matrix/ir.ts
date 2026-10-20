@@ -122,6 +122,8 @@ export type IrRequest = {
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
+  /** Anthropic-native top-k sampling cutoff. Only the Anthropic target can carry it. */
+  topK?: number | null;
   stop: string[];
   /** Thinking level; null means the client did not ask for reasoning. */
   effort?: IrEffort | null;

@@ -422,6 +422,7 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     maxTokens,
     temperature: typeof body.temperature === 'number' ? body.temperature : null,
     topP: typeof body.top_p === 'number' ? body.top_p : null,
+    topK: typeof body.top_k === 'number' ? body.top_k : null,
     stop:
       typeof body.stop_sequences === 'string'
         ? [body.stop_sequences]
@@ -436,6 +437,9 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   }
   if (body.top_p !== undefined && (typeof body.top_p !== 'number' || body.top_p < 0 || body.top_p > 1)) {
     throw new ConversionError('conversion_not_supported: top_p must be between 0 and 1');
+  }
+  if (body.top_k !== undefined && (typeof body.top_k !== 'number' || body.top_k < 0)) {
+    throw new ConversionError('conversion_not_supported: top_k must be a non-negative number');
   }
   if (body.stream !== undefined && typeof body.stream !== 'boolean') {
     throw new ConversionError('conversion_not_supported: stream must be boolean');
@@ -565,10 +569,12 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
       diag.add({ feature: 'max_tokens', action: 'defaulted' });
     }
     out.thinking = { type: 'enabled', budget_tokens: budget };
-    if (ir.temperature != null || ir.topP != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
+    if (ir.temperature != null || ir.topP != null || ir.topK != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
   } else {
     if (ir.temperature != null) out.temperature = ir.temperature;
     if (ir.topP != null) out.top_p = ir.topP;
+    // top_k is an Anthropic-native control; this target can carry it.
+    if (ir.topK != null) out.top_k = ir.topK;
   }
   out.max_tokens = maxTokens;
 

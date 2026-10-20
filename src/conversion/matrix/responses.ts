@@ -473,6 +473,8 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   out.max_output_tokens = maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
+  // top_k is an Anthropic-native control; this target cannot carry it.
+  if (ir.topK != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
   if (ir.stop.length) diag.add({ feature: 'stop_sequences', action: 'dropped' });
   if (ir.tools.length) {
     diag.add({ feature: 'function_tools', action: 'mapped' });
