@@ -25,6 +25,8 @@ export type TrackOptions = {
   onStreamStart?: () => void;
   onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
   completionMarker?: RegExp;
+  closeMarker?: RegExp;
+  completionGraceMs?: number;
   failureMarker?: RegExp;
   rewriteModel?: string;
   rewriteModelAt?: string;
@@ -50,6 +52,8 @@ export function trackStreamResponse(
     onStreamStart,
     onStreamEnd,
     completionMarker,
+    closeMarker,
+    completionGraceMs = 0,
     failureMarker,
     rewriteModel,
     rewriteModelAt,
@@ -77,6 +81,8 @@ export function trackStreamResponse(
   let hasSeenErrorEvent = false;
   let hasSeenTerminalFailure = false;
   let completionSeen = !completionMarker;
+  let completionAt: number | null = null;
+  let closeSeen = !(closeMarker ?? completionMarker);
   let nextSequenceNumber = 0;
   let isFinished = false;
   const usageScan = typeof onUsage === 'function' || typeof onAttemptUsage === 'function';
@@ -213,8 +219,21 @@ export function trackStreamResponse(
         return;
       }
       let result: Awaited<ReturnType<typeof raceWithIdle>>;
+      const graceRemainingMs = completionAt !== null && !closeSeen && completionGraceMs > 0 ? completionAt + completionGraceMs - Date.now() : null;
+      if (graceRemainingMs !== null && graceRemainingMs <= 0) {
+        reader.cancel().catch(() => {});
+        if (encoder && lineBuffer) {
+          controller.enqueue(encoder.encode(lineBuffer));
+          lineBuffer = '';
+        }
+        finalize('success');
+        controller.close();
+        return;
+      }
+      const effectiveIdleTimeoutMs =
+        graceRemainingMs === null ? idleTimeoutMs : Math.min(idleTimeoutMs > 0 ? idleTimeoutMs : graceRemainingMs, graceRemainingMs);
       try {
-        result = await raceWithIdle(reader.read(), idleTimeoutMs);
+        result = await raceWithIdle(reader.read(), effectiveIdleTimeoutMs);
       } catch {
         failureReason = 'reader_error';
         emitInterruption(controller);
@@ -228,6 +247,15 @@ export function trackStreamResponse(
       }
       if (result.timeout) {
         reader.cancel().catch(() => {});
+        if (graceRemainingMs !== null) {
+          if (encoder && lineBuffer) {
+            controller.enqueue(encoder.encode(lineBuffer));
+            lineBuffer = '';
+          }
+          finalize('success');
+          controller.close();
+          return;
+        }
         failureReason = 'idle_timeout';
         emitInterruption(controller);
         finalize('failure');
@@ -256,7 +284,7 @@ export function trackStreamResponse(
       receivedBytes += value.byteLength;
       if (!hasSeenErrorEvent || !completionSeen) {
         const decoded = tailDecoder.decode(value, { stream: true });
-        if (usageScan && !completionSeen) scanUsageLine(decoded);
+        if (usageScan && !closeSeen) scanUsageLine(decoded);
         const scanWindow = diagnosticTail + decoded;
         if (interruptionChunk) {
           const sequencePattern = /"sequence_number"\s*:\s*(\d+)/g;
@@ -270,7 +298,11 @@ export function trackStreamResponse(
           hasSeenErrorEvent = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
         }
         if (!hasSeenTerminalFailure && failureMarker?.test(scanWindow)) hasSeenTerminalFailure = true;
-        if (!completionSeen && completionMarker?.test(scanWindow)) completionSeen = true;
+        if (!completionSeen && completionMarker?.test(scanWindow)) {
+          completionSeen = true;
+          completionAt = Date.now();
+        }
+        if (!closeSeen && (closeMarker ?? completionMarker)?.test(scanWindow)) closeSeen = true;
         diagnosticTail = scanWindow.slice(-256);
       }
       let forwarded: Uint8Array;
@@ -289,7 +321,7 @@ export function trackStreamResponse(
         return;
       }
       controller.enqueue(forwarded);
-      if (completionMarker && completionSeen) {
+      if ((closeMarker ?? completionMarker) && closeSeen) {
         reader.cancel().catch(() => {});
         try {
           if (encoder && lineBuffer) {

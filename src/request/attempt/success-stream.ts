@@ -94,7 +94,9 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   if (route === 'openai_chat') {
     const tracked = trackStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
-      completionMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
+      completionMarker: /(?:data:\s*\[DONE\]|"finish_reason"\s*:\s*"(?:stop|length|tool_calls|content_filter|function_call)")/,
+      closeMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
+      completionGraceMs: 500,
       ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
       onUsage: (u: unknown) => recordTokens(c, node, u),
       interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),

@@ -16,7 +16,7 @@ import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';
 import type { IrEvent, IrReply, IrStop } from './ir.ts';
 import { isRecord } from './ir.ts';
 
-type OpenItem = { type: 'text' | 'think' | 'tool' | 'other'; itemId: string; streamed: boolean };
+type OpenItem = { type: 'text' | 'think' | 'tool' | 'other'; itemId: string; index: number; streamed: boolean };
 
 function responsesUsageFromRaw(reply: IrReply): Record<string, unknown> {
   const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
@@ -88,10 +88,13 @@ export class ResponsesStreamDecoder {
       case 'response.output_item.added':
         return this.outputItemAdded(payload);
       case 'response.output_item.done': {
-        const index = Number(payload.output_index);
         const item = isRecord(payload.item) ? payload.item : {};
-        const events = item.type === 'function_call' ? this.toolArgumentsFallback(this.open.get(index), item.arguments) : [];
-        this.open.delete(index);
+        const state = this.resolve(payload);
+        const events = item.type === 'function_call' ? this.toolArgumentsFallback(state, item.arguments) : [];
+        if (state) {
+          this.open.delete(state.index);
+          if (state.itemId) this.byItemId.delete(state.itemId);
+        }
         return { events, terminal: false };
       }
       case 'response.content_part.added':
@@ -160,7 +163,7 @@ export class ResponsesStreamDecoder {
       case 'function_call': {
         this.sawTool = true;
         // `streamed` tells whether arguments were already emitted, so a later `.done` event can fill in what deltas never carried.
-        const state: OpenItem = { type: 'tool', itemId, streamed: false };
+        const state: OpenItem = { type: 'tool', itemId, index, streamed: false };
         this.open.set(index, state);
         if (itemId) this.byItemId.set(itemId, state);
         const events: IrEvent[] = [
@@ -174,13 +177,13 @@ export class ResponsesStreamDecoder {
         return { events, terminal: false };
       }
       case 'message': {
-        const state: OpenItem = { type: 'text', itemId, streamed: false };
+        const state: OpenItem = { type: 'text', itemId, index, streamed: false };
         this.open.set(index, state);
         if (itemId) this.byItemId.set(itemId, state);
         return { events: [], terminal: false };
       }
       case 'reasoning': {
-        const state: OpenItem = { type: 'think', itemId, streamed: false };
+        const state: OpenItem = { type: 'think', itemId, index, streamed: false };
         this.open.set(index, state);
         if (itemId) this.byItemId.set(itemId, state);
         if (typeof item.encrypted_content === 'string' && item.encrypted_content) {
@@ -191,7 +194,7 @@ export class ResponsesStreamDecoder {
       default: {
         // Unknown provider-native output items (web_search_call, image
         // generation, MCP tools...) have no cross-protocol form.
-        const state: OpenItem = { type: 'other', itemId, streamed: true };
+        const state: OpenItem = { type: 'other', itemId, index, streamed: true };
         this.open.set(index, state);
         return { events: [], terminal: false };
       }
@@ -257,14 +260,20 @@ export class ResponsesStreamEncoder {
       }
       case 'think': {
         const out = this.ensureOpen('think');
-        if (this.open?.type === 'think') out.push(this.builder.reasoning_text_delta(this.open.itemId, this.open.outputIndex, event.text));
+        if (this.open?.type === 'think') {
+          this.open.buffer += event.text;
+          out.push(this.builder.reasoning_text_delta(this.open.itemId, this.open.outputIndex, event.text));
+        }
         return out;
       }
       case 'sig':
         return [];
       case 'text': {
         const out = this.ensureOpen('text');
-        if (this.open?.type === 'text') out.push(this.builder.output_text_delta(this.open.itemId, this.open.outputIndex, event.text));
+        if (this.open?.type === 'text') {
+          this.open.buffer += event.text;
+          out.push(this.builder.output_text_delta(this.open.itemId, this.open.outputIndex, event.text));
+        }
         return out;
       }
       case 'tool_start': {

@@ -64,10 +64,11 @@ function fallbackToIr(protocol: string, surface: string): IrProtocol | null {
 }
 
 const COMPLETION_MARKERS: Record<IrProtocol, RegExp> = {
-  openai_chat: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
+  openai_chat: /(?:data:\s*\[DONE\]|"finish_reason"\s*:\s*"(?:stop|length|tool_calls|content_filter|function_call)")/,
   anthropic: /event:\s*message_stop\b/,
   openai_responses: /event:\s*response\.(?:completed|incomplete)\b/,
 };
+const CHAT_CLOSE_MARKER = /data:\s*\[DONE\]\s*(?:\r?\n|$)/;
 
 export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
@@ -118,10 +119,16 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     const { reply } = replyFromNativeObject(upstreamIr, native);
     if (reply.rawUsage !== undefined && reply.rawUsage !== null) observeUpstreamAttemptUsage(c, reply.rawUsage);
     if (!reply.parts.some((p) => p.type === 'text' && p.text) && !reply.parts.some((p) => p.type === 'tool_call')) {
-      return { rotate: true, kind: classifyPostHeadersFailure(new Error('matrix response carried no meaningful output')).kind };
+      const classification = classifyPostHeadersFailure(new Error('matrix response carried no meaningful output'));
+      recordOutcome(state, node, classification, c, {
+        latencyMs,
+        status: upstream.status,
+        diagnostic: 'matrix response carried no meaningful output',
+      });
+      return { rotate: true, kind: classification.kind };
     }
-    recordNodeSuccess(c, node, latencyMs);
     recordTokens(c, node, reply.rawUsage);
+    recordNodeSuccess(c, node, latencyMs);
     if (c.clientWantsStream) {
       return { response: synthesizeMatrixStreamFromObject(reply, clientIr) };
     }
@@ -195,6 +202,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
 
   if (c.clientWantsStream) {
     const handle = openMatrixStream(guarded.body, upstreamIr, clientIr, fallbackId, {
+      model: requestedModel,
       onUpstreamUsage: (u) => {
         upstreamUsage = u;
         // Raw upstream usage feeds accounting; the translated client shape is
@@ -205,6 +213,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     const tracked = trackStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
       completionMarker: COMPLETION_MARKERS[clientIr],
+      ...(clientIr === 'openai_chat' ? { closeMarker: CHAT_CLOSE_MARKER, completionGraceMs: 500 } : {}),
       onUsage: () => recordTokens(c, node, upstreamUsage),
       interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
       upstreamFailureReason: hiddenStreamFailure,
@@ -218,6 +227,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     // the client object in one pass (single decode path).
     const collected = await collectMatrixObject(guarded.body, upstreamIr, clientIr, fallbackId, request.signal, c.attemptDeadlineMs, {
       seedInputTokens,
+      model: requestedModel,
       onUpstreamUsage: (raw) => {
         upstreamUsage = raw;
         observeUpstreamAttemptUsage(c, raw);
@@ -226,21 +236,33 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     const reply = collected.reply;
     const object = collected.object as Record<string, unknown>;
     if (!reply.parts.some((p) => p.type === 'text' && p.text) && !reply.parts.some((p) => p.type === 'tool_call')) {
-      return { rotate: true, kind: classifyPostHeadersFailure(new Error('matrix response carried no meaningful output')).kind };
+      const classification = classifyPostHeadersFailure(new Error('matrix response carried no meaningful output'));
+      recordOutcome(state, node, classification, c, {
+        latencyMs,
+        status: upstream.status,
+        diagnostic: 'matrix response carried no meaningful output',
+      });
+      return { rotate: true, kind: classification.kind };
     }
-    recordNodeSuccess(c, node, latencyMs);
     recordTokens(c, node, reply.rawUsage ?? upstreamUsage);
+    recordNodeSuccess(c, node, latencyMs);
     if (object.model !== undefined) object.model = requestedModel;
     return { response: jsonResponse(200, object, env, request, extraHeaders) };
   } catch (error) {
     if (request.signal?.aborted) {
       recordTokens(c, node, upstreamUsage);
+      recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - (c.attemptStartMs as number), status: guarded.status });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
     }
     if (c.hedgeAbort?.signal.aborted) {
       return hedgeLoserOutcome(c, node, 'object', latencyMs);
     }
     const classification = classifyPostHeadersFailure(error);
+    recordOutcome(state, node, classification, c, {
+      latencyMs: Date.now() - (c.attemptStartMs as number),
+      status: guarded.status,
+      diagnostic: error instanceof Error ? error.message : String(error),
+    });
     return { rotate: true, kind: classification.kind };
   }
 }
