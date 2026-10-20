@@ -79,6 +79,12 @@ export type LoopState = {
   failureKinds: Partial<Record<FailureKind, number>>;
   /** Fallback targets the request was rejected for by conversion, across all passes. */
   conversionRejections?: number;
+  /**
+   * Attempts already charged per tier across every pass of this request.
+   * `tier_attempts` is a request-wide hard cap, so a later protocol-fallback
+   * or model-family pass may only use what is left.
+   */
+  tierAttemptsUsed?: Record<number, number>;
   logger: GatewayLogger;
   requestId: string;
   maxAttempts: number;

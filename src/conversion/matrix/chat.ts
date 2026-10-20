@@ -402,6 +402,8 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
   if (ir.maxTokens != null) out.max_tokens = ir.maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
+  // top_k is an Anthropic-native control; this target cannot carry it.
+  if (ir.topK != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
   if (ir.stop.length) out.stop = ir.stop.length === 1 ? ir.stop[0] : ir.stop;
   if (ir.tools.length) {
     diag.add({ feature: 'function_tools', action: 'mapped' });

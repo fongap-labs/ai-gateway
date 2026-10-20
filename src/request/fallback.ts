@@ -192,7 +192,17 @@ export async function runFallbackChain({
     // contract as the native pass. Omitting maxInFlight here overstates live
     // capacity and can distort tier caps / fair-share timeout slicing before
     // the downstream picker eventually rejects the saturated account.
-    const fbTierCaps = computeTierCaps(tiers, fbReqDescriptor, state.attempted, policy, knownModels, policy.maxInFlight ?? null);
+    // The tier-attempt budget is request-wide: the native pass already spent
+    // part of it, so only the remainder is available to this fallback target.
+    const fbTierCaps = computeTierCaps(
+      tiers,
+      fbReqDescriptor,
+      state.attempted,
+      policy,
+      knownModels,
+      policy.maxInFlight ?? null,
+      state.tierAttemptsUsed,
+    );
     const conversionContext: ConversionContext = {
       convertedBody: conversionResult.body,
       fallbackProtocol: fb.protocol,

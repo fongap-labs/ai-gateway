@@ -122,16 +122,26 @@ export function computeTierCaps(
   policy: PolicyConfig,
   knownModels: ReadonlySet<string>,
   maxInFlight?: number | null,
+  consumed?: Partial<Record<Tier, number>>,
 ): TierMap<number> {
   const now = Date.now();
   const caps: TierMap<number> = { 1: 0, 2: 0, 3: 0 };
+
+  // Explicit tier attempts are a REQUEST-WIDE hard cap: a protocol fallback or
+  // a later model round may only use what the earlier passes left. Without this
+  // subtraction every pass would be granted the full tier budget again.
+  const applyConsumed = (): TierMap<number> => {
+    if (!consumed) return caps;
+    for (const tier of TIER_ORDER) caps[tier] = Math.max(0, (caps[tier] ?? 0) - (consumed[tier] ?? 0));
+    return caps;
+  };
 
   const dispatchable = TIER_ORDER.filter((t) =>
     t === 1
       ? tier1Dispatchable(tiers[t], reqDescriptor, attempted, now, knownModels, maxInFlight)
       : tierHasDispatchableNode(tiers[t], reqDescriptor, attempted, now, knownModels),
   );
-  if (dispatchable.length === 0) return caps;
+  if (dispatchable.length === 0) return applyConsumed();
 
   const max = policy.maxAttempts;
   const explicitTotal = dispatchable.reduce((sum, t) => sum + (policy.tierAttempts?.[`tier${t}`] ?? 0), 0);
@@ -142,15 +152,15 @@ export function computeTierCaps(
     if (override !== undefined) caps[t] = override;
   }
 
-  if (adjustable.length === 0) return caps;
+  if (adjustable.length === 0) return applyConsumed();
   const remaining = Math.max(0, max - explicitTotal);
-  if (remaining === 0) return caps;
+  if (remaining === 0) return applyConsumed();
 
   const baselineCount = Math.min(remaining, adjustable.length);
   for (const tier of adjustable.slice(0, baselineCount)) caps[tier] = 1;
   const firstAdjustable = adjustable[0];
   if (remaining > baselineCount && firstAdjustable !== undefined) caps[firstAdjustable] += remaining - baselineCount;
-  return caps;
+  return applyConsumed();
 }
 
 // Number of dispatches that can still happen in the current model/protocol pass.
