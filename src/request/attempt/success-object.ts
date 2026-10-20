@@ -116,8 +116,8 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
           return { rotate: true, kind: classification.kind };
         }
         recordTier1NonStreamTtft(c, node, data, isOpenAIChatCompletionMeaningful);
-        recordNodeSuccess(c, node, latencyMs);
         recordTokens(c, node, data?.usage);
+        recordNodeSuccess(c, node, latencyMs);
         data.model = requestedModel;
         return { response: jsonResponse(200, data, env, request, extraHeaders) };
       } catch (error) {
@@ -217,8 +217,8 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
       return { rotate: true, kind: classification.kind };
     }
     recordTier1NonStreamTtft(c, node, data, isAnthropicMessageMeaningful);
-    recordNodeSuccess(c, node, latencyMs);
     recordTokens(c, node, data?.usage);
+    recordNodeSuccess(c, node, latencyMs);
     if (clientWantsStream) return { response: synthesizeAnthropicFromMessage(data, { ...extraHeaders, ...corsHeaders(request, env) }) };
     if (data && typeof data === 'object') data.model = requestedModel;
     return { response: jsonResponse(200, data, env, request, extraHeaders) };

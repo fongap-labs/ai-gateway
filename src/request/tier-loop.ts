@@ -134,7 +134,7 @@ export function computeTierCaps(
   if (dispatchable.length === 0) return caps;
 
   const max = policy.maxAttempts;
-  const explicitTotal = TIER_ORDER.reduce((sum, t) => sum + (policy.tierAttempts?.[`tier${t}`] ?? 0), 0);
+  const explicitTotal = dispatchable.reduce((sum, t) => sum + (policy.tierAttempts?.[`tier${t}`] ?? 0), 0);
   const adjustable = dispatchable.filter((t) => policy.tierAttempts?.[`tier${t}`] === undefined);
 
   for (const t of dispatchable) {

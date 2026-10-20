@@ -103,7 +103,10 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   // pickCandidate returns PickedCandidate | null (same
   // shape as pickTier1Candidate). The Tier 2/3 twin path no longer wraps
   // a bare RuntimeNode — it passes the PickedCandidate through directly.
-  const legacyTwin = args.tierNumber === 1 ? null : pickCandidate(tierNodes, args.reqDescriptor, args.state.attempted, Date.now(), args.node.id);
+  const legacyTwin =
+    args.tierNumber === 1
+      ? null
+      : pickCandidate(tierNodes, args.reqDescriptor, args.state.attempted, Date.now(), args.node.id, args.state.knownModels);
   const twinPick: PickedCandidate | null =
     args.tierNumber === 1
       ? pickTier1Candidate(tierNodes, args.reqDescriptor, args.state.attempted, {
@@ -112,6 +115,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
           rng: args.rng ?? cryptoRng,
           affinityAccountId: args.tier1AffinityAccountId,
           evaluateAffinity: args.tier1EvaluateAffinity,
+          knownModels: args.state.knownModels,
           // A hedge is still a real Tier 1 dispatch. Preserve the same explicit
           // operator admission ceiling as the primary instead of silently falling
           // back to the picker's unlimited default.

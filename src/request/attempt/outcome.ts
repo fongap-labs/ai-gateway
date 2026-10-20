@@ -118,15 +118,14 @@ export function recordOutcome(
   let tier1RateLimitScope: 'model' | 'account' | null = null;
 
   if (node.tier === 'tier-1') {
-    // A failed dispatch still consumed a request slot upstream; confirm the
-    // lease (no delivered token usage) so the reservation is not restored. The
-    // 429 path below additionally writes a fresh quota report that may exhaust
-    // the window; non-rate-limit failures keep the reactive cooldown model.
-    settleTier1Quota(node.id, c.tier1ReleaseToken, 0);
-    releaseTier1Slot(node.id, c.tier1ReleaseToken);
     if (classification.action === 'neutral') {
+      releaseTier1Slot(node.id, c.tier1ReleaseToken);
       bumpNodeCounters(node.id, { requests: 1 });
     } else {
+      settleTier1Quota(node.id, c.tier1ReleaseToken, 0);
+      releaseTier1Slot(node.id, c.tier1ReleaseToken);
+    }
+    if (classification.action !== 'neutral') {
       const upstreamModel = upstreamModelOf(node, state.requestedModel);
       let tier1RetryAfterMs = classification.retryAfterMs || 0;
       if (classification.requestTooLarge) recordTier1Oversize(node.id, state.requestedModel, c?.reqDescriptor?.bodyChars ?? 0);

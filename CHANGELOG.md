@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- fix: preserve streamed text and reasoning when translating into Responses events, treat a Chat stream that closes after `finish_reason` as complete, capture trailing usage before finishing a non-stream assembly, release slot and quota accounting when matrix assembly returns empty or aborts, record usage before settling quota on non-stream successes, and rewrite the logical model on matrix-translated streams.
 - feat: make documentation link show deployment ID (first 7 chars of AIG_BUILD_SHA uppercase) or timestamp (YYYYMMddhhnn) when deployment ID unavailable, and point the link to `https://github.com/fongap-labs/ai-gateway/tree/<id>/docs`
 
 - fix: normalize request paths (collapse redundant slashes, drop query strings, strip trailing slashes, lowercase) before folding the doubled `/v1/v1/` prefix.

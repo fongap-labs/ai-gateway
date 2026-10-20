@@ -12,6 +12,8 @@ import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamPr
 import { createSseScanner, readWithDeadline } from './guard.ts';
 
 const MAX_ASSEMBLED_BYTES = 2 * 1024 * 1024;
+const TRAILING_USAGE_GRACE_MS = 250;
+const TRAILING_GRACE_EXPIRED = Symbol('trailing-usage-grace-expired');
 
 type ToolCallState = { id: string; type: string; function: { name: string; arguments: string } };
 type ChoiceState = { content: string; reasoning_content: string; toolCalls: Map<number, ToolCallState>; finish_reason: unknown };
@@ -44,6 +46,7 @@ export async function collectOpenAIStreamObject(
   };
 
   let isSemanticEof = false;
+  let semanticEofAt: number | null = null;
   const scanner = createSseScanner((data) => {
     if (!data || data === '[DONE]') {
       isSemanticEof = true;
@@ -112,19 +115,31 @@ export async function collectOpenAIStreamObject(
         await reader.cancel().catch(() => {});
         throw new DOMException('Client aborted during stream assembly.', 'AbortError');
       }
-      const { done, value } = await readWithDeadline(reader, deadlineMs, (message) => fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message));
+      if (isSemanticEof && semanticEofAt === null) semanticEofAt = Date.now();
+      const closeDeadlineMs = semanticEofAt === null ? null : semanticEofAt + TRAILING_USAGE_GRACE_MS;
+      const readDeadlineMs = closeDeadlineMs === null ? deadlineMs : Math.min(deadlineMs ?? Number.POSITIVE_INFINITY, closeDeadlineMs);
+      if (closeDeadlineMs !== null && closeDeadlineMs <= Date.now()) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+      let read: ReadableStreamReadResult<Uint8Array>;
+      try {
+        read = await readWithDeadline(reader, readDeadlineMs, async (message) => {
+          if (isSemanticEof) throw TRAILING_GRACE_EXPIRED;
+          return fail(UPSTREAM_PROCESSING_ERROR.DEADLINE, message);
+        });
+      } catch (e) {
+        if (e === TRAILING_GRACE_EXPIRED) {
+          await reader.cancel().catch(() => {});
+          break;
+        }
+        throw e;
+      }
+      const { done, value } = read;
       if (done) break;
       scanner.push(decoder.decode(value, { stream: true }));
       if (currentBytes > MAX_ASSEMBLED_BYTES) {
         await fail(UPSTREAM_PROCESSING_ERROR.TOO_LARGE, 'Assembled response exceeded gateway memory safety limit. Use stream:true.');
-      }
-      // Semantic EOF: [DONE] or finish_reason observed — the protocol stream
-      // is logically finished. Cancel the reader instead of waiting for HTTP
-      // EOF so a provider that leaves the connection open doesn't stall the
-      // failover budget.
-      if (isSemanticEof) {
-        await reader.cancel().catch(() => {});
-        break;
       }
     }
     scanner.flush();

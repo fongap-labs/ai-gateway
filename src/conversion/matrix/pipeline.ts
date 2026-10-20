@@ -101,7 +101,7 @@ export function openMatrixStream(
   from: IrProtocol,
   to: IrProtocol,
   fallbackId: string,
-  options: { onUpstreamUsage?: (usage: unknown) => void; seedInputTokens?: number } = {},
+  options: { onUpstreamUsage?: (usage: unknown) => void; seedInputTokens?: number; model?: string } = {},
 ): MatrixStreamHandle {
   const collector = new IrCollector();
   const decoder = makeDecoder(from);
@@ -124,8 +124,9 @@ export function openMatrixStream(
         event.type === 'start' && event.inputTokens === undefined && options.seedInputTokens !== undefined
           ? { ...event, inputTokens: options.seedInputTokens }
           : event;
-      collector.feed(seeded);
-      enqueue(controller, textEncoder, encoder.write(seeded));
+      const stamped = seeded.type === 'start' && options.model ? { ...seeded, model: options.model } : seeded;
+      collector.feed(stamped);
+      enqueue(controller, textEncoder, encoder.write(stamped));
     }
     if (terminal) sealReply(controller);
   };
@@ -250,7 +251,7 @@ export async function collectMatrixObject(
   fallbackId: string,
   clientSignal?: AbortSignal | null,
   deadlineMs?: number | null,
-  options: { seedInputTokens?: number; onUpstreamUsage?: (raw: unknown) => void } = {},
+  options: { seedInputTokens?: number; onUpstreamUsage?: (raw: unknown) => void; model?: string } = {},
 ): Promise<{ reply: IrReply; object: Record<string, unknown>; diagnostics: readonly ConversionDiagnostic[] }> {
   if (!upstreamBody) throw new Error('Upstream response has no body.');
   const collector = new IrCollector();
@@ -259,7 +260,7 @@ export async function collectMatrixObject(
   // estimate so node accounting does not collapse to zero when message_start
   // carries no usage. A real start event overwrites the seed.
   if (from === 'anthropic' && (options.seedInputTokens ?? 0) > 0) {
-    collector.feed({ type: 'start', id: '', model: '', inputTokens: options.seedInputTokens });
+    collector.feed({ type: 'start', id: '', model: options.model ?? '', inputTokens: options.seedInputTokens });
   }
   let hasTerminal = false;
 
@@ -268,7 +269,8 @@ export async function collectMatrixObject(
     for (const event of events) {
       if (event.type === 'error') throw new Error(`upstream stream error: ${event.message || 'unknown'}`);
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
-      collector.feed(event);
+      const stamped = event.type === 'start' && options.model ? { ...event, model: options.model } : event;
+      collector.feed(stamped);
     }
     if (terminal) hasTerminal = true;
   });
