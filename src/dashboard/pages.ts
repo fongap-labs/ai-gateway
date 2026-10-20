@@ -156,12 +156,17 @@ root.addEventListener('focusout',function(e){
 export async function dashboardResponse(request: Request, env: Record<string, unknown>): Promise<Response> {
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-  // Compute documentation label and URL based on deployment ID or timestamp
+  // The footer link identifies the running build: the label carries the
+  // deployment ID and the link opens the commit the worker was built from.
+  // Without a commit SHA there is no ref to point at, so the label falls back
+  // to a build timestamp and the link stays on the default branch docs.
   const gatewayEnv = env as GatewayEnv;
   const buildSha = String(gatewayEnv?.AIG_BUILD_SHA ?? '').trim();
-  let docIdOrTimestamp = 'Documentation';
-  if (/^[0-9a-f]{7,}$/i.test(buildSha)) {
-    docIdOrTimestamp = buildSha.slice(0, 7).toUpperCase();
+  let docLabel = 'Documentation';
+  let docUrl = DOCUMENTATION_URL;
+  if (/^[0-9a-f]{7,40}$/i.test(buildSha)) {
+    docLabel = buildSha.slice(0, 7).toUpperCase();
+    docUrl = `${GITHUB_URL}/commit/${buildSha}`;
   } else {
     const now = new Date();
     const year = now.getUTCFullYear();
@@ -169,10 +174,8 @@ export async function dashboardResponse(request: Request, env: Record<string, un
     const day = String(now.getUTCDate()).padStart(2, '0');
     const hour = String(now.getUTCHours()).padStart(2, '0');
     const minute = String(now.getUTCMinutes()).padStart(2, '0');
-    docIdOrTimestamp = `${year}${month}${day}${hour}${minute}`;
+    docLabel = `${year}${month}${day}${hour}${minute}`;
   }
-  const docLabel = docIdOrTimestamp; // same string used for label
-  const docUrl = `${GITHUB_URL}/tree/${docIdOrTimestamp}/docs`;
 
   try {
     const config = loadGatewayConfig(gatewayEnv);
