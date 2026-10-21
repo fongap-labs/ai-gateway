@@ -55,7 +55,7 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
 
 模型形态的 404 会隔离失败的节点/模型映射。经授权的兼容同级模型仍可能在同一请求预算内被尝试。
 
-家族重试规划感知故障域：配置在同一节点/账号上、并解析为同一上游模型的别名，会共享一个请求内的故障域。该故障域一旦耗尽，便不会再消耗额外的逻辑 attempt，也不会为未来的请求预留虚假的墙钟逃逸时间。
+家族重试规划感知故障域：配置在同一节点/账号上、并解析为同一上游模型的别名，会共享一个请求内的故障域。该故障域一旦耗尽，便不会再通过别名消耗额外的逻辑 attempt，也不会为未来的请求预留虚假的墙钟逃逸时间；唯一的例外是计划用尽之后的[末位同 key 重试](#末位同-key-重试)。
 
 全部为瞬时失败、且家族有界规划耗尽的情况是可重试的；这意味着请求计划已经用尽，但并不代表部署中的每个账号都已被证实不可用。
 
@@ -170,6 +170,17 @@ Tier 2/3 不消费 Tier 1 的 TTFT、亲和或 provider-model 热度状态。
 当前 schema 中不存在 `budget_split`、加权分配或其他跨 Tier 预算模式（There is no `budget_split`, weighted allocation, or alternate cross-tier budget mode in the current schema）。
 
 模型家族回退与协议回退共享同一个硬性的 `max_attempts` 与墙钟边界。
+
+### 末位同 key 重试
+
+同一请求内，每个节点在一次失败后默认被排除。只配一个 Tier 1 key 时，这意味着 `max_attempts` 形同虚设：一次偶发的 5xx 就会直接变成 502。因此在整个请求计划（native、协议回退、模型家族）都已用尽之后，网关会对**最近一次 Tier 1 瞬时失败**的那个 key 再重试**一次**。条件全部满足才会触发：
+
+- 失败类别是 `server`、`network`、`headers_timeout`、`first_event_timeout` 或 `stream_interrupted`，且发生在 native attempt 上（不是协议转换后的 attempt）；
+- 仍有未用完的逻辑 attempt（`max_attempts` 仍是硬上限）；
+- 剩余墙钟预算长于那次失败本身花掉的时间；
+- 该 key 仍可调度（例如熔断已打开时不会重试）。
+
+429、401/403、400 等客户端错误永远不会触发这次重试。每个请求最多重试一次。
 
 ## 故障转移预算
 

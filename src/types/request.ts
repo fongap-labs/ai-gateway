@@ -92,6 +92,14 @@ export type LoopState = {
    * or model-family pass may only use what is left.
    */
   tierAttemptsUsed?: Record<number, number>;
+  /**
+   * The most recent transient native Tier 1 failure, kept as the candidate for
+   * the one last-resort same-node retry; `latencyMs` is how long it took.
+   * Cleared once that retry has been spent.
+   */
+  sameNodeRetry?: { nodeId: string; model: string; latencyMs: number } | null;
+  /** True once the last-resort same-node retry has run. */
+  hasRetriedSameNode?: boolean;
   logger: GatewayLogger;
   requestId: string;
   maxAttempts: number;

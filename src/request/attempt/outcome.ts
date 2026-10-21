@@ -35,6 +35,16 @@ import type { AttemptContext, AttemptOutcome, LoopState } from '../../types/requ
 import { upstreamModelOf } from '../response-helpers.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 
+// Failures that say nothing about the next request to the same Tier 1 key. When
+// the request plan runs out, the most recent one of these may be retried once.
+const SAME_NODE_RETRY_KINDS: ReadonlySet<FailureKind> = new Set([
+  KIND.SERVER,
+  KIND.NETWORK,
+  KIND.HEADERS_TIMEOUT,
+  KIND.FIRST_EVENT_TIMEOUT,
+  KIND.STREAM_INTERRUPTED,
+]);
+
 export function rotateWithNeutralEnd(
   state: LoopState,
   node: RuntimeNode,
@@ -213,6 +223,9 @@ export function recordOutcome(
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : state.requestedModel;
       applyTier1Outcome(node.id, tier1ModelKey, t1Class);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
+      if (!state.hasRetriedSameNode && !c?.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)) {
+        state.sameNodeRetry = { nodeId: node.id, model: state.requestedModel, latencyMs: Math.max(0, latencyMs) };
+      }
     }
   } else if (classification.modelScoped) {
     recordModelMissing(node.id, state.requestedModel, classification.cooldownMs || 0);
