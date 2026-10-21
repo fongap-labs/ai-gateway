@@ -23,6 +23,13 @@ export type RequestDescriptor = {
 };
 
 /**
+ * Mutable holder for the original JSON text. A large body is released once
+ * dispatch has built or sent the first outbound body, so streaming and fallback
+ * paths do not keep it alive.
+ */
+export type RawBody = { text: string };
+
+/**
  * Auth result from authorize(). `mode` is 'grouped', 'none', or 'skip'
  * (version route short-circuit). `group` is the credential group label
  * ('AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT') — the only non-secret identifier
@@ -112,8 +119,8 @@ export type LoopContext = {
   fakeStream: boolean;
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
-  /** Original JSON text retained for small native requests; avoids a second stringify. */
-  rawBodyText?: string;
+  /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
+  rawBody?: RawBody;
   /** Client request body size in characters; fallback descriptors carry it too. */
   bodyChars?: number;
   limits: Limits;
@@ -173,8 +180,8 @@ export type AttemptContext = {
   fakeStream: boolean;
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
-  /** Original JSON text retained for small native requests; avoids a second stringify. */
-  rawBodyText?: string;
+  /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
+  rawBody?: RawBody;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   state: LoopState;
