@@ -214,6 +214,10 @@ export function preflight(env) {
   if (!v.vars.AIG_MODELS_CONFIG) warnings.push('AIG_MODELS_CONFIG is not set (optional; the registry applies conservative defaults).');
   if (!v.vars.AIG_POLICIES_CONFIG) warnings.push('AIG_POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
   if (!env.AIG_USAGE_D1_ID || String(env.AIG_USAGE_D1_ID).trim() === '') warnings.push('D1 persistence disabled: AIG_USAGE_D1_ID is not configured.');
+  const analyticsDataset = String(env.AIG_ANALYTICS_DATASET || '').trim();
+  if (analyticsDataset && !ANALYTICS_DATASET_NAME.test(analyticsDataset)) {
+    errors.push('AIG_ANALYTICS_DATASET must be 1-64 letters, digits or underscores.');
+  }
   const config = loadGatewayConfig({ ...v.vars, ...s.secrets });
   // A rejected setting is a mistake to fix, not capacity to accept: the runtime
   // keeps serving around it, but it never ships, whatever AIG_ALLOW_DEGRADED says.
@@ -228,7 +232,7 @@ export function preflight(env) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
-export function buildDeploymentSummary({ config, runtime, d1Configured, affinityKvConfigured, removedSecretShards = 0 }) {
+export function buildDeploymentSummary({ config, runtime, d1Configured, affinityKvConfigured, analyticsDataset, removedSecretShards = 0 }) {
   const modelsCount = (() => {
     try {
       return Object.keys(JSON.parse(runtime.vars.AIG_MODELS_CONFIG || '{}')).length;
@@ -254,6 +258,9 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
     '',
     'Tier 1 affinity KV',
     `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (AIG_AFFINITY_KV_ID is not configured)'}`,
+    '',
+    'Attempt analytics',
+    `  Status: ${String(analyticsDataset || '').trim() ? `ready (dataset ${String(analyticsDataset).trim()})` : 'disabled (AIG_ANALYTICS_DATASET is not configured)'}`,
     '',
     'Health',
     `  /health                    ${config.status === 'degraded' ? 'DEGRADED (allowed by AIG_ALLOW_DEGRADED)' : 'OK'}`,
@@ -287,7 +294,10 @@ export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) 
   return config;
 }
 
-export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') {
+// Workers Analytics Engine dataset names: letters, digits and underscores.
+const ANALYTICS_DATASET_NAME = /^[A-Za-z0-9_]{1,64}$/;
+
+export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {
   const out = {
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
@@ -310,6 +320,9 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '') 
   }
   if (String(affinityKvId || '').trim()) {
     out.kv_namespaces = [{ binding: 'TIER1_AFFINITY', id: String(affinityKvId).trim() }];
+  }
+  if (String(analyticsDataset || '').trim()) {
+    out.analytics_engine_datasets = [{ binding: 'GATEWAY_EVENTS', dataset: String(analyticsDataset).trim() }];
   }
   return out;
 }
@@ -429,7 +442,11 @@ async function main() {
     const bulkSecrets = existingSecretsFile ? withStaleNodeSecretsRemoved(runtime.secrets, readSecretList(existingSecretsFile)) : runtime.secrets;
     fs.writeFileSync(
       wrangler,
-      JSON.stringify(buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID), null, 2),
+      JSON.stringify(
+        buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID, process.env.AIG_ANALYTICS_DATASET),
+        null,
+        2,
+      ),
     );
     fs.writeFileSync(secretsOut, JSON.stringify(bulkSecrets), { mode: 0o600 });
     const removed = Object.values(bulkSecrets).filter((value) => value === null).length;
@@ -442,6 +459,7 @@ async function main() {
           runtime,
           d1Configured: process.env.AIG_USAGE_D1_ID,
           affinityKvConfigured: process.env.AIG_AFFINITY_KV_ID,
+          analyticsDataset: process.env.AIG_ANALYTICS_DATASET,
           removedSecretShards: removed,
         })}\n`,
       );

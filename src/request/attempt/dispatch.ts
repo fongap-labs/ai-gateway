@@ -12,6 +12,7 @@
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
+import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
@@ -64,6 +65,21 @@ export function isBufferedUpstreamReply(c: Pick<AttemptContext, 'conversionConte
 // every upstream dispatch emits exactly one completion record.
 export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
   const outcome = await dispatchAttempt(c);
+  if (outcome.budgetCharged !== false) {
+    recordAttemptEvent(c.env, {
+      nodeId: c.node.id,
+      provider: c.node.provider,
+      tier: c.node.tier,
+      model: c.reqDescriptor.model,
+      outcome: outcome.response?.ok ? 'ok' : (outcome.kind ?? (outcome.response?.status === 499 ? 'client_abort' : 'client')),
+      role: c.hedgedAttempt ? 'hedge' : c.state.hasRetriedSameNode ? 'retry' : 'primary',
+      route: c.route,
+      status: c.upstreamStatus ?? 0,
+      headersMs: c.headersMs ?? -1,
+      ttftMs: c.ttftMs ?? -1,
+      latencyMs: c.attemptStartMs ? Date.now() - c.attemptStartMs : -1,
+    });
+  }
   // Some hedge-loss paths intentionally bypass recordOutcome() because they are
   // neutral reliability outcomes. They still contacted an upstream, so close
   // the physical-attempt accounting slot here. The settlement helper is
@@ -333,6 +349,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   clearTimeout(timeoutId);
   const latencyMs = Date.now() - startMs;
   c.headersMs = latencyMs;
+  c.upstreamStatus = upstream.status;
 
   // Provider-reported quota windows arrive on response headers for both success
   // and error responses. Feed them into the Tier 1 quota state so the dormant
