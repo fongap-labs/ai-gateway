@@ -9,6 +9,8 @@
 //
 //   dispatch.ts        one node attempt: outbound prep, timeouts, fetch,
 //                      non-OK / network / client-abort classification entry
+//   body-release.ts    drop large request-body references after streaming
+//                      commits, so the prompt tree is not retained
 //   hedge.ts           hedge delay race, twin selection, shared deadline,
 //                      winner/loser lifecycle + abort
 //   success.ts         thin success-finalization dispatcher
@@ -25,7 +27,8 @@
 // Dependency direction (acyclic at runtime):
 //   attempt.ts -> index.ts -> { dispatch.ts -> success.ts ->
 //   { success-stream.ts, success-object.ts } -> observability.ts,
-//   dispatch.ts -> outcome.ts, hedge.ts -> dispatch.ts }.
+//   dispatch.ts -> body-release.ts, outcome.ts, observability.ts ->
+//   body-release.ts, hedge.ts -> dispatch.ts }.
 // success-stream.ts / success-object.ts import SuccessArgs from success.ts as
 // a type-only contract, so they add no runtime cycle.
 // No module here imports handler.ts, and nothing under reliability/ or
