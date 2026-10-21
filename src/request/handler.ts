@@ -14,6 +14,7 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import { getLogger } from '../observability/logger.ts';
+import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -162,7 +163,12 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   // overwritten by this request.
   const tier1Choices = tiers[1].filter((node) => supportsRequest(node, reqDescriptor, knownModels)).length;
   const sessionId = tier1Choices >= 2 ? resolveTier1SessionId(request) : null;
-  const affinityRead = sessionId ? await readTier1Affinity(env, sessionId) : null;
+  // Long cooldowns other isolates found (a rejected key, a spent quota) are
+  // adopted before scheduling; both KV reads are bounded and run together.
+  const [, affinityRead] = await Promise.all([
+    tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env) : undefined,
+    sessionId ? readTier1Affinity(env, sessionId) : null,
+  ]);
   const tier1Session = affinityRead === undefined ? null : sessionId;
   const tier1Affinity = affinityRead ?? null;
   const tier1EvaluateAffinity = shouldEvaluateAffinity(tier1Session);
