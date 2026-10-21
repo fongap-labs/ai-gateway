@@ -74,6 +74,8 @@ priority
 
 当前只有一种节点结构。不保留任何备用或兼容的 schema。
 
+被拒绝的节点只排除它自己：其余可用节点继续服务，网关状态为 `degraded`，原因列在 `/health` 的 `diagnostics` 中；只有一个可用节点都没有时才是 `invalid`。重复的 node id 或重复定义的凭据有歧义，该 id 的所有副本都会被排除。任何配置错误都会让部署预检失败（参见[故障排查](troubleshooting.md#网关处于-degraded-或-invalid-状态)）。
+
 ### 订阅节点（`auth: "oauth"`，仅限 Tier 2）
 
 Tier 2 节点可以声明 `"auth": "oauth"`，用以标记一个订阅权益节点。其凭据是在 dispatch 时从订阅 token 存储中解析出的 OAuth 访问 token，而非静态的 `AIG_TIER{N}_CREDENTIALS_*` 密钥。

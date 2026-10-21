@@ -45,6 +45,12 @@ export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 export type GatewayConfig = {
   status: ConfigStatus;
   ready: boolean;
+  /**
+   * Some configuration was rejected (a malformed shard, a conflicting node, an
+   * invalid model/policy/fallback/OAuth setting). The gateway keeps serving with
+   * what remains (status `degraded`), but a deploy is refused until it is fixed.
+   */
+  hasConfigErrors: boolean;
   accessKeyBound: boolean;
   nodes: RuntimeNode[];
   tiers: TierMap<RuntimeNode[]>;
@@ -124,6 +130,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     return {
       status,
       ready: false,
+      hasConfigErrors: auxDiagnostics.length > 0,
       accessKeyBound,
       nodes: [],
       tiers: { 1: [], 2: [], 3: [] },
@@ -139,25 +146,32 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
 
   const credentials = new Map<string, string>();
   const credentialTiers = new Map<string, string>();
-  let hasConflict = false;
+  // Node ids whose configuration is ambiguous (a credential or the id itself is
+  // defined twice). Every node with such an id is excluded, not just the copy
+  // that happened to be read second.
+  const conflictedIds = new Set<string>();
+  let hasConfigErrors = auxDiagnostics.length > 0;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedSecretShards) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON object { nodeId: credential }`);
-      hasConflict = true;
+      hasConfigErrors = true;
       continue;
     }
     const shardTier = `tier-${shard.tierNumber}`;
     for (const [nodeId, credential] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof credential !== 'string' || !credential.trim()) {
         diagnostics.push(`${shard.key}: credential for "${nodeId}" is empty`);
-        hasConflict = true;
+        hasConfigErrors = true;
         continue;
       }
       if (credentials.has(nodeId)) {
-        diagnostics.push(`credential id "${nodeId}" defined in multiple secret shards (${credentialTiers.get(nodeId)} and ${shardTier})`);
-        hasConflict = true;
+        diagnostics.push(
+          `credential id "${nodeId}" defined in multiple secret shards (${credentialTiers.get(nodeId)} and ${shardTier}); node excluded`,
+        );
+        conflictedIds.add(nodeId);
+        hasConfigErrors = true;
         continue;
       }
       credentials.set(nodeId, credential);
@@ -175,7 +189,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
     if (!Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON array of node objects`);
-      hasConflict = true;
+      hasConfigErrors = true;
       continue;
     }
     for (const rawNode of parsed) {
@@ -185,8 +199,10 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
           : '';
       const secretTier = ID_PATTERN.test(rawId) ? credentialTiers.get(rawId) : undefined;
       if (secretTier && secretTier !== tier) {
-        diagnostics.push(`Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}.`);
-        hasConflict = true;
+        diagnostics.push(
+          `Node "${rawId}" belongs to TIER${shard.tierNumber} but its credential is defined under TIER${secretTier.slice(5)}; node excluded.`,
+        );
+        hasConfigErrors = true;
         continue;
       }
       const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics);
@@ -197,8 +213,9 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
         continue;
       }
       if (seenIds.has(node.id)) {
-        diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key})`);
-        hasConflict = true;
+        diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key}); node excluded`);
+        conflictedIds.add(node.id);
+        hasConfigErrors = true;
         continue;
       }
       seenIds.set(node.id, shard.key);
@@ -206,17 +223,20 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
     }
   }
 
+  if (conflictedIds.size > 0) nodes = nodes.filter((node) => !conflictedIds.has(node.id));
   const canonical = canonicalizeNodeModels(nodes, env, diagnostics);
-  if (canonical.isAmbiguous) hasConflict = true;
+  if (canonical.isAmbiguous) hasConfigErrors = true;
   nodes = canonical.nodes;
   diagnostics.push(...collectNodeModelDiagnostics(nodes, env));
   for (const [nodeId] of credentials) {
     if (!seenIds.has(nodeId)) diagnostics.push(`credential "${nodeId}" has no matching node config`);
   }
 
-  if (auxDiagnostics.length > 0) status = 'invalid';
-  else if (hasConflict || nodes.length === 0) status = 'invalid';
-  else if (nodes.length < nodesDeclared) status = 'degraded';
+  // Only a configuration with no usable node stops the gateway. Anything else
+  // that was rejected degrades it: the usable nodes keep serving and /health lists
+  // the diagnostics, while the deploy check refuses it until it is fixed.
+  if (nodes.length === 0) status = 'invalid';
+  else if (hasConfigErrors || nodes.length < nodesDeclared) status = 'degraded';
   else status = 'ready';
   const ready = status === 'ready' || status === 'degraded';
 
@@ -230,6 +250,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   return {
     status,
     ready,
+    hasConfigErrors,
     accessKeyBound,
     nodes,
     tiers,

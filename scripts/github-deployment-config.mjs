@@ -213,7 +213,11 @@ export function preflight(env) {
   if (!v.vars.AIG_POLICIES_CONFIG) warnings.push('AIG_POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
   if (!env.AIG_USAGE_D1_ID || String(env.AIG_USAGE_D1_ID).trim() === '') warnings.push('D1 persistence disabled: AIG_USAGE_D1_ID is not configured.');
   const config = loadGatewayConfig({ ...v.vars, ...s.secrets });
-  if (config.status === 'degraded' && String(env.AIG_ALLOW_DEGRADED || '').toLowerCase() !== 'true') {
+  // A rejected setting is a mistake to fix, not capacity to accept: the runtime
+  // keeps serving around it, but it never ships, whatever AIG_ALLOW_DEGRADED says.
+  if (config.hasConfigErrors) {
+    errors.push(`Runtime configuration has errors: ${config.diagnostics.join('; ')}`);
+  } else if (config.status === 'degraded' && String(env.AIG_ALLOW_DEGRADED || '').toLowerCase() !== 'true') {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
     errors.push(
       `Runtime configuration is degraded (${config.nodesUsable}/${config.nodesTotal} usable nodes); fix the excluded nodes or set AIG_ALLOW_DEGRADED=true${details}`,
@@ -268,9 +272,9 @@ export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
 export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) {
   const env = { ...runtime.vars, ...runtime.secrets };
   const config = loadGatewayConfig(env);
-  if (!config.ready) {
+  if (!config.ready || config.hasConfigErrors) {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
-    throw new Error(`gateway runtime configuration is ${config.status}${details}`);
+    throw new Error(`gateway runtime configuration is ${config.ready ? 'in error' : config.status}${details}`);
   }
   if (!allowDegraded && config.status === 'degraded') {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
