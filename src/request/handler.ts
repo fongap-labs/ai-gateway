@@ -14,6 +14,7 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import { getLogger } from '../observability/logger.ts';
+import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { ConversionContext, LoopContext, RouteFeasibilityResult } from '../types/request.ts';
@@ -155,8 +156,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     tierAttemptsUsed: {},
   };
 
-  const tier1Session = resolveTier1SessionId(request);
-  const tier1Affinity = tier1Session ? await readTier1Affinity(env, tier1Session) : null;
+  // Affinity only chooses between Tier 1 keys. With fewer than two that can serve
+  // this request there is nothing to choose, so the session costs no KV read or
+  // write. A binding whose read timed out is unknown: it is neither used nor
+  // overwritten by this request.
+  const tier1Choices = tiers[1].filter((node) => supportsRequest(node, reqDescriptor, knownModels)).length;
+  const sessionId = tier1Choices >= 2 ? resolveTier1SessionId(request) : null;
+  const affinityRead = sessionId ? await readTier1Affinity(env, sessionId) : null;
+  const tier1Session = affinityRead === undefined ? null : sessionId;
+  const tier1Affinity = affinityRead ?? null;
   const tier1EvaluateAffinity = shouldEvaluateAffinity(tier1Session);
   const tier1Rng = makeTier1Rng(env);
 
