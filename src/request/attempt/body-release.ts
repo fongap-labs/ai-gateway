@@ -4,9 +4,9 @@
 // attempt/index.ts for the module map.
 
 // body-release.ts - drops large request-body references once a streaming
-// response is committed. The parsed body is no longer needed by the stream
-// callbacks, and retaining it for the whole stream keeps a large prompt tree
-// alive beside the response.
+// response is committed. The parsed body and any matrix-converted body are no
+// longer needed by the stream callbacks, and retaining them for the whole
+// stream keeps large prompt trees alive beside the response.
 
 import type { AttemptContext } from '../../types/request.ts';
 
@@ -18,4 +18,8 @@ export function releaseLargeRequestBody(c: AttemptContext): void {
   if ((c.reqDescriptor.bodyChars ?? 0) <= LARGE_BODY_CHARS) return;
   c.bodyJson = {};
   c.rawBody = undefined;
+  // The matrix conversion context owns its own converted body. It is only
+  // read while choosing the upstream protocol and building the request; no
+  // stream callback or retry follows a committed stream.
+  c.conversionContext = null;
 }
