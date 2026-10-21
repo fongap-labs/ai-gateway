@@ -112,6 +112,33 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   const countText = (value: unknown) => {
     tokens += estimateTextTokens(value);
   };
+  // Count block text directly instead of joining it into one string: tool
+  // results can be large and the join would allocate a second full copy.
+  const countToolResult = (content: unknown, isError: unknown) => {
+    if (isError) countText('[Tool execution error]\n');
+    if (content === undefined || content === null) return;
+    if (typeof content === 'string') {
+      countText(content);
+      return;
+    }
+    if (!Array.isArray(content)) {
+      countText(JSON.stringify(content));
+      return;
+    }
+    let hasPreviousPart = false;
+    for (const block of content) {
+      let part = '';
+      if (typeof block === 'string') part = block;
+      else if (!block || typeof block !== 'object') part = String(block ?? '');
+      else if (block.type === 'text') part = String(block.text || '');
+      else if (block.type === 'image') part = '[Tool-result image]';
+      else part = JSON.stringify(block) || '';
+      if (!part) continue;
+      if (hasPreviousPart) countText('\n');
+      countText(part);
+      hasPreviousPart = true;
+    }
+  };
   if (typeof body.system === 'string') countText(body.system);
   else if (Array.isArray(body.system)) for (const x of body.system) countText(x?.text || x);
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
@@ -121,7 +148,7 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
       for (const block of message.content || []) {
         if (block?.type === 'text') countText(block.text);
         else if (block?.type === 'tool_use') countText(JSON.stringify(block.input || {}));
-        else if (block?.type === 'tool_result') countText(toolResultToString(block.content, block.is_error));
+        else if (block?.type === 'tool_result') countToolResult(block.content, block.is_error);
         else if (block?.type === 'image') tokens += 1600;
         else countText(JSON.stringify(block));
       }
@@ -131,19 +158,4 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   const tools = Array.isArray(body.tools) ? body.tools : [];
   tokens += JSON.stringify(tools).length / 3 + tools.length * 64;
   return Math.max(1, Math.ceil(tokens));
-}
-
-function toolResultToString(content: unknown, isError: unknown): string {
-  const prefix = isError ? '[Tool execution error]\n' : '';
-  if (content === undefined || content === null) return prefix;
-  if (typeof content === 'string') return prefix + content;
-  if (!Array.isArray(content)) return prefix + JSON.stringify(content);
-  const parts = content.map((block) => {
-    if (typeof block === 'string') return block;
-    if (!block || typeof block !== 'object') return String(block ?? '');
-    if (block.type === 'text') return block.text || '';
-    if (block.type === 'image') return '[Tool-result image]';
-    return JSON.stringify(block);
-  });
-  return prefix + parts.filter(Boolean).join('\n');
 }
