@@ -139,13 +139,13 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // upstream mapping while the response can still be rewritten to Max.
   const effectiveModel = reqDescriptor.model;
   const upstreamModel = node.models[effectiveModel] || effectiveModel;
-  let bodyMutated = false;
+  let isBodyMutated = false;
   let outboundObject: Record<string, unknown>;
   if (route === 'openai_chat' && !conversionContext) {
     outboundObject = { ...sourceBody, model: upstreamModel };
     if (fakeStream) {
       outboundObject.stream = true;
-      bodyMutated = true;
+      isBodyMutated = true;
     }
   } else if (conversionContext && conversionContext.fallbackSurface === 'chat_completions') {
     outboundObject = { ...sourceBody, model: upstreamModel, ...(fakeStream ? { stream: true } : {}) };
@@ -166,7 +166,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // usage in the body and are never touched here.
   if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageEnabled(node, env)) {
     outboundObject = withUsageStreamOptions(outboundObject);
-    bodyMutated = true;
+    isBodyMutated = true;
   }
 
   // Tier 2 subscription nodes resolve their credential from the OAuth token
@@ -208,7 +208,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     }
     if (prepared.body) {
       outboundObject = prepared.body;
-      bodyMutated = true;
+      isBodyMutated = true;
     }
     subscriptionWire = adapter.wire;
     subscriptionUpstreamUrl = prepared.upstreamUrl;
@@ -221,7 +221,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   }
   const canReuseRawBody =
     rawBodyText !== undefined &&
-    !bodyMutated &&
+    !isBodyMutated &&
     !conversionContext &&
     !isSubscriptionNode(node) &&
     typeof bodyJson.model === 'string' &&
