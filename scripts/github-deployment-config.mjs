@@ -24,12 +24,14 @@ const RUNTIME_VAR_PATTERN = new RegExp(
 const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL']);
 const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
 
-export function parseConfigObject(text, label = 'configuration') {
+// A JSON.parse error quotes the text around the failure; for secrets that would
+// copy part of a credential into the deploy log, so only the label is reported.
+export function parseConfigObject(text, label = 'configuration', { isSecret = false } = {}) {
   let parsed;
   try {
     parsed = JSON.parse(String(text || ''));
   } catch (error) {
-    throw new Error(`${label} is not valid JSON (${error.message})`);
+    throw new Error(isSecret ? `${label} is not valid JSON` : `${label} is not valid JSON (${error.message})`);
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${label} must be a JSON object`);
@@ -122,7 +124,7 @@ export function normalizeRuntimeConfig(raw) {
 export function loadRuntimeConfig(varsText, secretsText, varsLabel = 'Worker variables', secretsLabel = 'Gateway secrets') {
   return normalizeRuntimeConfig({
     vars: parseConfigObject(varsText, varsLabel),
-    secrets: parseConfigObject(secretsText, secretsLabel),
+    secrets: parseConfigObject(secretsText, secretsLabel, { isSecret: true }),
   });
 }
 
