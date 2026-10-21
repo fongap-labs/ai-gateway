@@ -104,7 +104,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 
 当必需的生产输入缺失时，应用预检会失败即关闭。
 
-预检还会拒绝 `degraded` 配置：只要已声明的节点因缺少凭据、字段非法或 URL 非法而被排除，部署就会失败，避免容量静默减少。确实需要带着减少后的容量上线时，显式设置 `AIG_ALLOW_DEGRADED=true`，并在部署摘要与 `/health` 中确认 `nodes_usable/nodes_total`、`nodes_excluded` 和 `degraded`。部署后的健康检查同样默认拒绝 `degraded`，并会重试三次后回滚。
+预检还会拒绝 `degraded` 配置：只要已声明的节点因缺少凭据、字段非法或 URL 非法而被排除，部署就会失败，避免容量静默减少。确实需要带着减少后的容量上线时，显式设置 `AIG_ALLOW_DEGRADED=true`，并在部署摘要与 `/health` 中确认 `nodes_usable/nodes_total`、`nodes_excluded` 和 `degraded`。部署后的健康检查同样默认拒绝 `degraded`，并会重试三次后回滚。配置错误（被拒绝的分片、冲突的节点、无效的模型/策略/回退/OAuth 设置）与容量减少不同：运行时会绕开它们继续服务，但预检总是拒绝部署，`AIG_ALLOW_DEGRADED` 不会放行它们。
 
 ## 源码自有的部署入口
 

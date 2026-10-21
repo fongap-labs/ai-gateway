@@ -74,6 +74,8 @@ priority
 
 当前只有一种节点结构。不保留任何备用或兼容的 schema。
 
+被拒绝的节点只排除它自己：其余可用节点继续服务，网关状态为 `degraded`，原因列在 `/health` 的 `diagnostics` 中；只有一个可用节点都没有时才是 `invalid`。重复的 node id 或重复定义的凭据有歧义，该 id 的所有副本都会被排除。任何配置错误都会让部署预检失败（参见[故障排查](troubleshooting.md#网关处于-degraded-或-invalid-状态)）。
+
 ### 订阅节点（`auth: "oauth"`，仅限 Tier 2）
 
 Tier 2 节点可以声明 `"auth": "oauth"`，用以标记一个订阅权益节点。其凭据是在 dispatch 时从订阅 token 存储中解析出的 OAuth 访问 token，而非静态的 `AIG_TIER{N}_CREDENTIALS_*` 密钥。
@@ -270,6 +272,8 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 - `AIG_REQUEST_HEDGE_MAX`
 - `AIG_ACCESS_KEY_RPM`
 - `AIG_EDGE_CACHE_TTL_SEC`
+
+`AIG_AUTH_FAILURE_COOLDOWN_MS` 默认 1 小时，是凭据失效时的冷却时长：401 直接使用它；Tier 1 的 403 先走 `0 -> 60s -> 10m` 的模型级阶梯，连续多次才达到它（参见[可靠性模型](../architecture/reliability-model.md#冷却与半开恢复)）。
 
 `AIG_REQUEST_BODY_MAX_BYTES` 默认 20 MiB，最大 32 MiB。请求体会先作为文本读取再解析，超大请求更容易触及 Worker 的内存上限；除非上游确实需要，否则不要提高该值。超过 256 KiB 的请求不参与边缘缓存，超过 1 MiB 的请求不启动 hedge。未修改的 native 请求直接复用原始 JSON 文本，避免二次 `JSON.stringify`；超过 1 MiB 的原始文本在构建或发出首个上游请求体后释放，不跨流式响应或后续重试保留；大型流式响应提交后，已解析的请求体及协议转换后的请求体也会被释放，避免在整个流期间保留 prompt 树。
 

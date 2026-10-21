@@ -15,6 +15,15 @@
 
 分组的 key 若其模型允许列表为空，则会有意地授予零个模型。
 
+### 网关处于 `degraded` 或 `invalid` 状态
+
+配置里出错的部分只会让出错的部分失效，不会让整个网关停摆：
+
+- **`degraded`（仍在服务）**：至少还有一个可用节点，但有内容被拒绝。例如某个节点缺少凭据，或其凭据定义在另一个 Tier 的分片中、node id 重复（该 id 的所有副本都会被排除）、某个分片不是合法 JSON，或 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG`、`AIG_PROTOCOL_FALLBACKS`、`AIG_OAUTH_PROVIDERS` 有错误（相应设置回落到内置默认值）。`/health` 返回 200，并在 `diagnostics` 中逐条列出原因。
+- **`invalid`（停止服务）**：没有任何可用节点。`/health` 返回 503，推理请求返回 500。
+
+`/health` 中的 `diagnostics` 就是排查清单。只要存在配置错误，部署预检就会拒绝上线，即使设置了 `AIG_ALLOW_DEGRADED=true` 也一样（该变量只放行"节点被排除、容量减少"这一种情况）。
+
 ### `No AIG_TIER{1,2,3}_NODES_XX GitHub Variable is configured.`
 
 请添加至少一个有效的 Tier 配置分片，其内容为包含节点的 JSON 数组。后缀仅是分片编号。

@@ -250,21 +250,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       }
 
       const nativeResult = await runTierLoop(effectiveLoopCtx, effectiveReqDescriptor, null);
-      if (nativeResult) {
-        if (effectiveLoopCtx.edgeCachePlan && nativeResult.status === 200) {
-          const clientResponse = nativeResult;
-          const cacheBranch = clientResponse.clone();
-          storeEdgeCacheResponse(
-            effectiveLoopCtx.ctx,
-            effectiveLoopCtx.edgeCachePlan.keyRequest,
-            cacheBranch,
-            effectiveLoopCtx.edgeCachePlan.ttlSec,
-            effectiveLoopCtx.edgeCachePlan.stream,
-          );
-          return injectMissHeader(clientResponse, effectiveLoopCtx.request, effectiveLoopCtx.env);
-        }
-        return nativeResult;
-      }
+      if (nativeResult) return deliver(nativeResult, effectiveLoopCtx);
       rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
 
       if (state.logicalAttempts >= requestPolicy.maxAttempts) break modelRoundsLoop;
@@ -283,23 +269,34 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
         requestedModel: effectiveModel,
         runTierLoop,
       });
-      if (fbResult) {
-        if (fallbackLoopCtx.edgeCachePlan && fbResult.status === 200) {
-          const clientResponse = fbResult;
-          const cacheBranch = clientResponse.clone();
-          storeEdgeCacheResponse(
-            fallbackLoopCtx.ctx,
-            fallbackLoopCtx.edgeCachePlan.keyRequest,
-            cacheBranch,
-            fallbackLoopCtx.edgeCachePlan.ttlSec,
-            fallbackLoopCtx.edgeCachePlan.stream,
-          );
-          return injectMissHeader(clientResponse, fallbackLoopCtx.request, fallbackLoopCtx.env);
-        }
-        return fbResult;
-      }
+      if (fbResult) return deliver(fbResult, fallbackLoopCtx);
       rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
     }
+  }
+
+  // Last resort: the plan is spent, but an unused logical attempt remains and the
+  // most recent transient failure was a native Tier 1 attempt. Retry that one key
+  // once, when the remaining wall clock is at least what the failed attempt took.
+  // A 429, refusal or invalid request never becomes a candidate, and a key whose
+  // circuit has opened meanwhile is no longer eligible.
+  const retry = state.sameNodeRetry;
+  if (
+    retry &&
+    !state.hasRetriedSameNode &&
+    state.logicalAttempts < requestPolicy.maxAttempts &&
+    failoverBudgetMs - (Date.now() - requestStartMs) > retry.latencyMs &&
+    !request.signal?.aborted
+  ) {
+    state.hasRetriedSameNode = true;
+    state.sameNodeRetry = null;
+    state.requestedModel = retry.model;
+    state.attempted = new Set(config.nodes.filter((node) => node.id !== retry.nodeId).map((node) => node.id));
+    const retryLoopCtx: LoopContext = { ...loopCtx, feasibility: feasibilityForModel(retry.model), futureAttemptReserve: 0 };
+    logger.info(
+      `same-node retry request=${requestId} node=${retry.nodeId} model=${retry.model} logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
+    );
+    const retryResult = await runTierLoop(retryLoopCtx, { ...reqDescriptor, model: retry.model }, null);
+    if (retryResult) return deliver(retryResult, retryLoopCtx);
   }
 
   state.requestedModel = requestedModel;
@@ -316,6 +313,14 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     knownModels,
     familyFallback,
   );
+}
+
+// Hands a final response to the client, storing a cacheable success at the edge.
+function deliver(response: Response, loopCtx: LoopContext): Response {
+  const plan = loopCtx.edgeCachePlan;
+  if (!plan || response.status !== 200) return response;
+  storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream);
+  return injectMissHeader(response, loopCtx.request, loopCtx.env);
 }
 
 async function runTierLoop(

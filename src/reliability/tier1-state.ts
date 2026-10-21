@@ -49,6 +49,11 @@ export const TIER1_SIBLING_WAKE_MIN_REMAINING_MS = 60_000;
 // How long a "this request was too large" observation keeps large requests away.
 // After it lapses one request probes again, so a raised provider limit is noticed.
 export const TIER1_OVERSIZE_MEMORY_MS = 10 * 60_000;
+// A 403 refuses one request (policy, moderation, region, model permission), not the
+// key, so it is blamed on the model that got it. The first refusal costs nothing;
+// each refusal after the previous cooldown lapsed climbs 60s, 10m, then the auth
+// cooldown. A success clears the ladder.
+export const TIER1_FORBIDDEN_LADDER_MS = Object.freeze([0, 60_000, 600_000] as const);
 
 const FAILURE_STATE = Object.freeze({
   NORMAL: 'normal',
@@ -61,6 +66,9 @@ export type Tier1FailureState = (typeof FAILURE_STATE)[keyof typeof FAILURE_STAT
 
 export type Tier1ModelRuntime = {
   supported: boolean;
+  // Live requests on this logical model. The half-open single-probe gate counts
+  // these, so traffic on the key's other models never starves a recovery probe.
+  inFlight: number;
   disabled: boolean;
   cooldownUntil: number;
   cooldownReason: string | null;
@@ -68,6 +76,8 @@ export type Tier1ModelRuntime = {
   consecutiveFailures: number;
   consecutiveRateLimits: number;
   consecutiveOutliers: number;
+  // 403 refusals in a row on this model; drives TIER1_FORBIDDEN_LADDER_MS.
+  consecutiveForbidden: number;
   halfOpenSuccesses: number;
   ttftEwma: number | null;
   sampleCount: number;
@@ -132,7 +142,7 @@ export type Tier1AccountRuntime = {
   models: Map<string, Tier1ModelRuntime>;
 };
 
-export type Tier1ReleaseToken = { accountId: string; released: boolean; settled: boolean; quotaReserved: number };
+export type Tier1ReleaseToken = { accountId: string; modelId: string | null; released: boolean; settled: boolean; quotaReserved: number };
 
 /** Failure-kind classification input consumed from the reliability layer.
  * `kind` is an open string: stream-layer kinds (e.g. 'stream_interrupted')
@@ -145,6 +155,8 @@ export type Tier1FailureInput =
       rateLimitScope?: string;
       /** 'quota' for a long-lived allowance; any other value is a short window. */
       rateLimitClass?: string;
+      /** A 403: the request was refused, not the credential. */
+      forbidden?: boolean;
       streamReason?: unknown;
     }
   | null
@@ -156,7 +168,7 @@ export type Tier1Outcome = {
   reason: string;
   counted?: boolean;
   cooldownMs?: number;
-  backoff?: 'rate_limit' | 'timeout' | 'server' | 'default';
+  backoff?: 'rate_limit' | 'timeout' | 'server' | 'forbidden' | 'default';
   scopeAmbiguous?: boolean;
   /** True when a rate-limit cooldown reflects a long-lived allowance. */
   isQuota?: boolean;
@@ -167,6 +179,7 @@ const accounts = new Map<string, Tier1AccountRuntime>();
 function newModelRuntime(): Tier1ModelRuntime {
   return {
     supported: true,
+    inFlight: 0,
     disabled: false,
     cooldownUntil: 0,
     cooldownReason: null,
@@ -174,6 +187,7 @@ function newModelRuntime(): Tier1ModelRuntime {
     consecutiveFailures: 0,
     consecutiveRateLimits: 0,
     consecutiveOutliers: 0,
+    consecutiveForbidden: 0,
     halfOpenSuccesses: 0,
     ttftEwma: null,
     sampleCount: 0,
@@ -292,7 +306,7 @@ export function claimTier1Slot(
   const model = modelId ? account.models.get(modelId) : null;
   if (modelId && upstreamModelCooldownRemainingMs(account, node, modelId, now) > 0) return false;
   if ((model?.rateLimitRecoveryUntil ?? 0) > now) return false;
-  if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return false;
+  if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return false;
   if (maxInFlight !== null && account.inFlight >= maxInFlight) return false;
   // Quota admission. Only applies when the provider has reported an absolute
   // remaining-request count; unknown quota (null) is a no-op pass-through so the
@@ -301,6 +315,7 @@ export function claimTier1Slot(
   // settle, so concurrent admission cannot all pass against the tail of a window.
   if (account.quotaRemainingRequests !== null && account.quotaRemainingRequests <= 0) return false;
   account.inFlight++;
+  if (modelId) getTier1Model(node.id, modelId).inFlight++;
   if (account.quotaRemainingRequests !== null) {
     account.quotaRemainingRequests--;
     account.quotaReservedInFlight++;
@@ -316,13 +331,15 @@ export function claimTier1Slot(
   return true;
 }
 
-export function makeTier1ReleaseToken(accountId: string): Tier1ReleaseToken {
+// `modelId` must be the model the same claimTier1Slot call admitted, so release
+// returns that model's in-flight slot.
+export function makeTier1ReleaseToken(accountId: string, modelId: string | null = null): Tier1ReleaseToken {
   const account = accounts.get(accountId);
   // Stamp the reservation this claim acquired so release/settle can restore or
   // confirm it per-token. Synchronous claim->makeToken keeps this race-free in
   // the single-threaded isolate; a token always carries its own reservation.
   const reserved = account && account.quotaRemainingRequests !== null ? 1 : 0;
-  return { accountId, released: false, settled: false, quotaReserved: reserved };
+  return { accountId, modelId, released: false, settled: false, quotaReserved: reserved };
 }
 
 export function releaseTier1Slot(accountId: string, token: Tier1ReleaseToken | null | undefined): boolean {
@@ -331,6 +348,8 @@ export function releaseTier1Slot(accountId: string, token: Tier1ReleaseToken | n
   const account = accounts.get(accountId);
   if (account) {
     account.inFlight = Math.max(0, account.inFlight - 1);
+    const model = token.modelId ? account.models.get(token.modelId) : null;
+    if (model) model.inFlight = Math.max(0, model.inFlight - 1);
     // Restore the unconfirmed request reservation unless the lease was settled
     // with actual usage. Abort / pre-execution failure / hedge loss before
     // settlement give the reservation back; a settled lease has already
@@ -387,7 +406,7 @@ export function isTier1Eligible(
   if (upstreamModelCooldownRemainingMs(account, node, req.model, now) > 0) return false;
   const model = account.models.get(req.model);
   if (modelBlocked(model, now) || (model?.rateLimitRecoveryUntil ?? 0) > now) return false;
-  if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return false;
+  if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return false;
   if (exceedsOversizeCeiling(account, req.model, req.bodyChars, now)) return false;
   if (account.quotaState === 'exhausted_until' && account.quotaResetAt > now) return false;
   // A provider-reported window tail at zero also gates eligibility: the pool
@@ -459,6 +478,16 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
 export function classifyTier1Failure(classification: Tier1FailureInput, opts: { retryAfterMs?: number } = {}): Tier1Outcome {
   const { retryAfterMs } = opts;
   const kind = classification?.kind;
+  if (kind === 'auth' && classification?.forbidden) {
+    return {
+      scope: 'model',
+      action: 'cooldown',
+      counted: false,
+      backoff: 'forbidden',
+      reason: kind,
+      cooldownMs: Math.max(0, classification?.cooldownMs ?? TIER1_AUTH_DEFAULT_COOLDOWN_MS),
+    };
+  }
   if (kind === 'auth') {
     return {
       scope: 'account',
@@ -668,6 +697,20 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
     return;
   }
 
+  if (outcome.backoff === 'forbidden') {
+    const model = getTier1Model(accountId, modelId);
+    // Requests already in flight during a refusal cooldown do not climb the ladder.
+    if (model.cooldownUntil <= now) model.consecutiveForbidden++;
+    const ceiling = Math.max(0, outcome.cooldownMs ?? 0);
+    const step = TIER1_FORBIDDEN_LADDER_MS[model.consecutiveForbidden - 1];
+    const cooldownMs = step === undefined ? ceiling : Math.min(step, ceiling);
+    if (cooldownMs > 0) {
+      model.cooldownUntil = Math.max(model.cooldownUntil, now + cooldownMs);
+      model.cooldownReason = outcome.reason;
+    }
+    return;
+  }
+
   const rateLimited = outcome.backoff === 'rate_limit';
   if (rateLimited && (outcome.cooldownMs ?? 0) <= 0) return;
   const model = getTier1Model(accountId, modelId);
@@ -715,6 +758,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   }
 
   model.consecutiveFailures = 0;
+  model.consecutiveForbidden = 0;
   account.recentRateLimitedModels.delete(modelId);
   const modelRecoveryProbe =
     model.cooldownReason === 'rate_limit' && model.cooldownUntil <= now && !model.rateLimitRecoveryPending && model.rateLimitRecoveryUntil > 0;
@@ -759,7 +803,7 @@ export function tier1BlockingWaitMs(node: RuntimeNode, modelId: string, now: num
   if (model?.disabled) return Infinity;
   if (model && model.cooldownUntil > now) return model.cooldownUntil - now;
   if (model && model.rateLimitRecoveryUntil > now) return model.rateLimitRecoveryUntil - now;
-  if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return 1_000;
+  if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return 1_000;
   return Infinity;
 }
 
@@ -780,7 +824,7 @@ export function tier1HasDeferredCapacity(
     const model = account.models.get(req.model);
     if (modelBlocked(model, now)) continue;
     if ((model?.rateLimitRecoveryUntil ?? 0) > now) return true;
-    if (model?.failureState === FAILURE_STATE.HALF_OPEN && account.inFlight > 0) return true;
+    if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return true;
   }
   return false;
 }

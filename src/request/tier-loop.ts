@@ -43,7 +43,7 @@ export type TierPickResult = {
   node?: RuntimeNode;
   raceLost?: boolean;
   raceLostNodeId?: string;
-  tier1ReleaseToken?: { accountId: string; released: boolean; settled: boolean; quotaReserved: number } | null;
+  tier1ReleaseToken?: { accountId: string; modelId: string | null; released: boolean; settled: boolean; quotaReserved: number } | null;
   tier1EscapedFromAffinity?: boolean;
   tier1UpdateAffinity?: boolean;
   tier1AffinityHit?: boolean;

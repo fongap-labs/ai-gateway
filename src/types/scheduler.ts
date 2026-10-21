@@ -38,7 +38,7 @@ export type PickedCandidate = {
   node?: RuntimeNode;
   raceLost?: boolean;
   raceLostNodeId?: string;
-  releaseToken?: { accountId: string; released: boolean; settled: boolean; quotaReserved: number } | null;
+  releaseToken?: { accountId: string; modelId: string | null; released: boolean; settled: boolean; quotaReserved: number } | null;
   updateAffinity?: boolean;
   escapedFromAffinity?: boolean;
   affinityHit?: boolean;
