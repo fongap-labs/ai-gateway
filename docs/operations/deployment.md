@@ -87,7 +87,8 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - `CLOUDFLARE_ACCOUNT_ID`；
 - `AIG_PUBLIC_URL`；
 - 至少一个 `AIG_TIER{1,2,3}_NODES_XX` 分片；
-- 使用 Tier 1 亲和时所需的 `AIG_AFFINITY_KV_ID`；
+- 配置 Tier 1 节点时所需的 `AIG_AFFINITY_KV_ID`（GitHub 部署预检强制要求；运行时缺失时亲和自动禁用，主链路仍可用）；
+- 可选的 `AIG_ALLOW_DEGRADED=true`：显式允许带着被排除的节点继续部署（默认拒绝）；
 - 可选的 `AIG_USAGE_D1_ID`；
 - 对应的 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`；
 - 可选的 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG` 以及其他运行时 Variables。
@@ -102,6 +103,8 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 `CLOUDFLARE_ACCOUNT_ID` 的值不是 Secret，而是由中央策略别名注入：`policies/deploy-secrets.json` 将 `CLOUDFLARE_ACCOUNT_ID` 映射到主机仓库的 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` Variable。由于 `resolve-secret-scope` 只对 target 在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，该名字必须保持在列表中——列表声明的是可注入的环境变量名，而不是"已存储的 Secret 清单"。
 
 当必需的生产输入缺失时，应用预检会失败即关闭。
+
+预检还会拒绝 `degraded` 配置：只要已声明的节点因缺少凭据、字段非法或 URL 非法而被排除，部署就会失败，避免容量静默减少。确实需要带着减少后的容量上线时，显式设置 `AIG_ALLOW_DEGRADED=true`，并在部署摘要与 `/health` 中确认 `nodes_usable/nodes_total`、`nodes_excluded` 和 `degraded`。部署后的健康检查同样默认拒绝 `degraded`，并会重试三次后回滚。
 
 ## 源码自有的部署入口
 

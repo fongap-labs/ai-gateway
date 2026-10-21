@@ -271,6 +271,8 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 - `AIG_ACCESS_KEY_RPM`
 - `AIG_EDGE_CACHE_TTL_SEC`
 
+`AIG_REQUEST_BODY_MAX_BYTES` 默认 20 MiB，最大 32 MiB。请求体会先作为文本读取再解析，超大请求更容易触及 Worker 的内存上限；除非上游确实需要，否则不要提高该值。超过 256 KiB 的请求不参与边缘缓存，超过 1 MiB 的请求不启动 hedge。
+
 `AIG_EDGE_CACHE_AUTO`（布尔值，默认为 `false`）控制自动边缘缓存。默认情况下，只有发送了 `x-gateway-cache: true` 的请求才会被缓存；将其设为 `true` 后，`temperature: 0` 的请求也会被缓存。缓存条目的作用范围限定在调用方的 key 分组，以及其所提交凭据的带键指纹（由 `AIG_TOKEN_ENCRYPTION_KEY` 派生），流式请求与非流式请求绝不共享条目。包含工具调用的响应、被截断的流以及超过 2 MB 的响应体均不会被存储。轮换 `AIG_TOKEN_ENCRYPTION_KEY` 也会使现有缓存条目失效。
 
 `AIG_RATE_LIMIT_COOLDOWN_MS` 是 Tier 2/3 节点在 429 未携带任何提示时的回退等待时间。Tier 1 不使用它：Tier 1 的 key 遵循自适应阶梯 `15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m`（参见[可靠性模型](../architecture/reliability-model.md#429-处理)）。若要修改该阶梯，请将 `AIG_RATE_LIMIT_STEPS_MS` 设置为以逗号分隔的毫秒数，例如 `15000,30000,60000,300000`。除非某个 provider 需要不同的设置，否则请保持其未设置；缺失或格式错误的值会保持默认值。
@@ -308,6 +310,8 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 - 被动 TTFT；
 - 软性会话亲和、探索、恢复/熔断状态；
 - 可选的显式 `AIG_POLICIES_CONFIG.max_in_flight` 安全上限。
+
+配置 Tier 1 节点时，GitHub 部署预检强制要求 `AIG_AFFINITY_KV_ID`；运行时若未绑定该 KV，亲和会静默禁用，主链路仍可用。生产环境建议至少两个独立 Tier 1 账号，并将 `AIG_ACCESS_KEY_RPM` 设为非 0、为策略设置有限的 `max_in_flight`；这些不是硬编码默认值。
 
 访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。
 

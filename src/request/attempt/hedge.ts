@@ -34,6 +34,10 @@ import { attemptNode, isBufferedUpstreamReply } from './dispatch.ts';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A twin duplicates the outbound body and upstream buffers. Above this size a
+// hedge would risk the Worker memory limit instead of saving tail latency.
+const HEDGE_MAX_BODY_CHARS = 1024 * 1024;
+
 // ---- Hedged dispatch (reactive per-try hedge, Envoy-style) -----------------
 // A slow-but-alive node is the dominant tail-latency source: the scheduler
 // cannot know a candidate will be slow, and once an attempt is awaiting its
@@ -60,6 +64,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   if (!hedgePolicy || hedgePolicy.enabled === false) return attemptNode(args);
   const tierKey: 'tier1' | 'tier2' | 'tier3' = `tier${args.tierNumber}`;
   if (hedgePolicy.tiers && !hedgePolicy.tiers.includes(tierKey)) return attemptNode(args);
+  if ((args.reqDescriptor.bodyChars ?? 0) > HEDGE_MAX_BODY_CHARS) return attemptNode(args);
   // The built-in delay adapts to what is known about this request: a large
   // prompt or a primary whose TTFT is already long would otherwise be hedged on
   // nearly every call, doubling upstream load (and rate-limit pressure) for

@@ -145,6 +145,21 @@ export function collectSecretsFromEnv(env) {
   return { secrets };
 }
 
+function countNodesInShards(vars, tierNumber) {
+  const pattern = new RegExp(`^AIG_TIER${tierNumber}_NODES_(0[1-9]|10)$`);
+  let count = 0;
+  for (const [name, value] of Object.entries(vars)) {
+    if (!pattern.test(name)) continue;
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) count += parsed.length;
+    } catch {
+      // Preflight reports malformed JSON through the node-count diagnostics.
+    }
+  }
+  return count;
+}
+
 export function buildRuntimeFromEnv(env) {
   const v = collectVarsFromEnv(env);
   const s = collectSecretsFromEnv(env);
@@ -184,9 +199,26 @@ export function preflight(env) {
   if (!Object.keys(s.secrets).some((n) => NODE_SECRET.test(n))) {
     errors.push('No AIG_TIER[123]_CREDENTIALS_XX Secret is configured.');
   }
+  if (tier1Shards && countNodesInShards(v.vars, 1) === 1) {
+    warnings.push('Only one Tier 1 node is configured; there is no account-level failover if that key is rate-limited or unavailable.');
+  }
+  const rpm = Number(v.vars.AIG_ACCESS_KEY_RPM ?? 0);
+  if (tier1Shards && (!Number.isFinite(rpm) || rpm <= 0)) {
+    warnings.push('AIG_ACCESS_KEY_RPM is unset or 0; gateway access-key rate limiting is disabled.');
+  }
+  if (tier1Shards && !v.vars.AIG_POLICIES_CONFIG) {
+    warnings.push('AIG_POLICIES_CONFIG is not set; Tier 1 max_in_flight is unlimited by default.');
+  }
   if (!v.vars.AIG_MODELS_CONFIG) warnings.push('AIG_MODELS_CONFIG is not set (optional; the registry applies conservative defaults).');
   if (!v.vars.AIG_POLICIES_CONFIG) warnings.push('AIG_POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
   if (!env.AIG_USAGE_D1_ID || String(env.AIG_USAGE_D1_ID).trim() === '') warnings.push('D1 persistence disabled: AIG_USAGE_D1_ID is not configured.');
+  const config = loadGatewayConfig({ ...v.vars, ...s.secrets });
+  if (config.status === 'degraded' && String(env.AIG_ALLOW_DEGRADED || '').toLowerCase() !== 'true') {
+    const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
+    errors.push(
+      `Runtime configuration is degraded (${config.nodesUsable}/${config.nodesTotal} usable nodes); fix the excluded nodes or set AIG_ALLOW_DEGRADED=true${details}`,
+    );
+  }
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -202,8 +234,8 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
     'Deployment completed',
     '',
     'Gateway',
-    '  Status: ready',
-    `  Nodes: ${config.nodesUsable}/${config.nodesTotal} usable`,
+    `  Status: ${config.status}`,
+    `  Nodes: ${config.nodesUsable}/${config.nodesTotal} usable${config.nodesUsable < config.nodesTotal ? ' (DEGRADED: some configured nodes were excluded)' : ''}`,
     `  Models: ${modelsCount}`,
     '',
     'Configuration',
@@ -218,7 +250,7 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
     `  Status: ${String(affinityKvConfigured || '').trim() ? 'ready' : 'missing (AIG_AFFINITY_KV_ID is not configured)'}`,
     '',
     'Health',
-    '  /health                    OK',
+    `  /health                    ${config.status === 'degraded' ? 'DEGRADED (allowed by AIG_ALLOW_DEGRADED)' : 'OK'}`,
     '  /v1/models                 OK',
     '  /v1/messages/count_tokens  OK',
   ].join('\n');
@@ -233,12 +265,18 @@ export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
   return out;
 }
 
-export function validateGatewayRuntime(runtime) {
+export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) {
   const env = { ...runtime.vars, ...runtime.secrets };
   const config = loadGatewayConfig(env);
   if (!config.ready) {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
     throw new Error(`gateway runtime configuration is ${config.status}${details}`);
+  }
+  if (!allowDegraded && config.status === 'degraded') {
+    const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
+    throw new Error(
+      `gateway runtime configuration is degraded (${config.nodesUsable}/${config.nodesTotal} usable nodes); fix the excluded nodes or set AIG_ALLOW_DEGRADED=true${details}`,
+    );
   }
   return config;
 }
@@ -293,7 +331,7 @@ const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Remote deployment identity is the commit SHA returned by authenticated
 // /health. Human release labels are not part of runtime verification.
-export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs = 30_000, intervalMs = 5_000 } = {}) {
+export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs = 30_000, intervalMs = 5_000, allowDegraded = false } = {}) {
   const origin = String(baseUrl || '').replace(/\/+$/, '');
   if (!/^https:\/\//.test(origin)) throw new Error('AIG_PUBLIC_URL must be an absolute https URL');
   const headers = { authorization: `Bearer ${accessKey}` };
@@ -315,6 +353,10 @@ export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs 
       } else if (expectedBuild !== undefined && healthBody?.build !== expectedBuild) {
         lastError = new Error(
           `Remote /health.build does not match the validated deployment SHA (got ${healthBody?.build ?? 'unknown'}, expected ${expectedBuild})`,
+        );
+      } else if (!allowDegraded && Number(healthBody?.nodes_total) > Number(healthBody?.nodes_usable)) {
+        lastError = new Error(
+          `Remote /health reports degraded node capacity (${healthBody?.nodes_usable}/${healthBody?.nodes_total} usable); fix the excluded nodes or set AIG_ALLOW_DEGRADED=true`,
         );
       } else {
         lastError = null;
@@ -375,7 +417,8 @@ async function main() {
     if (!wrangler || !secretsOut)
       throw new Error('usage: prepare --from-env | --vars FILE --secrets-input FILE --wrangler FILE --secrets FILE [--existing-secrets FILE]');
     const runtime = resolveRuntime(argv);
-    const config = validateGatewayRuntime(runtime);
+    const allowDegraded = String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true';
+    const config = validateGatewayRuntime(runtime, { allowDegraded });
     const existingSecretsFile = argValue(argv, '--existing-secrets');
     const bulkSecrets = existingSecretsFile ? withStaleNodeSecretsRemoved(runtime.secrets, readSecretList(existingSecretsFile)) : runtime.secrets;
     fs.writeFileSync(
@@ -406,7 +449,10 @@ async function main() {
     const runtime = resolveRuntime(argv);
     const groupKey = Object.keys(runtime.secrets).find((k) => GROUP_KEY_RE.test(k));
     if (!groupKey) throw new Error('No AIG_ACCESS_KEY_<GROUP> secret found for health check');
-    await verifyRemote(process.env.AIG_PUBLIC_URL, runtime.secrets[groupKey], argValue(argv, '--expected-build') || undefined);
+    const allowDegraded = String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true';
+    await verifyRemote(process.env.AIG_PUBLIC_URL, runtime.secrets[groupKey], argValue(argv, '--expected-build') || undefined, {
+      allowDegraded,
+    });
     console.log('Remote health checks passed.');
     return;
   }

@@ -56,7 +56,7 @@ npm run validate:merge
 
 ### 预检失败
 
-请根据作业所指明的具体缺失的 Variable/Secret 进行修复。不要为了让预检继续通过而添加无关的占位值。
+请根据作业所指明的具体缺失的 Variable/Secret 进行修复。不要为了让预检继续通过而添加无关的占位值。如果错误是 `configuration is degraded (...)`，说明有已声明的节点被排除；修复该节点的凭据、字段或 URL，或显式设置 `AIG_ALLOW_DEGRADED=true` 接受减少后的容量。
 
 ### D1 迁移失败
 
