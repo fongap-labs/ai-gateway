@@ -107,6 +107,54 @@ function estimateTextTokens(text: unknown): number {
   return cjk + other / 4;
 }
 
+// Exact JSON.stringify() length for JSON-safe values, without allocating the
+// serialized copy. Tool schemas can be large (MCP), and only their length is
+// needed for the dense-JSON token charge.
+function jsonStringLength(value: string): number {
+  let length = 2;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 0x22 || code === 0x5c) length += 2;
+    else if (code === 0x08 || code === 0x0c || code === 0x0a || code === 0x0d || code === 0x09) length += 2;
+    else if (code < 0x20) length += 6;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = i + 1 < value.length ? value.charCodeAt(i + 1) : 0;
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        length += 2;
+        i++;
+      } else {
+        length += 6;
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) length += 6;
+    else length += 1;
+  }
+  return length;
+}
+
+function jsonSerializedLength(value: unknown): number {
+  if (typeof value === 'string') return jsonStringLength(value);
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)?.length ?? 0;
+  if (Array.isArray(value)) {
+    let length = 2;
+    for (let i = 0; i < value.length; i++) {
+      if (i > 0) length++;
+      const item = value[i];
+      length += item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 4 : jsonSerializedLength(item);
+    }
+    return length;
+  }
+  let length = 2;
+  let hasProperty = false;
+  for (const key of Object.keys(value)) {
+    const item = (value as Record<string, unknown>)[key];
+    if (item === undefined || typeof item === 'function' || typeof item === 'symbol') continue;
+    if (hasProperty) length++;
+    length += jsonStringLength(key) + 1 + jsonSerializedLength(item);
+    hasProperty = true;
+  }
+  return length;
+}
+
 export function estimateAnthropicInputTokens(body: Record<string, unknown>): number {
   let tokens = 0;
   const countText = (value: unknown) => {
@@ -156,6 +204,6 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   // Tool schemas are dense JSON: charge them at a denser ratio plus a fixed
   // per-tool overhead instead of the plain-text ratio.
   const tools = Array.isArray(body.tools) ? body.tools : [];
-  tokens += JSON.stringify(tools).length / 3 + tools.length * 64;
+  tokens += jsonSerializedLength(tools) / 3 + tools.length * 64;
   return Math.max(1, Math.ceil(tokens));
 }
