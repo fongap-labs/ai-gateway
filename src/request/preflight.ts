@@ -25,7 +25,7 @@ import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
 import { admitKeyRequest } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
-import type { AuthResult, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
+import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { TierMap } from '../types/scheduler.ts';
 import { authorize } from './auth.ts';
@@ -35,10 +35,6 @@ import { modelFallbackCandidates } from './model-fallback.ts';
 import { jsonResponse } from './response-helpers.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
 import { acceptsHtml, detectRoute, normalizePath } from './router.ts';
-
-// Above this size, keeping the original text alive costs more memory than the
-// saved JSON.stringify, so only normal-sized requests reuse their raw body.
-const MAX_RAW_BODY_REUSE_CHARS = 512 * 1024;
 
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
@@ -67,11 +63,12 @@ export type PreflightOk = {
   fakeStream: boolean;
   bodyJson: Record<string, unknown>;
   /**
-   * Original JSON text for request bodies small enough to reuse safely.
-   * dispatch.ts sends it unchanged when no model/stream mutation is needed,
-   * avoiding a second full JSON.stringify.
+   * Original JSON text reused when dispatch needs no model/stream mutation,
+   * avoiding a second full JSON.stringify. dispatch.ts releases it once the
+   * first outbound body is built or sent, so a large body does not stay alive
+   * during streaming or fallback.
    */
-  rawBodyText?: string;
+  rawBody?: RawBody;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   authResult: AuthResult;
@@ -200,7 +197,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const limits = getLimits(env);
   let bodyJson: Record<string, unknown>;
-  let rawBodyText: string | undefined;
+  let rawBody: RawBody | undefined;
   let bodyChars = 0;
   try {
     const contentType = (request.headers.get('content-type') || '').toLowerCase();
@@ -217,9 +214,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     const text = await readBodyTextWithLimit(request, limits.maxBodyBytes);
     bodyChars = text.length;
     bodyJson = JSON.parse(text || '{}');
-    // Retaining the raw body is only worthwhile for normal-sized requests: a
-    // large body is already close to the Worker memory ceiling.
-    if (bodyChars > 0 && bodyChars <= MAX_RAW_BODY_REUSE_CHARS) rawBodyText = text;
+    if (bodyChars > 0) rawBody = { text };
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
       return { ok: false, response: gatewayError(request, env, route, 413, error.message, requestId) };
@@ -378,7 +373,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     clientWantsStream,
     fakeStream,
     bodyJson,
-    rawBodyText,
+    rawBody,
     limits,
     exposeUpstreamInfo,
     authResult,

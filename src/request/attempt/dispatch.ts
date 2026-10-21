@@ -38,6 +38,9 @@ import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcom
 import { handleSuccess } from './success.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
+// Hedging is disabled above this size, so the holder can drop the original
+// text after the first upload instead of retaining it while streaming.
+const LARGE_RAW_BODY_CHARS = 1024 * 1024;
 
 // AttemptContext and AttemptOutcome are defined in src/types/request.ts
 // (the cross-module source of truth). attempt.ts receives its context from
@@ -102,7 +105,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     requestedModel,
     fakeStream,
     bodyJson,
-    rawBodyText,
+    rawBody,
     limits,
     exposeUpstreamInfo,
     state,
@@ -220,13 +223,22 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     };
   }
   const canReuseRawBody =
-    rawBodyText !== undefined &&
+    rawBody !== undefined &&
+    rawBody.text.length > 0 &&
     !isBodyMutated &&
     !conversionContext &&
     !isSubscriptionNode(node) &&
     typeof bodyJson.model === 'string' &&
     bodyJson.model === upstreamModel;
-  const outboundBody = canReuseRawBody && rawBodyText !== undefined ? rawBodyText : JSON.stringify(outboundObject);
+  let outboundBody: string;
+  if (canReuseRawBody && rawBody) {
+    outboundBody = rawBody.text;
+  } else {
+    // Drop the original before allocating its replacement string so a large
+    // mutated/converted body does not hold two full-size copies at peak.
+    if (rawBody && rawBody.text.length > LARGE_RAW_BODY_CHARS) rawBody.text = '';
+    outboundBody = JSON.stringify(outboundObject);
+  }
 
   let targetUrl: URL | string;
   try {
@@ -315,6 +327,10 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.debug(`upstream fetch failed on ${node.id}: ${errorMessage}`);
     return { rotate: true, kind: classification.kind };
+  } finally {
+    // The body has been uploaded (or the upload failed) by now. Large bodies
+    // are never hedged, so the holder no longer needs to keep them alive.
+    if (rawBody && rawBody.text.length > LARGE_RAW_BODY_CHARS) rawBody.text = '';
   }
   clearTimeout(timeoutId);
   const latencyMs = Date.now() - startMs;
