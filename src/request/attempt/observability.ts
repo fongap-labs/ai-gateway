@@ -32,6 +32,7 @@ import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptSettlement } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
+import { releaseLargeRequestBody } from './body-release.ts';
 
 // One settlement holder per physical upstream dispatch. The holder travels by
 // reference with the attempt context, so a context copy (a model-family
@@ -157,6 +158,11 @@ export function makeNodeStreamTrack(
   latencyMs: number,
   { observeStreamUsage = true }: { observeStreamUsage?: boolean } = {},
 ) {
+  // Once a stream is committed, no callback below needs the client body or
+  // the matrix conversion context. Dropping them here avoids retaining large
+  // prompt trees for the stream's lifetime; small bodies stay for hedge copies
+  // and other short-lived uses.
+  releaseLargeRequestBody(c);
   const tier1 = node.tier === 'tier-1';
   return {
     onAttemptUsage: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => {
