@@ -38,7 +38,10 @@ export const RUNTIME_TUNABLES = [
   { name: 'AIG_STREAM_IDLE_TIMEOUT_MS', type: 'int', min: 10_000, max: 600_000, def: 120_000 },
   { name: 'AIG_RATE_LIMIT_COOLDOWN_MS', type: 'int', min: 1_000, max: 600_000, def: 30_000 },
   { name: 'AIG_AUTH_FAILURE_COOLDOWN_MS', type: 'int', min: 60_000, max: 7 * 86_400_000, def: 3_600_000 },
-  { name: 'AIG_REQUEST_BODY_MAX_BYTES', type: 'int', min: 1024, max: 100 * 1024 * 1024, def: 20 * 1024 * 1024 },
+  // The body is held as text, then parsed into objects and possibly copied
+  // again for conversion. A Worker has ~128 MB of memory, so 32 MB is the
+  // practical ceiling; 20 MB remains the default.
+  { name: 'AIG_REQUEST_BODY_MAX_BYTES', type: 'int', min: 1024, max: 32 * 1024 * 1024, def: 20 * 1024 * 1024 },
   { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 60_000 },
   { name: 'AIG_HEDGE_DELAY_MS', type: 'int', min: 0, max: 600_000, def: 3_000 },
   { name: 'AIG_REQUEST_HEDGE_MAX', type: 'int', min: 0, max: 3, def: 1 },

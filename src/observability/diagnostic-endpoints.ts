@@ -180,6 +180,9 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         nodes_unknown_or_configured: unknown,
         nodes_cooling_down: cooling,
         nodes_disabled: disabled,
+        nodes_excluded: Math.max(0, config.nodesTotal - config.nodesUsable),
+        degraded: config.status === 'degraded',
+        single_point_of_failure: config.nodesUsable === 1,
         tiers: {
           'tier-1': config.nodes.filter((n) => n.tier === 'tier-1').length,
           'tier-2': config.nodes.filter((n) => n.tier === 'tier-2').length,

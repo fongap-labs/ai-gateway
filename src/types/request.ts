@@ -112,6 +112,8 @@ export type LoopContext = {
   fakeStream: boolean;
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
+  /** Original JSON text retained for small native requests; avoids a second stringify. */
+  rawBodyText?: string;
   /** Client request body size in characters; fallback descriptors carry it too. */
   bodyChars?: number;
   limits: Limits;
@@ -171,6 +173,8 @@ export type AttemptContext = {
   fakeStream: boolean;
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
+  /** Original JSON text retained for small native requests; avoids a second stringify. */
+  rawBodyText?: string;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   state: LoopState;

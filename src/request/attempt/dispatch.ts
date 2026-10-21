@@ -102,6 +102,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     requestedModel,
     fakeStream,
     bodyJson,
+    rawBodyText,
     limits,
     exposeUpstreamInfo,
     state,
@@ -138,9 +139,14 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // upstream mapping while the response can still be rewritten to Max.
   const effectiveModel = reqDescriptor.model;
   const upstreamModel = node.models[effectiveModel] || effectiveModel;
+  let bodyMutated = false;
   let outboundObject: Record<string, unknown>;
   if (route === 'openai_chat' && !conversionContext) {
-    outboundObject = { ...sourceBody, model: upstreamModel, ...(fakeStream ? { stream: true } : {}) };
+    outboundObject = { ...sourceBody, model: upstreamModel };
+    if (fakeStream) {
+      outboundObject.stream = true;
+      bodyMutated = true;
+    }
   } else if (conversionContext && conversionContext.fallbackSurface === 'chat_completions') {
     outboundObject = { ...sourceBody, model: upstreamModel, ...(fakeStream ? { stream: true } : {}) };
   } else {
@@ -160,6 +166,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // usage in the body and are never touched here.
   if (surface === 'chat_completions' && outboundObject.stream === true && streamUsageEnabled(node, env)) {
     outboundObject = withUsageStreamOptions(outboundObject);
+    bodyMutated = true;
   }
 
   // Tier 2 subscription nodes resolve their credential from the OAuth token
@@ -199,7 +206,10 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       logger.info(`subscription adapter refused dispatch node=${node.id} provider=${node.provider}`);
       return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
     }
-    if (prepared.body) outboundObject = prepared.body;
+    if (prepared.body) {
+      outboundObject = prepared.body;
+      bodyMutated = true;
+    }
     subscriptionWire = adapter.wire;
     subscriptionUpstreamUrl = prepared.upstreamUrl;
     // Adapter headers win over provider-config headers; both are
@@ -209,7 +219,14 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       ...prepared.headers,
     };
   }
-  const outboundBody = JSON.stringify(outboundObject);
+  const canReuseRawBody =
+    rawBodyText !== undefined &&
+    !bodyMutated &&
+    !conversionContext &&
+    !isSubscriptionNode(node) &&
+    typeof bodyJson.model === 'string' &&
+    bodyJson.model === upstreamModel;
+  const outboundBody = canReuseRawBody && rawBodyText !== undefined ? rawBodyText : JSON.stringify(outboundObject);
 
   let targetUrl: URL | string;
   try {

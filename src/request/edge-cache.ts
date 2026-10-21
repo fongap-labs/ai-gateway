@@ -27,7 +27,10 @@ const ELIGIBLE_ROUTES = new Set(['openai_chat', 'openai_responses', 'anthropic_m
 // A response that asks the client to run a tool is never replayed, and a body this large is not
 // worth a cache slot.
 const NON_CACHEABLE_MARKER = /"(?:tool_calls|function_call|tool_use)"/;
-const MAX_CACHED_CHARS = 2 * 1024 * 1024;
+const MAX_CACHED_BYTES = 2 * 1024 * 1024;
+// Canonicalising and hashing a large request body costs another full copy.
+// Large prompts are not useful cache candidates, so skip them before sortKeys.
+const MAX_CACHEABLE_REQUEST_CHARS = 256 * 1024;
 // A streamed response is only stored when the stream ended normally.
 const STREAM_END_MARKER = /\[DONE\]|"message_stop"|response\.completed/;
 
@@ -160,14 +163,50 @@ export async function resolveEdgeCachePlan(
   env: GatewayEnv,
   keyGroup: string,
   isStreamRequested: boolean,
+  bodyChars?: number,
 ): Promise<EdgeCachePlan | null> {
   if (!edgeCacheEligible(route, bodyJson, request, env)) return null;
+  if (typeof bodyChars === 'number' && bodyChars > MAX_CACHEABLE_REQUEST_CHARS) return null;
   const ttlSec = readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC');
   const ttl = ttlSec ? Number(ttlSec) : 14400;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
   const scope = await callerCacheScope(request, env);
   const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: isStreamRequested, scope });
   return { keyRequest, ttlSec: ttl, stream: isStreamRequested };
+}
+
+/**
+ * Reads at most maxBytes without materialising an unbounded response. Returns
+ * null when the body is too large or the stream fails.
+ */
+async function readCachedResponseText(response: Response, maxBytes: number): Promise<string | null> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (total + value.byteLength > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    return null;
+  }
+  const combined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(combined);
 }
 
 /**
@@ -195,8 +234,8 @@ export function storeEdgeCacheResponse(
   if (isStream !== isStreamExpected || (!isStream && !/json/i.test(ct))) return;
   const buffering = response.headers.get('x-accel-buffering');
   const task = (async () => {
-    const text = await response.text();
-    if (text.length > MAX_CACHED_CHARS || NON_CACHEABLE_MARKER.test(text)) return;
+    const text = await readCachedResponseText(response, MAX_CACHED_BYTES);
+    if (text === null || NON_CACHEABLE_MARKER.test(text)) return;
     if (isStream && !STREAM_END_MARKER.test(text)) return;
     // Build the stored response with TTL and baked HIT marker
     const headers = new Headers({ 'content-type': ct });

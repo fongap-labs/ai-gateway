@@ -173,6 +173,7 @@ export function trackStreamResponse(
   };
 
   const modelPointer = rewriteModelAt || 'model';
+  const modelPointerParts = modelPointer.split('.');
   const processLine = (line: string): string => {
     if (!line.startsWith('data:') || !line.includes('"model"')) return line;
     const raw = line.slice(5).trimStart();
@@ -180,15 +181,14 @@ export function trackStreamResponse(
     try {
       const json = JSON.parse(raw);
       if (json && typeof json === 'object') {
-        const parts = modelPointer.split('.');
         let holder = json;
-        for (let i = 0; i < parts.length - 1; i++) {
-          const part = parts[i];
+        for (let i = 0; i < modelPointerParts.length - 1; i++) {
+          const part = modelPointerParts[i];
           if (!part) return line;
           holder = holder?.[part];
           if (!holder || typeof holder !== 'object') return line;
         }
-        const leaf = parts[parts.length - 1];
+        const leaf = modelPointerParts[modelPointerParts.length - 1];
         if (!leaf || holder[leaf] === undefined) return line;
         holder[leaf] = rewriteModel;
         return `data: ${JSON.stringify(json)}`;

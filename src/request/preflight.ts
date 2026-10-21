@@ -36,6 +36,10 @@ import { jsonResponse } from './response-helpers.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
 import { acceptsHtml, detectRoute, normalizePath } from './router.ts';
 
+// Above this size, keeping the original text alive costs more memory than the
+// saved JSON.stringify, so only normal-sized requests reuse their raw body.
+const MAX_RAW_BODY_REUSE_CHARS = 512 * 1024;
+
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
   openai_responses: { protocol: 'openai', surface: 'responses' },
@@ -62,6 +66,12 @@ export type PreflightOk = {
   clientWantsStream: boolean;
   fakeStream: boolean;
   bodyJson: Record<string, unknown>;
+  /**
+   * Original JSON text for request bodies small enough to reuse safely.
+   * dispatch.ts sends it unchanged when no model/stream mutation is needed,
+   * avoiding a second full JSON.stringify.
+   */
+  rawBodyText?: string;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   authResult: AuthResult;
@@ -190,6 +200,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const limits = getLimits(env);
   let bodyJson: Record<string, unknown>;
+  let rawBodyText: string | undefined;
   let bodyChars = 0;
   try {
     const contentType = (request.headers.get('content-type') || '').toLowerCase();
@@ -199,9 +210,16 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
         response: gatewayError(request, env, route, 415, 'This endpoint requires Content-Type: application/json.', requestId),
       };
     }
+    const declaredLength = Number(request.headers.get('content-length'));
+    if (Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes) {
+      return { ok: false, response: gatewayError(request, env, route, 413, 'Request body exceeds limit.', requestId) };
+    }
     const text = await readBodyTextWithLimit(request, limits.maxBodyBytes);
     bodyChars = text.length;
     bodyJson = JSON.parse(text || '{}');
+    // Retaining the raw body is only worthwhile for normal-sized requests: a
+    // large body is already close to the Worker memory ceiling.
+    if (bodyChars > 0 && bodyChars <= MAX_RAW_BODY_REUSE_CHARS) rawBodyText = text;
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
       return { ok: false, response: gatewayError(request, env, route, 413, error.message, requestId) };
@@ -360,6 +378,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     clientWantsStream,
     fakeStream,
     bodyJson,
+    rawBodyText,
     limits,
     exposeUpstreamInfo,
     authResult,

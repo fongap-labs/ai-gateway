@@ -74,14 +74,35 @@ export function validateAnthropicCountTokensRequest(body: unknown): string | nul
 //   tools JSON       ~ 3 chars per token + fixed per-tool overhead
 //   image blocks     fixed conservative allowance (~1600 tokens)
 // The result is an APPROXIMATION, not a tokenizer.
-const CJK_PATTERN = /[\u1100-\u11FF\u2E80-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7AF\uF900-\uFAFF\uFF66-\uFF9F]/;
-
 function estimateTextTokens(text: unknown): number {
+  const value = String(text || '');
   let cjk = 0;
   let other = 0;
-  for (const ch of String(text || '')) {
-    if (CJK_PATTERN.test(ch)) cjk++;
-    else other++;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    // Keep astral characters counted once, as the previous for-of loop did.
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      const next = value.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        other++;
+        i++;
+        continue;
+      }
+    }
+    if (
+      (code >= 0x1100 && code <= 0x11ff) ||
+      (code >= 0x2e80 && code <= 0x31ff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0xa960 && code <= 0xa97f) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff66 && code <= 0xff9f)
+    ) {
+      cjk++;
+    } else {
+      other++;
+    }
   }
   return cjk + other / 4;
 }

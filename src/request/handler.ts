@@ -45,6 +45,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     clientWantsStream,
     fakeStream,
     bodyJson,
+    rawBodyText,
     limits,
     exposeUpstreamInfo,
     requestDescriptor: reqDescriptor,
@@ -58,7 +59,16 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 
   // Edge cache: compute plan and check for HIT before any upstream work.
   const keyGroup = ('group' in pre.authResult && pre.authResult.group) || '';
-  const edgeCachePlan = await resolveEdgeCachePlan(route, requestedModel, bodyJson, request, env, keyGroup, clientWantsStream);
+  const edgeCachePlan = await resolveEdgeCachePlan(
+    route,
+    requestedModel,
+    bodyJson,
+    request,
+    env,
+    keyGroup,
+    clientWantsStream,
+    reqDescriptor.bodyChars,
+  );
   if (edgeCachePlan) {
     const hit = await matchEdgeCache(edgeCachePlan.keyRequest, request, env);
     if (hit) return hit;
@@ -161,6 +171,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     clientWantsStream,
     fakeStream,
     bodyJson,
+    rawBodyText,
     bodyChars: reqDescriptor.bodyChars,
     limits,
     exposeUpstreamInfo,
@@ -324,6 +335,7 @@ async function runTierLoop(
     clientWantsStream,
     fakeStream,
     bodyJson,
+    rawBodyText,
     limits,
     exposeUpstreamInfo,
     state,
@@ -397,6 +409,7 @@ async function runTierLoop(
           clientWantsStream,
           fakeStream,
           bodyJson,
+          rawBodyText,
           limits,
           exposeUpstreamInfo,
           state,
