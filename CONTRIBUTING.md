@@ -29,13 +29,13 @@ npm run check:deploy
 - 摘要使用英文工程文本；非 ASCII、`Merge`/`Revert` 以外的裸消息会被拒绝。
 - 权威定义见 `fongap-labs/action-worker` 的 `docs/04_CHANGELOG_CONVENTIONS.md`；中央 PR 门禁执行同一套规则，本地的 `.githooks/commit-msg` 只是提前反馈。
 
-本地安装消息校验：
+整段历史检查（可选，npx 只在运行时下载）：
 
 ```bash
-git config core.hooksPath .githooks
-# 或使用 commitlint 做整段历史检查（无额外依赖安装，只有 npx 下载）：
 npx --yes --package=@commitlint/cli@19 commitlint --from origin/main --to HEAD
 ```
+
+本仓库的布局合同禁止本地 git hooks 目录（`.githooks/`），提交格式的执行方是中央 PR 门禁。
 
 ## Pull Request
 
