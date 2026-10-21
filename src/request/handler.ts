@@ -14,6 +14,7 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import { getLogger } from '../observability/logger.ts';
+import { admitRequestBody } from '../ratelimit/body-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
@@ -23,15 +24,41 @@ import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
 import { dispatchWithHedge } from './attempt.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './edge-cache.ts';
-import { buildBudgetExhaustedResponse, buildExhaustedResponse } from './errors.ts';
+import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './errors.ts';
 import { runFallbackChain } from './fallback.ts';
 import { buildModelFallbackPlan, failedDomainNodeIds, rememberFailedDomains } from './model-fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
-import { TIER_ORDER } from './router.ts';
+import { detectRoute, normalizePath, TIER_ORDER } from './router.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+  // Concurrent large bodies can exhaust the isolate's memory; past the budget the
+  // client is asked to retry instead (see ratelimit/body-budget.ts).
+  const releaseBody = admitRequestBody(Number(request.headers.get('content-length')));
+  if (!releaseBody) {
+    const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
+    return gatewayError(
+      request,
+      env,
+      route,
+      503,
+      'Gateway is busy with other large requests; retry shortly.',
+      crypto.randomUUID(),
+      undefined,
+      { 'retry-after': '1' },
+      'gateway_body_budget_exhausted',
+      true,
+    );
+  }
+  try {
+    return await handleAdmittedRequest(request, env, ctx);
+  } finally {
+    releaseBody();
+  }
+}
+
+async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx);
   if (pre.ok === false) return pre.response;
