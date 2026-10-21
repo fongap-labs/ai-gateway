@@ -158,9 +158,10 @@ export function makeNodeStreamTrack(
   latencyMs: number,
   { observeStreamUsage = true }: { observeStreamUsage?: boolean } = {},
 ) {
-  // Once a stream is committed, no callback below needs the client body.
-  // Dropping it here avoids retaining a large parsed prompt for the stream's
-  // lifetime; small bodies stay for hedge copies and other short-lived uses.
+  // Once a stream is committed, no callback below needs the client body or
+  // the matrix conversion context. Dropping them here avoids retaining large
+  // prompt trees for the stream's lifetime; small bodies stay for hedge copies
+  // and other short-lived uses.
   releaseLargeRequestBody(c);
   const tier1 = node.tier === 'tier-1';
   return {
