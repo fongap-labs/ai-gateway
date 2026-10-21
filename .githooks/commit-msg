@@ -1,0 +1,47 @@
+#!/bin/sh
+# Conventional Commits subject guard (.githooks/commit-msg).
+# The authority for the eleven types and the subject format is
+# fongap-labs/action-worker docs/04_CHANGELOG_CONVENTIONS.md. This script only
+# gives the author fast local feedback; the central PR gate stays the authority.
+# Usage: commit-msg <message-file> | commit-msg <subject> [...]
+# Install with: git config core.hooksPath .githooks
+
+set -u
+
+TYPES="build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test"
+# (type|)(scope|)(!|): subject — the scope is one word without spaces.
+SUBJECT_RE="^($TYPES)(\([^ ()]+\))?(!)?: .+"
+
+subject=""
+if [ "$#" -ge 1 ] && [ -f "$1" ]; then
+  # Hook invocation: the first non-comment, non-empty line of the message file.
+  subject=$(sed -n '/^[^#]/p' "$1" | head -n 1)
+else
+  subject="$*"
+fi
+
+case "$subject" in
+  Merge* | Revert*)
+    exit 0
+    ;;
+esac
+
+if [ -z "$subject" ]; then
+  echo "commit-msg: empty subject; use 'type(scope): summary' (fongap-labs docs/04_CHANGELOG_CONVENTIONS.md)." >&2
+  exit 1
+fi
+
+# Printable ASCII only, so gates and tooling never recode the subject.
+if printf "%s" "$subject" | LC_ALL=C grep -q "[^ -~]"; then
+  echo "commit-msg: subject must stay ASCII English engineering text." >&2
+  exit 1
+fi
+
+if ! printf "%s" "$subject" | grep -Eq "$SUBJECT_RE"; then
+  echo "commit-msg: '$subject' is not a Conventional Commits subject." >&2
+  echo "commit-msg: use one of: $TYPES (with an optional '(scope)' and '!'), then ': ' and a summary." >&2
+  echo "commit-msg: example: feat(storage): stream the cache chunk without a second buffer" >&2
+  exit 1
+fi
+
+exit 0
