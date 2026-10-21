@@ -2,4 +2,9 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
 *.bat text eol=crlf
-
+# The changelog only grows, and every change adds its entry at the top of the
+# unreleased section. Two changes that are open at the same time therefore touch the
+# same lines, and the merge stops with a conflict that has to be resolved by hand.
+# Unioning keeps the entries of both sides, which is what an append-only changelog
+# wants anyway.
+CHANGELOG.md merge=union
