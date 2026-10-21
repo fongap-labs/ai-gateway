@@ -141,7 +141,7 @@ export function pickTier1Candidate(
   }
   return {
     node: chosen,
-    releaseToken: makeTier1ReleaseToken(chosen.id),
+    releaseToken: makeTier1ReleaseToken(chosen.id, req.model),
     escapedFromAffinity: hasEscapedFromAffinity,
     updateAffinity,
     affinityHit: Boolean(affinityAccountId && chosen.id === affinityAccountId),
