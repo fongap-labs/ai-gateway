@@ -22,6 +22,21 @@ npm run check:deploy
 
 请使用 Node.js **>=22.18.0**。
 
+## 提交信息（Conventional Commits）
+
+- 提交（即 Squash merge 后的 PR 标题）使用 `type(scope): summary` 格式，类型限定 11 种：`build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test`。
+- 破坏性变更用 `!`（如 `feat(oauth)!: rotate the state cookie signing key`）或正文中的 `BREAKING CHANGE` 脚注声明；安全、迁移等以属性标注（`feat [security]:`）。
+- 摘要使用英文工程文本；非 ASCII、`Merge`/`Revert` 以外的裸消息会被拒绝。
+- 权威定义见 `fongap-labs/action-worker` 的 `docs/04_CHANGELOG_CONVENTIONS.md`；中央 PR 门禁执行同一套规则，本地的 `.githooks/commit-msg` 只是提前反馈。
+
+整段历史检查（可选，npx 只在运行时下载）：
+
+```bash
+npx --yes --package=@commitlint/cli@19 commitlint --from origin/main --to HEAD
+```
+
+本仓库的布局合同禁止本地 git hooks 目录（`.githooks/`），提交格式的执行方是中央 PR 门禁。
+
 ## Pull Request
 
 1. 使用 `feat/`、`fix/`、`refactor/`、`docs/`、`test/`、`ci/` 或 `chore/` 前缀创建聚焦的分支。
