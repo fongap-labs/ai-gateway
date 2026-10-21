@@ -45,6 +45,12 @@ export type FailureClassification = {
   /** The upstream said this request is larger than the model accepts (413). */
   requestTooLarge?: boolean;
   /**
+   * The upstream accepted the credential but refused this request (403): a policy,
+   * moderation, region or model-permission refusal. A 401 rejects the credential
+   * itself and does not set this.
+   */
+  forbidden?: boolean;
+  /**
    * What kind of allowance a 429 ran into, judged from the response wording and,
    * when the wording says nothing, from the magnitude of an explicit wait hint:
    * 'window' = a short per-minute style limit, 'quota' = a long-lived allowance
@@ -209,8 +215,11 @@ export function classifyUpstreamStatus(
     if (parseRetryAfterMs(headers, now) > 0) return rateLimitClassification(headers, env, now, body);
     return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, requestTooLarge: true };
   }
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false };
+  }
+  if (status === 403) {
+    return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false, forbidden: true };
   }
   // A 400 from one OpenAI-compatible upstream is not proof that the client
   // request is invalid everywhere. Treat it as request-local incompatibility:

@@ -49,6 +49,11 @@ export const TIER1_SIBLING_WAKE_MIN_REMAINING_MS = 60_000;
 // How long a "this request was too large" observation keeps large requests away.
 // After it lapses one request probes again, so a raised provider limit is noticed.
 export const TIER1_OVERSIZE_MEMORY_MS = 10 * 60_000;
+// A 403 refuses one request (policy, moderation, region, model permission), not the
+// key, so it is blamed on the model that got it. The first refusal costs nothing;
+// each refusal after the previous cooldown lapsed climbs 60s, 10m, then the auth
+// cooldown. A success clears the ladder.
+export const TIER1_FORBIDDEN_LADDER_MS = Object.freeze([0, 60_000, 600_000] as const);
 
 const FAILURE_STATE = Object.freeze({
   NORMAL: 'normal',
@@ -68,6 +73,8 @@ export type Tier1ModelRuntime = {
   consecutiveFailures: number;
   consecutiveRateLimits: number;
   consecutiveOutliers: number;
+  // 403 refusals in a row on this model; drives TIER1_FORBIDDEN_LADDER_MS.
+  consecutiveForbidden: number;
   halfOpenSuccesses: number;
   ttftEwma: number | null;
   sampleCount: number;
@@ -145,6 +152,8 @@ export type Tier1FailureInput =
       rateLimitScope?: string;
       /** 'quota' for a long-lived allowance; any other value is a short window. */
       rateLimitClass?: string;
+      /** A 403: the request was refused, not the credential. */
+      forbidden?: boolean;
       streamReason?: unknown;
     }
   | null
@@ -156,7 +165,7 @@ export type Tier1Outcome = {
   reason: string;
   counted?: boolean;
   cooldownMs?: number;
-  backoff?: 'rate_limit' | 'timeout' | 'server' | 'default';
+  backoff?: 'rate_limit' | 'timeout' | 'server' | 'forbidden' | 'default';
   scopeAmbiguous?: boolean;
   /** True when a rate-limit cooldown reflects a long-lived allowance. */
   isQuota?: boolean;
@@ -174,6 +183,7 @@ function newModelRuntime(): Tier1ModelRuntime {
     consecutiveFailures: 0,
     consecutiveRateLimits: 0,
     consecutiveOutliers: 0,
+    consecutiveForbidden: 0,
     halfOpenSuccesses: 0,
     ttftEwma: null,
     sampleCount: 0,
@@ -459,6 +469,16 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
 export function classifyTier1Failure(classification: Tier1FailureInput, opts: { retryAfterMs?: number } = {}): Tier1Outcome {
   const { retryAfterMs } = opts;
   const kind = classification?.kind;
+  if (kind === 'auth' && classification?.forbidden) {
+    return {
+      scope: 'model',
+      action: 'cooldown',
+      counted: false,
+      backoff: 'forbidden',
+      reason: kind,
+      cooldownMs: Math.max(0, classification?.cooldownMs ?? TIER1_AUTH_DEFAULT_COOLDOWN_MS),
+    };
+  }
   if (kind === 'auth') {
     return {
       scope: 'account',
@@ -668,6 +688,20 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
     return;
   }
 
+  if (outcome.backoff === 'forbidden') {
+    const model = getTier1Model(accountId, modelId);
+    // Requests already in flight during a refusal cooldown do not climb the ladder.
+    if (model.cooldownUntil <= now) model.consecutiveForbidden++;
+    const ceiling = Math.max(0, outcome.cooldownMs ?? 0);
+    const step = TIER1_FORBIDDEN_LADDER_MS[model.consecutiveForbidden - 1];
+    const cooldownMs = step === undefined ? ceiling : Math.min(step, ceiling);
+    if (cooldownMs > 0) {
+      model.cooldownUntil = Math.max(model.cooldownUntil, now + cooldownMs);
+      model.cooldownReason = outcome.reason;
+    }
+    return;
+  }
+
   const rateLimited = outcome.backoff === 'rate_limit';
   if (rateLimited && (outcome.cooldownMs ?? 0) <= 0) return;
   const model = getTier1Model(accountId, modelId);
@@ -715,6 +749,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   }
 
   model.consecutiveFailures = 0;
+  model.consecutiveForbidden = 0;
   account.recentRateLimitedModels.delete(modelId);
   const modelRecoveryProbe =
     model.cooldownReason === 'rate_limit' && model.cooldownUntil <= now && !model.rateLimitRecoveryPending && model.rateLimitRecoveryUntil > 0;

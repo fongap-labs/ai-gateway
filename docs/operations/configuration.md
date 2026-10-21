@@ -271,6 +271,8 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 - `AIG_ACCESS_KEY_RPM`
 - `AIG_EDGE_CACHE_TTL_SEC`
 
+`AIG_AUTH_FAILURE_COOLDOWN_MS` 默认 1 小时，是凭据失效时的冷却时长：401 直接使用它；Tier 1 的 403 先走 `0 -> 60s -> 10m` 的模型级阶梯，连续多次才达到它（参见[可靠性模型](../architecture/reliability-model.md#冷却与半开恢复)）。
+
 `AIG_REQUEST_BODY_MAX_BYTES` 默认 20 MiB，最大 32 MiB。请求体会先作为文本读取再解析，超大请求更容易触及 Worker 的内存上限；除非上游确实需要，否则不要提高该值。超过 256 KiB 的请求不参与边缘缓存，超过 1 MiB 的请求不启动 hedge。未修改的 native 请求直接复用原始 JSON 文本，避免二次 `JSON.stringify`；超过 1 MiB 的原始文本在构建或发出首个上游请求体后释放，不跨流式响应或后续重试保留；大型流式响应提交后，已解析的请求体及协议转换后的请求体也会被释放，避免在整个流期间保留 prompt 树。
 
 `AIG_EDGE_CACHE_AUTO`（布尔值，默认为 `false`）控制自动边缘缓存。默认情况下，只有发送了 `x-gateway-cache: true` 的请求才会被缓存；将其设为 `true` 后，`temperature: 0` 的请求也会被缓存。缓存条目的作用范围限定在调用方的 key 分组，以及其所提交凭据的带键指纹（由 `AIG_TOKEN_ENCRYPTION_KEY` 派生），流式请求与非流式请求绝不共享条目。包含工具调用的响应、被截断的流以及超过 2 MB 的响应体均不会被存储。轮换 `AIG_TOKEN_ENCRYPTION_KEY` 也会使现有缓存条目失效。
