@@ -17,7 +17,7 @@
 
 import { readEnv } from '../config/env.ts';
 import { getLogger } from '../observability/logger.ts';
-import { corsHeaders, htmlResponse } from '../protocol/http.ts';
+import { corsHeaders, htmlResponse, readBodyTextWithLimit } from '../protocol/http.ts';
 import { getProviderAdapter } from '../providers/registry.ts';
 import type { OAuthProviderConfig } from '../providers/types.ts';
 import { authorize, authorizeCredentials } from '../request/auth.ts';
@@ -245,7 +245,7 @@ async function handleOAuthStart(request: Request, env: GatewayEnv, ctx: OAuthRou
   if (!authResult.authorized && request.method === 'POST') {
     const contentType = request.headers.get('content-type') || '';
     if (!contentType.includes('application/x-www-form-urlencoded')) return oauthError(400, 'Bad request', 'Expected form-urlencoded body.');
-    const form = new URLSearchParams(await request.text());
+    const form = new URLSearchParams(await readBodyTextWithLimit(request, 64 * 1024));
     provider = (form.get('provider') || provider).trim().toLowerCase();
     nodeId = (form.get('node') || nodeId).trim();
     authResult = await authorizeCredentials([form.get('key') || ''], env);
@@ -377,7 +377,7 @@ async function handleOAuthPastePost(env: GatewayEnv, request: Request): Promise<
   let state = '',
     code = '';
   if (contentType.includes('application/x-www-form-urlencoded')) {
-    const form = new URLSearchParams(await request.text());
+    const form = new URLSearchParams(await readBodyTextWithLimit(request, 64 * 1024));
     state = form.get('state') || '';
     code = form.get('code') || '';
   } else {

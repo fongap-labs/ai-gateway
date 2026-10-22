@@ -240,7 +240,7 @@ export function storeEdgeCacheResponse(
     // Build the stored response with TTL and baked HIT marker
     const headers = new Headers({ 'content-type': ct });
     if (buffering) headers.set('x-accel-buffering', buffering);
-    headers.set('cache-control', `public, max-age=${ttlSec}`);
+    headers.set('cache-control', `private, no-store`);
     headers.set('x-gateway-cache-status', 'HIT');
     await cache.put(keyRequest, new Response(text, { status: 200, headers }));
   })().catch(() => {});

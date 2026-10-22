@@ -22,7 +22,7 @@ function diagnosticsKeyName(names, diagnosticsGroupsValue) {
   const allowed = diagnosticsGroups(diagnosticsGroupsValue);
   return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
 }
-const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10))$`);
+const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY)$`);
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
   `^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
