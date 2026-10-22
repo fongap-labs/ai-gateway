@@ -6,7 +6,13 @@
 // key's credential is rejected or its daily quota is gone. Cooldowns that are
 // long-lived evidence (see Tier1SharedCooldown) and still have at least
 // SHARED_COOLDOWN_MIN_MS to run are written to one KV key; an isolate reads it
-// at most once per REFRESH_MS and adopts the entries.
+// on its first Tier 1 request and then at most once per REFRESH_MS, and adopts
+// the entries.
+//
+// KV budget (Workers Free: 100,000 reads and 1,000 writes a day per account,
+// shared with session affinity): reads are bounded by active isolates, not by
+// traffic, and a write happens only when an isolate learns something the key
+// does not hold yet, so a burst of failures on one key costs one write.
 //
 // Best effort by design: KV is eventually consistent, two isolates writing at
 // once can drop an entry, and a read that is slow does not hold the request.
@@ -21,7 +27,7 @@ import { adoptTier1Cooldown, type Tier1SharedCooldown, tier1LongCooldowns } from
 const KV_BINDING = 'TIER1_AFFINITY';
 export const SHARED_COOLDOWNS_KEY = 'tier1-cooldowns:v1';
 export const SHARED_COOLDOWN_MIN_MS = 5 * 60_000;
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 5 * 60_000;
 const READ_TIMEOUT_MS = 50;
 const MIN_KV_TTL_SECONDS = 60;
 
@@ -66,6 +72,14 @@ function parseEntries(value: unknown): Tier1SharedCooldown[] {
 
 const entryKey = (entry: Tier1SharedCooldown): string => `${entry.node}\u0000${entry.model ?? ''}`;
 
+// A cooldown is news when it is not shared yet, or extends the shared deadline by
+// at least SHARED_COOLDOWN_MIN_MS; a smaller extension only lets another isolate
+// probe the key once more when the old deadline passes.
+function isNews(entry: Tier1SharedCooldown): boolean {
+  const current = known.find((candidate) => entryKey(candidate) === entryKey(entry));
+  return !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
+}
+
 // Union by (node, model), keeping the later deadline, without expired entries.
 function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number): Tier1SharedCooldown[] {
   const byKey = new Map<string, Tier1SharedCooldown>();
@@ -106,7 +120,7 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
 export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLike | undefined, accountId: string, now: number = Date.now()): void {
   const kv = kvOf(env);
   if (!kv) return;
-  const fresh = tier1LongCooldowns(accountId, SHARED_COOLDOWN_MIN_MS, now);
+  const fresh = tier1LongCooldowns(accountId, SHARED_COOLDOWN_MIN_MS, now).filter(isNews);
   if (fresh.length === 0) return;
   known = merge(known, fresh, now);
   if (isWriting) {

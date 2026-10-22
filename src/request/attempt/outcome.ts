@@ -222,8 +222,10 @@ export function recordOutcome(
         { retryAfterMs: tier1RetryAfterMs },
       );
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : state.requestedModel;
-      applyTier1Outcome(node.id, tier1ModelKey, t1Class);
-      shareLongTier1Cooldowns(c.env, c.ctx, node.id);
+      // One timestamp for both, so a cooldown exactly at the sharing threshold is shared.
+      const outcomeAt = Date.now();
+      applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
+      shareLongTier1Cooldowns(c.env, c.ctx, node.id, outcomeAt);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
       if (!state.hasRetriedSameNode && !c?.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)) {
         state.sameNodeRetry = { nodeId: node.id, model: state.requestedModel, latencyMs: Math.max(0, latencyMs) };
