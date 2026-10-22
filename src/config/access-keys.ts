@@ -24,8 +24,24 @@ import type { GatewayEnv } from '../types/runtime.ts';
 import { readEnv } from './env.ts';
 import { loadGatewayConfig } from './nodes.ts';
 import { collectKnownModels } from './registry.ts';
+import { DIAGNOSTICS_GROUPS_DEFAULT } from './runtime-vars.ts';
 
 export const KEY_GROUPS: readonly string[] = Object.freeze(['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT']);
+
+/**
+ * Groups whose keys may read /health and /metrics, from AIG_DIAGNOSTICS_GROUPS
+ * (unset: DIAGNOSTICS_GROUPS_DEFAULT). null means every valid key may.
+ */
+export function diagnosticsGroups(value: unknown): ReadonlySet<string> | null {
+  const raw = String(value ?? '').trim() || DIAGNOSTICS_GROUPS_DEFAULT;
+  if (raw === '*') return null;
+  return new Set(
+    raw
+      .split(',')
+      .map((group) => group.trim().toUpperCase())
+      .filter(Boolean),
+  );
+}
 
 function parseModelsField(
   raw: unknown,

@@ -61,6 +61,10 @@ export const RUNTIME_TUNABLES = [
 
 export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
 
+// Diagnostics expose node state and the deployment build, so by default only the
+// two most privileged key groups read them.
+export const DIAGNOSTICS_GROUPS_DEFAULT = 'MAX,ULTRA';
+
 export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_CORS_ORIGIN', def: '' },
   { name: 'AIG_USAGE_INCLUDE_MODE', def: 'auto' },
@@ -90,8 +94,8 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // (fail-closed); already linked subscriptions keep working.
   { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
   // Access-key groups allowed to read /health and /metrics, comma separated ("AGENT" or
-  // "AGENT,ULTRA"). Unset keeps the previous behavior: every valid key may read them.
-  { name: 'AIG_DIAGNOSTICS_GROUPS', def: '' },
+  // "AGENT,ULTRA"); "*" lets every valid key read them.
+  { name: 'AIG_DIAGNOSTICS_GROUPS', def: DIAGNOSTICS_GROUPS_DEFAULT },
 ];
 
 export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
