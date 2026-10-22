@@ -19,6 +19,10 @@ const KV_BINDING = 'TIER1_AFFINITY';
 const KEY_PREFIX = 'affinity:v1:';
 const TTL_SECONDS = 30 * 60;
 const CACHE_TTL_MS = 5_000;
+// A KV read of a cold key can take far longer than the rest of the request
+// setup. Affinity is only a score bias, so a request waits at most this long for
+// it; an answer that arrives later still warms the cache for the next request.
+const READ_TIMEOUT_MS = 50;
 const ESCAPE_CHECK_REQUESTS = 10;
 const ESCAPE_CHECK_MS = 5 * 60_000;
 const ESCAPE_THRESHOLD = 1.2;
@@ -123,6 +127,7 @@ const stats = {
   selections: 0,
   selectionHits: 0,
   escapes: 0,
+  timeouts: 0,
 };
 
 function kvOf(env: GatewayEnv): AffinityKV | null {
@@ -159,7 +164,9 @@ export function resolveTier1SessionId(request: Request): string | null {
   return id.length >= 8 && id.length <= 128 ? id : null;
 }
 
-export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Promise<string | null> {
+// Resolves to the bound account, null when there is none, or undefined when the
+// read did not answer within READ_TIMEOUT_MS (the binding is unknown).
+export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Promise<string | null | undefined> {
   if (!sessionId) return null;
   const kv = kvOf(env);
   if (!kv) return null;
@@ -169,17 +176,30 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Pro
     return cached;
   }
   stats.reads++;
-  let accountId: string | null = null;
+  const lookup = (async () => {
+    let accountId: string | null = null;
+    try {
+      const value = await kv.get(key);
+      if (typeof value === 'string' && value.length > 0 && value.length <= 64) accountId = value;
+    } catch {
+      /* affinity is advisory; a transient KV read failure yields no bias */
+    }
+    if (accountId) stats.hits++;
+    else stats.misses++;
+    cache.set(key, accountId, CACHE_TTL_MS);
+    return accountId;
+  })();
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timerId = setTimeout(() => resolve(undefined), READ_TIMEOUT_MS);
+  });
   try {
-    const value = await kv.get(key);
-    if (typeof value === 'string' && value.length > 0 && value.length <= 64) accountId = value;
-  } catch {
-    /* affinity is advisory; a transient KV read failure yields no bias */
+    const accountId = await Promise.race([lookup, timeout]);
+    if (accountId === undefined) stats.timeouts++;
+    return accountId;
+  } finally {
+    clearTimeout(timerId);
   }
-  if (accountId) stats.hits++;
-  else stats.misses++;
-  cache.set(key, accountId, CACHE_TTL_MS);
-  return accountId;
 }
 
 // Called only for a cold session's first Tier 1 success or a successful
@@ -263,5 +283,6 @@ export function __resetTier1AffinityForTests(): void {
     selections: 0,
     selectionHits: 0,
     escapes: 0,
+    timeouts: 0,
   });
 }

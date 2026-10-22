@@ -14,6 +14,9 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import { getLogger } from '../observability/logger.ts';
+import { admitRequestBody } from '../ratelimit/body-budget.ts';
+import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
+import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { ConversionContext, LoopContext, RouteFeasibilityResult } from '../types/request.ts';
@@ -21,15 +24,41 @@ import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
 import { dispatchWithHedge } from './attempt.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './edge-cache.ts';
-import { buildBudgetExhaustedResponse, buildExhaustedResponse } from './errors.ts';
+import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './errors.ts';
 import { runFallbackChain } from './fallback.ts';
 import { buildModelFallbackPlan, failedDomainNodeIds, rememberFailedDomains } from './model-fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
-import { TIER_ORDER } from './router.ts';
+import { detectRoute, normalizePath, TIER_ORDER } from './router.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+  // Concurrent large bodies can exhaust the isolate's memory; past the budget the
+  // client is asked to retry instead (see ratelimit/body-budget.ts).
+  const releaseBody = admitRequestBody(Number(request.headers.get('content-length')));
+  if (!releaseBody) {
+    const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
+    return gatewayError(
+      request,
+      env,
+      route,
+      503,
+      'Gateway is busy with other large requests; retry shortly.',
+      crypto.randomUUID(),
+      undefined,
+      { 'retry-after': '1' },
+      'gateway_body_budget_exhausted',
+      true,
+    );
+  }
+  try {
+    return await handleAdmittedRequest(request, env, ctx);
+  } finally {
+    releaseBody();
+  }
+}
+
+async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx);
   if (pre.ok === false) return pre.response;
@@ -155,8 +184,20 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     tierAttemptsUsed: {},
   };
 
-  const tier1Session = resolveTier1SessionId(request);
-  const tier1Affinity = tier1Session ? await readTier1Affinity(env, tier1Session) : null;
+  // Affinity only chooses between Tier 1 keys. With fewer than two that can serve
+  // this request there is nothing to choose, so the session costs no KV read or
+  // write. A binding whose read timed out is unknown: it is neither used nor
+  // overwritten by this request.
+  const tier1Choices = tiers[1].filter((node) => supportsRequest(node, reqDescriptor, knownModels)).length;
+  const sessionId = tier1Choices >= 2 ? resolveTier1SessionId(request) : null;
+  // Long cooldowns other isolates found (a rejected key, a spent quota) are
+  // adopted before scheduling; both KV reads are bounded and run together.
+  const [, affinityRead] = await Promise.all([
+    tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env) : undefined,
+    sessionId ? readTier1Affinity(env, sessionId) : null,
+  ]);
+  const tier1Session = affinityRead === undefined ? null : sessionId;
+  const tier1Affinity = affinityRead ?? null;
   const tier1EvaluateAffinity = shouldEvaluateAffinity(tier1Session);
   const tier1Rng = makeTier1Rng(env);
 

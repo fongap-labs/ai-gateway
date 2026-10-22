@@ -153,7 +153,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   let hasConfigErrors = auxDiagnostics.length > 0;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedSecretShards) {
-    const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics);
+    const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics, { isSecret: true });
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON object { nodeId: credential }`);
       hasConfigErrors = true;
@@ -497,12 +497,14 @@ export function collectShards(
   return shards;
 }
 
-function parseJsonVar(raw: string, key: string, diagnostics: string[]): unknown {
+// A JSON.parse error message quotes the text around the failure, so for a secret
+// shard it would copy part of a credential into /health and the deploy log.
+function parseJsonVar(raw: string, key: string, diagnostics: string[], { isSecret = false }: { isSecret?: boolean } = {}): unknown {
   try {
     return JSON.parse(raw);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    diagnostics.push(`${key}: invalid JSON (${msg})`);
+    diagnostics.push(isSecret ? `${key}: invalid JSON` : `${key}: invalid JSON (${msg})`);
     return null;
   }
 }

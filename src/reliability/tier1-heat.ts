@@ -8,7 +8,6 @@
 import type { RuntimeNode } from '../types/node.ts';
 import { tier1AccountInFlight } from './tier1-state.ts';
 
-export const TIER1_INFLIGHT_MAX_FACTOR = 1.25;
 export const TIER1_HEDGE_MAX_CONCURRENCY_PRESSURE = 0.75;
 
 export const TIER1_PROVIDER_MODEL_429_WINDOW_MS = 90_000;
@@ -99,9 +98,14 @@ export function tier1HeatPressure(node: RuntimeNode): number {
   return tier1ConcurrencyPressure(node);
 }
 
+// Score multiplier for live work on the account: a key with n requests in flight
+// costs (n + 1) times an idle one, like a latency x outstanding-requests balancer.
+// The bounded TTFT factor still favours a faster key, but no key takes every
+// request just because it is fast; it shares load with idle peers in proportion
+// to its speed. Ranking only: a busy key stays eligible.
 export function tier1InFlightFactor(node: RuntimeNode): number {
-  const pressure = tier1ConcurrencyPressure(node);
-  return 1 + (TIER1_INFLIGHT_MAX_FACTOR - 1) * pressure;
+  const inFlight = tier1AccountInFlight(node.id);
+  return 1 + (Number.isFinite(inFlight) && inFlight > 0 ? inFlight : 0);
 }
 
 export function tier1AffinityHeatFactor(node: RuntimeNode, baseAffinityFactor: number): number {

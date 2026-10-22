@@ -223,6 +223,8 @@ export type AttemptContext = {
   attemptDeadlineMs?: number;
   attemptStartMs?: number;
   headersMs?: number;
+  /** HTTP status of the upstream response; unset when no response arrived. */
+  upstreamStatus?: number;
   ttftMs?: number;
   upstreamProtocol?: Protocol;
   surface?: Surface;
