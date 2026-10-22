@@ -20,6 +20,7 @@ import {
   synthesizeMatrixStreamFromObject,
 } from '../../conversion/matrix/pipeline.ts';
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
+import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
 import { classifyClientAbort, classifyFirstEventFailure, classifyPostHeadersFailure } from '../../reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
@@ -105,7 +106,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     else recordTtft(node.id, c.ttftMs, state.requestedModel);
     let native: unknown;
     try {
-      native = await upstream.json();
+      native = await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs).then((text) => JSON.parse(text));
     } catch (error) {
       const classification = classifyPostHeadersFailure(error);
       recordOutcome(state, node, classification, c, { latencyMs: Date.now() - (c.attemptStartMs as number), status: upstream.status });

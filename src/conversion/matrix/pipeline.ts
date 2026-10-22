@@ -480,6 +480,7 @@ export function synthesizeMatrixStreamFromObject(reply: IrReply, to: IrProtocol)
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
       'x-accel-buffering': 'no',
+      'x-request-id': reply.id,
     }),
   });
 }
