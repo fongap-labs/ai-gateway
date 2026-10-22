@@ -130,11 +130,11 @@ Dashboard           仅负责展示
 - 订阅的访问 token 与刷新 token 使用 `AIG_TOKEN_ENCRYPTION_KEY` Worker 密钥进行 AES-GCM 加密；缺少该密钥会禁用全部订阅接入与解析（失败即关闭），token 绝不会以明文形式存入 D1。
 - OAuth 接入（`/oauth/start`、`/oauth/callback/<provider>`、`/oauth/paste`）使用 PKCE S256，并配合一次性使用的 D1 流程状态（TTL 10 分钟）；`/oauth/start` 要求网关访问密钥与匹配的 Tier 2 节点，且每次 callback/paste 无论结果如何都会消费其状态行。
 - 三个主流订阅 provider（anthropic、openai、google）的内置 OAuth 默认值嵌入了其开源 CLI 的公开常量；`AIG_OAUTH_PROVIDERS` 条目按 provider 整体替换默认值。带有 `manual_redirect_url` 的 provider（Google）使用手动粘贴授权码的流程，因为其 OAuth 客户端不允许任意的网关回调 URI。
-- 短生命周期的 scheduler/reliability 状态仅在 isolate 内尽力而为，并随 isolate 一同消失。
+- 短生命周期的 scheduler/reliability 状态仅在 isolate 内尽力而为，并随 isolate 一同消失；唯一的例外是 Tier 1 的长时间冷却（见下一条）。
 - 运行时状态读取（可用性、账号/模型状态、额度）通过统一的 `RuntimeStateStore` 契约（`src/types/runtime-state.ts`）解析，该契约投影于 Tier 1 自适应运行时与 Tier 2/3 节点状态之上；两个后端保持各自独立的实现与学习信号。
 - D1 的 Token 总量反映真实的物理上游用量（上游报告的 usage），而公共的「次请求」统计使用成功交付的请求数。
 - D1 token 用量与公共模型状态属于可观测性数据，不是路由的决策依据。
-- `TIER1_AFFINITY` KV 仅存储哈希后的会话亲和信息，不会使路由具有全局粘性。
+- `TIER1_AFFINITY` KV 存储两类数据：哈希后的会话亲和（不会使路由具有全局粘性），以及 Tier 1 的长时间冷却共享键 `tier1-cooldowns:v1`（凭据被拒、长期配额耗尽、升级后的 403，剩余至少 5 分钟）。isolate 在首个 Tier 1 请求时读取、此后每 5 分钟最多一次，只在学到新的长时间冷却时写入，避免再为已知不可用的 key 付出一次失败请求；它是尽力而为的提示，不是全局一致的状态。
 - Provider Discovery 是只读的建议性工具。
 - Public Model Status 是只读的五状态投影；仪表盘的 P50/P95/样本数是模型级聚合，绝不会反馈给 Scheduler 或 Reliability。
 - ai-gateway 只保留一套当前的内部/配置契约；已被取代的旧版本路径会被直接删除，而不是保留在兼容垫片之后。
@@ -157,7 +157,7 @@ Dashboard           仅负责展示
 
 当前模块职责以及路由/可靠性架构在稳定期内冻结。日常工作应聚焦于提升正确性、测试、运维以及实测的生产行为，而不是重组目录或发明并行的控制平面。
 
-- Reliability 与 scheduler 状态按设计仅在 isolate 内尽力而为。
+- Reliability 与 scheduler 状态按设计仅在 isolate 内尽力而为；只有上述长时间冷却经 KV 尽力共享。
 - 除非生产证据表明 isolate 本地塑形正在造成实质性故障，否则不引入 Durable Objects 或全局调度器。
 - Provider Wire Profile 仍然是线协议契约元数据，而不是第二套逐模型的能力引擎。
 - 能力校验保持精简，仅对已声明的逻辑模型元数据中明显的矛盾进行失败即关闭。
@@ -169,9 +169,9 @@ Dashboard           仅负责展示
 
 D1 与 KV 在可能的情况下被刻意置于关键调度决策路径之外。
 
-- `TIER1_AFFINITY` KV：短生命周期的会话绑定，TTL 为 30 分钟。
+- `TIER1_AFFINITY` KV：短生命周期的会话绑定，TTL 为 30 分钟；以及 Tier 1 长时间冷却的共享键，TTL 为其中最晚的到期时间。
 - Token 用量 D1：持久化的物理上游用量、成功交付证据、近期公共状态证据，以及模型级 TTFT 聚合。
-- Tier 1 的 TTFT、in-flight、冷却、自适应 429/热度、半开状态：isolate 本地内存。
+- Tier 1 的 TTFT、in-flight、冷却、自适应 429/热度、半开状态：isolate 本地内存（长时间冷却另有 KV 共享副本）。
 - Tier 2/3 的健康/熔断/并发状态：isolate 本地内存。
 
 网关不会基于这些本地状态宣称跨 PoP 全局准确的并发数或 provider 账号额度。不会仅因为全局协调在理论上更「干净」就引入它；只有实测证据表明家庭或小型团队的部署模型确实需要时，才会引入。

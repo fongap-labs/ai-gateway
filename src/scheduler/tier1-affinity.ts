@@ -6,7 +6,7 @@
 // briefly in isolate memory. Tier 2/3 never read or write this store.
 //
 // Memory safety: both the affinity cache and the escape counters use a
-// bounded TTL map. A client that floods unique x-session-id values can never
+// bounded TTL map. A client that floods unique session ids can never
 // grow isolate memory unboundedly — expired entries are evicted first, then
 // the oldest entries by insertion order (LRU-ish). The raw client Session ID
 // is never stored as a Map key; a stable synchronous hash is used instead so
@@ -19,6 +19,11 @@ const KV_BINDING = 'TIER1_AFFINITY';
 const KEY_PREFIX = 'affinity:v1:';
 const TTL_SECONDS = 30 * 60;
 const CACHE_TTL_MS = 5_000;
+// A KV read of a cold key can take far longer than the rest of the request
+// setup. Affinity is only a score bias, so a request waits at most this long for
+// it; an answer that arrives later still warms the cache for the next request.
+const READ_TIMEOUT_MS = 50;
+const TIMED_OUT = Symbol('timed out');
 const ESCAPE_CHECK_REQUESTS = 10;
 const ESCAPE_CHECK_MS = 5 * 60_000;
 const ESCAPE_THRESHOLD = 1.2;
@@ -123,6 +128,8 @@ const stats = {
   selections: 0,
   selectionHits: 0,
   escapes: 0,
+  timeouts: 0,
+  readFailures: 0,
 };
 
 function kvOf(env: GatewayEnv): AffinityKV | null {
@@ -152,14 +159,23 @@ function sessionHash(sessionId: string): string {
   return `h${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+// Claude Code does not send x-session-id; it names each conversation with
+// x-claude-code-session-id, which stays the same for the whole session.
+const SESSION_HEADERS = ['x-session-id', 'x-claude-code-session-id'] as const;
+
 export function resolveTier1SessionId(request: Request): string | null {
-  const raw = request?.headers?.get?.('x-session-id');
-  if (typeof raw !== 'string') return null;
-  const id = raw.trim();
-  return id.length >= 8 && id.length <= 128 ? id : null;
+  for (const name of SESSION_HEADERS) {
+    const raw = request?.headers?.get?.(name);
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (id.length >= 8 && id.length <= 128) return id;
+  }
+  return null;
 }
 
-export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Promise<string | null> {
+// Resolves to the bound account, null when there is none, or undefined when the
+// read failed or did not answer within READ_TIMEOUT_MS (the binding is unknown).
+export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Promise<string | null | undefined> {
   if (!sessionId) return null;
   const kv = kvOf(env);
   if (!kv) return null;
@@ -169,17 +185,34 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Pro
     return cached;
   }
   stats.reads++;
-  let accountId: string | null = null;
+  const lookup = (async () => {
+    let value: string | null | undefined;
+    try {
+      value = await kv.get(key);
+    } catch {
+      // A failed read (for example the daily KV read limit) leaves the binding
+      // unknown: no bias, and nothing is cached or overwritten for it.
+      stats.readFailures++;
+      return undefined;
+    }
+    const accountId = typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : null;
+    if (accountId) stats.hits++;
+    else stats.misses++;
+    cache.set(key, accountId, CACHE_TTL_MS);
+    return accountId;
+  })();
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timerId = setTimeout(() => resolve(TIMED_OUT), READ_TIMEOUT_MS);
+  });
   try {
-    const value = await kv.get(key);
-    if (typeof value === 'string' && value.length > 0 && value.length <= 64) accountId = value;
-  } catch {
-    /* affinity is advisory; a transient KV read failure yields no bias */
+    const accountId = await Promise.race([lookup, timeout]);
+    if (accountId !== TIMED_OUT) return accountId;
+    stats.timeouts++;
+    return undefined;
+  } finally {
+    clearTimeout(timerId);
   }
-  if (accountId) stats.hits++;
-  else stats.misses++;
-  cache.set(key, accountId, CACHE_TTL_MS);
-  return accountId;
 }
 
 // Called only for a cold session's first Tier 1 success or a successful
@@ -263,5 +296,7 @@ export function __resetTier1AffinityForTests(): void {
     selections: 0,
     selectionHits: 0,
     escapes: 0,
+    timeouts: 0,
+    readFailures: 0,
   });
 }

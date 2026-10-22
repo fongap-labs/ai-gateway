@@ -168,7 +168,11 @@ Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有
 
 部署里完全没有 Anthropic 节点时，每个 Claude Code 请求都走这条回退路径。Claude Code 的每一轮请求都会带上 advisor、tool search 之类的可选服务端工具定义；只要请求里还有普通函数工具，这些定义会被丢弃（诊断为 `provider_native_tool_definition`），请求照常发出。以下情况仍会返回 502 `conversion_not_supported`（服务端日志中的 `fallback_conversion_skipped` 给出原因）：工具面完全由服务端工具构成（例如只有 `web_search` 的搜索子请求）、`tool_choice` 强制指定了服务端工具、请求带有 `mcp_servers` 或 `container`、历史中含有 `web_search` 的 `server_tool_use` 块。
 
+Claude Code 在 auto 权限模式下会在请求顶层附带 `safeguards`，请 Anthropic 服务端检查危险的工具调用。非 Anthropic 上游无法执行这项检查，所以该模型没有 Anthropic 节点时，网关返回 400 `unsupported_request_field` 并在 `error.details.unsupported_fields` 中点名该字段，而不是 502；Claude Code 收到后会去掉该字段并自动重发。若仍看到 502 `conversion_not_supported`，请先确认部署版本（`/health` 的 `build`）包含此行为。
+
 Claude Code 还会用小模型（默认是 Haiku 系列）做标题、摘要等后台请求。网关只会路由已知模型目录里的模型，所以请设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL`（或 `ANTHROPIC_SMALL_FAST_MODEL`）指向网关已配置的模型，否则这些请求会返回 404 `Model not found for this key.`。
+
+Claude Code 启动时提示 `Model "Code-Max" isn't recognized · context assumed to be 200k tokens`，是因为它不认识网关的逻辑模型名，只好假设 200k 上下文，并据此决定何时自动压缩对话。这是客户端提示，与网关无关，请求照常处理。在 Claude Code 的 `settings.json` 的 `env` 中设置 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 为该逻辑模型背后上游模型的真实上下文窗口，提示即消失，自动压缩也会按真实窗口进行。同一个逻辑模型可能被路由到多个上游模型，请取其中最小的窗口，否则对话可能在压缩前就超出某个上游的上限而被拒绝。
 
 转换桥接刻意不做完整的 Anthropic 语义模拟。诸如 thinking 历史/控制、上下文管理控制、provider 原生工具以及部分工具提示等特性，可能会被降级或被拒绝。调试时，转换诊断会以固定的类别暴露信息，而不包含请求内容。
 

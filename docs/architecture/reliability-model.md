@@ -14,6 +14,8 @@ Tier 1 状态仅保存在 isolate 内，且范围经过刻意限定：
 
 isolate 重启会清除这些自适应状态。网关不声称 provider 级别的状态一致性。
 
+例外是**长时间冷却的跨 isolate 共享**：凭据被拒（401）、长期配额耗尽的 429（作用于整个 key），以及升级到至少 5 分钟的 403（作用于单个模型），在剩余时间不少于 5 分钟时写入 `TIER1_AFFINITY` KV 的 `tier1-cooldowns:v1` 键（JSON 数组 `{node, model?, until, reason, quota?}`）。每个 isolate 在首个 Tier 1 请求时读取一次，此后每 5 分钟最多一次（等待不超过约 50ms），并采纳读到的条目，从不缩短本地冷却；只有学到新信息（尚未共享的条目，或把已共享的截止时间推后至少 5 分钟）才写入，同一个 key 的一串失败只写一次，以免耗尽 Workers Free 每天 1,000 次的 KV 写入额度；采纳的配额冷却到期后仍走单次恢复探测。只共享这几类，是因为它们都不会提前结束；分钟级限流窗口可能因同级 key 恢复而被提前唤醒，所以只留在本地。共享是尽力而为：KV 最终一致，并发写入可能丢失条目，丢失的代价只是像以前一样多一次失败请求；新 isolate 不继承 429 阶梯的级数。
+
 ## 运行时状态接口
 
 Tier 1 自适应运行时（`reliability/tier1-state.ts`）与 Tier 2/3 节点状态（`reliability/node-state.ts`）按设计保持各自独立的实现与学习信号；二者并未统一为单一后端。需要读取状态的上层模块，通过 `src/reliability/runtime-state-store.ts` 中的投影，消费 `src/types/runtime-state.ts` 中的统一 `RuntimeStateStore` 契约：
@@ -277,7 +279,7 @@ prefill 时间随提示词变长，Claude Code 这类编码代理发来几十万
 
 ## 协调边界
 
-全局并发协调尚未实现。自适应 429 恢复、provider-model 热度以及可选的 `max_in_flight` 准入，都仅限于 isolate 本地。只有当生产证据表明跨 isolate 的恢复冲突已经严重损害可靠性，足以证明其延迟与复杂度成本合理时，才会引入 Durable Objects 或其他强协调层。
+全局并发协调尚未实现。自适应 429 恢复、provider-model 热度以及可选的 `max_in_flight` 准入，都仅限于 isolate 本地；跨 isolate 只尽力共享上文所述的长时间冷却。只有当生产证据表明跨 isolate 的恢复冲突已经严重损害可靠性，足以证明其延迟与复杂度成本合理时，才会引入 Durable Objects 或其他强协调层。
 
 ## 可观测性边界
 

@@ -997,6 +997,59 @@ export function snapshotTier1AccountRuntime(accountId: string, modelIds: Readonl
   };
 }
 
+/**
+ * A cooldown another isolate should honour: evidence that outlives this isolate
+ * and is never cleared early. A credential rejection (401) or long-lived quota
+ * on the account, or an escalated 403 refusal on one model. Short rate-limit
+ * windows are not shared: a recovering sibling key may wake them early.
+ */
+export type Tier1SharedCooldown = { node: string; model?: string; until: number; reason: string; quota?: boolean };
+
+export function tier1LongCooldowns(accountId: string, minRemainingMs: number, now: number = Date.now()): Tier1SharedCooldown[] {
+  const account = accounts.get(accountId);
+  if (!account) return [];
+  const out: Tier1SharedCooldown[] = [];
+  const accountReason = account.accountCooldownReason;
+  const isLongLived = accountReason === 'auth' || (accountReason === 'rate_limit' && account.accountCooldownIsQuota);
+  if (isLongLived && accountReason && account.accountCooldownUntil - now >= minRemainingMs) {
+    out.push({
+      node: accountId,
+      until: account.accountCooldownUntil,
+      reason: accountReason,
+      ...(account.accountCooldownIsQuota ? { quota: true } : {}),
+    });
+  }
+  for (const [modelId, model] of account.models) {
+    if (model.cooldownReason === 'auth' && model.cooldownUntil - now >= minRemainingMs) {
+      out.push({ node: accountId, model: modelId, until: model.cooldownUntil, reason: 'auth' });
+    }
+  }
+  return out;
+}
+
+/** Apply a cooldown another isolate shared. Never shortens a local one. */
+export function adoptTier1Cooldown(entry: Tier1SharedCooldown, now: number = Date.now()): void {
+  if (!(entry.until > now)) return;
+  if (entry.model) {
+    const model = getTier1Model(entry.node, entry.model);
+    if (entry.until > model.cooldownUntil) {
+      model.cooldownUntil = entry.until;
+      model.cooldownReason = entry.reason;
+    }
+    return;
+  }
+  const account = getTier1Account(entry.node);
+  if (entry.until <= account.accountCooldownUntil) return;
+  account.accountCooldownUntil = entry.until;
+  account.accountCooldownReason = entry.reason;
+  if (entry.reason === 'rate_limit') {
+    // Expiry is followed by the usual single recovery probe.
+    account.accountCooldownIsQuota = entry.quota === true;
+    account.rateLimitRecoveryPending = true;
+    account.rateLimitRecoveryUntil = 0;
+  }
+}
+
 export function __resetTier1StateForTests(): void {
   accounts.clear();
 }

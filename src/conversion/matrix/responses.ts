@@ -50,7 +50,9 @@ const RESPONSES_ALLOWED_FIELDS = [
 function assertFields(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
   for (const [key, v] of Object.entries(value)) {
     if (v === undefined) continue;
-    if (!allowed.includes(key)) throw new ConversionError(`conversion_not_supported: unknown ${label} field "${key}"`);
+    if (allowed.includes(key)) continue;
+    const options = label === 'request' ? { requestField: key } : {};
+    throw new ConversionError(`conversion_not_supported: unknown ${label} field "${key}"`, undefined, options);
   }
 }
 

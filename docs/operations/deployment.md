@@ -90,6 +90,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 配置 Tier 1 节点时所需的 `AIG_AFFINITY_KV_ID`（GitHub 部署预检强制要求；运行时缺失时亲和自动禁用，主链路仍可用）；
 - 可选的 `AIG_ALLOW_DEGRADED=true`：显式允许带着被排除的节点继续部署（默认拒绝）；
 - 可选的 `AIG_USAGE_D1_ID`；
+- 可选的 `AIG_ANALYTICS_DATASET`：Workers Analytics Engine 数据集名称（字母、数字、下划线，最长 64 个字符），设置后部署会添加 `GATEWAY_EVENTS` 绑定，参见[跨 isolate 调用分析](#跨-isolate-调用分析)；
 - 对应的 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`；
 - 可选的 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG` 以及其他运行时 Variables。
 
@@ -105,6 +106,49 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 当必需的生产输入缺失时，应用预检会失败即关闭。
 
 预检还会拒绝 `degraded` 配置：只要已声明的节点因缺少凭据、字段非法或 URL 非法而被排除，部署就会失败，避免容量静默减少。确实需要带着减少后的容量上线时，显式设置 `AIG_ALLOW_DEGRADED=true`，并在部署摘要与 `/health` 中确认 `nodes_usable/nodes_total`、`nodes_excluded` 和 `degraded`。部署后的健康检查同样默认拒绝 `degraded`，并会重试三次后回滚。配置错误（被拒绝的分片、冲突的节点、无效的模型/策略/回退/OAuth 设置）与容量减少不同：运行时会绕开它们继续服务，但预检总是拒绝部署，`AIG_ALLOW_DEGRADED` 不会放行它们。
+
+## 跨 isolate 调用分析
+
+`/health` 与 `/metrics` 只反映响应它们的那一个 isolate，无法回答「每个免费 key 用了多少、被限流多少次、多少请求靠重试或 hedge 才成功」。设置 `AIG_ANALYTICS_DATASET` 后，网关对**每一次真实的上游调用**写入一条 Workers Analytics Engine 数据点；未设置、绑定缺失或写入失败时网关行为完全不变。这些数据只用于观测，不参与路由。
+
+| 位置 | 内容 |
+| --- | --- |
+| `index1` | node id（采样键） |
+| `blob1`–`blob7` | node id、provider、tier、逻辑模型、结果（`ok` 或失败类别，如 `rate_limit`、`server`）、角色（`primary`、`hedge`、末位同 key 重试 `retry`）、路由 |
+| `double1`–`double4` | 上游 HTTP 状态（无响应为 0）、响应头耗时、首个有意义输出耗时、该次调用耗时（毫秒，未知为 -1） |
+
+流式请求的 `ok` 表示已提交首个有意义输出；提交之后的中断仍记在网关日志里。
+
+用 [Analytics Engine SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/) 查询（需要具有 Account Analytics 读取权限的 API Token）。例如最近一天每个 key 的调用结果分布：
+
+```sql
+SELECT blob1 AS node, blob5 AS outcome, SUM(_sample_interval) AS calls
+FROM gateway_events
+WHERE timestamp > NOW() - INTERVAL '1' DAY
+GROUP BY node, outcome
+ORDER BY node, calls DESC
+```
+
+把 `gateway_events` 换成你设置的数据集名称。按 `blob6` 分组可以看出重试与 hedge 带来的额外上游调用占比。
+
+## Cloudflare 免费套餐预算
+
+网关按 Workers Free 设计。下表列出免费额度（按账号每天计，UTC 0 点重置）、网关的消耗方式，以及超出后的表现。数字来自 Cloudflare 公布的免费额度；CPU 一行是在 Node（与 workerd 同为 V8，但不是同一运行时）上实测的估计值。
+
+| 资源 | 免费额度 | 网关的消耗 | 超出后 |
+| --- | --- | --- | --- |
+| Workers 请求 | 100,000 次/天 | 每个客户端请求一次，`/health`、`/metrics` 等诊断请求也计入 | 请求被 Cloudflare 拒绝，直到重置 |
+| CPU 时间 | 每次请求 10ms | 解析与改写请求体的开销随请求体增长：按原样转发时约每 MB 2–3ms，需要重新序列化（模型别名、协议转换）时约每 MB 5ms，4 MB 约 22ms | 该请求被 Cloudflare 终止 |
+| KV 读取 | 100,000 次/天 | 会话亲和：带 `x-session-id`（或 Claude Code 的 `x-claude-code-session-id`）且至少两个 Tier 1 key 能服务时，每个会话每 5 秒最多一次；共享冷却：每个活跃 isolate 首个请求一次，此后每 5 分钟最多一次 | 读取失败视为没有数据：不偏置、不写入，冷却只在本地生效 |
+| KV 写入 | 1,000 次/天 | 会话亲和：新会话首次成功、闲置超过 30 分钟后再来、迁移到另一个 key 时各一次；共享冷却：只在学到新的长时间冷却时一次 | 写入失败，亲和与冷却共享退化为仅本地 |
+| D1 写入行数（可选 `AIG_USAGE_D1_ID`） | 100,000 行/天 | 每次上游调用约 3 行（小时、总计、小时×模型） | 用量统计写入失败，不影响请求 |
+| Analytics Engine（可选 `AIG_ANALYTICS_DATASET`） | 100,000 个数据点/天 | 每次上游调用一个 | 写入失败不影响请求 |
+
+据此：
+
+- 长上下文请求是免费套餐上最先撞到的限制。多 MB 的请求可能超过 10ms CPU 而被终止，尤其是经过模型别名或协议转换时；客户端应控制上下文大小。
+- 每个请求都换一个新 `x-session-id` 的客户端，每个请求都会写一次 KV，会很快用完每天 1,000 次写入，并连带让冷却共享失效。要么保持会话 ID 稳定，要么不发送该头。
+- 开启 D1 统计时，每天约 33,000 次上游调用就会用完写入额度（重试与 hedge 也计入）。
 
 ## 源码自有的部署入口
 
