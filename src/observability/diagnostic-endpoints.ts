@@ -4,7 +4,7 @@
 // Diagnostic HTTP endpoints: /health, /metrics, /v1/models.
 // Responses contain runtime state only — never credentials.
 
-import { filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
+import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
 import type { RegistryEntry } from '../config/registry.ts';
 import { collectKnownModels, modelRegistryEntry, servesModel } from '../config/registry.ts';
@@ -111,17 +111,11 @@ function buildModelsList(
   return { object: 'list', data };
 }
 
-// AIG_DIAGNOSTICS_GROUPS narrows /health and /metrics to named key groups. Unset keeps them open to
-// every valid key; when set, a request with no resolved group is refused.
+// AIG_DIAGNOSTICS_GROUPS names the key groups that read /health and /metrics (unset: MAX and
+// ULTRA; "*": every valid key). A request with no resolved group is refused.
 export function canReadDiagnostics(env: Record<string, unknown>, authResult: AuthResult): boolean {
-  const raw = String(env?.AIG_DIAGNOSTICS_GROUPS ?? '').trim();
-  if (!raw) return true;
-  const allowed = new Set(
-    raw
-      .split(',')
-      .map((value) => value.trim().toUpperCase())
-      .filter(Boolean),
-  );
+  const allowed = diagnosticsGroups(env?.AIG_DIAGNOSTICS_GROUPS);
+  if (allowed === null) return true;
   const group = authResult.authorized && 'group' in authResult ? authResult.group : null;
   return typeof group === 'string' && allowed.has(group.toUpperCase());
 }
