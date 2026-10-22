@@ -168,6 +168,8 @@ Tier 1 的冷却范围限定在受影响的 provider/key-slot 上；它不会有
 
 部署里完全没有 Anthropic 节点时，每个 Claude Code 请求都走这条回退路径。Claude Code 的每一轮请求都会带上 advisor、tool search 之类的可选服务端工具定义；只要请求里还有普通函数工具，这些定义会被丢弃（诊断为 `provider_native_tool_definition`），请求照常发出。以下情况仍会返回 502 `conversion_not_supported`（服务端日志中的 `fallback_conversion_skipped` 给出原因）：工具面完全由服务端工具构成（例如只有 `web_search` 的搜索子请求）、`tool_choice` 强制指定了服务端工具、请求带有 `mcp_servers` 或 `container`、历史中含有 `web_search` 的 `server_tool_use` 块。
 
+Claude Code 在 auto 权限模式下会在请求顶层附带 `safeguards`，请 Anthropic 服务端检查危险的工具调用。非 Anthropic 上游无法执行这项检查，所以该模型没有 Anthropic 节点时，网关返回 400 `unsupported_request_field` 并在 `error.details.unsupported_fields` 中点名该字段，而不是 502；Claude Code 收到后会去掉该字段并自动重发。若仍看到 502 `conversion_not_supported`，请先确认部署版本（`/health` 的 `build`）包含此行为。
+
 Claude Code 还会用小模型（默认是 Haiku 系列）做标题、摘要等后台请求。网关只会路由已知模型目录里的模型，所以请设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL`（或 `ANTHROPIC_SMALL_FAST_MODEL`）指向网关已配置的模型，否则这些请求会返回 404 `Model not found for this key.`。
 
 转换桥接刻意不做完整的 Anthropic 语义模拟。诸如 thinking 历史/控制、上下文管理控制、provider 原生工具以及部分工具提示等特性，可能会被降级或被拒绝。调试时，转换诊断会以固定的类别暴露信息，而不包含请求内容。

@@ -153,7 +153,8 @@ OpenAI Chat 上游的完成边界：`finish_reason` 之后，尾随的 usage 帧
 
 - OpenAI Chat 客户端收到 OpenAI 格式的错误。
 - Anthropic Messages 客户端收到 Anthropic 格式的错误。
-- 转换失败会在无效的目标请求被 dispatch 之前，以网关转换失败的形式上报。
+- 转换失败会在无效的目标请求被 dispatch 之前，以网关转换失败的形式上报（502 `conversion_not_supported`）。
+- 例外：请求被拒的唯一原因是客户端顶层字段无法被任何目标协议承载（例如 Claude Code auto 权限模式发送的 `safeguards`），且该模型没有任何 native 节点时，返回 400 `invalid_request_error`，`error.details.failure_kind` 为 `unsupported_request_field`，`error.details.unsupported_fields` 列出字段名。这个网关没有任何节点能承载这些字段，重试不会改变结果；客户端去掉它们后重发即可，Claude Code 会自动这样做。只要该模型有 native 节点（即使暂时不可用），仍返回 502，因为 native 节点恢复后能原样承载这些字段。
 - 原生尝试已经 dispatch、而某个回退目标随后被转换拒绝时，耗尽响应（含故障转移预算耗尽）的 `error.details.conversion_rejected` 给出被拒绝的转换次数。只报告次数：原因文本可能引用客户端可控的名称，仅保留在 `fallback_conversion_skipped` 服务器日志中。
 
 ## 职责边界
