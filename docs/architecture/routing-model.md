@@ -96,7 +96,7 @@ P2C 采样
 
 ### 软性会话亲和（Soft session affinity）
 
-客户端可以提供 `x-session-id`（8–128 个字符）。网关会先对其进行哈希，然后再在 `TIER1_AFFINITY` 中存储 Tier 1 的账号绑定。
+客户端可以提供 `x-session-id`（8–128 个字符）。没有该头时，网关使用 Claude Code 自动发送的 `x-claude-code-session-id`：它在整个会话中保持不变，所以同一段对话的各轮请求会倾向同一个 key，更容易命中上游的提示缓存。网关会先对会话 ID 进行哈希，然后再在 `TIER1_AFFINITY` 中存储 Tier 1 的账号绑定。
 
 亲和是评分偏置，而非粘性路由。它不能绕过资格、冷却或健康状态。
 
