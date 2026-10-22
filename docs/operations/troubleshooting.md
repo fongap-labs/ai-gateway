@@ -172,6 +172,8 @@ Claude Code 在 auto 权限模式下会在请求顶层附带 `safeguards`，请 
 
 Claude Code 还会用小模型（默认是 Haiku 系列）做标题、摘要等后台请求。网关只会路由已知模型目录里的模型，所以请设置 `ANTHROPIC_DEFAULT_HAIKU_MODEL`（或 `ANTHROPIC_SMALL_FAST_MODEL`）指向网关已配置的模型，否则这些请求会返回 404 `Model not found for this key.`。
 
+Claude Code 启动时提示 `Model "Code-Max" isn't recognized · context assumed to be 200k tokens`，是因为它不认识网关的逻辑模型名，只好假设 200k 上下文，并据此决定何时自动压缩对话。这是客户端提示，与网关无关，请求照常处理。在 Claude Code 的 `settings.json` 的 `env` 中设置 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 为该逻辑模型背后上游模型的真实上下文窗口，提示即消失，自动压缩也会按真实窗口进行。同一个逻辑模型可能被路由到多个上游模型，请取其中最小的窗口，否则对话可能在压缩前就超出某个上游的上限而被拒绝。
+
 转换桥接刻意不做完整的 Anthropic 语义模拟。诸如 thinking 历史/控制、上下文管理控制、provider 原生工具以及部分工具提示等特性，可能会被降级或被拒绝。调试时，转换诊断会以固定的类别暴露信息，而不包含请求内容。
 
 ### OpenAI Responses 问题
