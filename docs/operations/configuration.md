@@ -291,6 +291,8 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 
 其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP`、`AIG_DASHBOARD_MODELS`、`AIG_OAUTH_PROVIDERS` 与 `AIG_OAUTH_ADMIN_GROUPS`（参见 [Tier 2 订阅](#tier-2-订阅oauth)）。
 
+`AIG_DIAGNOSTICS_GROUPS` 决定哪些访问密钥分组可以读取 `/health` 与 `/metrics`，逗号分隔、不区分大小写，例如 `ULTRA` 或 `MAX,AGENT`。未设置时默认为 `MAX,ULTRA`；设为 `*` 时所有有效密钥都可读取。其他分组的密钥访问这两个端点会收到 `403`，`/v1/*` 不受影响。部署后的健康检查使用一个允许读取的分组密钥；已配置的密钥中没有任何一个允许读取时，部署预检直接失败。
+
 ## 仪表盘模型展示
 
 `AIG_DASHBOARD_MODELS` 是逻辑模型的展示允许列表，以逗号分隔。

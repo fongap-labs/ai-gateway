@@ -95,13 +95,13 @@ npm run deploy                # 部署到 Cloudflare Workers
 ### 3. 验证部署
 
 ```bash
-curl https://<你的网关>/health -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
+curl https://<你的网关>/health -H "Authorization: Bearer <YOUR_MAX_OR_ULTRA_KEY>"
 curl https://<你的网关>/v1/models -H "Authorization: Bearer <YOUR_GATEWAY_KEY>"
 ```
 
 预期结果：
 
-- `/health` 返回 JSON，包含 `build`（部署的 commit SHA）、`status`、`ready`、`nodes_usable` 等字段。返回 `200` 表示配置有效；返回 `503` 表示配置无效或未配置，见[故障排查](docs/operations/troubleshooting.md)。`nodes_usable` 应大于 0。
+- `/health` 默认只允许 MAX 与 ULTRA 分组的密钥读取（其他分组返回 `403`，见下文 `AIG_DIAGNOSTICS_GROUPS`）。它返回 JSON，包含 `build`（部署的 commit SHA）、`status`、`ready`、`nodes_usable` 等字段。返回 `200` 表示配置有效；返回 `503` 表示配置无效或未配置，见[故障排查](docs/operations/troubleshooting.md)。`nodes_usable` 应大于 0。
 - `/v1/models` 返回非空的模型列表，说明分组配置正确。若为空，见下方[常见问题](#常见问题)。
 
 ### 4. 接入客户端
@@ -242,7 +242,7 @@ flowchart TD
 
 - 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
 - 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
-- `/health`、`/metrics` 与 `/v1/*` 需要有效的网关密钥。可用 `AIG_DIAGNOSTICS_GROUPS` 将 `/health` 与 `/metrics` 限制给指定分组。
+- `/health`、`/metrics` 与 `/v1/*` 需要有效的网关密钥。`/health` 与 `/metrics` 会暴露节点状态与部署版本，默认只允许 MAX 与 ULTRA 分组读取；用 `AIG_DIAGNOSTICS_GROUPS`（逗号分隔，例如 `ULTRA` 或 `MAX,AGENT`）改为其他分组，设为 `*` 则所有有效密钥都可读取。部署后的自动健康检查会选用一个允许读取的分组密钥；已配置的密钥中没有任何一个允许读取时，部署预检会直接失败。
 - 仪表盘 `/` 与徽章 `/readme-status.svg` **默认公开**（`AIG_PUBLIC_DASHBOARD` 默认为 `true`），徽章包含本实例的用量统计。不希望公开时，将其设为 `false`。
 
 完整规则与限流边界见 [SECURITY.md](SECURITY.md)。
