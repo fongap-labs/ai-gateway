@@ -42,7 +42,10 @@
 //     names and credentials are never logged.
 //   * If every recognized fallback target is rejected before any upstream
 //     dispatch, return a dedicated 502 instead of misreporting the condition as
-//     node cooldown/circuit exhaustion.
+//     node cooldown/circuit exhaustion. The exception is a request whose only
+//     problem is top-level fields no target protocol can carry, for a model with
+//     no native node: no node of this gateway can ever serve those fields, so the
+//     answer is a 400 that names them, and the client can resend without them.
 
 import type { IrProtocol } from '../conversion/matrix/ir.ts';
 import { convertMatrixRequest, isMatrixPair } from '../conversion/matrix/pipeline.ts';
@@ -114,6 +117,8 @@ export async function runFallbackChain({
   const logger = getLogger(env);
   let conversionRejectedCount = 0;
   let convertedTargetCount = 0;
+  const unsupportedRequestFields = new Set<string>();
+  let hasOtherRejection = false;
 
   for (const fb of fallbacks) {
     if (state.logicalAttempts >= policy.maxAttempts) break;
@@ -140,6 +145,8 @@ export async function runFallbackChain({
     } catch (e) {
       if (e instanceof ConversionError) {
         conversionRejectedCount++;
+        if (e.requestField) unsupportedRequestFields.add(e.requestField);
+        else hasOtherRejection = true;
         const reason = String(e.message || e.code || 'conversion_not_supported').slice(0, 300);
         logger.error(
           JSON.stringify({
@@ -175,6 +182,7 @@ export async function runFallbackChain({
     const highRiskLoss = highRiskSemanticLoss(conversionResult);
     if (highRiskLoss.length > 0) {
       conversionRejectedCount++;
+      hasOtherRejection = true;
       logger.error(
         JSON.stringify({
           event: 'fallback_conversion_skipped',
@@ -217,6 +225,24 @@ export async function runFallbackChain({
 
   state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
   if (conversionRejectedCount > 0 && convertedTargetCount === 0 && state.dispatches === 0) {
+    if (!feasibility?.nativeSupported && !hasOtherRejection && unsupportedRequestFields.size > 0) {
+      // Field names come from the client's own body; bound them before echoing one back.
+      const fields = [...unsupportedRequestFields].map((field) => field.slice(0, 64));
+      const names = fields.map((field) => `"${field}"`).join(', ');
+      return gatewayError(
+        request,
+        env,
+        route,
+        400,
+        `Request field ${names} is not supported: no upstream configured for this model can carry it. Remove it and retry.`,
+        requestId,
+        {
+          requested_model: requestedModel,
+          unsupported_fields: fields,
+          failure_kind: 'unsupported_request_field',
+        },
+      );
+    }
     return gatewayError(request, env, route, 502, 'Configured protocol fallback cannot represent this request.', requestId, {
       requested_model: requestedModel,
       attempts: state.logicalAttempts,

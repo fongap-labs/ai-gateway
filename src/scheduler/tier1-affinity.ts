@@ -6,7 +6,7 @@
 // briefly in isolate memory. Tier 2/3 never read or write this store.
 //
 // Memory safety: both the affinity cache and the escape counters use a
-// bounded TTL map. A client that floods unique x-session-id values can never
+// bounded TTL map. A client that floods unique session ids can never
 // grow isolate memory unboundedly — expired entries are evicted first, then
 // the oldest entries by insertion order (LRU-ish). The raw client Session ID
 // is never stored as a Map key; a stable synchronous hash is used instead so
@@ -159,11 +159,18 @@ function sessionHash(sessionId: string): string {
   return `h${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+// Claude Code does not send x-session-id; it names each conversation with
+// x-claude-code-session-id, which stays the same for the whole session.
+const SESSION_HEADERS = ['x-session-id', 'x-claude-code-session-id'] as const;
+
 export function resolveTier1SessionId(request: Request): string | null {
-  const raw = request?.headers?.get?.('x-session-id');
-  if (typeof raw !== 'string') return null;
-  const id = raw.trim();
-  return id.length >= 8 && id.length <= 128 ? id : null;
+  for (const name of SESSION_HEADERS) {
+    const raw = request?.headers?.get?.(name);
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (id.length >= 8 && id.length <= 128) return id;
+  }
+  return null;
 }
 
 // Resolves to the bound account, null when there is none, or undefined when the
