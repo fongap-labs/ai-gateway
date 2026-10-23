@@ -22,13 +22,13 @@ import {
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
-import { admitKeyRequest } from '../ratelimit/key-rpm.ts';
+import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { TierMap } from '../types/scheduler.ts';
-import { authorize } from './auth.ts';
+import { authorize, presentedCredentials } from './auth.ts';
 import { gatewayError } from './errors.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from './model-authz.ts';
 import { modelFallbackCandidates } from './model-fallback.ts';
@@ -81,6 +81,37 @@ export type PreflightOk = {
   feasibility: RouteFeasibilityResult;
 };
 export type PreflightResult = PreflightTerminal | PreflightOk;
+
+// Fingerprint for the failed-authorization window: 'ANON' when no credential is
+// presented, otherwise the first 16 hex digits of the SHA-256 of the presented
+// credentials. The plaintext credential is never stored or logged.
+async function authAttemptFingerprint(request: Request): Promise<string> {
+  const credentials = presentedCredentials(request);
+  if (credentials.length === 0) return 'ANON';
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(credentials.join('\n'))));
+  return Array.from(digest.slice(0, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function rateLimitedResponse(request: Request, env: GatewayEnv, retryAfterSec: number, code: string, message: string): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message,
+        type: 'rate_limit_error',
+        code,
+        retry_after_seconds: retryAfterSec,
+      },
+    }),
+    {
+      status: 429,
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': String(retryAfterSec),
+        ...(corsHeaders(request, env) || {}),
+      },
+    },
+  );
+}
 
 export async function preflight(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<PreflightResult> {
   const requestId = crypto.randomUUID();
@@ -139,13 +170,33 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       response: gatewayError(request, env, route, 500, 'Gateway misconfigured: no AIG_ACCESS_KEY_<GROUP> is set.', requestId),
     };
   }
+  // Failed-authorization throttle. It is checked before any credential is
+  // verified, and only failed attempts are charged, so valid traffic never
+  // consumes the budget.
+  const authFingerprint = await authAttemptFingerprint(request);
+  const authAttemptVerdict = admitAuthAttempt(authFingerprint, getLimits(env).authAttemptRpm);
+  if (authAttemptVerdict.ok === false) {
+    return {
+      ok: false,
+      response: rateLimitedResponse(
+        request,
+        env,
+        authAttemptVerdict.retryAfterSec,
+        'gateway_auth_throttled',
+        `Too many failed gateway authorization attempts. Retry after ${authAttemptVerdict.retryAfterSec}s.`,
+      ),
+    };
+  }
+
   const authResult: AuthResult = await authorize(request, env);
   if (!authResult.authorized) {
+    recordAuthFailure(authFingerprint);
     return {
       ok: false,
       response: gatewayError(request, env, route, 401, 'Unauthorized: gateway access key is invalid or missing.', requestId),
     };
   }
+  clearAuthFailures(authFingerprint);
 
   // Local diagnostics/model-list routes carry no upstream cost and do not
   // consume the client-key RPM budget.
@@ -154,22 +205,14 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     const fingerprint = ('group' in authResult ? authResult.group : null) || 'ANON';
     const verdict = admitKeyRequest(fingerprint, limits.gatewayKeyRpm);
     if (verdict.ok === false) {
-      const headers = {
-        'retry-after': String(verdict.retryAfterSec),
-        ...(corsHeaders(request, env) || {}),
-      };
       return {
         ok: false,
-        response: new Response(
-          JSON.stringify({
-            error: {
-              message: `Gateway access-key RPM cap exceeded. Retry after ${verdict.retryAfterSec}s.`,
-              type: 'rate_limit_error',
-              code: 'gateway_key_rpm',
-              retry_after_seconds: verdict.retryAfterSec,
-            },
-          }),
-          { status: 429, headers: { 'content-type': 'application/json', ...headers } },
+        response: rateLimitedResponse(
+          request,
+          env,
+          verdict.retryAfterSec,
+          'gateway_key_rpm',
+          `Gateway access-key RPM cap exceeded. Retry after ${verdict.retryAfterSec}s.`,
         ),
       };
     }

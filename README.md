@@ -243,7 +243,7 @@ flowchart TD
 - 上游凭据只存于 Cloudflare Secret，不写入节点配置、日志或诊断输出。
 - 网关密钥通过 `Authorization: Bearer` 或 `x-api-key` 头传递，不要放进 URL。
 - `/health`、`/metrics` 与 `/v1/*` 需要有效的网关密钥。`/health` 与 `/metrics` 会暴露节点状态与部署版本，默认只允许 MAX 与 ULTRA 分组读取；用 `AIG_DIAGNOSTICS_GROUPS`（逗号分隔，例如 `ULTRA` 或 `MAX,AGENT`）改为其他分组，设为 `*` 则所有有效密钥都可读取。部署后的自动健康检查会选用一个允许读取的分组密钥；已配置的密钥中没有任何一个允许读取时，部署预检会直接失败。
-- 仪表盘 `/` 与徽章 `/readme-status.svg` **默认公开**（`AIG_PUBLIC_DASHBOARD` 默认为 `true`），徽章包含本实例的用量统计。不希望公开时，将其设为 `false`。
+- 仪表盘 `/` 与徽章 `/readme-status.svg` **默认公开**（`AIG_PUBLIC_DASHBOARD` 默认为 `true`），徽章包含本实例的用量统计。仪表盘不列出访问密钥分组名。不希望公开时，将其设为 `false`。
 
 完整规则与限流边界见 [SECURITY.md](SECURITY.md)。
 

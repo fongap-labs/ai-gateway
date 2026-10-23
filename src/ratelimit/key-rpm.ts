@@ -86,6 +86,63 @@ export function admitKeyRequest(groupFingerprint: string, cap: number, now: numb
   return { ok: true };
 }
 
+// Failed-authorization window. It is separate from the per-group RPM window
+// above, so a flood of bad credentials cannot consume a valid group's budget.
+// It is keyed on a presence/credential fingerprint computed by preflight.ts
+// ("ANON" for no credential, otherwise a SHA-256 prefix), never the plaintext.
+// Only failed attempts are recorded: a successful request calls
+// clearAuthFailures() and never consumes the budget.
+type AuthFailureEntry = {
+  stamps: number[];
+  lastSeen: number;
+};
+
+const authFailureState: Map<string, AuthFailureEntry> = new Map();
+
+function evictStaleAuthFailure(): void {
+  if (authFailureState.size <= MAX_TRACKED_KEYS) return;
+  let oldest: [string, AuthFailureEntry] | null = null;
+  for (const [k, v] of authFailureState) {
+    if (oldest === null || v.lastSeen < oldest[1].lastSeen) oldest = [k, v];
+  }
+  if (oldest) authFailureState.delete(oldest[0]);
+}
+
+/**
+ * Check whether an attempt from `fingerprint` may proceed to authorization.
+ * Read-only: it does not consume budget. Call recordAuthFailure() when the
+ * attempt fails. `cap` is AIG_AUTH_ATTEMPT_RPM (0 = disabled).
+ */
+export function admitAuthAttempt(fingerprint: string, cap: number, now: number = Date.now()): KeyAdmissionVerdict {
+  if (!cap || cap <= 0) return { ok: true };
+  const entry = authFailureState.get(fingerprint);
+  if (!entry) return { ok: true };
+  pruneWindow(entry.stamps, now);
+  if (entry.stamps.length < cap) return { ok: true };
+  const oldest = entry.stamps[0];
+  if (oldest === undefined) return { ok: true };
+  const retryAfterMs = Math.max(1, oldest + WINDOW_MS - now);
+  return { ok: false, retryAfterSec: Math.ceil(retryAfterMs / 1000) };
+}
+
+/** Charge one failed authorization attempt against `fingerprint`'s window. */
+export function recordAuthFailure(fingerprint: string, now: number = Date.now()): void {
+  let entry = authFailureState.get(fingerprint);
+  if (!entry) {
+    entry = { stamps: [], lastSeen: now };
+    authFailureState.set(fingerprint, entry);
+    evictStaleAuthFailure();
+  }
+  pruneWindow(entry.stamps, now);
+  entry.lastSeen = now;
+  entry.stamps.push(now);
+}
+
+/** Forget a fingerprint's failed attempts after it authorizes successfully. */
+export function clearAuthFailures(fingerprint: string): void {
+  authFailureState.delete(fingerprint);
+}
+
 export function getKeyRpmSnapshot(groupFingerprint: string, now: number = Date.now()): { used: number; cap: number } {
   const entry = keyState.get(groupFingerprint);
   if (!entry) return { used: 0, cap: 0 };
@@ -95,4 +152,5 @@ export function getKeyRpmSnapshot(groupFingerprint: string, now: number = Date.n
 
 export function __resetKeyRpmForTests(): void {
   keyState.clear();
+  authFailureState.clear();
 }

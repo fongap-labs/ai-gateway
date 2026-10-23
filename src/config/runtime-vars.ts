@@ -49,8 +49,12 @@ export const RUNTIME_TUNABLES = [
   // 60s sliding window. The cap is best-effort (single-isolate); for a
   // strict global cap across isolates, bind a Cloudflare Rate Limiting
   // worker binding (this is the existing model, see QUOTA_RATE_LIMITER).
-  // 0 disables the cap entirely (default for backward compatibility).
+  // 0 disables the cap entirely (default). Set a positive value to cap each key group.
   { name: 'AIG_ACCESS_KEY_RPM', type: 'int', min: 0, max: 100_000, def: 0 },
+  // Per-isolate, per-fingerprint cap on FAILED authorization attempts in a 60s
+  // sliding window. Checked before authorize(); only failures are counted, and a
+  // successful authorization clears the fingerprint. 0 disables the throttle.
+  { name: 'AIG_AUTH_ATTEMPT_RPM', type: 'int', min: 0, max: 100_000, def: 60 },
   // Edge idempotent-cache TTL for zero-temperature (or x-gateway-cache
   // opt-in) inference requests. Stored through the Cloudflare Cache API at
   // the edge colo; a HIT replays the exact client-facing response with zero
@@ -103,6 +107,7 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   { name: 'AIG_HAS_STREAM_GUARD', def: false },
   { name: 'AIG_CAN_USE_HTTP', def: false },
   // Serve the public dashboard at / and the README status badge. false answers both with 404.
+  // The dashboard never lists access-key group names.
   { name: 'AIG_PUBLIC_DASHBOARD', def: true },
   // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
   // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.

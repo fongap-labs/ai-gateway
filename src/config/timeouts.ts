@@ -89,6 +89,7 @@ export type Limits = {
   isHedgeDelayExplicit: boolean;
   maxHedgesPerRequest: number;
   gatewayKeyRpm: number;
+  authAttemptRpm: number;
   edgeCacheTtlSec: number;
 };
 
@@ -216,6 +217,12 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_ACCESS_KEY_RPM.min,
       LIMITS.AIG_ACCESS_KEY_RPM.max,
       LIMITS.AIG_ACCESS_KEY_RPM.def,
+    ),
+    authAttemptRpm: clampInt(
+      readEnv(env, 'AIG_AUTH_ATTEMPT_RPM'),
+      LIMITS.AIG_AUTH_ATTEMPT_RPM.min,
+      LIMITS.AIG_AUTH_ATTEMPT_RPM.max,
+      LIMITS.AIG_AUTH_ATTEMPT_RPM.def,
     ),
     edgeCacheTtlSec: clampInt(
       readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC'),

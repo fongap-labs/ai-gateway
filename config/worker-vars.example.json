@@ -52,5 +52,6 @@
   },
   "AIG_EDGE_CACHE_TTL_SEC": "14400",
   "AIG_EDGE_CACHE_AUTO": "false",
+  "AIG_PUBLIC_DASHBOARD": "true",
   "AIG_REPOSITORY_URL": "https://github.com/your-org/ai-gateway"
 }

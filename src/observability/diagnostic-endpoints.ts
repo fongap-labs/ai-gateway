@@ -204,7 +204,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
               usage_missing: s.totals.missing,
             },
             usage_coverage: s.usageCoverage,
-            note: 'Isolate-local, best-effort, upstream-reported usage only; missing usage is never estimated. Not billing-grade.',
+            note: 'Isolate-local, best-effort, upstream-reported usage only; missing usage is never estimated. Writes are buffered per isolate and flushed in batches, so increments not yet flushed are lost if the isolate is recycled. Not billing-grade.',
           };
         })(),
         diagnostics: config.diagnostics,

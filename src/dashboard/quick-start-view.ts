@@ -24,11 +24,11 @@ function snippetPane({ id, active, code }: { id: string; active: boolean; code: 
   );
 }
 
-export function quickStartSection({ apiBase, accessGroups }: { apiBase: string; accessGroups: readonly string[] }): string {
+// Access-key group names are operator information, so they are not rendered here.
+export function quickStartSection({ apiBase }: { apiBase: string }): string {
   const origin = new URL(apiBase).origin;
-  const groups = accessGroups.length > 0 ? accessGroups.join(' / ') : '未配置';
-  const openai = `# Key 组：${groups}\nOPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=<YOUR_GATEWAY_KEY>`;
-  const anthropic = `# Key 组：${groups}\nANTHROPIC_BASE_URL=${origin}\nANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>`;
+  const openai = `OPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=<YOUR_GATEWAY_KEY>`;
+  const anthropic = `ANTHROPIC_BASE_URL=${origin}\nANTHROPIC_AUTH_TOKEN=<YOUR_GATEWAY_KEY>`;
   const tabs = [
     { id: 'openai', label: 'OpenAI 协议' },
     { id: 'anthropic', label: 'Anthropic 协议' },
