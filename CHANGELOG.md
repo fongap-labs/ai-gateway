@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- 安全 [breaking, security]: 鉴权失败的请求由独立的失败尝试窗口节流（`AIG_AUTH_ATTEMPT_RPM`，默认每分钟 60 次，`0` 关闭）。超限返回 429，错误码为 `gateway_auth_throttled`，并带 `Retry-After`；鉴权成功的请求不消耗失败预算。访问密钥 RPM 上限 `AIG_ACCESS_KEY_RPM` 的默认值由 `0` 改为 `120`。迁移：此前未设置该变量的部署会开始受每分组每分钟 120 次的限制；需要更高吞吐的部署请显式设置更大的值，或设为 `0` 关闭。
+
+- 安全 [breaking, security]: 公开仪表盘 `/` 与徽章 `/readme-status.svg` 默认关闭（`AIG_PUBLIC_DASHBOARD` 默认为 `false`，两者返回 404）。快速开始不再列出访问密钥分组名。迁移：需要公开仪表盘的部署须显式设置 `AIG_PUBLIC_DASHBOARD=true`。
+
+- 安全 [security]: 边缘缓存在未配置 `AIG_TOKEN_ENCRYPTION_KEY` 时失败关闭：不查询也不写入缓存，凭据指纹不再用公开常量派生。
+
+- 修复: 流式边缘缓存命中现在与上游流一样计入完成与取消，`activeRequests` 不再随每次命中单调增长。
+
+- 安全 [security]: 没有可用 `Content-Length` 的请求体（例如 chunked 传输）按 `AIG_REQUEST_BODY_MAX_BYTES` 计入在途请求体预算，不再绕过 32 MiB 的预算。迁移注意：并发的无 `Content-Length` 请求超出预算时会返回可重试的 503；常规 JSON 客户端会发送 `Content-Length`，不受影响。
+
+- 变更: D1 token 用量写入改为 isolate 内缓冲：按小时与模型合并，每 50 条或每 2 秒以一次 `d1.batch()` 提交。写入失败时增量回滚并在下次刷写时重试。读取与定时维护前会先刷写。isolate 被回收时尚未刷写的增量会丢失，口径仍为尽力而为。
+
+- 变更: 大请求体读取改为收集分块后一次解码，减少峰值内存拷贝；超限仍返回 `BodyTooLargeError`。
+
 - 安全 [security]: 修复 Worker 内存与缓存隔离问题。跨协议成功矩阵回退读取上游响应时不再无上限，最多读取 2 MiB；`/oauth/start` 与 `/oauth/paste` 的表单体限制为 64 KiB，未通过凭据校验的超大请求无法耗尽内存。边缘缓存的命中响应改为 `private, no-store`，与未命中一致，共享缓存不会把一个客户端的答案交给另一个。合成矩阵流补上 `x-request-id`。部署密钥同步此前忽略 `AIG_TOKEN_ENCRYPTION_KEY`，导致每次部署都丢弃它，订阅令牌因此无法解密，现已修复。
 
 - 安全 [breaking, security, migration]: `/health` 与 `/metrics` 默认只允许 MAX 与 ULTRA 密钥读取，因为它们会暴露节点状态与部署版本。`AIG_DIAGNOSTICS_GROUPS` 可指定其他密钥组，设为 `*` 则恢复所有有效密钥的访问；部署预检在没有可读取 `/health` 的密钥时失败。迁移：所有密钥都不在 MAX 与 ULTRA 中的部署，须在下次部署前设置 `AIG_DIAGNOSTICS_GROUPS`。

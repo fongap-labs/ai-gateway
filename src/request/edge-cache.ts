@@ -6,9 +6,16 @@
 // is enabled. Uses the Cloudflare Cache API at the edge colo. A HIT replays the exact client-facing
 // response with zero upstream consumption; a MISS continues the normal
 // pipeline and stores the successful response non-blocking via waitUntil.
+//
+// Fail-closed: the cache key's credential fingerprint is an HMAC keyed from
+// AIG_TOKEN_ENCRYPTION_KEY. When that secret is not configured, callerCacheScope()
+// returns null and the edge cache is disabled entirely (no lookup, no store),
+// even for requests that opt in. This matches the token store's no-key policy.
 
 import { getBool, readEnv } from '../config/env.ts';
+import { getLogger } from '../observability/logger.ts';
 import { corsHeaders } from '../protocol/http.ts';
+import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { presentedCredentials } from './auth.ts';
 
@@ -49,14 +56,17 @@ export function edgeCacheEligible(route: string, bodyJson: Record<string, unknow
 
 /**
  * Non-reversible fingerprint of the credential the caller presented, so rotating or replacing a key
- * never replays another key's cached answers. The HMAC key is derived from AIG_TOKEN_ENCRYPTION_KEY
- * when it is configured; the fingerprint is never logged or returned.
+ * never replays another key's cached answers. The HMAC key is derived from AIG_TOKEN_ENCRYPTION_KEY;
+ * the fingerprint is never logged or returned. Returns null (fail-closed) when that secret is not
+ * configured, because a fingerprint derived from a public constant would be forgeable.
  */
-export async function callerCacheScope(request: Request, env: GatewayEnv): Promise<string> {
+export async function callerCacheScope(request: Request, env: GatewayEnv): Promise<string | null> {
+  const encryptionKey = readEnv(env, 'AIG_TOKEN_ENCRYPTION_KEY');
+  if (!encryptionKey) return null;
   const credentials = presentedCredentials(request).sort();
   if (credentials.length === 0) return '';
   const encoder = new TextEncoder();
-  const keyMaterial = encoder.encode(`aig-edge-cache-v1:${readEnv(env, 'AIG_TOKEN_ENCRYPTION_KEY') ?? ''}`);
+  const keyMaterial = encoder.encode(`aig-edge-cache-v1:${encryptionKey}`);
   const key = await crypto.subtle.importKey('raw', keyMaterial, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(credentials.join('\0'))));
   return Array.from(mac.slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -138,6 +148,12 @@ export async function matchEdgeCache(keyRequest: Request, request: Request, env:
   for (const [k, v] of Object.entries(corsHeaders(request, env))) {
     headers.set(k, v);
   }
+  // A replayed stream is not an upstream stream, so trackClientResponse would otherwise
+  // never finalize it. The marker makes it wrap the stream and count the outcome (success
+  // on completion, cancellation on client abort) and decrement activeRequests.
+  if (/text\/event-stream/i.test(cached.headers.get('content-type') || '')) {
+    headers.set(SYNTHETIC_CLIENT_STREAM_HEADER, '1');
+  }
   return new Response(cached.body, { status: 200, headers });
 }
 
@@ -150,6 +166,16 @@ export type EdgeCachePlan = {
   ttlSec: number;
   stream: boolean;
 };
+
+// Logged once per isolate: an operator who opted in but left the key unset
+// should see why the cache stays off, without a line per request.
+let hasLoggedMissingEncryptionKey = false;
+
+function logEdgeCacheDisabledOnce(env: GatewayEnv): void {
+  if (hasLoggedMissingEncryptionKey) return;
+  hasLoggedMissingEncryptionKey = true;
+  getLogger(env).debug('[edge-cache] disabled: AIG_TOKEN_ENCRYPTION_KEY is not configured (fail-closed; the cache key needs it).');
+}
 
 /**
  * Computes the edge cache plan (key + TTL) if eligible, else null.
@@ -171,6 +197,10 @@ export async function resolveEdgeCachePlan(
   const ttl = ttlSec ? Number(ttlSec) : 14400;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
   const scope = await callerCacheScope(request, env);
+  if (scope === null) {
+    logEdgeCacheDisabledOnce(env);
+    return null;
+  }
   const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: isStreamRequested, scope });
   return { keyRequest, ttlSec: ttl, stream: isStreamRequested };
 }

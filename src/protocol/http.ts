@@ -136,11 +136,12 @@ export class BodyTooLargeError extends Error {
   }
 }
 
+// Collects the raw chunks and decodes once. A multi-byte UTF-8 sequence split across
+// chunks is then decoded whole, and the body is never built up as a string piece by piece.
 export async function readBodyTextWithLimit(request: Request, maxBytes: number): Promise<string> {
   if (!request.body) return '';
   const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
+  const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
@@ -150,9 +151,15 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number):
       await reader.cancel().catch(() => {});
       throw new BodyTooLargeError();
     }
-    text += decoder.decode(value, { stream: true });
+    chunks.push(value);
   }
-  return text + decoder.decode();
+  const combined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(combined);
 }
 
 export async function safeReadErrorBody(response: Response, maxBytes: number = 4096, deadlineMs?: number | null): Promise<string> {

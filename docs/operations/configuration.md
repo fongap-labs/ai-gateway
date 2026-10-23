@@ -271,6 +271,7 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 - `AIG_HEDGE_DELAY_MS`
 - `AIG_REQUEST_HEDGE_MAX`
 - `AIG_ACCESS_KEY_RPM`
+- `AIG_AUTH_ATTEMPT_RPM`
 - `AIG_EDGE_CACHE_TTL_SEC`
 
 `AIG_AUTH_FAILURE_COOLDOWN_MS` 默认 1 小时，是凭据失效时的冷却时长：401 直接使用它；Tier 1 的 403 先走 `0 -> 60s -> 10m` 的模型级阶梯，连续多次才达到它（参见[可靠性模型](../architecture/reliability-model.md#冷却与半开恢复)）。
@@ -287,7 +288,7 @@ Claude 与 Codex 节点遵循相同的模式，分别使用 `provider: "anthropi
 
 超时与 hedge 的内置默认值会随请求体大小和回复方式自适应（参见[可靠性模型](../architecture/reliability-model.md#随请求体大小自适应)与[路由模型](../architecture/routing-model.md#hedge)）：请求体超过 50000 字符后，请求预算、响应头等待和首事件等待每 25000 字符各增加 1 秒（上限 45 秒）；非流式请求的响应头等待改为整个 attempt 窗口；内置的 3 秒 hedge 延迟会随大提示词、主节点的 TTFT 以及非流式回复（至少 10 秒）而推后。显式设置 `AIG_HEDGE_DELAY_MS` 或策略的 `hedge.delay_ms` 会按原值使用。
 
-`AIG_IS_SUBSCRIPTION_ENABLED`（布尔值，默认为 `true`）用于开启或关闭 Tier 2 订阅代理。设为 `false` 时，标记为 `auth: "oauth"` 的节点不会被加载，且每个 `/oauth/*` 路由都会返回 404。`AIG_PUBLIC_DASHBOARD`（布尔值，默认为 `true`）决定是否在 `/` 提供仪表盘、在 `/readme-status.svg` 提供徽章；设为 `false` 时两者均返回 404。`AIG_DIAGNOSTICS_GROUPS`（以逗号分隔的 key 分组，默认为空）将 `/health` 与 `/metrics` 限制为所列分组；设置之后，其他任何有效 key 都会收到 403，而 `/v1/models` 仍对所有 key 开放。
+`AIG_IS_SUBSCRIPTION_ENABLED`（布尔值，默认为 `true`）用于开启或关闭 Tier 2 订阅代理。设为 `false` 时，标记为 `auth: "oauth"` 的节点不会被加载，且每个 `/oauth/*` 路由都会返回 404。`AIG_PUBLIC_DASHBOARD`（布尔值，默认为 `false`）决定是否在 `/` 提供仪表盘、在 `/readme-status.svg` 提供徽章；默认 `false` 时两者均返回 404，设为 `true` 后匿名访客即可看到模型状态与用量。仪表盘不展示访问密钥分组名。`AIG_DIAGNOSTICS_GROUPS`（以逗号分隔的 key 分组，默认为空）将 `/health` 与 `/metrics` 限制为所列分组；设置之后，其他任何有效 key 都会收到 403，而 `/v1/models` 仍对所有 key 开放。
 
 其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP`、`AIG_DASHBOARD_MODELS`、`AIG_OAUTH_PROVIDERS` 与 `AIG_OAUTH_ADMIN_GROUPS`（参见 [Tier 2 订阅](#tier-2-订阅oauth)）。
 
@@ -319,7 +320,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
 配置 Tier 1 节点时，GitHub 部署预检强制要求 `AIG_AFFINITY_KV_ID`；运行时若未绑定该 KV，亲和会静默禁用，主链路仍可用。生产环境建议至少两个独立 Tier 1 账号，并将 `AIG_ACCESS_KEY_RPM` 设为非 0、为策略设置有限的 `max_in_flight`；这些不是硬编码默认值。
 
-访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。
+访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。其默认值为每分组每分钟 `120`，设为 `0` 才关闭。`AIG_AUTH_ATTEMPT_RPM`（默认 `60`，`0` 关闭）限制鉴权失败的请求，超限返回 429（`gateway_auth_throttled`），详见 [SECURITY.md](../../SECURITY.md#认证失败节流)。
 
 ## 策略
 

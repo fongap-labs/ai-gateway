@@ -216,9 +216,10 @@ export function preflight(env) {
   if (tier1Shards && countNodesInShards(v.vars, 1) === 1) {
     warnings.push('Only one Tier 1 node is configured; there is no account-level failover if that key is rate-limited or unavailable.');
   }
-  const rpm = Number(v.vars.AIG_ACCESS_KEY_RPM ?? 0);
+  // Unset means the runtime default (120, see runtime-vars.ts); only an explicit 0 disables the cap.
+  const rpm = Number(v.vars.AIG_ACCESS_KEY_RPM ?? 120);
   if (tier1Shards && (!Number.isFinite(rpm) || rpm <= 0)) {
-    warnings.push('AIG_ACCESS_KEY_RPM is unset or 0; gateway access-key rate limiting is disabled.');
+    warnings.push('AIG_ACCESS_KEY_RPM is 0; gateway access-key rate limiting is disabled.');
   }
   if (tier1Shards && !v.vars.AIG_POLICIES_CONFIG) {
     warnings.push('AIG_POLICIES_CONFIG is not set; Tier 1 max_in_flight is unlimited by default.');

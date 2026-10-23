@@ -4,6 +4,7 @@
 // Public re-export surface for the token-usage store.
 
 export { aggregateDailyToWeekly, aggregateHourlyToDaily } from './aggregation.ts';
+export { __resetUsageBufferForTests, flushUsageBuffer } from './buffer.ts';
 export {
   DISPLAY_TIMEZONE_OFFSET_MS,
   isoDayUtc8,
@@ -14,7 +15,6 @@ export {
   ttftBucketIndex,
   utc8DayStartUtcMs,
 } from './keys.ts';
-
 // Delivered-response queries remain the source for Public Model Status / TTFT.
 export {
   MODEL_STATUS_HISTORICAL_WINDOW_MS,

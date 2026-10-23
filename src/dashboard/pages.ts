@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { loadAccessKeysConfig } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
 import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import { htmlResponse } from '../protocol/http.ts';
@@ -189,7 +188,6 @@ export async function dashboardResponse(request: Request, env: Record<string, un
     const configuredPublicUrl = String(gatewayEnv?.AIG_PUBLIC_URL || '').trim();
     const publicOrigin = configuredPublicUrl ? new URL(configuredPublicUrl).origin : new URL(request.url).origin;
     const apiBase = `${publicOrigin}/v1`;
-    const accessGroups = loadAccessKeysConfig(gatewayEnv).keys.map((entry) => entry.group);
 
     const officialNames = new Map<string, string>();
     for (const node of config.nodes || []) {
@@ -201,7 +199,7 @@ export async function dashboardResponse(request: Request, env: Record<string, un
 
     const modelsResult = renderModels(models, ensureModelTtftContainers(stats.ttft, models));
     const usageHtml = await usageSection(gatewayEnv, now, stats, officialNames);
-    const quickHtml = quickStartSection({ apiBase, accessGroups });
+    const quickHtml = quickStartSection({ apiBase });
 
     const body = [
       '<section id="status">',

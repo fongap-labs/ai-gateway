@@ -18,6 +18,7 @@
 
 import type { GatewayEnv } from '../../types/runtime.ts';
 import { getUtcWeekStartUtcMs } from '../time-buckets.ts';
+import { flushUsageBuffer } from './buffer.ts';
 import {
   DAILY_RETENTION_MS,
   DAY_MS,
@@ -109,6 +110,9 @@ export async function cleanupModelStats(env: GatewayEnv) {
 // propagate so that Cron Trigger status reflects failures (matching
 // legacy cleanupModelStats behavior).
 export async function maintainUsageStats(env: GatewayEnv, now: number = Date.now()) {
+  // Write out buffered increments first, so aggregation sees every event this isolate has
+  // recorded. A failed flush is logged and retained in the buffer, and maintenance continues.
+  await flushUsageBuffer().catch((e) => console.error('token-stats flush before maintenance failed:', e?.message || e));
   // Local import to avoid a circular reference: aggregation.ts does
   // not need anything from retention.ts, but the orchestrator
   // chains them. The dynamic import keeps the module graph a DAG.

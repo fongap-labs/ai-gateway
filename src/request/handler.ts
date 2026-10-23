@@ -13,6 +13,7 @@
 // Streaming rule: the first-event guard runs BEFORE any streaming Response is
 // returned to the client; after that point transparent failover is forbidden.
 
+import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { admitRequestBody } from '../ratelimit/body-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
@@ -35,7 +36,9 @@ import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pick
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
   // client is asked to retry instead (see ratelimit/body-budget.ts).
-  const releaseBody = admitRequestBody(Number(request.headers.get('content-length')));
+  // A request without a body is charged nothing, whatever its Content-Length says.
+  const worstCaseBodyBytes = request.body ? getLimits(env).maxBodyBytes : 0;
+  const releaseBody = admitRequestBody(Number(request.headers.get('content-length')), worstCaseBodyBytes);
   if (!releaseBody) {
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
     return gatewayError(

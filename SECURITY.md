@@ -47,6 +47,21 @@
 
 限流器是**按分组**（group-scoped）而非按 key 设置的：同一 `AIG_ACCESS_KEY_<GROUP>` 中的所有访问密钥共享同一 RPM 上限。这是有意的设计，以避免按 key 状态的爆炸式增长；详情参见 `src/ratelimit/key-rpm.ts`。
 
+`AIG_ACCESS_KEY_RPM` 默认为 `120`（每分组每分钟）；设为 `0` 才会关闭该上限。
+
+### 认证失败节流
+
+鉴权失败（缺少或错误的网关密钥）的请求，由独立的失败尝试窗口（`AIG_AUTH_ATTEMPT_RPM`，默认 `60`，每分钟，每个 isolate；设为 `0` 关闭）限制。该检查在凭据校验之前进行：超限的请求直接返回 `429`，错误码为 `gateway_auth_throttled`，并带有 `Retry-After` 头。
+
+- **只计失败**：鉴权成功的请求不消耗失败预算；同一指纹一旦鉴权成功，其失败窗口即被清零。
+- **指纹**：未携带凭据的请求共用 `ANON` 指纹；携带凭据的请求使用所提交凭据的 SHA-256 前 16 位十六进制字符。明文凭据不会被存储或记录。
+- **已知局限**：指纹按凭据区分，因此每个不同的凭据拥有各自的窗口。持续更换凭据进行爆破的请求，不会累计到同一窗口，该节流对此无效；它主要抑制同一凭据反复失败的请求，以及无凭据的高频请求。针对凭据爆破的防护，需要依赖访问密钥本身的熵（推荐足够长的随机密钥）以及上述 Cloudflare WAF 规则。
+- 与 RPM 上限一样，窗口是 isolate 本地的，跨 isolate 的总量不受严格约束。
+
+## 公开仪表盘
+
+公开仪表盘（`/`）与状态徽章（`/readme-status.svg`）由 `AIG_PUBLIC_DASHBOARD` 控制，**默认关闭**（`false`，两者均返回 404）。设为 `true` 后，匿名访客可以看到模型状态与用量聚合；此时仪表盘**不**列出访问密钥分组名（`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 等），分组名属于运营信息。
+
 ## Google OAuth 客户端常量
 
 `src/providers/google.ts` 中的 Google OAuth `client_id` 与 `client_secret`，取自 Gemini CLI 的公开 OAuth 客户端（Apache-2.0 许可，参见 https://github.com/google-gemini/gemini-cli）。它们是为已安装应用设计的公开常量，**不**被视为机密。OAuth 接入流程仅将其用于 Tier 2 的 Gemini Code Assist 订阅；客户端提供的凭据绝不会到达上游 provider。
