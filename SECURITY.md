@@ -60,7 +60,7 @@
 
 ## 公开仪表盘
 
-公开仪表盘（`/`）与状态徽章（`/readme-status.svg`）由 `AIG_PUBLIC_DASHBOARD` 控制，**默认关闭**（`false`，两者均返回 404）。设为 `true` 后，匿名访客可以看到模型状态与用量聚合；此时仪表盘**不**列出访问密钥分组名（`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 等），分组名属于运营信息。
+公开仪表盘（`/`）与状态徽章（`/readme-status.svg`）由 `AIG_PUBLIC_DASHBOARD` 控制，**默认开启**（`true`）；设为 `false` 时两者均返回 404。匿名访客可以看到模型状态与用量聚合；仪表盘**不**列出访问密钥分组名（`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 等），分组名属于运营信息。
 
 ## Google OAuth 客户端常量
 

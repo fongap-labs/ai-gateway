@@ -127,7 +127,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (request.method === 'OPTIONS') {
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
   }
-  const isPublicDashboard = getBool(env, 'AIG_PUBLIC_DASHBOARD', false);
+  const isPublicDashboard = getBool(env, 'AIG_PUBLIC_DASHBOARD', true);
   if (request.method === 'GET' && pathname === '/' && acceptsHtml(request)) {
     if (!isPublicDashboard) return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
     return { ok: false, response: await dashboardResponse(request, env) };
