@@ -47,7 +47,7 @@
 
 限流器是**按分组**（group-scoped）而非按 key 设置的：同一 `AIG_ACCESS_KEY_<GROUP>` 中的所有访问密钥共享同一 RPM 上限。这是有意的设计，以避免按 key 状态的爆炸式增长；详情参见 `src/ratelimit/key-rpm.ts`。
 
-`AIG_ACCESS_KEY_RPM` 默认为 `120`（每分组每分钟）；设为 `0` 才会关闭该上限。
+`AIG_ACCESS_KEY_RPM` 默认为 `0`，即不设每分组每分钟的上限；设为正数才会启用该上限。
 
 ### 认证失败节流
 

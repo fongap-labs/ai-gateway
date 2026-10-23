@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 安全 [breaking, security]: 鉴权失败的请求由独立的失败尝试窗口节流（`AIG_AUTH_ATTEMPT_RPM`，默认每分钟 60 次，`0` 关闭）。超限返回 429，错误码为 `gateway_auth_throttled`，并带 `Retry-After`；鉴权成功的请求不消耗失败预算。访问密钥 RPM 上限 `AIG_ACCESS_KEY_RPM` 的默认值由 `0` 改为 `120`。迁移：此前未设置该变量的部署会开始受每分组每分钟 120 次的限制；需要更高吞吐的部署请显式设置更大的值，或设为 `0` 关闭。
+- 安全 [breaking, security]: 鉴权失败的请求由独立的失败尝试窗口节流（`AIG_AUTH_ATTEMPT_RPM`，默认每分钟 60 次，`0` 关闭）。超限返回 429，错误码为 `gateway_auth_throttled`，并带 `Retry-After`；鉴权成功的请求不消耗失败预算。
 
 - 安全 [security]: 公开仪表盘的快速开始不再列出访问密钥分组名（`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT`）。仪表盘与徽章的开关 `AIG_PUBLIC_DASHBOARD` 默认值保持不变（`true`）。
 

@@ -49,8 +49,8 @@ export const RUNTIME_TUNABLES = [
   // 60s sliding window. The cap is best-effort (single-isolate); for a
   // strict global cap across isolates, bind a Cloudflare Rate Limiting
   // worker binding (this is the existing model, see QUOTA_RATE_LIMITER).
-  // 0 disables the cap entirely. Default 120 so an out-of-the-box deployment is capped.
-  { name: 'AIG_ACCESS_KEY_RPM', type: 'int', min: 0, max: 100_000, def: 120 },
+  // 0 disables the cap entirely (default). Set a positive value to cap each key group.
+  { name: 'AIG_ACCESS_KEY_RPM', type: 'int', min: 0, max: 100_000, def: 0 },
   // Per-isolate, per-fingerprint cap on FAILED authorization attempts in a 60s
   // sliding window. Checked before authorize(); only failures are counted, and a
   // successful authorization clears the fingerprint. 0 disables the throttle.

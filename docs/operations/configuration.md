@@ -320,7 +320,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
 配置 Tier 1 节点时，GitHub 部署预检强制要求 `AIG_AFFINITY_KV_ID`；运行时若未绑定该 KV，亲和会静默禁用，主链路仍可用。生产环境建议至少两个独立 Tier 1 账号，并将 `AIG_ACCESS_KEY_RPM` 设为非 0、为策略设置有限的 `max_in_flight`；这些不是硬编码默认值。
 
-访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。其默认值为每分组每分钟 `120`，设为 `0` 才关闭。`AIG_AUTH_ATTEMPT_RPM`（默认 `60`，`0` 关闭）限制鉴权失败的请求，超限返回 429（`gateway_auth_throttled`），详见 [SECURITY.md](../../SECURITY.md#认证失败节流)。
+访问密钥分组不会增加路由评分因子。`AIG_ACCESS_KEY_RPM` 用于保护网关访问密钥；它不是 Provider 额度模型。其默认值为 `0`，即不限制；设为正数才会按分组每分钟限制请求数。`AIG_AUTH_ATTEMPT_RPM`（默认 `60`，`0` 关闭）限制鉴权失败的请求，超限返回 429（`gateway_auth_throttled`），详见 [SECURITY.md](../../SECURITY.md#认证失败节流)。
 
 ## 策略
 
