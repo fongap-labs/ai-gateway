@@ -66,7 +66,7 @@ PR 描述应说明问题、行为变更、验证方式、兼容性影响、资�
 - [运营](docs/operations/configuration.md) —— 配置与部署流程。
 - [治理](docs/governance/README.md) —— 开发、质量、依赖、产品与文档策略。
 
-历史证据保存在 Git 历史、Pull Request、commit、已有的 tag 以及已有的 GitHub Release 之中。仓库不维护自动化的项目发布编号。仓库中的 `CHANGELOG.md` 是英文工程记录，并遵循 Action Worker 的变更日志约定；它不构成第二套历史系统。
+历史证据保存在 Git 历史、Pull Request、commit、已有的 tag 以及已有的 GitHub Release 之中。仓库不维护自动化的项目发布编号。仓库中的 `CHANGELOG.md` 是中文工程记录，并遵循 Action Worker 的变更日志约定；它不构成第二套历史系统。
 
 如果需要命名的发布，由维护者选定目标 commit，并手动创建 Git tag 或 GitHub Release。CI 与部署自动化绝不可推断、递增、校验或发布项目发布编号。
 

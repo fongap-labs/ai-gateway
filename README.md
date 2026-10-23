@@ -220,7 +220,7 @@ flowchart TD
 
 完整规则见 [CONTRIBUTING.md](CONTRIBUTING.md)，要点如下：
 
-- 人类文档使用中文；PR 标题、工程 diff 与 CHANGELOG 使用英文。
+- 人类文档与 CHANGELOG 条目使用中文；PR 标题与工程 diff 使用英文。
 - 分支使用 `feat/`、`fix/`、`docs/` 等前缀，每个 PR 只有一个主要目标。
 - PR 标题遵循 Conventional Commits，例如 `docs: state independent shard binding in README`。
 - 行为、配置、协议或部署变化，必须在同一 PR 中更新规范文档。
