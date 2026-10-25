@@ -31,14 +31,19 @@ export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([15_000, 30_000, 60_
 export const ADAPTIVE_429_WINDOW_STEPS_MS = Object.freeze([15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 180_000, 300_000] as const);
 
 // A 429 that names a long-lived allowance (an hourly plan window, a daily cap) stays
-// exhausted until the provider's window rolls over, which can be hours away. Probing
-// such a key every few minutes buys nothing but a failed request each time, so this
-// ladder starts at the 5-minute stage and keeps stretching to the longest window
-// seen in practice (5 hours). Any success clears it, so a key whose window rolled
-// over early is back in the pool at the next probe.
-export const ADAPTIVE_429_QUOTA_STEPS_MS = Object.freeze([
-  300_000, 600_000, 1_200_000, 2_400_000, 3_600_000, 7_200_000, 10_800_000, 18_000_000,
-] as const);
+// exhausted until the provider's window rolls over. Probing such a key every few
+// minutes buys only a failed request each time, so this ladder starts at the
+// 5-minute stage. It stops at 30 minutes (TIER1_QUOTA_COOLDOWN_MAX_MS): a probe
+// every half hour costs one request, while a longer bench keeps a key that has
+// already recovered out of the pool, and with the shared cooldown store out of
+// every isolate's pool. Any success clears it.
+export const ADAPTIVE_429_QUOTA_STEPS_MS = Object.freeze([300_000, 600_000, 1_200_000, 1_800_000] as const);
+
+// The longest a Tier 1 key is benched for a long-lived allowance, whether the
+// wait comes from the ladder or from the provider's own Retry-After or reset
+// text. A provider's stated reset is a hint, not a guarantee, so it never keeps
+// a key out of the pool for longer than the ladder would.
+export const TIER1_QUOTA_COOLDOWN_MAX_MS = 1_800_000;
 
 export const ADAPTIVE_429_TRUSTED_HINT_STAGES = 2;
 // A 429 whose text names a long-lived allowance (daily limit, plan window, credits)

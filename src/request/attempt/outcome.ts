@@ -14,9 +14,9 @@ import {
   ADAPTIVE_429_QUOTA_STEPS_MS,
   ADAPTIVE_429_WINDOW_STEPS_MS,
   adaptive429StepsFromEnv,
-  clearAdaptive429State,
   nextAdaptive429CooldownMs,
   snapshotAdaptive429State,
+  TIER1_QUOTA_COOLDOWN_MAX_MS,
 } from '../../reliability/adaptive-429.ts';
 import type { FailureClassification, FailureKind } from '../../reliability/classify.ts';
 import { classifyHedgeRaceLoss, KIND } from '../../reliability/classify.ts';
@@ -143,7 +143,7 @@ export function recordOutcome(
     if (classification.action !== 'neutral') {
       const upstreamModel = upstreamModelOf(node, state.requestedModel);
       let tier1RetryAfterMs = classification.retryAfterMs || 0;
-      let tier1RateLimitClass: string | undefined = classification.rateLimitWindow;
+      const tier1RateLimitClass: string | undefined = classification.rateLimitWindow;
       if (classification.requestTooLarge) recordTier1Oversize(node.id, state.requestedModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
@@ -156,58 +156,30 @@ export function recordOutcome(
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const now = Date.now();
 
-        // Determine the adaptive-429 ladder to use. A window-classified 429 climbs
-        // the gentle window ladder; a quota-classified one the long-allowance
-        // ladder (it already cools the whole key). A window 429 whose ladder
-        // reaches stage >= 3 is effectively a long-lived allowance: promote it to
-        // the quota ladder and widen the scope to the account.
-        const quotaSteps = () => adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_QUOTA_STEPS_MS, ADAPTIVE_429_QUOTA_STEPS_MS);
-        let ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
+        // Determine the adaptive-429 ladder to use. Only the response itself decides
+        // the class: a window-classified 429 climbs the gentle window ladder and
+        // stays on it however often its probe fails, because a per-minute limit
+        // shared with other isolates and clients keeps refusing probes without
+        // being a long-lived allowance. A quota-classified one (explicit horizon
+        // wording or a long stated wait) climbs the long-allowance ladder and
+        // already cools the whole key.
+        const ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
         const isWindowLadder = classification.rateLimitWindow === 'window';
         const isQuotaLadder = classification.rateLimitWindow === 'quota';
-        let ladderSteps = isWindowLadder
+        const ladderSteps = isWindowLadder
           ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_WINDOW_STEPS_MS, ADAPTIVE_429_WINDOW_STEPS_MS)
           : isQuotaLadder
-            ? quotaSteps()
+            ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_QUOTA_STEPS_MS, ADAPTIVE_429_QUOTA_STEPS_MS)
             : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
         // An unclassified account-wide 429 keeps the historical quota start stage
         // on the default ladder; a window 429 climbs from stage 1 even when the
         // observed scope is account-wide.
-        let startStage = !isWindowLadder && !isQuotaLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
-        let isWindowClassified = isWindowLadder;
-
-        if (isWindowClassified && tier1RateLimitScope === 'model') {
-          // Check the model ladder stage for potential promotion
-          const modelAdaptive = snapshotAdaptive429State(node.provider, node.id, now, state.requestedModel);
-          if (modelAdaptive.stage >= 3) {
-            tier1RateLimitScope = 'account';
-            ladderModel = '';
-            ladderSteps = quotaSteps();
-            startStage = 1;
-            isWindowClassified = false;
-            tier1RateLimitClass = 'quota';
-            // The long-allowance ladder starts from its first step, not from the
-            // window ladder's stage.
-            clearAdaptive429State(node.provider, node.id);
-          }
-        }
-
-        if (isWindowClassified && tier1RateLimitScope === 'account') {
-          // Window-classified but already account-scoped: check account ladder
-          const accountAdaptive = snapshotAdaptive429State(node.provider, node.id, now, '');
-          if (accountAdaptive.stage >= 3) {
-            ladderSteps = quotaSteps();
-            startStage = 1;
-            isWindowClassified = false;
-            tier1RateLimitClass = 'quota';
-            clearAdaptive429State(node.provider, node.id);
-          }
-        }
+        const startStage = !isWindowLadder && !isQuotaLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
 
         tier1RetryAfterMs = nextAdaptive429CooldownMs(
           node.provider,
           node.id,
-          classification.retryAfterMs || 0,
+          Math.min(classification.retryAfterMs || 0, TIER1_QUOTA_COOLDOWN_MAX_MS),
           now,
           ladderModel,
           ladderSteps,
