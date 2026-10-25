@@ -85,8 +85,8 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // Empty keeps the built-in window ladder.
   { name: 'AIG_RATE_LIMIT_WINDOW_STEPS_MS', def: '' },
   // Long-allowance variant of the 429 ladder, for hourly/daily plan windows
-  // (a 5-hour coding plan, a daily cap): "300000,600000,1200000,2400000,3600000,
-  // 7200000,10800000,18000000". Empty keeps the built-in ladder (5m ... 5h).
+  // (a 5-hour coding plan, a daily cap): "300000,600000,1200000,1800000".
+  // Empty keeps the built-in ladder (5m ... 30m).
   { name: 'AIG_RATE_LIMIT_QUOTA_STEPS_MS', def: '' },
   // Tier 2 subscription OAuth provider registry: JSON object keyed by
   // provider name -> { authorize_url, token_url, client_id, scope,
