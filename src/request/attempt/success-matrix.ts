@@ -24,7 +24,7 @@ import { readBufferedReplyText } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
 import { classifyClientAbort, classifyFirstEventFailure, classifyPostHeadersFailure } from '../../reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
-import { recordTier1Ttft } from '../../reliability/tier1-state.ts';
+import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../reliability/tier1-state.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
 import { trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutputForConversion, isOpenAIChatRealOutputForConversion, isResponsesRealOutput } from '../../transport/index.ts';
@@ -103,8 +103,12 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   if (!upstreamStreaming) {
     detach();
     c.ttftMs = Date.now() - (c.attemptStartMs as number);
-    if (node.tier === 'tier-1') recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
-    else recordTtft(node.id, c.ttftMs, state.requestedModel);
+    if (node.tier === 'tier-1') {
+      recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
+      // A full upstream object is richer probe evidence than headers alone;
+      // the v2 gate commits here once upstream.ok is established.
+      commitTier1RecoveryProbe(node.id, state.requestedModel);
+    } else recordTtft(node.id, c.ttftMs, state.requestedModel);
     let native: unknown;
     try {
       native = await readBufferedReplyText(upstream, c.attemptDeadlineMs).then((text) => JSON.parse(text));
@@ -194,8 +198,11 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
 
   detach();
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
-  if (node.tier === 'tier-1') recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
-  else recordTtft(node.id, c.ttftMs, state.requestedModel);
+  if (node.tier === 'tier-1') {
+    recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
+    // First SSE event: same v2 probe-evidence contract as the native stream path.
+    commitTier1RecoveryProbe(node.id, state.requestedModel);
+  } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
   // Anthropic input-token estimate for usage accounting parity with the legacy

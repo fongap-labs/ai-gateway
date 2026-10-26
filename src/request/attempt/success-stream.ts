@@ -5,7 +5,7 @@ import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { classifyClientAbort, classifyFirstEventFailure } from '../../reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
-import { recordTier1Ttft } from '../../reliability/tier1-state.ts';
+import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../reliability/tier1-state.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
 import { trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../transport/index.ts';
@@ -87,8 +87,13 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
 
   detach();
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
-  if (node.tier === 'tier-1') recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
-  else recordTtft(node.id, c.ttftMs, state.requestedModel);
+  if (node.tier === 'tier-1') {
+    recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
+    // The first SSE event is the v2 recovery-probe evidence for a stream: a
+    // key past its rate-limit cooldown that answers here is healthy, and the
+    // single-flight window opens immediately (no-op under the legacy gate).
+    commitTier1RecoveryProbe(node.id, state.requestedModel);
+  } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
 

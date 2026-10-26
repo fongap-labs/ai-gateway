@@ -61,6 +61,14 @@ export const RUNTIME_TUNABLES = [
   // upstream consumption. 0 disables the edge cache entirely (match and put
   // are skipped), matching the AIG_ACCESS_KEY_RPM disable convention.
   { name: 'AIG_EDGE_CACHE_TTL_SEC', type: 'int', min: 0, max: 7 * 86_400, def: 14_400 },
+  // (AIG_TIER1_PROBE_V2) How long an armed Tier 1 recovery probe holds its
+  // single-flight window before the gate self-opens. The probe itself commits as
+  // soon as the first meaningful evidence arrives (response headers for a
+  // buffered reply, the first SSE event for a stream), so a healthy key reopens
+  // in about one round trip instead of holding every other request behind the
+  // whole window. Under the legacy gate (AIG_TIER1_PROBE_V2 off) this value is
+  // unused; the classic fixed 15s window keeps its dedicated constant.
+  { name: 'AIG_TIER1_PROBE_TIMEOUT_MS', type: 'int', min: 5_000, max: 30_000, def: 10_000 },
 ] as const satisfies readonly RuntimeTunable[];
 
 export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
@@ -114,6 +122,13 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
   // Cache temperature=0 requests without the x-gateway-cache: true opt-in. Off by default.
   { name: 'AIG_EDGE_CACHE_AUTO', def: false },
+  // v2 Tier 1 rate-limit recovery gate. false keeps the legacy behavior: a
+  // 15s account-wide (or model-wide) hard gate after each 429 cooldown expires,
+  // with the recovery probe committed only at stream end. true replaces the
+  // hard gate with a single-flight probe that other requests do not queue
+  // behind: concurrent claims skip to another node, and the probe commits at
+  // response headers / first SSE event.
+  { name: 'AIG_TIER1_PROBE_V2', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

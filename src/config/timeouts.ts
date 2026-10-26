@@ -4,7 +4,7 @@
 // Single source of truth for every timeout / cooldown value.
 // Do not hardcode timeout defaults anywhere else.
 
-import { clampInt, readEnv } from './env.ts';
+import { clampInt, getBool, readEnv } from './env.ts';
 import type { RuntimeTunableName } from './runtime-vars.ts';
 import { RUNTIME_TUNABLES } from './runtime-vars.ts';
 
@@ -91,6 +91,13 @@ export type Limits = {
   gatewayKeyRpm: number;
   authAttemptRpm: number;
   edgeCacheTtlSec: number;
+  /** AIG_TIER1_PROBE_V2: single-flight recovery probe that commits early
+   *  (headers / first SSE event) instead of a 15s hard gate whose probe only
+   *  commits at stream end. false keeps the legacy gate byte-for-byte. */
+  tier1ProbeV2: boolean;
+  /** AIG_TIER1_PROBE_TIMEOUT_MS: how long the v2 probe keeps its single-flight
+   *  window when no meaningful evidence arrives. Unused legacy mode. */
+  tier1ProbeTimeoutMs: number;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -229,6 +236,13 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.min,
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.max,
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.def,
+    ),
+    tier1ProbeV2: getBool(env, 'AIG_TIER1_PROBE_V2', false),
+    tier1ProbeTimeoutMs: clampInt(
+      readEnv(env, 'AIG_TIER1_PROBE_TIMEOUT_MS'),
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.min,
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.max,
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.def,
     ),
   };
   cache.set(env, cached);

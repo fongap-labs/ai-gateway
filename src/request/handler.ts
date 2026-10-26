@@ -18,6 +18,7 @@ import { getLogger } from '../observability/logger.ts';
 import { admitRequestBody } from '../ratelimit/body-budget.ts';
 import { isSpeculativeRetryAfter, RetrySlot } from '../reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
+import { configureTier1ProbeGate } from '../reliability/tier1-state.ts';
 import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
 import { tier1ModelAvailability } from '../scheduler/tier1-scheduler.ts';
@@ -41,10 +42,15 @@ import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pick
 const SIBLING_HOP_CAP_MS = 45_000;
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+  // Per-isolate reliability configuration (probe gate) must be applied before
+  // the first scheduling decision of this request. getLimits caches the
+  // clamped values per env object, so this costs one map lookup in steady state.
+  const limits = getLimits(env);
+  configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
   // client is asked to retry instead (see ratelimit/body-budget.ts).
   // A request without a body is charged nothing, whatever its Content-Length says.
-  const worstCaseBodyBytes = request.body ? getLimits(env).maxBodyBytes : 0;
+  const worstCaseBodyBytes = request.body ? limits.maxBodyBytes : 0;
   const releaseBody = admitRequestBody(Number(request.headers.get('content-length')), worstCaseBodyBytes);
   if (!releaseBody) {
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
