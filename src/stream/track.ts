@@ -401,6 +401,9 @@ export type RelayOptions = {
   onStreamStart?: () => void;
   onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
   onAttemptUsage?: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => void;
+  /** Delivered-response usage callback, mirroring TrackOptions.onUsage
+   *  semantics: fires once on a cleanly completed stream, before onSuccess. */
+  onUsage?: () => void;
 };
 
 /**
@@ -421,10 +424,18 @@ export type RelayOptions = {
  * onNeutral/onStreamStart/onStreamEnd/onAttemptUsage match
  * makeNodeStreamTrack's callbacks exactly, so callers can reuse them.
  */
-export function relayStreamResponse(response: Response, { idleTimeoutMs, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage }: RelayOptions): Response {
+export function relayStreamResponse(
+  response: Response,
+  { idleTimeoutMs, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage, onUsage }: RelayOptions,
+): Response {
   if (!response.body) {
     try {
       onAttemptUsage?.(null, 'success');
+    } catch {
+      /* observability only */
+    }
+    try {
+      onUsage?.();
     } catch {
       /* observability only */
     }
@@ -449,6 +460,14 @@ export function relayStreamResponse(response: Response, { idleTimeoutMs, onSucce
     if (result === 'success') onSuccess();
     else if (result === 'failure') onFailure();
     else onNeutral();
+    // Success-only delivered usage, mirroring TrackOptions.onUsage semantics.
+    if (result === 'success') {
+      try {
+        onUsage?.();
+      } catch {
+        /* observability must never break relay */
+      }
+    }
     onStreamEnd?.(attemptOutcome === 'neutral' ? 'neutral' : 'completed', {
       reason: null,
       durationMs: Date.now() - startMs,

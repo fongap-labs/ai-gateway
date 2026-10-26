@@ -124,8 +124,39 @@ function scheduleBackground(c: AttemptContext, task: Promise<unknown>): void {
   }
 }
 
-export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {
+/**
+ * A committed stream whose matrix translation hit the AIG_CONVERSION_BUDGET
+ * ends as a NEUTRAL end with a budget reason, not as a node failure: the reply
+ * size is the client's demand, so the key takes no cooldown and the attempt is
+ * not counted as delivered, but the physical upstream attempt — which DID run
+ * and bill its tokens — is settled exactly once through the undelivered writer.
+ * The client saw the protocol error frames / truncated reply through the relay.
+ * Composes with the makeNodeStreamTrack callbacks, which the caller bypasses
+ * when the budget fired.
+ */
+export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reason: string, status: number): void {
+  const latencyMs = c.attemptStartMs ? Date.now() - c.attemptStartMs : -1;
+  recordUndeliveredUpstreamAttempt(c, node);
   if (node.tier === 'tier-1') {
+    const observed = settlementOf(c).observedUsage;
+    const consumed = normalizeTokenUsage(observed)?.total ?? 0;
+    settleTier1Quota(node.id, c.tier1ReleaseToken, consumed);
+    releaseTier1Slot(node.id, c.tier1ReleaseToken);
+  } else {
+    recordNeutralEnd(node.id);
+  }
+  bumpNodeCounters(node.id, { requests: 1 });
+  gatewayStats.activeRequests = Math.max(0, gatewayStats.activeRequests - 1);
+  gatewayStats.cancellations++;
+  c.logger.info(
+    `[conversion-budget] request=${c.requestId} node=${node.id} provider=${node.provider}` +
+      ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? node.surfaces?.[0] ?? ''}` +
+      ` tier=${node.tier} model=${logicalModelOf(c)} reason=${reason} status=${status}` +
+      ` kind=conversion_budget counted=false latency_ms=${latencyMs}`,
+  );
+}
+
+export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {  if (node.tier === 'tier-1') {
     const logicalModel = c.state.requestedModel;
     const rateLimited = () =>
       getTier1Account(node.id).consecutiveRateLimits > 0 || (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits ?? 0) > 0;

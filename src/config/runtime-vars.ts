@@ -75,6 +75,26 @@ export const RUNTIME_TUNABLES = [
   // uses this smaller cap (64KB), so a prefix-only provider cannot make the
   // isolate buffer megabytes before the first event is observed.
   { name: 'AIG_STREAM_GUARD_PREFIX_BYTES', type: 'int', min: 16_384, max: 2 * 1024 * 1024, def: 65_536 },
+  // (AIG_CONVERSION_BUDGET) Per-request ceiling on IR translation work for one
+  // matrix-converted reply: max decoded events, translated output characters,
+  // tool-call events, cumulative argument length of one open tool call, and
+  // reported output tokens. Cross-protocol replies are small by demand; a
+  // runaway generation (misconfigured max_tokens, a looping model) otherwise
+  // translates unbounded CPU inside the isolate. Units: counts; lengths in
+  // UTF-16 code units (~byte equivalent for ASCII). Ignored entirely while the
+  // AIG_CONVERSION_BUDGET flag is off.
+  { name: 'AIG_CONVERSION_MAX_EVENTS', type: 'int', min: 25, max: 100_000, def: 400 },
+  { name: 'AIG_CONVERSION_MAX_BYTES', type: 'int', min: 4_096, max: 4 * 1024 * 1024, def: 131_072 },
+  { name: 'AIG_CONVERSION_MAX_TOOL_EVENTS', type: 'int', min: 2, max: 100_000, def: 200 },
+  { name: 'AIG_CONVERSION_MAX_TOOL_ARG_BYTES', type: 'int', min: 1_024, max: 1024 * 1024, def: 65_536 },
+  // The same output ceiling for the collected-object path (a non-streaming
+  // client over a forced-stream upstream), which accumulates the decoded reply
+  // in memory before rendering.
+  { name: 'AIG_CONVERSION_NONSTREAM_MAX_BYTES', type: 'int', min: 4_096, max: 4 * 1024 * 1024, def: 131_072 },
+  // Reported cumulative output-token ceiling. Anthropic reports running output
+  // tokens mid-stream, so this can cut a live stream; Chat/Responses report
+  // once at the end. 0 disables the token ceiling entirely (default).
+  { name: 'AIG_CONVERSION_MAX_OUTPUT_TOKENS', type: 'int', min: 0, max: 10_000_000, def: 0 },
 ] as const satisfies readonly RuntimeTunable[];
 
 export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
@@ -111,6 +131,15 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // separated ("ULTRA" or "ULTRA,AGENT"). Unset disables onboarding
   // (fail-closed); already linked subscriptions keep working.
   { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
+  // AIG_OAUTH_ADMIN_GROUPS listing...
+  { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
+  // What the translation matrix does when a reply exceeds the AIG_CONVERSION_*
+  // budget (AIG_CONVERSION_BUDGET must be on). "error" (default) ends the
+  // stream with a gateway error frame (or 502 for object collection); "truncate"
+  // renders a well-formed short reply instead (finish_reason length /
+  // stop_reason max_tokens / response.incomplete) — the attempt is delivered,
+  // counted, and settled like any other success.
+  { name: 'AIG_CONVERSION_BUDGET_MODE', def: 'error' },
   // Access-key groups allowed to read /health and /metrics, comma separated ("AGENT" or
   // "AGENT,ULTRA"); "*" lets every valid key read them.
   { name: 'AIG_DIAGNOSTICS_GROUPS', def: DIAGNOSTICS_GROUPS_DEFAULT },
@@ -143,6 +172,18 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // accounted as delivered), no synthetic interruption events. Idle timeout and
   // cancel propagation stay active.
   { name: 'AIG_STREAM_PASSTHROUGH', def: false },
+  // Per-request budget enforcement for matrix (cross-protocol) conversions.
+  // false (default) keeps the legacy unlimited translation byte-for-byte. true
+  // applies the AIG_CONVERSION_* ceilings: when exceeded, behavior is governed
+  // by AIG_CONVERSION_BUDGET_MODE. The node receives no reliability blame
+  // either way: the reply size is the client's demand, not the key's health.
+  { name: 'AIG_CONVERSION_BUDGET', def: false },
+  // Non-streaming clients keep their own stream flag for matrix conversions so
+  // the upstream may answer with a single JSON body (avoids SSE parsing and,
+  // for several providers, accounts cheaper). false (default) keeps the forced
+  // upstream streaming + collect path. Streaming clients always upstream-stream
+  // regardless of this flag.
+  { name: 'AIG_CONVERSION_PREFER_NONSTREAM', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

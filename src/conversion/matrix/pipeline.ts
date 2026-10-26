@@ -1,4 +1,5 @@
 ﻿// SPDX-License-Identifier: MIT
+
 // Copyright (c) 2026 Fongap Labs
 //
 // Translation-matrix pipeline: the per-protocol adapters (chat / anthropic /
@@ -18,6 +19,7 @@ import { convertSseStream } from '../sse.ts';
 import { ConversionError } from '../validation.ts';
 import { anthropicObjectToIr, anthropicStopFromIr, buildAnthropicRequest, parseAnthropicRequest } from './anthropic.ts';
 import { AnthropicStreamDecoder, AnthropicStreamEncoder } from './anthropic-stream.ts';
+import { type BudgetStopReason, ConversionBudgetStop, createMatrixBudget, type MatrixConversionBudget, outputUnitsOf } from './budget.ts';
 import { buildChatRequest, chatObjectToIr, chatStopFromIr, chatToolId, parseChatRequest } from './chat.ts';
 import { ChatStreamDecoder, ChatStreamEncoder, chatUsageFromRaw } from './chat-stream.ts';
 import { MatrixDiag } from './diag.ts';
@@ -38,7 +40,12 @@ export function isMatrixPair(from: IrProtocol, to: IrProtocol): boolean {
 
 // ---- Request translation ----------------------------------------------------
 
-export function convertMatrixRequest(from: IrProtocol, to: IrProtocol, body: Record<string, unknown>): ConversionResult {
+export function convertMatrixRequest(
+  from: IrProtocol,
+  to: IrProtocol,
+  body: Record<string, unknown>,
+  options: { preferNonstream?: boolean } = {},
+): ConversionResult {
   if (!isMatrixPair(from, to)) throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)} is not matrix-owned`);
   let ir: IrRequest;
   let diag: MatrixDiag;
@@ -55,26 +62,36 @@ export function convertMatrixRequest(from: IrProtocol, to: IrProtocol, body: Rec
     default:
       throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)}`);
   }
-  return buildTarget(to, ir, diag);
+  return buildTarget(to, ir, diag, options.preferNonstream === true);
 }
 
-function buildTarget(to: IrProtocol, ir: IrRequest, diag: MatrixDiag): ConversionResult {
+function buildTarget(to: IrProtocol, ir: IrRequest, diag: MatrixDiag, preferNonstream = false): ConversionResult {
   switch (to) {
     case 'anthropic':
-      return finalizeMatrix(diag, buildAnthropicRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined);
+      return finalizeMatrix(diag, buildAnthropicRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, preferNonstream);
     case 'openai_chat':
-      return finalizeMatrix(diag, buildChatRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined);
+      return finalizeMatrix(diag, buildChatRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, preferNonstream);
     case 'openai_responses':
-      return finalizeMatrix(diag, buildResponsesRequest(ir, diag), ir.structuredOutputSchema ? 'native' : undefined);
+      return finalizeMatrix(diag, buildResponsesRequest(ir, diag), ir.structuredOutputSchema ? 'native' : undefined, preferNonstream);
     default:
       throw new ConversionError(`conversion_not_supported: matrix target "${String(to)}"`);
   }
 }
 
-function finalizeMatrix(diag: MatrixDiag, body: Record<string, unknown>, structuredOutput: StructuredOutputStrategy | undefined): ConversionResult {
-  // Matrix paths always drive the upstream in streaming mode; non-streaming
-  // clients are served from the collected reply (single decode path).
-  body.stream = true;
+function finalizeMatrix(
+  diag: MatrixDiag,
+  body: Record<string, unknown>,
+  structuredOutput: StructuredOutputStrategy | undefined,
+  preferNonstream = false,
+): ConversionResult {
+  // Translation matrix paths default to driving the upstream in streaming mode
+  // (AIG_CONVERSION_PREFER_NONSTREAM off): non-streaming clients are served
+  // from the collected reply through the single decode path. With the flag on,
+  // a non-streaming CLIENT keeps its own stream flag so the provider may
+  // answer with one JSON body — the success layer already translates and
+  // bounds that shape (readBufferedReplyText / replyFromNativeObject), and
+  // SSE parsing disappears from the request. Streaming clients upstream-stream.
+  if (!preferNonstream || body.stream === true) body.stream = true;
   return diag.finalize(body, structuredOutput ? { strategy: structuredOutput } : undefined);
 }
 
@@ -88,6 +105,21 @@ export type MatrixStreamHandle = {
   /** Non-null once the upstream reached its terminal event. */
   replyIfDone: () => IrReply | null;
   diagnostics: () => readonly ConversionDiagnostic[];
+  /** The budget stop reason once the AIG_CONVERSION_BUDGET expired, else null. */
+  budgetExceeded: () => BudgetStopReason | null;
+};
+
+/** Wiring for AIG_CONVERSION_BUDGET on the streaming translate path. */
+export type MatrixStreamBudget = {
+  cfg: MatrixConversionBudget;
+  /**
+   * AIG_CONVERSION_BUDGET_MODE. "truncate" renders a well-formed short reply
+   * (canonical length stop through the collector, then encoder.finish); "error"
+   * enqueues `stopChunk` (the client-protocol gateway error frames the success
+   * layer built) and closes.
+   */
+  mode: 'error' | 'truncate';
+  stopChunk: Uint8Array | null;
 };
 
 /**
@@ -101,13 +133,42 @@ export function openMatrixStream(
   from: IrProtocol,
   to: IrProtocol,
   fallbackId: string,
-  options: { onUpstreamUsage?: (usage: unknown) => void; seedInputTokens?: number; model?: string } = {},
+  options: { onUpstreamUsage?: (usage: unknown) => void; seedInputTokens?: number; model?: string; budget?: MatrixStreamBudget } = {},
 ): MatrixStreamHandle {
   const collector = new IrCollector();
   const decoder = makeDecoder(from);
   const encoder = makeEncoder(to);
   const textEncoder = new TextEncoder();
   let finalReply: IrReply | null = null;
+  const budget = createMatrixBudget(options.budget?.cfg ?? null);
+  let budgetStop: BudgetStopReason | null = null;
+
+  // Shared budget-stop choreography. Runs INSIDE convertSseStream's onData, so
+  // it must never throw: enqueue the terminal frames, flip the driver's
+  // terminal flag and let the driver close cleanly (cancelling the upstream in
+  // its finally block). Throwing here would error the client controller — the
+  // ungraceful path AIG_CONVERSION_BUDGET_MODE=error deliberately avoids.
+  const stopByBudget = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
+    budgetStop = budget?.stopped ?? null;
+    if (options.budget?.mode === 'truncate') {
+      // A well-formed shortened reply: the canonical length stop renders the
+      // provider-idiomatic terminal frames (finish_reason length /
+      // stop_reason max_tokens / response.incomplete) through encoder.finish.
+      collector.feed({ type: 'stop', stop: 'length' });
+      sealReply(controller);
+      return;
+    }
+    if (options.budget?.stopChunk instanceof Uint8Array && options.budget.stopChunk.byteLength > 0) {
+      controller.enqueue(options.budget.stopChunk);
+      return;
+    }
+    // Defensive default when the success layer supplied no error chunk: keep
+    // the client stream structured rather than erroring the controller.
+    enqueue(controller, textEncoder, [
+      'data: {"error":{"message":"Gateway conversion output budget exceeded.","type":"api_error","code":"conversion_budget_exceeded"}}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+  };
 
   const onData = (data: string, controller: ReadableStreamDefaultController<Uint8Array>): void => {
     const { events, terminal } = pushDecoder(decoder, from, data);
@@ -125,6 +186,14 @@ export function openMatrixStream(
           ? { ...event, inputTokens: options.seedInputTokens }
           : event;
       const stamped = seeded.type === 'start' && options.model ? { ...seeded, model: options.model } : seeded;
+      // Budget probe BEFORE the collector/encoder consume the event, so the
+      // overshooting piece is never delivered or billed as translated work.
+      if (budget) {
+        if (!budget.beginEvent(event) || !budget.chargeOutput(outputUnitsOf(event))) {
+          stopByBudget(controller);
+          return;
+        }
+      }
       collector.feed(stamped);
       enqueue(controller, textEncoder, encoder.write(stamped));
     }
@@ -142,14 +211,16 @@ export function openMatrixStream(
   const clientStream = convertSseStream(
     upstreamBody,
     onData,
-    () => decoder.done,
+    // The driver stops reading (and cancels the upstream) once the decoder saw
+    // its terminal sentinel OR the translation budget expired.
+    () => decoder.done || budgetStop !== null,
     (controller) => {
       if (!endsCleanly(decoder)) return false;
       sealReply(controller);
       return true;
     },
   );
-  return { clientStream, collector, from, to, replyIfDone: () => finalReply, diagnostics: () => streamDiagnostics(finalReply, to) };
+  return { clientStream, collector, from, to, replyIfDone: () => finalReply, diagnostics: () => streamDiagnostics(finalReply, to), budgetExceeded: () => budgetStop };
 }
 
 function upstreamReportedError(message: string): Error {
@@ -251,11 +322,12 @@ export async function collectMatrixObject(
   fallbackId: string,
   clientSignal?: AbortSignal | null,
   deadlineMs?: number | null,
-  options: { seedInputTokens?: number; onUpstreamUsage?: (raw: unknown) => void; model?: string } = {},
+  options: { seedInputTokens?: number; onUpstreamUsage?: (raw: unknown) => void; model?: string; budget?: { cfg: MatrixConversionBudget; mode: 'error' | 'truncate' } } = {},
 ): Promise<{ reply: IrReply; object: Record<string, unknown>; diagnostics: readonly ConversionDiagnostic[] }> {
   if (!upstreamBody) throw new Error('Upstream response has no body.');
   const collector = new IrCollector();
   const decoder = makeDecoder(from);
+  const budget = createMatrixBudget(options.budget?.cfg ?? null);
   // Anthropic-only seed: mirrors the legacy conversion path's input-token
   // estimate so node accounting does not collapse to zero when message_start
   // carries no usage. A real start event overwrites the seed.
@@ -269,6 +341,24 @@ export async function collectMatrixObject(
     for (const event of events) {
       if (event.type === 'error') throw new Error(`upstream stream error: ${event.message || 'unknown'}`);
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
+      // AIG_CONVERSION_BUDGET probe BEFORE the collector consumes the event, so
+      // the overshooting piece is never rendered or billed as translated work.
+      // "error" mode throws ConversionBudgetStop (the success layer renders a
+      // 502 and stops; regenerating on another node would bill the same
+      // oversized answer). "truncate" seals the canonical length stop and
+      // terminates the READ: hasTerminal breaks the read loop, which cancels
+      // the upstream, and the collected short reply is rendered normally and
+      // delivered with regular success accounting.
+      if (budget) {
+        if (!budget.beginEvent(event) || !budget.chargeOutput(outputUnitsOf(event))) {
+          if (options.budget?.mode === 'truncate') {
+            collector.feed({ type: 'stop', stop: 'length' });
+            hasTerminal = true;
+            return;
+          }
+          throw new ConversionBudgetStop(budget.stopped as BudgetStopReason);
+        }
+      }
       const stamped = event.type === 'start' && options.model ? { ...event, model: options.model } : event;
       collector.feed(stamped);
     }

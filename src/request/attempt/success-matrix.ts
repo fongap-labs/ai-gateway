@@ -4,11 +4,14 @@
 // Success layer for IR-matrix conversions: the upstream speaks a foreign
 // protocol (`fallbackProtocol`/`fallbackSurface`), the matrix decode/encode
 // round-trip produces the client protocol. Non-streaming clients are served
-// from the collected reply (the upstream is ALWAYS forced into streaming for
-// matrix conversions by convertMatrixRequest). Every cross-protocol pair is
-// matrix-owned; native passes carry no conversion context and never land here.
+// from the collected reply; by convertMatrixRequest the upstream is forced
+// into streaming (or, with AIG_CONVERSION_PREFER_NONSTREAM, allowed to answer
+// with one JSON body, which this file's JSON branch already handles). Every
+// cross-protocol pair is matrix-owned; native passes carry no conversion
+// context and never land here.
 
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
+import { ConversionBudgetStop } from '../../conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
 import { isRecord } from '../../conversion/matrix/ir.ts';
 import {
@@ -22,16 +25,16 @@ import {
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
 import { readBufferedReplyText } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
-import { classifyClientAbort, classifyFirstEventFailure, classifyPostHeadersFailure } from '../../reliability/classify.ts';
+import { classifyClientAbort, classifyConversionBudget, classifyFirstEventFailure, classifyPostHeadersFailure } from '../../reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../reliability/tier1-state.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
-import { trackStreamResponse } from '../../stream/track.ts';
+import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutputForConversion, isOpenAIChatRealOutputForConversion, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome, ConversionContext } from '../../types/request.ts';
 import { gatewayError } from '../errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../response-helpers.ts';
-import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordNodeSuccess, recordTokens } from './observability.ts';
+import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordNodeBudgetStop, recordNodeSuccess, recordTokens } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
@@ -71,6 +74,28 @@ const COMPLETION_MARKERS: Record<IrProtocol, RegExp> = {
   openai_responses: /event:\s*response\.(?:completed|incomplete)\b/,
 };
 const CHAT_CLOSE_MARKER = /data:\s*\[DONE\]\s*(?:\r?\n|$)/;
+
+// The SSE frames the matrix stream ends with when the AIG_CONVERSION_BUDGET
+// expired in "error" mode. Route-specific strait of streamInterruptionChunk
+// with the budget wording; OpenAI Chat additionally gets the [DONE] sentinel
+// after the terminal error payload (the truncation mode renders its own
+// well-formed terminal frames through the encoder instead — no chunk here).
+function conversionBudgetErrorChunk(route: string, requestId: string): Uint8Array {
+  const base = streamInterruptionChunk(route, requestId, null, {
+    message: 'Gateway conversion output budget exceeded.',
+    code: 'conversion_budget_exceeded',
+  });
+  if (route === 'openai_chat') {
+    const done = streamErrorEncoder.encode('data: [DONE]\n\n');
+    const out = new Uint8Array(base.byteLength + done.byteLength);
+    out.set(base, 0);
+    out.set(done, base.byteLength);
+    return out;
+  }
+  return base;
+}
+
+const streamErrorEncoder = new TextEncoder();
 
 export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
@@ -205,6 +230,17 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
+
+  // AIG_CONVERSION_BUDGET wiring (limits-derived, flag-off keeps everything
+  // below byte-identical to the legacy behavior).
+  const budget = limits.conversionBudget
+    ? {
+        cfg: { ...limits.conversionBudgetCfg, maxOutputTokens: limits.conversionBudgetMaxTokens },
+        mode: limits.conversionBudgetMode,
+        stopChunk: conversionBudgetErrorChunk(route, requestId),
+      }
+    : null;
+
   // Anthropic input-token estimate for usage accounting parity with the legacy
   // conversion path (rawUsage otherwise reports only what the upstream sent).
   const seedInputTokens = upstreamIr === 'anthropic' ? estimateAnthropicInputTokens(bodyJson) : 0;
@@ -220,15 +256,86 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
         // cosmetic and must not enter node token statistics.
         observeUpstreamAttemptUsage(c, u);
       },
+      ...(budget ? { budget: { cfg: budget.cfg, mode: budget.mode, stopChunk: budget.stopChunk } } : {}),
     });
+    // A budget stop in "error" mode is a NEUTRAL end with its own record: the
+    // relay/track outcome callbacks must NOT run their success/interrupted
+    // story on top of it (that would count the request as delivered or cool
+    // the node for a stream interrupted by the gateway itself). "truncate"
+    // mode renders a well-formed short reply instead, so the regular success
+    // accounting stays in charge and no intercept is needed.
+    const budgetCut = (): boolean => budget !== null && handle.budgetExceeded() !== null && budget.mode === 'error';
+    let budgetSettled = false;
+    const settleBudgetOnce = (): void => {
+      if (!budgetSettled) {
+        budgetSettled = true;
+        recordNodeBudgetStop(c, node, handle.budgetExceeded() ?? 'unknown', 200);
+      }
+    };
+    const base = makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false });
+    const trackCallbacks = {
+      ...base,
+      onAttemptUsage: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => {
+        if (budgetCut()) {
+          settleBudgetOnce();
+          return;
+        }
+        base.onAttemptUsage(usage, outcome);
+      },
+      onSuccess: () => {
+        if (budgetCut()) {
+          settleBudgetOnce();
+          return;
+        }
+        base.onSuccess();
+      },
+      onFailure: () => {
+        if (budgetCut()) {
+          settleBudgetOnce();
+          return;
+        }
+        base.onFailure();
+      },
+      onNeutral: () => {
+        if (budgetCut()) {
+          settleBudgetOnce();
+          return;
+        }
+        base.onNeutral();
+      },
+      onStreamEnd: (
+        outcome: string,
+        d: { reason: string | null; durationMs: number; chunkCount: number; receivedBytes: number; completionMarkerSeen: boolean },
+      ) => {
+        if (budgetCut()) return; // the [conversion-budget] log line stands in
+        base.onStreamEnd(outcome, d);
+      },
+    };
+    const guardedUsage = () => {
+      if (!budgetCut()) recordTokens(c, node, upstreamUsage);
+    };
+
+    // AIG_STREAM_PASSTHROUGH: the matrix has ALREADY translated the bytes once,
+    // so running the per-chunk decode + completion/usage/error/rewrite scans a
+    // SECOND time on the client stream only burns isolate CPU. Relay instead;
+    // delivered usage flows through the collector callback below.
+    if (limits.streamPassthrough) {
+      const relayed = relayStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
+        idleTimeoutMs: limits.streamIdleTimeoutMs,
+        ...trackCallbacks,
+        onUsage: guardedUsage,
+      });
+      return { response: relayed };
+    }
+
     const tracked = trackStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
       completionMarker: COMPLETION_MARKERS[clientIr],
       ...(clientIr === 'openai_chat' ? { closeMarker: CHAT_CLOSE_MARKER, completionGraceMs: 500 } : {}),
-      onUsage: () => recordTokens(c, node, upstreamUsage),
+      onUsage: guardedUsage,
       interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
       upstreamFailureReason: hiddenStreamFailure,
-      ...makeNodeStreamTrack(c, node, latencyMs, { observeStreamUsage: false }),
+      ...trackCallbacks,
     });
     return { response: tracked };
   }
@@ -243,6 +350,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
         upstreamUsage = raw;
         observeUpstreamAttemptUsage(c, raw);
       },
+      ...(budget ? { budget: { cfg: { ...budget.cfg, maxOutputUnits: limits.conversionNonstreamMaxUnits }, mode: budget.mode } } : {}),
     });
     const reply = collected.reply;
     const object = collected.object as Record<string, unknown>;
@@ -260,6 +368,33 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     if (object.model !== undefined) object.model = requestedModel;
     return { response: jsonResponse(200, object, env, request, extraHeaders) };
   } catch (error) {
+    // Budget stop in "error" mode: the oversized translated reply would be
+    // regenerated (and billed) identically on any other node, so stop the
+    // request with a 502 that names the budget — mirroring the oversized-reply
+    // terminal — while the node takes no reliability blame. In "truncate"
+    // mode this cannot fire: collectMatrixObject seals a well-formed short
+    // reply instead of throwing.
+    if (error instanceof ConversionBudgetStop) {
+      const classification = classifyConversionBudget();
+      recordOutcome(state, node, classification, c, {
+        latencyMs: Date.now() - (c.attemptStartMs as number),
+        status: guarded.status,
+        diagnostic: error.message,
+      });
+      return {
+        response: gatewayError(
+          request,
+          env,
+          route,
+          502,
+          'The translated reply exceeds the gateway conversion output budget. Retry with a smaller request.',
+          requestId,
+          undefined,
+          undefined,
+          'conversion_budget_exceeded',
+        ),
+      };
+    }
     if (request.signal?.aborted) {
       // The client received no model output, so this attempt is a physical
       // upstream attempt only. Recording it as delivered would inflate the

@@ -104,6 +104,27 @@ export type Limits = {
   /** AIG_STREAM_GUARD_PREFIX_BYTES: pre-event byte budget for the guard in
    *  pass-through mode. Unused legacy mode (2MB constant). */
   streamGuardPrefixBytes: number;
+  /** AIG_CONVERSION_BUDGET: per-request ceilings on matrix translation work.
+   *  false keeps the legacy unlimited translation. */
+  conversionBudget: boolean;
+  /** AIG_CONVERSION_BUDGET_MODE: what happens when a reply exceeds the budget.
+   *  "error" ends with a gateway error frame / 502; "truncate" delivers a
+   *  well-formed shortened reply and counts the attempt as delivered. */
+  conversionBudgetMode: 'error' | 'truncate';
+  /** Numeric ceilings for streaming translation (see MatrixConversionBudget). */
+  conversionBudgetCfg: {
+    maxEvents: number;
+    maxOutputUnits: number;
+    maxToolEvents: number;
+    maxToolArgUnits: number;
+  };
+  /** Output ceiling for the collected-object path. */
+  conversionNonstreamMaxUnits: number;
+  /** Reported output-token ceiling; 0 disables. */
+  conversionBudgetMaxTokens: number;
+  /** AIG_CONVERSION_PREFER_NONSTREAM: non-streaming clients keep their own
+   *  stream flag so cross-protocol requests may hit the upstream non-streaming. */
+  conversionPreferNonstream: boolean;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -165,6 +186,11 @@ export function attemptFirstEventTimeoutMs(firstEventTimeoutMs: number, remainin
 }
 
 const cache = new WeakMap<object, Limits>();
+
+/** AIG_CONVERSION_BUDGET_MODE pick, fail-safe to "error" on any unknown value. */
+function conversionBudgetModeOf(env: Record<string, unknown>): 'error' | 'truncate' {
+  return readEnv(env, 'AIG_CONVERSION_BUDGET_MODE')?.toLowerCase() === 'truncate' ? 'truncate' : 'error';
+}
 
 export function getLimits(env: Record<string, unknown>): Limits {
   let cached = cache.get(env);
@@ -257,6 +283,32 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.max,
       LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.def,
     ),
+    conversionBudget: getBool(env, 'AIG_CONVERSION_BUDGET', false),
+    conversionBudgetMode: conversionBudgetModeOf(env),
+    conversionBudgetCfg: {
+      maxEvents: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_EVENTS'), LIMITS.AIG_CONVERSION_MAX_EVENTS.min, LIMITS.AIG_CONVERSION_MAX_EVENTS.max, LIMITS.AIG_CONVERSION_MAX_EVENTS.def),
+      maxOutputUnits: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_BYTES'), LIMITS.AIG_CONVERSION_MAX_BYTES.min, LIMITS.AIG_CONVERSION_MAX_BYTES.max, LIMITS.AIG_CONVERSION_MAX_BYTES.def),
+      maxToolEvents: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_TOOL_EVENTS'), LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.min, LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.max, LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.def),
+      maxToolArgUnits: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_TOOL_ARG_BYTES'),
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.min,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.max,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.def,
+      ),
+    },
+    conversionNonstreamMaxUnits: clampInt(
+      readEnv(env, 'AIG_CONVERSION_NONSTREAM_MAX_BYTES'),
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.min,
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.max,
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.def,
+    ),
+    conversionBudgetMaxTokens: clampInt(
+      readEnv(env, 'AIG_CONVERSION_MAX_OUTPUT_TOKENS'),
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.min,
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.max,
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.def,
+    ),
+    conversionPreferNonstream: getBool(env, 'AIG_CONVERSION_PREFER_NONSTREAM', false),
   };
   cache.set(env, cached);
   return cached;
