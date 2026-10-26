@@ -45,6 +45,27 @@ export const RUNTIME_TUNABLES = [
   { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 60_000 },
   { name: 'AIG_HEDGE_DELAY_MS', type: 'int', min: 0, max: 600_000, def: 3_000 },
   { name: 'AIG_REQUEST_HEDGE_MAX', type: 'int', min: 0, max: 3, def: 1 },
+  // (AIG_REQUEST_ADMISSION) Per-isolate cap on concurrent body-carrying
+  // requests. Each admission starts streams that share the isolate's CPU and
+  // its ~128MB; a burst must not starve in-flight streams to the point where
+  // the isolate is recycled with all learned state. Bodyless requests
+  // (health, metrics, dashboard) are never refused for this. 0 disables.
+  { name: 'AIG_ISOLATE_MAX_IN_FLIGHT', type: 'int', min: 0, max: 512, def: 32 },
+  // (AIG_REQUEST_ADMISSION) Worst-case charge AND read ceiling for a request
+  // body without a usable Content-Length (chunked transfer): its true size is
+  // unknowable before reading, but charging AIG_REQUEST_BODY_MAX_BYTES (20MB)
+  // per chunked request would admit almost none once the 32MB in-flight budget
+  // is busy. The read in preflight is bounded by the same value, so the charge
+  // stays a true worst case at a fraction of the full-body cap. Bodies WITH a
+  // Content-Length keep the declared charge and the full-body read ceiling.
+  { name: 'AIG_CHUNKED_BODY_MAX_BYTES', type: 'int', min: 16_384, max: 32 * 1024 * 1024, def: 524_288 },
+  // (AIG_REQUEST_ADMISSION) Logical-attempt ceilings per streaming mode. A wide
+  // failover plan fans out into the whole node pool — each attempt bills at
+  // least one upstream dispatch — and a streaming attempt cannot retry after
+  // the client stream is committed. New-mode defaults: 2 for streaming, 3 for
+  // buffered requests; raise these to re-widen explicit policies.
+  { name: 'AIG_STREAM_MAX_ATTEMPTS', type: 'int', min: 1, max: 8, def: 2 },
+  { name: 'AIG_NONSTREAM_MAX_ATTEMPTS', type: 'int', min: 1, max: 8, def: 3 },
   // Per-isolate, per-key RPM cap. Counts request-START moments in a
   // 60s sliding window. The cap is best-effort (single-isolate); a strict
   // global cap across isolates needs a Cloudflare WAF rate-limiting rule in
@@ -184,6 +205,16 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // upstream streaming + collect path. Streaming clients always upstream-stream
   // regardless of this flag.
   { name: 'AIG_CONVERSION_PREFER_NONSTREAM', def: false },
+  // Request-admission / isolation guards (action: request admission). false
+  // (default) keeps the legacy admission byte-for-byte: no isolate concurrency
+  // cap, chunked bodies charged and read at AIG_REQUEST_BODY_MAX_BYTES, the
+  // resolved policy's max_attempts, and an AIG_REQUEST_HEDGE_MAX default of 1.
+  // true enables: AIG_ISOLATE_MAX_IN_FLIGHT, the AIG_CHUNKED_BODY_MAX_BYTES
+  // charge/read cap for Content-Length-less bodies, per-mode logical-attempt
+  // ceilings (AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS), and
+  // switches the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set
+  // AIG_REQUEST_HEDGE_MAX always wins on both sides of the flag).
+  { name: 'AIG_REQUEST_ADMISSION', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

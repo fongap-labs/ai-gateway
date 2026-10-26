@@ -254,7 +254,12 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     if (Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes) {
       return { ok: false, response: gatewayError(request, env, route, 413, 'Request body exceeds limit.', requestId) };
     }
-    const text = await readBodyTextWithLimit(request, limits.maxBodyBytes);
+    // AIG_REQUEST_ADMISSION: a body carrying no usable Content-Length (chunked
+    // transfer) is read under the dedicated chunked cap — the same value it was
+    // admitted against in handler.ts — instead of the full body cap. Bodies
+    // WITH a Content-Length keep the full read ceiling.
+    const chunked = !Number.isFinite(declaredLength) || declaredLength <= 0;
+    const text = await readBodyTextWithLimit(request, limits.requestAdmission && chunked ? limits.chunkedBodyMaxBytes : limits.maxBodyBytes);
     bodyChars = text.length;
     bodyJson = JSON.parse(text || '{}');
     if (bodyChars > 0) rawBody = { text };
@@ -401,6 +406,14 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   const policy = getPolicy(requestedModel, loadModelsConfig(env), loadPoliciesConfig(env));
+  // AIG_REQUEST_ADMISSION: cap the request-wide logical attempts per streaming
+  // mode. A wide failover plan fans out into the whole node pool — every attempt
+  // bills at least one upstream dispatch — and a streaming attempt can never
+  // retry after the client stream is committed, so the leverage of attempt 4+
+  // is paid for by every caller. Operators re-widen with
+  // AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS.
+  const attemptCap = clientWantsStream ? limits.streamMaxAttempts : limits.nonStreamMaxAttempts;
+  const requestPolicy = limits.requestAdmission ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, attemptCap) } : policy;
   // A large prompt needs proportionally more wall-clock time for prefill, so the
   // request budget grows with its size instead of timing out healthy upstreams.
   const failoverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);
@@ -423,7 +436,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     requestDescriptor,
     config,
     tiers,
-    policy,
+    policy: requestPolicy,
     failoverBudgetMs,
     knownModels: callableModels,
     feasibility,

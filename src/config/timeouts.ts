@@ -125,6 +125,19 @@ export type Limits = {
   /** AIG_CONVERSION_PREFER_NONSTREAM: non-streaming clients keep their own
    *  stream flag so cross-protocol requests may hit the upstream non-streaming. */
   conversionPreferNonstream: boolean;
+  /** AIG_REQUEST_ADMISSION: request-admission / isolation guard stack. false
+   *  keeps the legacy admission byte-for-byte. */
+  requestAdmission: boolean;
+  /** AIG_ISOLATE_MAX_IN_FLIGHT: per-isolate cap on concurrent body-carrying
+   *  requests; 0 disables. */
+  isolateMaxInFlight: number;
+  /** AIG_CHUNKED_BODY_MAX_BYTES: admission charge and read ceiling for bodies
+   *  without a usable Content-Length. Unused legacy mode (full-body cap). */
+  chunkedBodyMaxBytes: number;
+  /** AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS: logical-attempt
+   *  ceilings per streaming mode. Unused legacy mode. */
+  streamMaxAttempts: number;
+  nonStreamMaxAttempts: number;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -192,6 +205,21 @@ function conversionBudgetModeOf(env: Record<string, unknown>): 'error' | 'trunca
   return readEnv(env, 'AIG_CONVERSION_BUDGET_MODE')?.toLowerCase() === 'truncate' ? 'truncate' : 'error';
 }
 
+/**
+ * AIG_REQUEST_HEDGE_MAX: an explicitly set value always wins (both sides of
+ * the AIG_REQUEST_ADMISSION flag). When unset, the default depends on the
+ * flag: the admission stack wants hedges off by default — every hedge is a
+ * bonus upstream dispatch whose bill lands regardless of who wins the race —
+ * while the legacy mode keeps its documented default of 1.
+ */
+function maxHedgesFor(env: Record<string, unknown>): number {
+  const raw = readEnv(env, 'AIG_REQUEST_HEDGE_MAX');
+  if (raw !== undefined) {
+    return clampInt(raw, LIMITS.AIG_REQUEST_HEDGE_MAX.min, LIMITS.AIG_REQUEST_HEDGE_MAX.max, LIMITS.AIG_REQUEST_HEDGE_MAX.def);
+  }
+  return getBool(env, 'AIG_REQUEST_ADMISSION', false) ? 0 : LIMITS.AIG_REQUEST_HEDGE_MAX.def;
+}
+
 export function getLimits(env: Record<string, unknown>): Limits {
   let cached = cache.get(env);
   if (cached) return cached;
@@ -245,12 +273,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_HEDGE_DELAY_MS.def,
     ),
     isHedgeDelayExplicit: readEnv(env, 'AIG_HEDGE_DELAY_MS') !== undefined,
-    maxHedgesPerRequest: clampInt(
-      readEnv(env, 'AIG_REQUEST_HEDGE_MAX'),
-      LIMITS.AIG_REQUEST_HEDGE_MAX.min,
-      LIMITS.AIG_REQUEST_HEDGE_MAX.max,
-      LIMITS.AIG_REQUEST_HEDGE_MAX.def,
-    ),
+    maxHedgesPerRequest: maxHedgesFor(env),
     gatewayKeyRpm: clampInt(
       readEnv(env, 'AIG_ACCESS_KEY_RPM'),
       LIMITS.AIG_ACCESS_KEY_RPM.min,
@@ -309,6 +332,31 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.def,
     ),
     conversionPreferNonstream: getBool(env, 'AIG_CONVERSION_PREFER_NONSTREAM', false),
+    requestAdmission: getBool(env, 'AIG_REQUEST_ADMISSION', false),
+    isolateMaxInFlight: clampInt(
+      readEnv(env, 'AIG_ISOLATE_MAX_IN_FLIGHT'),
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.min,
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.max,
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.def,
+    ),
+    chunkedBodyMaxBytes: clampInt(
+      readEnv(env, 'AIG_CHUNKED_BODY_MAX_BYTES'),
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.min,
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.max,
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.def,
+    ),
+    streamMaxAttempts: clampInt(
+      readEnv(env, 'AIG_STREAM_MAX_ATTEMPTS'),
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.min,
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.max,
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.def,
+    ),
+    nonStreamMaxAttempts: clampInt(
+      readEnv(env, 'AIG_NONSTREAM_MAX_ATTEMPTS'),
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.min,
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.max,
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.def,
+    ),
   };
   cache.set(env, cached);
   return cached;

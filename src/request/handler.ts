@@ -16,6 +16,7 @@
 import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { admitRequestBody } from '../ratelimit/body-budget.ts';
+import { admitIsolateRequest } from '../ratelimit/isolate-concurrency.ts';
 import { isSpeculativeRetryAfter, RetrySlot } from '../reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../reliability/tier1-state.ts';
@@ -47,12 +48,44 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   // clamped values per env object, so this costs one map lookup in steady state.
   const limits = getLimits(env);
   configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
+  // AIG_REQUEST_ADMISSION: cap concurrent body-carrying requests per isolate
+  // (see ratelimit/isolate-concurrency.ts). Bodyless requests — health, metrics,
+  // the dashboard — pass uncounted so monitoring survives a burst. Legacy mode
+  // keeps the byte-for-byte behavior: no gate is armed at all.
+  const releaseConcurrency =
+    limits.requestAdmission && limits.isolateMaxInFlight > 0 && request.body !== null ? admitIsolateRequest(limits.isolateMaxInFlight) : () => {};
+  if (!releaseConcurrency) {
+    const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
+    return gatewayError(
+      request,
+      env,
+      route,
+      503,
+      'Gateway is busy with concurrent requests; retry shortly.',
+      crypto.randomUUID(),
+      undefined,
+      { 'retry-after': '1' },
+      'gateway_concurrency_exhausted',
+      true,
+    );
+  }
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
   // client is asked to retry instead (see ratelimit/body-budget.ts).
   // A request without a body is charged nothing, whatever its Content-Length says.
-  const worstCaseBodyBytes = request.body ? limits.maxBodyBytes : 0;
-  const releaseBody = admitRequestBody(Number(request.headers.get('content-length')), worstCaseBodyBytes);
+  // AIG_REQUEST_ADMISSION: a body carrying no usable Content-Length (chunked
+  // transfer) is charged the dedicated chunked cap instead of the full body
+  // cap; its read is bounded by the same value (preflight), so the charge
+  // remains a true worst case at a fraction of AIG_REQUEST_BODY_MAX_BYTES.
+  const declaredLength = Number(request.headers.get('content-length'));
+  const worstCaseBodyBytes =
+    request.body === null
+      ? 0
+      : limits.requestAdmission && !(Number.isFinite(declaredLength) && declaredLength > 0)
+        ? limits.chunkedBodyMaxBytes
+        : limits.maxBodyBytes;
+  const releaseBody = admitRequestBody(declaredLength, worstCaseBodyBytes);
   if (!releaseBody) {
+    releaseConcurrency();
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
     return gatewayError(
       request,
@@ -71,6 +104,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     return await handleAdmittedRequest(request, env, ctx);
   } finally {
     releaseBody();
+    releaseConcurrency();
   }
 }
 
