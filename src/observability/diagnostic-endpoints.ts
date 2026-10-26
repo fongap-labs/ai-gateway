@@ -10,6 +10,7 @@ import type { RegistryEntry } from '../config/registry.ts';
 import { collectKnownModels, modelRegistryEntry, servesModel } from '../config/registry.ts';
 import { corsHeaders, jsonError } from '../protocol/http.ts';
 import { snapshotNode } from '../reliability/node-state.ts';
+import { snapshotRetryBudget } from '../reliability/retry-budget.ts';
 import { snapshotTier1AccountRuntime } from '../reliability/tier1-state.ts';
 import { snapshotTier1Affinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -244,6 +245,11 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_client_failures_total', gatewayStats.failures);
   emit('gateway_client_active_requests', 'gauge', 'Client requests currently active in this isolate.');
   counter('gateway_client_active_requests', gatewayStats.activeRequests);
+  const retryBudget = snapshotRetryBudget();
+  emit('gateway_retry_budget_retrying', 'gauge', 'Requests in this isolate currently holding a speculative retry or hedge slot.');
+  counter('gateway_retry_budget_retrying', retryBudget.retrying);
+  emit('gateway_retry_budget_denied_total', 'counter', 'Speculative retries or hedges refused because the isolate retry budget was spent.');
+  counter('gateway_retry_budget_denied_total', retryBudget.denied);
 
   emit('gateway_stream_started_total', 'counter', 'Streams relayed to clients from any node (wrapper creation).');
   counter('gateway_stream_started_total', streamStats.started);

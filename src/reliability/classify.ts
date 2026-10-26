@@ -280,6 +280,13 @@ export function classifyPostHeadersFailure(error: unknown): FailureClassificatio
   return classifyFirstEventFailure();
 }
 
+// The upstream answered, but with more than the gateway will buffer. Another
+// node would regenerate (and bill) the same oversized answer, so the request
+// ends here and the node is not blamed.
+export function classifyOversizedReply(): FailureClassification {
+  return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+}
+
 export function classifyClientAbort(): FailureClassification {
   return { kind: KIND.CLIENT_ABORT, action: 'neutral', cooldownMs: 0, counted: false };
 }

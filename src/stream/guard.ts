@@ -183,10 +183,14 @@ export async function ensureFirstSseEvent(
       clearTimeout(timerId);
       clientSignal?.removeEventListener('abort', abort);
       const state: { failureReason: string | null } = { failureReason: null };
+      // Pull-driven: the upstream is read only as fast as the client drains the
+      // stream, so a slow client cannot make the isolate buffer a whole reply.
       const stream = new ReadableStream({
         start(controller) {
           for (const chunk of consumed) controller.enqueue(chunk);
-          void pump(reader, controller, state);
+        },
+        pull(controller) {
+          return pull(reader, controller, state);
         },
         cancel() {
           reader.cancel().catch(() => {});
@@ -277,18 +281,15 @@ async function consumeSseEventsWithReader(
   if (!isSettled()) scanner.flush();
 }
 
-async function pump(
+async function pull(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   controller: ReadableStreamDefaultController<Uint8Array>,
   state: { failureReason: string | null },
 ): Promise<void> {
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      controller.enqueue(value);
-    }
-    controller.close();
+    const { done, value } = await reader.read();
+    if (done) controller.close();
+    else controller.enqueue(value);
   } catch {
     state.failureReason = 'reader_error';
     try {

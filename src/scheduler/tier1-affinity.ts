@@ -18,7 +18,11 @@ const AIG_AFFINITY_KV_FACTOR = 0.85;
 const KV_BINDING = 'TIER1_AFFINITY';
 const KEY_PREFIX = 'affinity:v1:';
 const TTL_SECONDS = 30 * 60;
+// A cached binding is served as-is for CACHE_TTL_MS, then still served while it
+// is refreshed in the background: affinity is only a score bias, so a binding
+// that is a few seconds stale costs nothing, while waiting on KV costs TTFT.
 const CACHE_TTL_MS = 5_000;
+const CACHE_RETENTION_MS = TTL_SECONDS * 1000;
 // A KV read of a cold key can take far longer than the rest of the request
 // setup. Affinity is only a score bias, so a request waits at most this long for
 // it; an answer that arrives later still warms the cache for the next request.
@@ -113,7 +117,10 @@ class BoundedTtlMap<V> {
   }
 }
 
-const cache = new BoundedTtlMap<string | null>(CACHE_MAX_ENTRIES, CACHE_TTL_MS);
+type CachedBinding = { accountId: string | null; freshUntil: number };
+const cache = new BoundedTtlMap<CachedBinding>(CACHE_MAX_ENTRIES, CACHE_TTL_MS);
+// One KV read per key at a time: concurrent requests of a session share it.
+const inflightReads = new Map<string, Promise<string | null | undefined>>();
 // Escape counters have no natural TTL — they track request frequency per
 // session. Use a generous TTL (same as the escape check window) so stale
 // counters for sessions that stop sending are eventually cleaned up.
@@ -130,6 +137,7 @@ const stats = {
   escapes: 0,
   timeouts: 0,
   readFailures: 0,
+  staleServes: 0,
 };
 
 function kvOf(env: GatewayEnv): AffinityKV | null {
@@ -173,17 +181,17 @@ export function resolveTier1SessionId(request: Request): string | null {
   return null;
 }
 
-// Resolves to the bound account, null when there is none, or undefined when the
-// read failed or did not answer within READ_TIMEOUT_MS (the binding is unknown).
-export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Promise<string | null | undefined> {
-  if (!sessionId) return null;
-  const kv = kvOf(env);
-  if (!kv) return null;
-  const key = await affinityKey(sessionId);
-  const cached = cache.get(key);
-  if (cached !== undefined) {
-    return cached;
-  }
+function cacheBinding(key: string, accountId: string | null, now: number = Date.now()): void {
+  // A known binding outlives its freshness window (served stale, refreshed in the
+  // background); "no binding" is only trusted for the freshness window.
+  cache.set(key, { accountId, freshUntil: now + CACHE_TTL_MS }, accountId ? CACHE_RETENTION_MS : CACHE_TTL_MS);
+}
+
+// One shared KV read per key. Resolves to the bound account, null when there is
+// none, or undefined when the read failed.
+function lookupBinding(kv: AffinityKV, key: string): Promise<string | null | undefined> {
+  const pending = inflightReads.get(key);
+  if (pending) return pending;
   stats.reads++;
   const lookup = (async () => {
     let value: string | null | undefined;
@@ -198,9 +206,39 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string): Pro
     const accountId = typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : null;
     if (accountId) stats.hits++;
     else stats.misses++;
-    cache.set(key, accountId, CACHE_TTL_MS);
+    cacheBinding(key, accountId);
     return accountId;
-  })();
+  })().finally(() => {
+    inflightReads.delete(key);
+  });
+  inflightReads.set(key, lookup);
+  return lookup;
+}
+
+// Resolves to the bound account, null when there is none, or undefined when the
+// read failed or did not answer within READ_TIMEOUT_MS (the binding is unknown).
+// A binding this isolate already knows is returned at once, even past its
+// freshness window; the refresh then runs in the background.
+export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?: ExecutionContextLike): Promise<string | null | undefined> {
+  if (!sessionId) return null;
+  const kv = kvOf(env);
+  if (!kv) return null;
+  const key = await affinityKey(sessionId);
+  const cached = cache.get(key);
+  if (cached !== undefined) {
+    if (cached.freshUntil <= Date.now() && !inflightReads.has(key)) {
+      stats.staleServes++;
+      cached.freshUntil = Date.now() + CACHE_TTL_MS;
+      const refresh = lookupBinding(kv, key).catch(() => undefined);
+      try {
+        ctx?.waitUntil?.(refresh);
+      } catch {
+        /* the refresh still runs; it is only not extended past the response */
+      }
+    }
+    return cached.accountId;
+  }
+  const lookup = lookupBinding(kv, key);
   let timerId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
     timerId = setTimeout(() => resolve(TIMED_OUT), READ_TIMEOUT_MS);
@@ -223,7 +261,7 @@ export function writeTier1Affinity(env: GatewayEnv, ctx: ExecutionContextLike, s
   const operation = (async () => {
     const key = await affinityKey(sessionId);
     await kv.put(key, accountId, { expirationTtl: TTL_SECONDS });
-    cache.set(key, accountId, CACHE_TTL_MS);
+    cacheBinding(key, accountId);
     stats.writes++;
   })().catch(() => {
     stats.writeFailures++;
@@ -286,6 +324,7 @@ export function snapshotTier1Affinity(env: GatewayEnv) {
 
 export function __resetTier1AffinityForTests(): void {
   cache.clear();
+  inflightReads.clear();
   escapeCounters.clear();
   Object.assign(stats, {
     reads: 0,
@@ -298,5 +337,6 @@ export function __resetTier1AffinityForTests(): void {
     escapes: 0,
     timeouts: 0,
     readFailures: 0,
+    staleServes: 0,
   });
 }
