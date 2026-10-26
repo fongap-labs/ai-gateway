@@ -392,3 +392,136 @@ async function raceWithIdle(
     clearTimeout(timerId);
   }
 }
+
+export type RelayOptions = {
+  idleTimeoutMs: number;
+  onSuccess: () => void;
+  onFailure: () => void;
+  onNeutral: () => void;
+  onStreamStart?: () => void;
+  onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
+  onAttemptUsage?: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => void;
+  /** Delivered-response usage callback, mirroring TrackOptions.onUsage
+   *  semantics: fires once on a cleanly completed stream, before onSuccess. */
+  onUsage?: () => void;
+};
+
+/**
+ * Pass-through stream relay (AIG_STREAM_PASSTHROUGH): move every byte from the
+ * upstream to the client without decoding, scanning, rewriting or usage
+ * observation. Each chunk is forwarded as received, so per-chunk cost is one
+ * read + one enqueue instead of a decode plus several regex scans.
+ *
+ * Accepted trade-offs (documented in changelog.d/stream-passthrough.md):
+ *   - no completion-marker knowledge: a truncated stream that ends with a
+ *     clean transport EOF is accounted as delivered output;
+ *   - no model rewrite: the client sees the upstream's model spelling;
+ *   - no usage sampling: delivered/attempts token rows carry no usage;
+ *   - no synthetic interruption events: a lost stall ends like a normal close.
+ * Kept for reliability: the idle timeout (a stalled upstream is cut and the
+ * attempt is recorded as failed) and cancel() propagation (a disconnecting
+ * client cancels the upstream body). Semantics of onSuccess/onFailure/
+ * onNeutral/onStreamStart/onStreamEnd/onAttemptUsage match
+ * makeNodeStreamTrack's callbacks exactly, so callers can reuse them.
+ */
+export function relayStreamResponse(
+  response: Response,
+  { idleTimeoutMs, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage, onUsage }: RelayOptions,
+): Response {
+  if (!response.body) {
+    try {
+      onAttemptUsage?.(null, 'success');
+    } catch {
+      /* observability only */
+    }
+    try {
+      onUsage?.();
+    } catch {
+      /* observability only */
+    }
+    onSuccess();
+    return response;
+  }
+  const reader = response.body.getReader();
+  const startMs = Date.now();
+  let chunkCount = 0;
+  let receivedBytes = 0;
+  let isFinished = false;
+
+  const finalize = (result: 'success' | 'failure' | 'neutral'): void => {
+    if (isFinished) return;
+    isFinished = true;
+    const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : 'success';
+    try {
+      onAttemptUsage?.(null, attemptOutcome);
+    } catch {
+      /* fail-open */
+    }
+    if (result === 'success') onSuccess();
+    else if (result === 'failure') onFailure();
+    else onNeutral();
+    // Success-only delivered usage, mirroring TrackOptions.onUsage semantics.
+    if (result === 'success') {
+      try {
+        onUsage?.();
+      } catch {
+        /* observability must never break relay */
+      }
+    }
+    onStreamEnd?.(attemptOutcome === 'neutral' ? 'neutral' : 'completed', {
+      reason: null,
+      durationMs: Date.now() - startMs,
+      chunkCount,
+      receivedBytes,
+      completionMarkerSeen: false,
+    });
+  };
+
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (isFinished) {
+        controller.close();
+        return;
+      }
+      let result: Awaited<ReturnType<typeof raceWithIdle>>;
+      try {
+        result = await raceWithIdle(reader.read(), idleTimeoutMs);
+      } catch {
+        finalize('failure');
+        try {
+          controller.close();
+        } catch {
+          /* closed */
+        }
+        return;
+      }
+      if (result.timeout) {
+        reader.cancel().catch(() => {});
+        finalize('failure');
+        controller.close();
+        return;
+      }
+      const { done, value } = result.value;
+      if (done) {
+        finalize('success');
+        controller.close();
+        return;
+      }
+      chunkCount++;
+      receivedBytes += value.byteLength;
+      controller.enqueue(value);
+    },
+    cancel() {
+      finalize('neutral');
+      reader.cancel().catch(() => {});
+    },
+  });
+
+  onStreamStart?.();
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}

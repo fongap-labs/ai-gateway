@@ -13,6 +13,7 @@
 // even for requests that opt in. This matches the token store's no-key policy.
 
 import { getBool, readEnv } from '../config/env.ts';
+import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { corsHeaders } from '../protocol/http.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
@@ -194,7 +195,10 @@ export async function resolveEdgeCachePlan(
   if (!edgeCacheEligible(route, bodyJson, request, env)) return null;
   if (typeof bodyChars === 'number' && bodyChars > MAX_CACHEABLE_REQUEST_CHARS) return null;
   const ttlSec = readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC');
-  const ttl = ttlSec ? Number(ttlSec) : 14400;
+  // An explicit AIG_EDGE_CACHE_TTL_SEC wins; the DEFAULT is limits-owned
+  // (AIG_COST_GUARDS switches it from the 4h prompt cache to off entirely —
+  // edge PUTs are their own storage-IO cost).
+  const ttl = ttlSec ? Number(ttlSec) : getLimits(env).edgeCacheTtlDefaultSec;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
   const scope = await callerCacheScope(request, env);
   if (scope === null) {

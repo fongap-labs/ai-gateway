@@ -48,20 +48,27 @@ export function jsonResponse(status: number, data: unknown, env: GatewayEnv, req
 // when a transparent failover is no longer safe. The shape is route-specific:
 // Responses uses event: error + type/error, Anthropic uses event: error +
 // type/error nested under .error, and OpenAI Chat uses a plain data: payload.
+// `message`/`code` override the default stream-interruption wording for other
+// protocol-level cut causes (e.g. the conversion budget); defaults keep the
+// original spelling byte-for-byte.
 export function streamInterruptionChunk(
   route: string,
   requestId: string,
   reason: string | null,
-  { nextSequenceNumber = 0 }: { nextSequenceNumber?: number } = {},
+  {
+    nextSequenceNumber = 0,
+    message: messageOverride,
+    code = 'stream_interrupted',
+  }: { nextSequenceNumber?: number; message?: string; code?: string } = {},
 ): Uint8Array {
-  const message = `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
+  const message = messageOverride ?? `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
   let event: string;
   if (route === 'openai_responses') {
-    event = `event: error\ndata: ${JSON.stringify({ type: 'error', code: 'stream_interrupted', message, param: null, sequence_number: nextSequenceNumber })}\n\n`;
+    event = `event: error\ndata: ${JSON.stringify({ type: 'error', code, message, param: null, sequence_number: nextSequenceNumber })}\n\n`;
   } else if (route === 'anthropic_messages') {
     event = `event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message } })}\n\n`;
   } else {
-    event = `data: ${JSON.stringify({ error: { message, type: 'api_error', code: 'stream_interrupted' } })}\n\n`;
+    event = `data: ${JSON.stringify({ error: { message, type: 'api_error', code } })}\n\n`;
   }
   return streamErrorEncoder.encode(event);
 }

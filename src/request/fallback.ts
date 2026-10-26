@@ -47,6 +47,7 @@
 //     no native node: no node of this gateway can ever serve those fields, so the
 //     answer is a 400 that names them, and the client can resend without them.
 
+import { getLimits } from '../config/timeouts.ts';
 import type { IrProtocol } from '../conversion/matrix/ir.ts';
 import { convertMatrixRequest, isMatrixPair } from '../conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../conversion/result.ts';
@@ -141,7 +142,11 @@ export async function runFallbackChain({
       // prompt strategy: the matrix adapters embed the JSON instruction
       // themselves and native/tool modes require positive capability
       // evidence that cross-protocol fallback cannot assume here.
-      conversionResult = convertMatrixRequest(from, to, bodyJson);
+      // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
+      // stream flag so the provider may answer with one JSON body (streaming
+      // clients still get the forced upstream stream).
+      const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
+      conversionResult = convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
     } catch (e) {
       if (e instanceof ConversionError) {
         conversionRejectedCount++;

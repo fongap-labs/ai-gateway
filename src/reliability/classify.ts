@@ -287,6 +287,17 @@ export function classifyOversizedReply(): FailureClassification {
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }
 
+// The matrix-translated reply would exceed the gateway's per-reply conversion
+// budget (AIG_CONVERSION_*). Rotating would regenerate — and bill — the same
+// over-budget answer, so the request ends here; the node is not blamed, the
+// reply size is the client's demand, not the key's health. Reuses the closed
+// vocabulary's `client` kind (a stop, never counted); the specific cause stays
+// visible through the conversion_budget_exceeded wire code and the
+// [conversion-budget] log line.
+export function classifyConversionBudget(): FailureClassification {
+  return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+}
+
 export function classifyClientAbort(): FailureClassification {
   return { kind: KIND.CLIENT_ABORT, action: 'neutral', cooldownMs: 0, counted: false };
 }

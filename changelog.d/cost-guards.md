@@ -1,0 +1,5 @@
+- 新增: `AIG_COST_GUARDS`（默认关闭，一次性开合四个可观测性与持久化默认值）。关闭时与 v0.1.3 逐字节一致：亲和写开启、每个 token 事件落 D1、edge cache 默认 4 小时 TTL、`AIG_LOG_LEVEL` 默认 info。开启后每个子项的显式设置永远优先（开关两侧一致）。
+- 变更: KV 亲和写：`AIG_AFFINITY_WRITE` 默认由 1 切到 0——Tier 1 会话亲和只是软评分偏置，它的写量在 Free 套餐每天 1,000 次 KV 写的配额里与其他 KV 用途直接竞争。读路径不变：不再有写之后，查找一律 miss，亲和自动退化为纯评分比较，同时消除了陈旧绑定风险。
+- 变更: D1 token 记账采样：`AIG_TOKEN_D1_SAMPLE_PCT` 默认由 100 切到 1（0 表示完全停写）。采样只作用于 D1 聚合的写入：isolate 内的 /metrics 计数器与节点级 token 统计保持 100% 精确；D1 聚合变为明示的抽样口径（不做外推，dashboard 上 D1 数据按抽样理解）。动机：Free 套餐 10 万 D1 写每天，计费记账不该是写入大户。
+- 变更: edge cache：显式 `AIG_EDGE_CACHE_TTL_SEC` 优先；默认值由 4 小时（14400s）切到 0（整体停用，HIT 与 PUT 都跳过）。edge PUT 是独立的存储 IO 成本，且命中只省重复上游调用——免费层下默认关闭、需要时显式开。
+- 变更: 日志：`AIG_LOG_LEVEL` 默认由 info 切到 warn（显式设置优先）。info 是请求主路径上的 console.log I/O，逐条进入 Workers tail 会放大可观测噪音与日志配额消耗；warn 保持 error 级照常输出。新增 warn 层级（与 error 同层：抑制 info 与 debug，保留 error）。

@@ -35,6 +35,34 @@ const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.na
 // stores the supplied deadline and controls the post-cooldown recovery probe;
 // it must never invent a second rate-limit ladder.
 export const TIER1_429_PROBE_GATE_MS = 15_000;
+// The v2 per-isolate probe configuration below takes its bounds from the
+// single source of truth (AIG_TIER1_PROBE_TIMEOUT_MS). A misconfigured value
+// never wedges the gate: values below one second (or above the registry
+// ceiling) are clamped, not rejected.
+const PROBE_TIMEOUT_TUNABLE = RUNTIME_TUNABLES.find((entry) => entry.name === 'AIG_TIER1_PROBE_TIMEOUT_MS') ?? null;
+
+// Scope of a rate-limit recovery probe mark: account-wide or one model.
+type RateLimitProbeScope = { rateLimitRecoveryUntil: number };
+
+// v2 probe-gate configuration. Defaults (v2=false) keep the legacy fixed gate
+// byte-for-byte until the request bootstrap (src/request/handler.ts) applies
+// the deployment's runtime variables; those are constants for an isolate's
+// lifetime, so one apply per request entry is sufficient and race-free.
+const probeGate: { v2: boolean; timeoutMs: number } = {
+  v2: false,
+  timeoutMs: PROBE_TIMEOUT_TUNABLE?.def ?? TIER1_429_PROBE_GATE_MS,
+};
+
+/** Apply the runtime probe-gate configuration (from getLimits). */
+export function configureTier1ProbeGate(cfg: { v2?: boolean; timeoutMs?: number } = {}): void {
+  probeGate.v2 = cfg.v2 === true;
+  if (typeof cfg.timeoutMs === 'number' && Number.isFinite(cfg.timeoutMs) && cfg.timeoutMs > 0) {
+    const max = PROBE_TIMEOUT_TUNABLE?.max ?? 30_000;
+    probeGate.timeoutMs = Math.min(Math.max(Math.round(cfg.timeoutMs), 1_000), max);
+  } else {
+    probeGate.timeoutMs = PROBE_TIMEOUT_TUNABLE?.def ?? TIER1_429_PROBE_GATE_MS;
+  }
+}
 // A 429 is blamed on the model that received it. Only when a second distinct model
 // on the same account is limited inside this window does the cooldown widen to the
 // whole account (an account-wide quota looks exactly like that).
@@ -271,7 +299,30 @@ function upstreamModelCooldownRemainingMs(account: Tier1AccountRuntime, node: Ru
 }
 
 function recoveryGateMs(): number {
-  return TIER1_429_PROBE_GATE_MS;
+  // Legacy gate: the dedicated fixed constant, identical to the pre-v2 arming
+  // value. v2: the deadline bounds the single-flight probe window only, with
+  // ±10% jitter so keys whose cooldowns lapse together do not probe in lockstep.
+  if (!probeGate.v2) return TIER1_429_PROBE_GATE_MS;
+  return jittered(probeGate.timeoutMs);
+}
+
+/**
+ * Rate-limit recovery gate for one scope (account or model).
+ *
+ * Legacy: an armed window blocks every claim; the recovery probe commits only
+ * at a later recorded success, so a key sits out the fixed window while every
+ * other request waits behind it.
+ *
+ * v2 (AIG_TIER1_PROBE_V2): the armed mark means "single-flight probe
+ * outstanding". A claim that finds the scope idle (inFlight === 0) carries the
+ * probe; any further claim is refused so the scheduler immediately re-routes.
+ * The window self-opens when it lapses, so a probe that never reports cannot
+ * wedge the key for more than AIG_TIER1_PROBE_TIMEOUT_MS.
+ */
+function rateLimitProbeBlocked(scope: RateLimitProbeScope, scopeInFlight: number, now: number): boolean {
+  if (scope.rateLimitRecoveryUntil <= now) return false;
+  if (!probeGate.v2) return true;
+  return scopeInFlight > 0;
 }
 
 // A provider-reported window that has rolled over is stale: the old remaining
@@ -297,15 +348,11 @@ export function claimTier1Slot(
   const account = getTier1Account(node.id);
   account.provider = node.provider;
   normalizeQuotaWindow(account, now);
-  if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
-  // Probe-gate mutex: while a recovery probe is in flight (rateLimitRecoveryUntil > 0
-  // and not yet succeeded), do not admit any additional concurrent requests.
-  // This prevents multiple requests from simultaneously hammering a key that is
-  // still proving it has recovered.
-  if (account.rateLimitRecoveryUntil > now && account.inFlight > 0) return false;
+  if (account.accountDisabled || account.accountCooldownUntil > now) return false;
+  if (rateLimitProbeBlocked(account, account.inFlight, now)) return false;
   const model = modelId ? account.models.get(modelId) : null;
   if (modelId && upstreamModelCooldownRemainingMs(account, node, modelId, now) > 0) return false;
-  if ((model?.rateLimitRecoveryUntil ?? 0) > now) return false;
+  if (model && rateLimitProbeBlocked(model, model.inFlight, now)) return false;
   if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return false;
   if (maxInFlight !== null && account.inFlight >= maxInFlight) return false;
   // Quota admission. Only applies when the provider has reported an absolute
@@ -399,13 +446,11 @@ export function isTier1Eligible(
   const account = accounts.get(node.id);
   if (!account) return true;
   normalizeQuotaWindow(account, now);
-  if (account.accountDisabled || account.accountCooldownUntil > now || account.rateLimitRecoveryUntil > now) return false;
-  // Probe-gate mutex: while a recovery probe is in flight (rateLimitRecoveryUntil > 0
-  // and not yet succeeded), do not admit any additional concurrent requests.
-  if (account.rateLimitRecoveryUntil > now && account.inFlight > 0) return false;
+  if (account.accountDisabled || account.accountCooldownUntil > now) return false;
+  if (rateLimitProbeBlocked(account, account.inFlight, now)) return false;
   if (upstreamModelCooldownRemainingMs(account, node, req.model, now) > 0) return false;
   const model = account.models.get(req.model);
-  if (modelBlocked(model, now) || (model?.rateLimitRecoveryUntil ?? 0) > now) return false;
+  if (modelBlocked(model, now) || (model && rateLimitProbeBlocked(model, model.inFlight, now))) return false;
   if (model?.failureState === FAILURE_STATE.HALF_OPEN && model.inFlight > 0) return false;
   if (exceedsOversizeCeiling(account, req.model, req.bodyChars, now)) return false;
   if (account.quotaState === 'exhausted_until' && account.quotaResetAt > now) return false;
@@ -737,11 +782,15 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
   }
 }
 
-export function recordTier1Success(accountId: string, modelId: string, now: number = Date.now()): void {
-  const account = getTier1Account(accountId);
-  const model = getTier1Model(accountId, modelId);
-  account.consecutiveAccountFailures = 0;
-
+/**
+ * Clear a proven rate-limit recovery on both scopes, exactly where the legacy
+ * recordTier1Success detections left them: an armed mark whose cooldown has
+ * lapsed and whose probe has been issued. The v2 early commit reuses this so
+ * the stream-end path stays a no-op afterwards (idempotent). Deliberately NOT
+ * touching the half-open circuit transition: first-event evidence proves the
+ * key answers, not that the conversation completed.
+ */
+function clearRateLimitRecoveryIfProven(account: Tier1AccountRuntime, model: Tier1ModelRuntime, now: number): void {
   const accountRecoveryProbe =
     account.accountCooldownReason === 'rate_limit' &&
     account.accountCooldownUntil <= now &&
@@ -756,10 +805,6 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
     account.rateLimitRecoveryUntil = 0;
     account.accountCooldownIsQuota = false;
   }
-
-  model.consecutiveFailures = 0;
-  model.consecutiveForbidden = 0;
-  account.recentRateLimitedModels.delete(modelId);
   const modelRecoveryProbe =
     model.cooldownReason === 'rate_limit' && model.cooldownUntil <= now && !model.rateLimitRecoveryPending && model.rateLimitRecoveryUntil > 0;
   if (modelRecoveryProbe) {
@@ -771,6 +816,39 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
     model.rateLimitRecoveryUntil = 0;
     model.cooldownIsQuota = false;
   }
+}
+
+/** v2 probe commit (AIG_TIER1_PROBE_V2): fired at the first meaningful upstream
+ *  evidence of a LIVE request — response headers for a buffered reply, the
+ *  first SSE event for a stream. Proves "is this key still limited?" for that
+ *  scope and releases every other request waiting on the probe window at once;
+ *  the request itself keeps streaming under its normal accounting. No-op while
+ *  the legacy gate is active or when no armed recovery state exists; the
+ *  stream-end recordTier1Success remains the owner in both those cases. */
+export function commitTier1RecoveryProbe(accountId: string, modelId: string, now: number = Date.now()): boolean {
+  if (!probeGate.v2) return false;
+  const account = getTier1Account(accountId);
+  const model = getTier1Model(accountId, modelId);
+  const armedBefore =
+    (account.accountCooldownReason === 'rate_limit' && account.rateLimitRecoveryUntil > 0) ||
+    (model.cooldownReason === 'rate_limit' && model.rateLimitRecoveryUntil > 0);
+  clearRateLimitRecoveryIfProven(account, model, now);
+  const armedAfter =
+    (account.accountCooldownReason === 'rate_limit' && account.rateLimitRecoveryUntil > 0) ||
+    (model.cooldownReason === 'rate_limit' && model.rateLimitRecoveryUntil > 0);
+  return armedBefore && !armedAfter;
+}
+
+export function recordTier1Success(accountId: string, modelId: string, now: number = Date.now()): void {
+  const account = getTier1Account(accountId);
+  const model = getTier1Model(accountId, modelId);
+  account.consecutiveAccountFailures = 0;
+
+  clearRateLimitRecoveryIfProven(account, model, now);
+
+  model.consecutiveFailures = 0;
+  model.consecutiveForbidden = 0;
+  account.recentRateLimitedModels.delete(modelId);
   if (model.failureState === FAILURE_STATE.HALF_OPEN) {
     model.halfOpenSuccesses++;
     if (model.halfOpenSuccesses >= TIER1_HALF_OPEN_SUCCESS_THRESHOLD) {

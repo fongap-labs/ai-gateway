@@ -46,6 +46,11 @@ const guardedStreamState = new WeakMap<object, { failureReason: string | null }>
 export const FIRST_EVENT_MAX_PRE_BYTES = 2 * 1024 * 1024;
 export const FIRST_EVENT_MAX_SSE_LINE = 1024 * 1024;
 
+// Pre-event budget for the pass-through streaming mode: the guard only needs
+// enough bytes to see the first meaningful SSE event, not the worst-case
+// prefix it used to absorb. Configured via AIG_STREAM_GUARD_PREFIX_BYTES.
+export const FIRST_EVENT_MAX_PRE_BYTES_PASSTHROUGH = 64 * 1024;
+
 export type SseEventState = { dataLines: string[]; dataLength: number };
 export type SseEventHandler = (data: string) => void;
 
@@ -167,8 +172,10 @@ export async function ensureFirstSseEvent(
   clientSignal: AbortSignal | null | undefined,
   isRealOutput: ((json: unknown) => boolean) | undefined,
   onParsedEvent?: (json: unknown) => void,
+  options: { maxPreBytes?: number } = {},
 ): Promise<Response> {
   if (!upstreamResponse.body) throw guardError(GUARD_ERROR.EMPTY);
+  const maxPreBytes = typeof options.maxPreBytes === 'number' && options.maxPreBytes > 0 ? options.maxPreBytes : FIRST_EVENT_MAX_PRE_BYTES;
   const reader = upstreamResponse.body.getReader();
   const consumed: Uint8Array[] = [];
   let isSettled = false;
@@ -247,7 +254,7 @@ export async function ensureFirstSseEvent(
     clientSignal?.addEventListener('abort', abort, { once: true });
     timerId = setTimeout(() => finishErr(GUARD_ERROR.TIMEOUT), timeoutMs);
 
-    void consumeSseEventsWithReader(reader, check, consumed, () => isSettled)
+    void consumeSseEventsWithReader(reader, check, consumed, () => isSettled, maxPreBytes)
       .then(() => {
         if (!isSettled) finishErr(GUARD_ERROR.EMPTY);
       })
@@ -262,6 +269,7 @@ async function consumeSseEventsWithReader(
   onData: SseEventHandler,
   consumed: Uint8Array[],
   isSettled: () => boolean,
+  maxPreBytes: number,
 ): Promise<void> {
   const decoder = new TextDecoder();
   const scanner = createSseScanner(onData);
@@ -271,7 +279,7 @@ async function consumeSseEventsWithReader(
     if (done || isSettled()) break;
     if (consumed) consumed.push(value);
     preBytes += value.byteLength;
-    if (preBytes > FIRST_EVENT_MAX_PRE_BYTES) {
+    if (preBytes > maxPreBytes) {
       reader.cancel().catch(() => {});
       throw guardError(GUARD_ERROR.PRE_EVENT_BYTES_EXCEEDED);
     }

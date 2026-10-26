@@ -125,6 +125,17 @@ export function admitAuthAttempt(fingerprint: string, cap: number, now: number =
   return { ok: false, retryAfterSec: Math.ceil(retryAfterMs / 1000) };
 }
 
+/**
+ * True when any failed authorization attempt is tracked (the throttle has
+ * state to consult on admission or clear on success). AIG_HOT_PATH_GUARDS uses
+ * this to skip the per-request credential hash while no failure has ever been
+ * charged in this isolate — both the admit check and the success clear are
+ * no-ops against empty state, so the hash would be spent on nothing.
+ */
+export function hasTrackedAuthFailures(): boolean {
+  return authFailureState.size > 0;
+}
+
 /** Charge one failed authorization attempt against `fingerprint`'s window. */
 export function recordAuthFailure(fingerprint: string, now: number = Date.now()): void {
   let entry = authFailureState.get(fingerprint);

@@ -4,7 +4,7 @@
 // Single source of truth for every timeout / cooldown value.
 // Do not hardcode timeout defaults anywhere else.
 
-import { clampInt, readEnv } from './env.ts';
+import { clampInt, getBool, readEnv } from './env.ts';
 import type { RuntimeTunableName } from './runtime-vars.ts';
 import { RUNTIME_TUNABLES } from './runtime-vars.ts';
 
@@ -91,6 +91,73 @@ export type Limits = {
   gatewayKeyRpm: number;
   authAttemptRpm: number;
   edgeCacheTtlSec: number;
+  /** AIG_TIER1_PROBE_V2: single-flight recovery probe that commits early
+   *  (headers / first SSE event) instead of a 15s hard gate whose probe only
+   *  commits at stream end. false keeps the legacy gate byte-for-byte. */
+  tier1ProbeV2: boolean;
+  /** AIG_TIER1_PROBE_TIMEOUT_MS: how long the v2 probe keeps its single-flight
+   *  window when no meaningful evidence arrives. Unused legacy mode. */
+  tier1ProbeTimeoutMs: number;
+  /** AIG_STREAM_PASSTHROUGH: byte-for-byte native stream relay with no
+   *  per-chunk scanning. false keeps the tracked relay. */
+  streamPassthrough: boolean;
+  /** AIG_STREAM_GUARD_PREFIX_BYTES: pre-event byte budget for the guard in
+   *  pass-through mode. Unused legacy mode (2MB constant). */
+  streamGuardPrefixBytes: number;
+  /** AIG_CONVERSION_BUDGET: per-request ceilings on matrix translation work.
+   *  false keeps the legacy unlimited translation. */
+  conversionBudget: boolean;
+  /** AIG_CONVERSION_BUDGET_MODE: what happens when a reply exceeds the budget.
+   *  "error" ends with a gateway error frame / 502; "truncate" delivers a
+   *  well-formed shortened reply and counts the attempt as delivered. */
+  conversionBudgetMode: 'error' | 'truncate';
+  /** Numeric ceilings for streaming translation (see MatrixConversionBudget). */
+  conversionBudgetCfg: {
+    maxEvents: number;
+    maxOutputUnits: number;
+    maxToolEvents: number;
+    maxToolArgUnits: number;
+  };
+  /** Output ceiling for the collected-object path. */
+  conversionNonstreamMaxUnits: number;
+  /** Reported output-token ceiling; 0 disables. */
+  conversionBudgetMaxTokens: number;
+  /** AIG_CONVERSION_PREFER_NONSTREAM: non-streaming clients keep their own
+   *  stream flag so cross-protocol requests may hit the upstream non-streaming. */
+  conversionPreferNonstream: boolean;
+  /** AIG_REQUEST_ADMISSION: request-admission / isolation guard stack. false
+   *  keeps the legacy admission byte-for-byte. */
+  requestAdmission: boolean;
+  /** AIG_ISOLATE_MAX_IN_FLIGHT: per-isolate cap on concurrent body-carrying
+   *  requests; 0 disables. */
+  isolateMaxInFlight: number;
+  /** AIG_CHUNKED_BODY_MAX_BYTES: admission charge and read ceiling for bodies
+   *  without a usable Content-Length. Unused legacy mode (full-body cap). */
+  chunkedBodyMaxBytes: number;
+  /** AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS: logical-attempt
+   *  ceilings per streaming mode. Unused legacy mode. */
+  streamMaxAttempts: number;
+  nonStreamMaxAttempts: number;
+  /** Whether Tier 1 session-affinity KV writes are enabled. Legacy default on;
+   *  AIG_COST_GUARDS switches the default off. */
+  tier1AffinityWrite: boolean;
+  /** AIG_TOKEN_D1_SAMPLE_PCT: percent of token-usage events persisted into the
+   *  D1 aggregate (isolate counters stay exact). Legacy default 100. */
+  tokenD1SamplePct: number;
+  /** Default edge-cache TTL when AIG_EDGE_CACHE_TTL_SEC is unset. Legacy 4h;
+   *  AIG_COST_GUARDS switches the default off. */
+  edgeCacheTtlDefaultSec: number;
+  /** Default log level when AIG_LOG_LEVEL is unset. Legacy info; AIG_COST_GUARDS
+   *  switches the default to warn. */
+  logLevelDefault: string;
+  /** AIG_HOT_PATH_GUARDS: main-path CPU guard stack (lazy auth fingerprint,
+   *  route-scoped diagnostics import, tighter affinity read + breaker). false
+   *  keeps the legacy hot path byte-for-byte. */
+  hotPathGuards: boolean;
+  /** AIG_AFFINITY_READ_TIMEOUT_MS: wait for a cold affinity KV read before the
+   *  binding is treated as unknown. Legacy default 50; the guard stack switches
+   *  the default to 15. */
+  affinityReadTimeoutMs: number;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -152,10 +219,42 @@ export function attemptFirstEventTimeoutMs(firstEventTimeoutMs: number, remainin
 }
 
 const cache = new WeakMap<object, Limits>();
+// Shared cache key for callers without a real env (unit-test harnesses, bare
+// config probes): the values are env-independent defaults, and WeakMap keys
+// must be objects.
+const EMPTY_ENV: Record<string, unknown> = {};
+
+/** AIG_CONVERSION_BUDGET_MODE pick, fail-safe to "error" on any unknown value. */
+function conversionBudgetModeOf(env: Record<string, unknown>): 'error' | 'truncate' {
+  return readEnv(env, 'AIG_CONVERSION_BUDGET_MODE')?.toLowerCase() === 'truncate' ? 'truncate' : 'error';
+}
+
+/**
+ * AIG_REQUEST_HEDGE_MAX: an explicitly set value always wins (both sides of
+ * the AIG_REQUEST_ADMISSION flag). When unset, the default depends on the
+ * flag: the admission stack wants hedges off by default — every hedge is a
+ * bonus upstream dispatch whose bill lands regardless of who wins the race —
+ * while the legacy mode keeps its documented default of 1.
+ */
+function maxHedgesFor(env: Record<string, unknown>): number {
+  const raw = readEnv(env, 'AIG_REQUEST_HEDGE_MAX');
+  if (raw !== undefined) {
+    return clampInt(raw, LIMITS.AIG_REQUEST_HEDGE_MAX.min, LIMITS.AIG_REQUEST_HEDGE_MAX.max, LIMITS.AIG_REQUEST_HEDGE_MAX.def);
+  }
+  return getBool(env, 'AIG_REQUEST_ADMISSION', false) ? 0 : LIMITS.AIG_REQUEST_HEDGE_MAX.def;
+}
 
 export function getLimits(env: Record<string, unknown>): Limits {
-  let cached = cache.get(env);
+  // Defensive: some internal probes (for example a bare persistTokenUsage() or
+  // getLogger() call in a unit test) pass no env at all. WeakMap keys must be
+  // objects, so those calls share one empty-env cache slot instead of throwing.
+  const cacheKey = typeof env === 'object' && env !== null ? env : EMPTY_ENV;
+  let cached = cache.get(cacheKey);
   if (cached) return cached;
+  // AIG_COST_GUARDS switches observable-default VALUES only (never clamps an
+  // explicit override); see each derived field below.
+  const costGuards = getBool(env, 'AIG_COST_GUARDS', false);
+  const hotPathGuards = getBool(env, 'AIG_HOT_PATH_GUARDS', false);
   cached = {
     headersTimeoutMs: clampInt(
       readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS'),
@@ -206,12 +305,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_HEDGE_DELAY_MS.def,
     ),
     isHedgeDelayExplicit: readEnv(env, 'AIG_HEDGE_DELAY_MS') !== undefined,
-    maxHedgesPerRequest: clampInt(
-      readEnv(env, 'AIG_REQUEST_HEDGE_MAX'),
-      LIMITS.AIG_REQUEST_HEDGE_MAX.min,
-      LIMITS.AIG_REQUEST_HEDGE_MAX.max,
-      LIMITS.AIG_REQUEST_HEDGE_MAX.def,
-    ),
+    maxHedgesPerRequest: maxHedgesFor(env),
     gatewayKeyRpm: clampInt(
       readEnv(env, 'AIG_ACCESS_KEY_RPM'),
       LIMITS.AIG_ACCESS_KEY_RPM.min,
@@ -230,8 +324,112 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.max,
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.def,
     ),
+    tier1ProbeV2: getBool(env, 'AIG_TIER1_PROBE_V2', false),
+    tier1ProbeTimeoutMs: clampInt(
+      readEnv(env, 'AIG_TIER1_PROBE_TIMEOUT_MS'),
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.min,
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.max,
+      LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.def,
+    ),
+    streamPassthrough: getBool(env, 'AIG_STREAM_PASSTHROUGH', false),
+    streamGuardPrefixBytes: clampInt(
+      readEnv(env, 'AIG_STREAM_GUARD_PREFIX_BYTES'),
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.min,
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.max,
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.def,
+    ),
+    conversionBudget: getBool(env, 'AIG_CONVERSION_BUDGET', false),
+    conversionBudgetMode: conversionBudgetModeOf(env),
+    conversionBudgetCfg: {
+      maxEvents: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_EVENTS'),
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.min,
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.max,
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.def,
+      ),
+      maxOutputUnits: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_BYTES'),
+        LIMITS.AIG_CONVERSION_MAX_BYTES.min,
+        LIMITS.AIG_CONVERSION_MAX_BYTES.max,
+        LIMITS.AIG_CONVERSION_MAX_BYTES.def,
+      ),
+      maxToolEvents: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_TOOL_EVENTS'),
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.min,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.max,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.def,
+      ),
+      maxToolArgUnits: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_TOOL_ARG_BYTES'),
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.min,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.max,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.def,
+      ),
+    },
+    conversionNonstreamMaxUnits: clampInt(
+      readEnv(env, 'AIG_CONVERSION_NONSTREAM_MAX_BYTES'),
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.min,
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.max,
+      LIMITS.AIG_CONVERSION_NONSTREAM_MAX_BYTES.def,
+    ),
+    conversionBudgetMaxTokens: clampInt(
+      readEnv(env, 'AIG_CONVERSION_MAX_OUTPUT_TOKENS'),
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.min,
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.max,
+      LIMITS.AIG_CONVERSION_MAX_OUTPUT_TOKENS.def,
+    ),
+    conversionPreferNonstream: getBool(env, 'AIG_CONVERSION_PREFER_NONSTREAM', false),
+    requestAdmission: getBool(env, 'AIG_REQUEST_ADMISSION', false),
+    isolateMaxInFlight: clampInt(
+      readEnv(env, 'AIG_ISOLATE_MAX_IN_FLIGHT'),
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.min,
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.max,
+      LIMITS.AIG_ISOLATE_MAX_IN_FLIGHT.def,
+    ),
+    chunkedBodyMaxBytes: clampInt(
+      readEnv(env, 'AIG_CHUNKED_BODY_MAX_BYTES'),
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.min,
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.max,
+      LIMITS.AIG_CHUNKED_BODY_MAX_BYTES.def,
+    ),
+    streamMaxAttempts: clampInt(
+      readEnv(env, 'AIG_STREAM_MAX_ATTEMPTS'),
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.min,
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.max,
+      LIMITS.AIG_STREAM_MAX_ATTEMPTS.def,
+    ),
+    nonStreamMaxAttempts: clampInt(
+      readEnv(env, 'AIG_NONSTREAM_MAX_ATTEMPTS'),
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.min,
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.max,
+      LIMITS.AIG_NONSTREAM_MAX_ATTEMPTS.def,
+    ),
+    tier1AffinityWrite:
+      readEnv(env, 'AIG_AFFINITY_WRITE') !== undefined
+        ? clampInt(
+            readEnv(env, 'AIG_AFFINITY_WRITE'),
+            LIMITS.AIG_AFFINITY_WRITE.min,
+            LIMITS.AIG_AFFINITY_WRITE.max,
+            LIMITS.AIG_AFFINITY_WRITE.def,
+          ) === 1
+        : !costGuards,
+    tokenD1SamplePct: clampInt(
+      readEnv(env, 'AIG_TOKEN_D1_SAMPLE_PCT'),
+      LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.min,
+      LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.max,
+      costGuards ? 1 : LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.def,
+    ),
+    edgeCacheTtlDefaultSec: costGuards ? 0 : 14_400,
+    logLevelDefault: costGuards ? 'warn' : 'info',
+    hotPathGuards,
+    affinityReadTimeoutMs: clampInt(
+      readEnv(env, 'AIG_AFFINITY_READ_TIMEOUT_MS'),
+      LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.min,
+      LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.max,
+      hotPathGuards ? 15 : LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.def,
+    ),
   };
-  cache.set(env, cached);
+  cache.set(cacheKey, cached);
   return cached;
 }
 
