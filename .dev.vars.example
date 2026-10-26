@@ -98,6 +98,31 @@ AIG_TIER1_NODES_01='[
 # AIG_ANTHROPIC_COUNT_MODE="approximate"
 # AIG_DASHBOARD_MODELS="Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air"
 
+# ---- Free-tier capacity/cost guards (defaults live in src/config/runtime-vars.ts) ----
+# AIG_TIER1_PROBE_V2="false"                    # default: false; single-flight 429 recovery probe
+# AIG_TIER1_PROBE_TIMEOUT_MS="10000"            # default: 10 s
+# AIG_STREAM_PASSTHROUGH="false"                # default: false; byte-for-byte native stream relay
+# AIG_STREAM_GUARD_PREFIX_BYTES="65536"         # default: 64 KB
+# AIG_CONVERSION_BUDGET="false"                 # default: false; per-reply matrix translation budget
+# AIG_CONVERSION_BUDGET_MODE="error"            # default: error (truncate renders a shortened reply)
+# AIG_CONVERSION_PREFER_NONSTREAM="false"       # default: false
+# AIG_CONVERSION_MAX_EVENTS="400"               # default: 400
+# AIG_CONVERSION_MAX_BYTES="131072"             # default: 128 KB (translated output)
+# AIG_CONVERSION_MAX_TOOL_EVENTS="200"          # default: 200
+# AIG_CONVERSION_MAX_TOOL_ARG_BYTES="65536"     # default: 64 KB per open tool call
+# AIG_CONVERSION_NONSTREAM_MAX_BYTES="131072"   # default: 128 KB (collected-object path)
+# AIG_CONVERSION_MAX_OUTPUT_TOKENS="0"          # default: 0 (reported output-token ceiling disabled)
+# AIG_REQUEST_ADMISSION="false"                 # default: false; admission/concurrency guard stack
+# AIG_ISOLATE_MAX_IN_FLIGHT="32"                # default: 32; 0 disables the isolate concurrency cap
+# AIG_CHUNKED_BODY_MAX_BYTES="524288"           # default: 512 KB; charge/read cap for bodies without Content-Length
+# AIG_STREAM_MAX_ATTEMPTS="2"                   # default: 2; streaming logical-attempt cap (admission stack)
+# AIG_NONSTREAM_MAX_ATTEMPTS="3"                # default: 3; buffered logical-attempt cap (admission stack)
+# AIG_COST_GUARDS="false"                       # default: false; flips the four cost defaults below
+# AIG_AFFINITY_WRITE="1"                        # default: 1; cost guards switch the default to 0
+# AIG_TOKEN_D1_SAMPLE_PCT="100"                 # default: 100; cost guards switch the default to 1 (0 = no D1 token writes)
+# AIG_AFFINITY_READ_TIMEOUT_MS="50"             # default: 50 ms; hot-path guards switch the default to 15
+# AIG_HOT_PATH_GUARDS="false"                   # default: false; lazy auth fingerprint, route-scoped diagnostics, affinity breaker
+
 # ============ Protocol fallback (optional) ============
 # All three protocol surfaces translate pairwise through the IR matrix:
 # Anthropic Messages <-> OpenAI Chat <-> OpenAI Responses (six directed pairs).

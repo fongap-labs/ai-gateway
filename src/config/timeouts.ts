@@ -219,6 +219,10 @@ export function attemptFirstEventTimeoutMs(firstEventTimeoutMs: number, remainin
 }
 
 const cache = new WeakMap<object, Limits>();
+// Shared cache key for callers without a real env (unit-test harnesses, bare
+// config probes): the values are env-independent defaults, and WeakMap keys
+// must be objects.
+const EMPTY_ENV: Record<string, unknown> = {};
 
 /** AIG_CONVERSION_BUDGET_MODE pick, fail-safe to "error" on any unknown value. */
 function conversionBudgetModeOf(env: Record<string, unknown>): 'error' | 'truncate' {
@@ -241,7 +245,11 @@ function maxHedgesFor(env: Record<string, unknown>): number {
 }
 
 export function getLimits(env: Record<string, unknown>): Limits {
-  let cached = cache.get(env);
+  // Defensive: some internal probes (for example a bare persistTokenUsage() or
+  // getLogger() call in a unit test) pass no env at all. WeakMap keys must be
+  // objects, so those calls share one empty-env cache slot instead of throwing.
+  const cacheKey = typeof env === 'object' && env !== null ? env : EMPTY_ENV;
+  let cached = cache.get(cacheKey);
   if (cached) return cached;
   // AIG_COST_GUARDS switches observable-default VALUES only (never clamps an
   // explicit override); see each derived field below.
@@ -421,7 +429,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       hotPathGuards ? 15 : LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.def,
     ),
   };
-  cache.set(env, cached);
+  cache.set(cacheKey, cached);
   return cached;
 }
 
