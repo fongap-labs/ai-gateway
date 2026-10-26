@@ -265,10 +265,10 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     // mode renders a well-formed short reply instead, so the regular success
     // accounting stays in charge and no intercept is needed.
     const budgetCut = (): boolean => budget !== null && handle.budgetExceeded() !== null && budget.mode === 'error';
-    let budgetSettled = false;
+    let isBudgetSettled = false;
     const settleBudgetOnce = (): void => {
-      if (!budgetSettled) {
-        budgetSettled = true;
+      if (!isBudgetSettled) {
+        isBudgetSettled = true;
         recordNodeBudgetStop(c, node, handle.budgetExceeded() ?? 'unknown', 200);
       }
     };

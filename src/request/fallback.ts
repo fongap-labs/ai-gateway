@@ -145,8 +145,8 @@ export async function runFallbackChain({
       // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
       // stream flag so the provider may answer with one JSON body (streaming
       // clients still get the forced upstream stream).
-      const preferNonstream = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
-      conversionResult = convertMatrixRequest(from, to, bodyJson, { preferNonstream });
+      const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
+      conversionResult = convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
     } catch (e) {
       if (e instanceof ConversionError) {
         conversionRejectedCount++;

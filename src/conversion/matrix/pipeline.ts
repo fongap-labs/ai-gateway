@@ -44,7 +44,7 @@ export function convertMatrixRequest(
   from: IrProtocol,
   to: IrProtocol,
   body: Record<string, unknown>,
-  options: { preferNonstream?: boolean } = {},
+  options: { isNonstreamPreferred?: boolean } = {},
 ): ConversionResult {
   if (!isMatrixPair(from, to)) throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)} is not matrix-owned`);
   let ir: IrRequest;
@@ -62,17 +62,17 @@ export function convertMatrixRequest(
     default:
       throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)}`);
   }
-  return buildTarget(to, ir, diag, options.preferNonstream === true);
+  return buildTarget(to, ir, diag, options.isNonstreamPreferred === true);
 }
 
-function buildTarget(to: IrProtocol, ir: IrRequest, diag: MatrixDiag, preferNonstream = false): ConversionResult {
+function buildTarget(to: IrProtocol, ir: IrRequest, diag: MatrixDiag, isNonstreamPreferred = false): ConversionResult {
   switch (to) {
     case 'anthropic':
-      return finalizeMatrix(diag, buildAnthropicRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, preferNonstream);
+      return finalizeMatrix(diag, buildAnthropicRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, isNonstreamPreferred);
     case 'openai_chat':
-      return finalizeMatrix(diag, buildChatRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, preferNonstream);
+      return finalizeMatrix(diag, buildChatRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, isNonstreamPreferred);
     case 'openai_responses':
-      return finalizeMatrix(diag, buildResponsesRequest(ir, diag), ir.structuredOutputSchema ? 'native' : undefined, preferNonstream);
+      return finalizeMatrix(diag, buildResponsesRequest(ir, diag), ir.structuredOutputSchema ? 'native' : undefined, isNonstreamPreferred);
     default:
       throw new ConversionError(`conversion_not_supported: matrix target "${String(to)}"`);
   }
@@ -82,7 +82,7 @@ function finalizeMatrix(
   diag: MatrixDiag,
   body: Record<string, unknown>,
   structuredOutput: StructuredOutputStrategy | undefined,
-  preferNonstream = false,
+  isNonstreamPreferred = false,
 ): ConversionResult {
   // Translation matrix paths default to driving the upstream in streaming mode
   // (AIG_CONVERSION_PREFER_NONSTREAM off): non-streaming clients are served
@@ -91,7 +91,7 @@ function finalizeMatrix(
   // answer with one JSON body — the success layer already translates and
   // bounds that shape (readBufferedReplyText / replyFromNativeObject), and
   // SSE parsing disappears from the request. Streaming clients upstream-stream.
-  if (!preferNonstream || body.stream === true) body.stream = true;
+  if (!isNonstreamPreferred || body.stream === true) body.stream = true;
   return diag.finalize(body, structuredOutput ? { strategy: structuredOutput } : undefined);
 }
 
