@@ -82,6 +82,19 @@ export const RUNTIME_TUNABLES = [
   // upstream consumption. 0 disables the edge cache entirely (match and put
   // are skipped), matching the AIG_ACCESS_KEY_RPM disable convention.
   { name: 'AIG_EDGE_CACHE_TTL_SEC', type: 'int', min: 0, max: 7 * 86_400, def: 14_400 },
+  // (AIG_COST_GUARDS) Percent of token-usage events persisted into the D1
+  // aggregate (delivered + upstream views both). 100 keeps every event; the
+  // guard stack switches the DEFAULT to 1%. Sampling applies to the D1 writes
+  // only: the isolate-local /metrics counters and node token statistics stay
+  // exact, and the D1 aggregate becomes an explicitly sampled basis (never
+  // extrapolated), which frees write cadence on the Free plan's 100k writes/day.
+  // 0 disables D1 token persistence entirely.
+  { name: 'AIG_TOKEN_D1_SAMPLE_PCT', type: 'int', min: 0, max: 100, def: 100 },
+  // (AIG_COST_GUARDS) KV Tier 1 session-affinity writes. 1 (default) keeps the
+  // binding write; the guard stack switches the DEFAULT to 0 — it is a soft
+  // score bias whose write volume otherwise competes with the Free plan's
+  // 1,000 KV writes/day. Explicit values always win on both sides.
+  { name: 'AIG_AFFINITY_WRITE', type: 'int', min: 0, max: 1, def: 1 },
   // (AIG_TIER1_PROBE_V2) How long an armed Tier 1 recovery probe holds its
   // single-flight window before the gate self-opens. The probe itself commits as
   // soon as the first meaningful evidence arrives (response headers for a
@@ -215,6 +228,13 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // switches the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set
   // AIG_REQUEST_HEDGE_MAX always wins on both sides of the flag).
   { name: 'AIG_REQUEST_ADMISSION', def: false },
+  // Observability / persistence cost guards. false (default) keeps every
+  // documented default byte-for-byte: KV affinity writes ON, every token-usage
+  // event persisted to D1, a 4h edge-cache TTL, and AIG_LOG_LEVEL defaulting
+  // to info. true switches those four DEFAULTS (explicit values always win on
+  // both sides): AIG_AFFINITY_WRITE -> 0, AIG_TOKEN_D1_SAMPLE_PCT -> 1,
+  // AIG_EDGE_CACHE_TTL_SEC -> 0 (off), AIG_LOG_LEVEL -> warn.
+  { name: 'AIG_COST_GUARDS', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

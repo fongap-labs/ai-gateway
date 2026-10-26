@@ -22,10 +22,26 @@
 // SQL lives in statements.ts. A caller's promise settles when the event's flush
 // has been written, and events that do not trigger a flush resolve immediately.
 
+import { getLimits } from '../../config/timeouts.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
 import { normalizeUsageReport } from '../token-usage.ts';
 import { bufferPersist } from './buffer.ts';
 import type { UsagePayload } from './statements.ts';
+
+/**
+ * AIG_TOKEN_D1_SAMPLE_PCT (default 100 = every event; the AIG_COST_GUARDS
+ * stack switches the default to 1%). Sampling gates the D1 write only — the
+ * isolate-local /metrics counters and node token statistics stay exact, and
+ * the D1 aggregate becomes an explicitly sampled basis that is never
+ * extrapolated. 0 turns D1 token persistence into a no-op (events resolve
+ * immediately, matching the buffer's own no-flush contract).
+ */
+function shouldPersistEvent(env: GatewayEnv): boolean {
+  const pct = getLimits(env).tokenD1SamplePct;
+  if (pct >= 100) return true;
+  if (pct <= 0) return false;
+  return Math.random() * 100 < pct;
+}
 
 export function tokenUsagePayload(usage: unknown): UsagePayload {
   const report = normalizeUsageReport(usage);
@@ -71,6 +87,7 @@ export function persistTokenUsage(
   model: string | null = null,
   ttftMs: number | null = null,
 ): Promise<void> {
+  if (!shouldPersistEvent(env)) return Promise.resolve();
   return bufferPersist(env, 'delivered', { now, model, usage: tokenUsagePayload(usage), ttftMs });
 }
 
@@ -78,5 +95,6 @@ export function persistTokenUsage(
 // response (failure, retry/fallback loss, hedge loser, or client-cancelled live
 // upstream). It touches upstream_* columns only.
 export function persistUpstreamAttemptUsage(env: GatewayEnv, usage: unknown, now: number = Date.now(), model: string | null = null): Promise<void> {
+  if (!shouldPersistEvent(env)) return Promise.resolve();
   return bufferPersist(env, 'upstream', { now, model, usage: tokenUsagePayload(usage) });
 }

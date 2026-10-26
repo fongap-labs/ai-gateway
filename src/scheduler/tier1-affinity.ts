@@ -12,6 +12,7 @@
 // is never stored as a Map key; a stable synchronous hash is used instead so
 // no plaintext session ID lingers in isolate memory beyond the request scope.
 
+import { getLimits } from '../config/timeouts.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 
 const AIG_AFFINITY_KV_FACTOR = 0.85;
@@ -256,6 +257,12 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?
 // Called only for a cold session's first Tier 1 success or a successful
 // migration. Repeated successes on the same account perform no KV write.
 export function writeTier1Affinity(env: GatewayEnv, ctx: ExecutionContextLike, sessionId: string, accountId: string): boolean {
+  // AIG_COST_GUARDS defaults KV affinity writes OFF (AIG_AFFINITY_WRITE; an
+  // explicit set wins on both sides): it is a soft score bias whose write
+  // volume competes with the Free plan's 1,000 KV writes/day. Reads follow
+  // their own path — with no writes, lookups miss and affinity degrades to
+  // the plain score bias without stale-binding risk.
+  if (!getLimits(env).tier1AffinityWrite) return false;
   const kv = kvOf(env);
   if (!sessionId || !accountId || !kv) return false;
   const operation = (async () => {
