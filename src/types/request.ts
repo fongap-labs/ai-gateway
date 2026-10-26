@@ -158,6 +158,13 @@ export type LoopContext = {
    * promised to reachable compatible siblings.
    */
   futureAttemptReserve: number;
+  /**
+   * Upper bound on this pass's streaming header and first-event waits, set while
+   * a later model in the plan could still take over. Null for the last pass.
+   */
+  attemptCapMs?: number | null;
+  /** Last untried model after a family switch: its streaming header wait may use the whole remaining window. */
+  takeRemainingWindow?: boolean;
 };
 
 /**
@@ -207,6 +214,10 @@ export type AttemptContext = {
    * candidates or enlarge maxAttempts.
    */
   remainingDispatchableAttempts: number;
+  /** Per-attempt cap on streaming header and first-event waits; see LoopContext.attemptCapMs. */
+  attemptCapMs?: number | null;
+  /** Last untried model after a family switch; see LoopContext.takeRemainingWindow. */
+  takeRemainingWindow?: boolean;
   /** The active (protocol, surface, model) triple — the fallback passes carry
    * the fallback descriptor without a client route. */
   reqDescriptor: RoutableRequest;

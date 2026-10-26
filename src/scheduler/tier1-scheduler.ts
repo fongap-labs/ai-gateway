@@ -167,3 +167,29 @@ function sampleTwo(arr: RuntimeNode[], rng: () => number = cryptoRng, affinityNo
   if (!a || !b) throw new Error('tier1 P2C invariant: two candidates required');
   return { a, b };
 }
+
+/**
+ * Live availability of one logical model for family fallback: the lowest Tier 1
+ * score among nodes that can take it right now. Infinity means no node can
+ * (cooling, circuit open, quota spent, or at an explicit max_in_flight ceiling).
+ * Lower is freer.
+ */
+export function tier1ModelAvailability(
+  tier1Nodes: ReadonlyArray<RuntimeNode>,
+  req: RoutableRequest,
+  now: number,
+  knownModels?: ReadonlySet<string> | null,
+  maxInFlight?: number | null,
+  excludedNodeIds?: ReadonlySet<string> | null,
+): number {
+  const eligible: RuntimeNode[] = [];
+  for (const node of tier1Nodes) {
+    if (excludedNodeIds?.has(node.id)) continue;
+    if (isTier1Eligible(node, req, now, knownModels, maxInFlight)) eligible.push(node);
+  }
+  let best = Infinity;
+  for (const node of eligible) {
+    best = Math.min(best, calculateTier1Score(node, req.model, eligible, tier1SelectionHeatFactor(node, 1), now));
+  }
+  return best;
+}

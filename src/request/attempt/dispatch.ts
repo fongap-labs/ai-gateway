@@ -296,10 +296,13 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     attemptHeadersTimeout = attemptHeadersTimeoutMs(isBufferedReply ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs, windowMs, 1);
   } else {
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
-    const attemptBudgetMs = attemptBudgetWindowMs(remainingBudgetMs, remainingDispatchableAttempts);
+    const windowMs = attemptBudgetWindowMs(remainingBudgetMs, remainingDispatchableAttempts);
+    // A streaming attempt that can hand over to a sibling model gives up early.
+    // The window bounds only the header and first-event waits, not the stream.
+    const attemptBudgetMs = !isBufferedReply && c.attemptCapMs ? Math.min(windowMs, c.attemptCapMs) : windowMs;
     c.attemptDeadlineMs = Date.now() + attemptBudgetMs;
     attemptHeadersTimeout = attemptHeadersTimeoutMs(
-      isBufferedReply ? Math.max(configuredHeadersMs, attemptBudgetMs) : configuredHeadersMs,
+      isBufferedReply || c.takeRemainingWindow ? Math.max(configuredHeadersMs, attemptBudgetMs) : configuredHeadersMs,
       attemptBudgetMs,
       1,
     );

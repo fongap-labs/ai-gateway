@@ -20,6 +20,7 @@ import { isSpeculativeRetryAfter, RetrySlot } from '../reliability/retry-budget.
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
+import { tier1ModelAvailability } from '../scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { ConversionContext, LoopContext, LoopState, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
@@ -28,11 +29,16 @@ import { dispatchWithHedge } from './attempt.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './edge-cache.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './errors.ts';
 import { runFallbackChain } from './fallback.ts';
-import { buildModelFallbackPlan, failedDomainNodeIds, rememberFailedDomains } from './model-fallback.ts';
+import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from './model-fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './router.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
+
+// A streaming attempt on a model that still has a sibling after it gives up
+// after this long when the upstream stays silent. Only the last model in the
+// plan may use the whole remaining request budget.
+const SIBLING_HOP_CAP_MS = 45_000;
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
@@ -142,10 +148,6 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   const failedDomains = new Set<string>();
   const nodesById = new Map(config.nodes.map((node) => [node.id, node] as const));
 
-  // Flatten only for request-plan accounting. Execution still follows the
-  // bounded rounds below.
-  const orderedModelPasses = modelPlan.flatMap((round, roundIndex) => round.map((pass, passIndex) => ({ roundIndex, passIndex, pass })));
-
   const baseFeasibility = new Map<string, RouteFeasibilityResult>([[requestedModel, feasibility]]);
   const feasibilityForModel = (model: string, excludedNodeIds?: ReadonlySet<string> | null): RouteFeasibilityResult => {
     if (!excludedNodeIds?.size) {
@@ -174,13 +176,13 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   // request-scoped, but it is not allowed to become phantom capacity: once a
   // credential+upstreamModel failure domain is known, future aliases that only
   // resolve to that same spent domain are filtered out before reserving time.
-  const futureAttemptReserveFor = (currentOrdinal: number, passAttemptCeiling: number): number => {
+  const futureAttemptReserveFor = (futurePasses: ReadonlyArray<{ model: string; attemptCap: number | null }>, passAttemptCeiling: number): number => {
     if (!familyFallback) return 0;
     let slotsLeft = Math.max(0, requestPolicy.maxAttempts - passAttemptCeiling);
     if (slotsLeft === 0) return 0;
     let reserved = 0;
-    for (let i = currentOrdinal + 1; i < orderedModelPasses.length && slotsLeft > 0; i++) {
-      const futurePass = orderedModelPasses[i]?.pass;
+    for (let i = 0; i < futurePasses.length && slotsLeft > 0; i++) {
+      const futurePass = futurePasses[i];
       if (!futurePass) continue;
       const excluded = failedDomainNodeIds(config.nodes, futurePass.model, failedDomains);
       if (!feasibilityForModel(futurePass.model, excluded).reachable) continue;
@@ -258,14 +260,30 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     edgeCachePlan,
   };
 
-  let planOrdinal = 0;
-  modelRoundsLoop: for (let roundIndex = 0; roundIndex < modelPlan.length; roundIndex++) {
-    const round = modelPlan[roundIndex];
-    if (!round) continue;
-    for (let passIndex = 0; passIndex < round.length; passIndex++) {
-      const pass = round[passIndex];
+  // Each round starts as a pending list in plan order. The default (requested)
+  // model is taken whenever it can take the request; when it is unavailable or
+  // busy, the freest sibling goes next. A pass never runs twice.
+  const pendingRounds = modelPlan.map((round) => [...round]);
+  const triedModels = new Set<string>();
+  const availabilityOf = (model: string): number =>
+    tier1ModelAvailability(
+      tiers[1],
+      { ...reqDescriptor, model },
+      Date.now(),
+      knownModels,
+      requestPolicy.maxInFlight ?? null,
+      failedDomainNodeIds(config.nodes, model, failedDomains),
+    );
+  // Passes not yet tried: the rest of this round, then every later round.
+  const upcomingPasses = (roundIndex: number, pending: ReadonlyArray<{ model: string; attemptCap: number | null }>) => [
+    ...pending,
+    ...pendingRounds.slice(roundIndex + 1).flat(),
+  ];
+  modelRoundsLoop: for (let roundIndex = 0; roundIndex < pendingRounds.length; roundIndex++) {
+    const pending = pendingRounds[roundIndex] ?? [];
+    while (pending.length > 0) {
+      const [pass] = pending.splice(pickNextModelPass(pending, requestedModel, availabilityOf), 1);
       if (!pass) continue;
-      const currentOrdinal = planOrdinal++;
       if (state.logicalAttempts >= requestPolicy.maxAttempts || state.retryShed) break modelRoundsLoop;
       const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
       if (remainingBudgetMs <= 0) {
@@ -298,11 +316,22 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       }
 
       state.requestedModel = effectiveModel;
-      const futureAttemptReserve = futureAttemptReserveFor(currentOrdinal, passAttemptCeiling);
+      // "Later" means a model this request has not tried yet. Re-check passes for
+      // models already tried do not keep an earlier hop short.
+      const modelKey = effectiveModel.trim().toLowerCase();
+      const untriedLater = upcomingPasses(roundIndex, pending).some((later) => {
+        const laterKey = later.model.trim().toLowerCase();
+        return laterKey !== modelKey && !triedModels.has(laterKey);
+      });
+      const earlierModelTried = [...triedModels].some((tried) => tried !== modelKey);
+      triedModels.add(modelKey);
+      const futureAttemptReserve = futureAttemptReserveFor(upcomingPasses(roundIndex, pending), passAttemptCeiling);
       const effectiveLoopCtx: LoopContext = {
         ...loopCtx,
         feasibility: effectiveFeasibility,
         policy: passPolicy,
+        attemptCapMs: untriedLater ? SIBLING_HOP_CAP_MS : null,
+        takeRemainingWindow: earlierModelTried && !untriedLater,
         futureAttemptReserve,
       };
 
@@ -329,7 +358,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       // keep phantom escape time inside the remainder of this pass.
       const fallbackLoopCtx: LoopContext = {
         ...effectiveLoopCtx,
-        futureAttemptReserve: futureAttemptReserveFor(currentOrdinal, passAttemptCeiling),
+        futureAttemptReserve: futureAttemptReserveFor(upcomingPasses(roundIndex, pending), passAttemptCeiling),
       };
       const fbResult = await runFallbackChain({
         loopCtx: fallbackLoopCtx,
@@ -493,6 +522,8 @@ async function runTierLoop(
           requestStartMs,
           reqDescriptor,
           remainingDispatchableAttempts,
+          attemptCapMs: loopCtx.attemptCapMs ?? null,
+          takeRemainingWindow: loopCtx.takeRemainingWindow ?? false,
           policy,
           tierNumber,
           tier1ReleaseToken: pick.tier1ReleaseToken || null,
