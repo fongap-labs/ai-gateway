@@ -14,7 +14,7 @@ import { getOAuthProvider } from '../../oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
-import { buildTargetUrl, safeReadErrorBody } from '../../protocol/http.ts';
+import { buildTargetUrl, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
 import {
@@ -37,6 +37,7 @@ import { upstreamModelOf } from '../response-helpers.ts';
 import { LARGE_BODY_CHARS } from './body-release.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { stopOnOversizedReply } from './oversize.ts';
 import { handleSuccess } from './success.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
@@ -417,7 +418,9 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       if (buffering) wireHeaders.set('x-accel-buffering', buffering);
       upstream = new Response(nativeBody, { status: 200, headers: wireHeaders });
     } else {
-      const text = await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs);
+      const read = await readBodyTextBounded(upstream, MAX_BUFFERED_REPLY_BYTES, c.attemptDeadlineMs);
+      if (read.isTruncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+      const text = read.text;
       let parsed: unknown;
       try {
         parsed = JSON.parse(text);

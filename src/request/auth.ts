@@ -34,6 +34,21 @@ function sha256Digest(text: unknown): Promise<ArrayBuffer> {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text ?? '')));
 }
 
+// The configured secrets do not change while an isolate lives, so their digests
+// are computed once instead of once per request per key group.
+const MAX_CACHED_SECRET_DIGESTS = 32;
+const secretDigests = new Map<string, Promise<Uint8Array>>();
+
+function secretDigest(secret: string): Promise<Uint8Array> {
+  let digest = secretDigests.get(secret);
+  if (!digest) {
+    if (secretDigests.size >= MAX_CACHED_SECRET_DIGESTS) secretDigests.clear();
+    digest = sha256Digest(secret).then((buffer) => new Uint8Array(buffer));
+    secretDigests.set(secret, digest);
+  }
+  return digest;
+}
+
 function constantTimeEquals(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
@@ -75,9 +90,9 @@ export async function authorizeCredentials(credentials: readonly string[], env: 
   const candidateDigests = await Promise.all(presented.map((c) => sha256Digest(c)));
   for (const key of access.keys) {
     if (!key.secret) continue;
-    const expected = await sha256Digest(key.secret);
+    const expected = await secretDigest(key.secret);
     for (const candidate of candidateDigests) {
-      if (constantTimeEquals(new Uint8Array(candidate), new Uint8Array(expected))) {
+      if (constantTimeEquals(new Uint8Array(candidate), expected)) {
         return {
           authorized: true,
           mode: 'grouped',

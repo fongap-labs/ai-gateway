@@ -16,11 +16,12 @@
 import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { admitRequestBody } from '../ratelimit/body-budget.ts';
+import { isSpeculativeRetryAfter, RetrySlot } from '../reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { supportsRequest } from '../scheduler/scheduler.ts';
 import { readTier1Affinity, recordTier1AffinityDecision, resolveTier1SessionId, shouldEvaluateAffinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { ConversionContext, LoopContext, RouteFeasibilityResult } from '../types/request.ts';
+import type { ConversionContext, LoopContext, LoopState, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { RoutableRequest, TierMap } from '../types/scheduler.ts';
 import { dispatchWithHedge } from './attempt.ts';
@@ -62,6 +63,28 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
 }
 
 async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+  const retrySlot = new RetrySlot();
+  try {
+    return await runAdmittedRequest(request, env, ctx, retrySlot);
+  } finally {
+    retrySlot.end();
+  }
+}
+
+// Whether the next attempt may be dispatched. A retry after an upstream that was
+// slow or failing (not a plain pool rotation) draws on the isolate retry budget;
+// once it is refused the request stops trying instead of walking the whole pool.
+function mayDispatchNextAttempt(state: LoopState): boolean {
+  if (state.retryShed) return false;
+  const last = state.attempts.at(-1);
+  if (!last || !isSpeculativeRetryAfter(last.kind)) return true;
+  if (!state.retrySlot || state.retrySlot.tryAcquire()) return true;
+  state.retryShed = true;
+  state.logger.info(`retry-budget shed request=${state.requestId} after=${String(last.kind)} attempts=${state.logicalAttempts}`);
+  return false;
+}
+
+async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike, retrySlot: RetrySlot): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx);
   if (pre.ok === false) return pre.response;
@@ -179,6 +202,7 @@ async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: Exe
     failureKinds: {},
     logger,
     requestId,
+    retrySlot,
     maxAttempts: requestPolicy.maxAttempts,
     maxDispatches: requestPolicy.maxAttempts + limits.maxHedgesPerRequest,
     requestedModel,
@@ -197,7 +221,7 @@ async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: Exe
   // adopted before scheduling; both KV reads are bounded and run together.
   const [, affinityRead] = await Promise.all([
     tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env) : undefined,
-    sessionId ? readTier1Affinity(env, sessionId) : null,
+    sessionId ? readTier1Affinity(env, sessionId, ctx) : null,
   ]);
   const tier1Session = affinityRead === undefined ? null : sessionId;
   const tier1Affinity = affinityRead ?? null;
@@ -242,7 +266,7 @@ async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: Exe
       const pass = round[passIndex];
       if (!pass) continue;
       const currentOrdinal = planOrdinal++;
-      if (state.logicalAttempts >= requestPolicy.maxAttempts) break modelRoundsLoop;
+      if (state.logicalAttempts >= requestPolicy.maxAttempts || state.retryShed) break modelRoundsLoop;
       const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
       if (remainingBudgetMs <= 0) {
         state.requestedModel = requestedModel;
@@ -327,9 +351,11 @@ async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: Exe
   if (
     retry &&
     !state.hasRetriedSameNode &&
+    !state.retryShed &&
     state.logicalAttempts < requestPolicy.maxAttempts &&
     failoverBudgetMs - (Date.now() - requestStartMs) > retry.latencyMs &&
-    !request.signal?.aborted
+    !request.signal?.aborted &&
+    state.retrySlot?.tryAcquire() !== false
   ) {
     state.hasRetriedSameNode = true;
     state.sameNodeRetry = null;
@@ -411,6 +437,7 @@ async function runTierLoop(
       if (remainingBudgetMs <= 0) {
         return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
       }
+      if (!mayDispatchNextAttempt(state)) return null;
       const currentPassRemaining = countRemainingDispatchableAttempts(
         tiers,
         reqDescriptor,

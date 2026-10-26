@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
-import { corsHeaders, safeReadErrorBody, trimDiagnostic } from '../../protocol/http.ts';
+import { corsHeaders, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, readBufferedReplyText, trimDiagnostic } from '../../protocol/http.ts';
 import { synthesizeSseFromCompletion } from '../../protocol/openai.ts';
 import { collectResponsesObject, synthesizeResponsesFromObject } from '../../protocol/responses/index.ts';
 import {
@@ -21,6 +21,7 @@ import { buildClientErrorResponse, gatewayError } from '../errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response-helpers.ts';
 import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
+import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
 /**
@@ -59,7 +60,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     try {
       let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
       if (upstreamWasStreaming) data = await collectResponsesObject(upstream, request.signal, c.attemptDeadlineMs);
-      else data = JSON.parse(await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs));
+      else data = JSON.parse(await readBufferedReplyText(upstream, c.attemptDeadlineMs));
       if (data && typeof data === 'object' && data.error) {
         const status = Number(data.error?.status) >= 400 && Number(data.error?.status) < 600 ? Math.trunc(Number(data.error?.status)) : 502;
         const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, data.error?.message || '');
@@ -113,6 +114,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         // failure that pollutes node health or the retry flow.
         return hedgeLoserOutcome(c, node, 'object', latencyMs);
       }
+      if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
       const classification = classifyPostHeadersFailure(error);
       recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
       return { rotate: true, kind: classification.kind };
@@ -148,6 +150,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         if (c.hedgeAbort?.signal.aborted) {
           return hedgeLoserOutcome(c, node, 'object', latencyMs);
         }
+        if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
         const classification = classifyPostHeadersFailure(error);
         recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
         return { rotate: true, kind: classification.kind };
@@ -167,7 +170,9 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
       );
       return { response: tracked };
     }
-    const text = await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs);
+    const read = await readBodyTextBounded(upstream, MAX_BUFFERED_REPLY_BYTES, c.attemptDeadlineMs);
+    if (read.isTruncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+    const text = read.text;
     let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
     try {
       data = JSON.parse(text);
@@ -212,7 +217,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
   try {
     let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
     if (upstreamWasStreaming) data = await collectAnthropicMessageObject(upstream, request.signal, c.attemptDeadlineMs);
-    else data = JSON.parse(await safeReadErrorBody(upstream, 2 * 1024 * 1024, c.attemptDeadlineMs));
+    else data = JSON.parse(await readBufferedReplyText(upstream, c.attemptDeadlineMs));
     if (data && typeof data === 'object' && (data.type === 'error' || data.error)) {
       const message = data.error?.message || 'Upstream returned an embedded error.';
       // An Anthropic error body carries its class in `error.type`, not in a
@@ -255,6 +260,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     if (c.hedgeAbort?.signal.aborted) {
       return hedgeLoserOutcome(c, node, 'object', latencyMs);
     }
+    if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
     const classification = classifyPostHeadersFailure(error);
     recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
     return { rotate: true, kind: classification.kind };

@@ -6,6 +6,7 @@
 
 import type { Limits } from '../config/timeouts.ts';
 import type { FailureKind } from '../reliability/classify.ts';
+import type { RetrySlot } from '../reliability/retry-budget.ts';
 import type { EdgeCachePlan } from '../request/edge-cache.ts';
 import type { RuntimeNode } from './node.ts';
 import type { PolicyConfig } from './policy.ts';
@@ -100,6 +101,10 @@ export type LoopState = {
   sameNodeRetry?: { nodeId: string; model: string; latencyMs: number } | null;
   /** True once the last-resort same-node retry has run. */
   hasRetriedSameNode?: boolean;
+  /** This request's share of the isolate retry budget (see reliability/retry-budget.ts). */
+  retrySlot?: RetrySlot;
+  /** True once a speculative retry or hedge was refused: the request stops trying. */
+  retryShed?: boolean;
   logger: GatewayLogger;
   requestId: string;
   maxAttempts: number;

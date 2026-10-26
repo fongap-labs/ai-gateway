@@ -121,7 +121,7 @@ export async function runFallbackChain({
   let hasOtherRejection = false;
 
   for (const fb of fallbacks) {
-    if (state.logicalAttempts >= policy.maxAttempts) break;
+    if (state.logicalAttempts >= policy.maxAttempts || state.retryShed) break;
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
     if (remainingBudgetMs <= 0) {
       // The rejected conversions are part of the answer the client gets, even

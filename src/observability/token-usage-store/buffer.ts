@@ -30,8 +30,12 @@ import {
   type UsageStatement,
 } from './statements.ts';
 
-const FLUSH_EVENT_THRESHOLD = 50;
-const FLUSH_INTERVAL_MS = 2_000;
+// Workers Free allows 100,000 D1 row writes a day and every flush upserts a few
+// rows per table, so flushing every couple of seconds under steady traffic spends
+// the allowance on bookkeeping. Events merge by (kind, hour, model), so a longer
+// window loses nothing but the increments of a recycled isolate.
+const FLUSH_EVENT_THRESHOLD = 500;
+const FLUSH_INTERVAL_MS = 30_000;
 
 export type UsageEvent = {
   /** Event time in epoch milliseconds; selects the hour row. */

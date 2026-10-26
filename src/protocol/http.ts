@@ -5,6 +5,7 @@
 // building, timing-safe auth, bounded body reads.
 
 import { readEnv } from '../config/env.ts';
+import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingError } from '../types/upstream-processing.ts';
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -162,22 +163,29 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number):
   return new TextDecoder().decode(combined);
 }
 
-export async function safeReadErrorBody(response: Response, maxBytes: number = 4096, deadlineMs?: number | null): Promise<string> {
+// Reads at most `maxBytes` of a response body and reports whether more was left
+// behind. Never throws; a failed or timed-out read yields what was gathered so far.
+export async function readBodyTextBounded(
+  response: Response,
+  maxBytes: number = 4096,
+  deadlineMs?: number | null,
+): Promise<{ text: string; isTruncated: boolean }> {
   try {
     const ct = (response.headers.get('content-type') || '').toLowerCase();
-    if (ct.includes('text/event-stream')) return '[streaming body skipped]';
+    if (ct.includes('text/event-stream')) return { text: '[streaming body skipped]', isTruncated: false };
     const reader = response.body?.getReader();
-    if (!reader) return '';
+    if (!reader) return { text: '', isTruncated: false };
     const chunks: Uint8Array[] = [];
     let total = 0;
+    let isTruncated = false;
     const deadline = deadlineMs && deadlineMs > 0 ? deadlineMs : null;
-    while (total < maxBytes) {
+    for (;;) {
       let result: ReadableStreamReadResult<Uint8Array>;
       if (deadline) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) {
           await reader.cancel().catch(() => {});
-          return '';
+          return { text: '', isTruncated: false };
         }
         let timerId: ReturnType<typeof setTimeout> | undefined;
         const timeoutP = new Promise<null>((resolve) => {
@@ -190,7 +198,7 @@ export async function safeReadErrorBody(response: Response, maxBytes: number = 4
           ]);
           if (!raced.ok) {
             await reader.cancel().catch(() => {});
-            return '';
+            return { text: '', isTruncated: false };
           }
           result = raced.value;
         } finally {
@@ -204,7 +212,10 @@ export async function safeReadErrorBody(response: Response, maxBytes: number = 4
       const slice = result.value.byteLength > remaining ? result.value.subarray(0, remaining) : result.value;
       chunks.push(slice);
       total += slice.byteLength;
-      if (slice.byteLength < result.value.byteLength) break;
+      if (slice.byteLength < result.value.byteLength) {
+        isTruncated = true;
+        break;
+      }
     }
     await reader.cancel().catch(() => {});
     const combined = new Uint8Array(total);
@@ -213,10 +224,32 @@ export async function safeReadErrorBody(response: Response, maxBytes: number = 4
       combined.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    return new TextDecoder().decode(combined);
+    return { text: new TextDecoder().decode(combined), isTruncated };
   } catch {
-    return '';
+    return { text: '', isTruncated: false };
   }
+}
+
+// Diagnostic read: a truncated tail is fine for error text.
+export async function safeReadErrorBody(response: Response, maxBytes: number = 4096, deadlineMs?: number | null): Promise<string> {
+  return (await readBodyTextBounded(response, maxBytes, deadlineMs)).text;
+}
+
+// Largest buffered (non-stream) upstream reply the gateway will hold and parse.
+export const MAX_BUFFERED_REPLY_BYTES = 2 * 1024 * 1024;
+
+// Reads a complete buffered reply. A reply over the limit is never parsed from
+// a truncated prefix: the read throws TOO_LARGE so the caller can stop instead
+// of regenerating the same oversized answer on another node.
+export async function readBufferedReplyText(response: Response, deadlineMs?: number | null): Promise<string> {
+  const { text, isTruncated } = await readBodyTextBounded(response, MAX_BUFFERED_REPLY_BYTES, deadlineMs);
+  if (isTruncated) {
+    throw upstreamProcessingError(
+      UPSTREAM_PROCESSING_ERROR.TOO_LARGE,
+      'Upstream reply exceeded the gateway buffered-response limit. Use stream:true.',
+    );
+  }
+  return text;
 }
 
 export function trimDiagnostic(text: unknown, limit: number = 600): string {

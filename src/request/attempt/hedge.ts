@@ -112,6 +112,9 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   // (primary still awaiting its rate-limiter check) is treated the same way.
   const deadlineRemainingMs = (primaryArgs.attemptDeadlineMs ?? 0) - Date.now();
   if (deadlineRemainingMs <= 0) return primary;
+  // A hedge is speculative work like a retry after a failure: it draws on the same
+  // isolate budget, and when that is spent the primary simply runs alone.
+  if (args.state.retrySlot && !args.state.retrySlot.tryAcquire()) return primary;
   // The twin is picked through the same protocol/surface/model-gated selector
   // as the primary, so a hedge twin is ALWAYS same-protocol and same-surface
   // as its primary — an anthropic node can never twin an openai request, and

@@ -73,7 +73,6 @@ export function trackStreamResponse(
     return response;
   }
   const reader = response.body.getReader();
-  const rewriteDecoder = new TextDecoder();
   const tailDecoder = new TextDecoder();
   const encoder = rewriteModel !== undefined ? new TextEncoder() : null;
   let lineBuffer = '';
@@ -106,12 +105,23 @@ export function trackStreamResponse(
   };
 
   const scanUsageLine = (text: string) => {
+    // Most chunks carry no usage report: when nothing is pending and this one does
+    // not mention it, only the unfinished last line has to be remembered.
+    if (usageLines === '' && !text.includes('"usage"')) {
+      usageLines = text.slice(text.lastIndexOf('\n') + 1);
+      if (usageLines.length > 64 * 1024) usageLines = '';
+      return;
+    }
     usageLines += text;
     if (usageLines.length > 64 * 1024) usageLines = '';
     const lines = usageLines.split('\n');
     usageLines = lines.pop() || '';
     for (const line of lines) {
-      if (!line.startsWith('data:') || !line.includes('"usage"')) continue;
+      if (!line.startsWith('data:')) continue;
+      const usageAt = line.indexOf('"usage"');
+      if (usageAt < 0) continue;
+      // Chat chunks that carry only `"usage":null` report nothing; skip the parse.
+      if (line.startsWith('"usage":null', usageAt) && line.indexOf('"usage"', usageAt + 7) < 0) continue;
       const raw = line.slice(5).trim();
       if (!raw || raw === '[DONE]') continue;
       try {
@@ -174,8 +184,20 @@ export function trackStreamResponse(
 
   const modelPointer = rewriteModelAt || 'model';
   const modelPointerParts = modelPointer.split('.');
+  // A chat stream repeats the same `"model":"<upstream name>"` in every chunk.
+  // Once the first one has been rewritten through a full parse, later chunks that
+  // carry the exact same token (once) are rewritten by string replacement, which
+  // keeps the rest of the line byte for byte and skips parse + stringify.
+  const rewriteLiteral = rewriteModel !== undefined ? `"model":${JSON.stringify(rewriteModel)}` : '';
+  let learnedModelToken: string | null = null;
   const processLine = (line: string): string => {
     if (!line.startsWith('data:') || !line.includes('"model"')) return line;
+    if (learnedModelToken !== null) {
+      const at = line.indexOf(learnedModelToken);
+      if (at >= 0 && line.indexOf(learnedModelToken, at + learnedModelToken.length) < 0) {
+        return line.slice(0, at) + rewriteLiteral + line.slice(at + learnedModelToken.length);
+      }
+    }
     const raw = line.slice(5).trimStart();
     if (!raw || raw === '[DONE]') return line;
     try {
@@ -190,6 +212,7 @@ export function trackStreamResponse(
         }
         const leaf = modelPointerParts[modelPointerParts.length - 1];
         if (!leaf || holder[leaf] === undefined) return line;
+        if (modelPointer === 'model' && typeof holder[leaf] === 'string') learnedModelToken = `"model":${JSON.stringify(holder[leaf])}`;
         holder[leaf] = rewriteModel;
         return `data: ${JSON.stringify(json)}`;
       }
@@ -199,9 +222,9 @@ export function trackStreamResponse(
     return line;
   };
 
-  const forwardBytes = (value: Uint8Array): Uint8Array => {
+  const forwardBytes = (value: Uint8Array, text: string): Uint8Array => {
     if (!encoder) return value;
-    lineBuffer += rewriteDecoder.decode(value, { stream: true });
+    lineBuffer += text;
     const lines = lineBuffer.split('\n');
     lineBuffer = lines.pop() || '';
     if (lineBuffer.length > TRACK_MAX_LINE_BUFFER || lines.some((line) => line.length > TRACK_MAX_LINE_BUFFER)) {
@@ -282,8 +305,11 @@ export function trackStreamResponse(
       }
       chunkCount++;
       receivedBytes += value.byteLength;
+      // Decoded once per chunk and shared by the scans and the model rewrite. The
+      // rewrite needs every chunk decoded, so the decoder never skips one.
+      let decoded = '';
+      if (encoder || !hasSeenErrorEvent || !completionSeen) decoded = tailDecoder.decode(value, { stream: true });
       if (!hasSeenErrorEvent || !completionSeen) {
-        const decoded = tailDecoder.decode(value, { stream: true });
         if (usageScan && !closeSeen) scanUsageLine(decoded);
         const scanWindow = diagnosticTail + decoded;
         if (interruptionChunk) {
@@ -307,7 +333,7 @@ export function trackStreamResponse(
       }
       let forwarded: Uint8Array;
       try {
-        forwarded = forwardBytes(value);
+        forwarded = forwardBytes(value, decoded);
       } catch {
         reader.cancel().catch(() => {});
         failureReason = 'reader_error';
