@@ -98,6 +98,12 @@ export type Limits = {
   /** AIG_TIER1_PROBE_TIMEOUT_MS: how long the v2 probe keeps its single-flight
    *  window when no meaningful evidence arrives. Unused legacy mode. */
   tier1ProbeTimeoutMs: number;
+  /** AIG_STREAM_PASSTHROUGH: byte-for-byte native stream relay with no
+   *  per-chunk scanning. false keeps the tracked relay. */
+  streamPassthrough: boolean;
+  /** AIG_STREAM_GUARD_PREFIX_BYTES: pre-event byte budget for the guard in
+   *  pass-through mode. Unused legacy mode (2MB constant). */
+  streamGuardPrefixBytes: number;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -243,6 +249,13 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.min,
       LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.max,
       LIMITS.AIG_TIER1_PROBE_TIMEOUT_MS.def,
+    ),
+    streamPassthrough: getBool(env, 'AIG_STREAM_PASSTHROUGH', false),
+    streamGuardPrefixBytes: clampInt(
+      readEnv(env, 'AIG_STREAM_GUARD_PREFIX_BYTES'),
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.min,
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.max,
+      LIMITS.AIG_STREAM_GUARD_PREFIX_BYTES.def,
     ),
   };
   cache.set(env, cached);

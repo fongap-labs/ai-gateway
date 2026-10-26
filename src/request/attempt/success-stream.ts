@@ -7,7 +7,7 @@ import { classifyClientAbort, classifyFirstEventFailure } from '../../reliabilit
 import { markProbeFailure, recordTtft } from '../../reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../reliability/tier1-state.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../stream/guard.ts';
-import { trackStreamResponse } from '../../stream/track.ts';
+import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
 import { gatewayError } from '../errors.ts';
@@ -53,10 +53,19 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
           : surface === 'chat_completions'
             ? isOpenAIChatRealOutput
             : undefined;
-    guarded = await ensureFirstSseEvent(upstream, firstEventTimeout, request.signal, isRealOutput, (event: unknown) => {
-      const usage = reportedUsageFromPayload(event);
-      if (usage != null) observeUpstreamAttemptUsage(c, usage);
-    });
+    guarded = await ensureFirstSseEvent(
+      upstream,
+      firstEventTimeout,
+      request.signal,
+      isRealOutput,
+      (event: unknown) => {
+        const usage = reportedUsageFromPayload(event);
+        if (usage != null) observeUpstreamAttemptUsage(c, usage);
+      },
+      // Pass-through mode only needs the first meaningful event, not the
+      // worst-case 2MB prefix the guarding scanner otherwise absorbs.
+      limits.streamPassthrough ? { maxPreBytes: limits.streamGuardPrefixBytes } : {},
+    );
   } catch (e) {
     detach();
     const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : GUARD_ERROR.EMPTY;
@@ -96,6 +105,18 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
+
+  // Pass-through relay (AIG_STREAM_PASSTHROUGH): no per-chunk decode/regex/
+  // rewrite/usage scan; up to the trade-offs documented in relayStreamResponse.
+  // makeNodeStreamTrack supplies the same accounting callbacks the tracked
+  // path uses, so reliability and slot bookkeeping stay identical.
+  if (limits.streamPassthrough) {
+    const relayed = relayStreamResponse(new Response(guarded.body, { status: 200, headers }), {
+      idleTimeoutMs: limits.streamIdleTimeoutMs,
+      ...makeNodeStreamTrack(c, node, latencyMs),
+    });
+    return { response: relayed };
+  }
 
   if (route === 'openai_chat') {
     const tracked = trackStreamResponse(new Response(guarded.body, { status: 200, headers }), {

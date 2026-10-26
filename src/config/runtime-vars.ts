@@ -69,6 +69,12 @@ export const RUNTIME_TUNABLES = [
   // whole window. Under the legacy gate (AIG_TIER1_PROBE_V2 off) this value is
   // unused; the classic fixed 15s window keeps its dedicated constant.
   { name: 'AIG_TIER1_PROBE_TIMEOUT_MS', type: 'int', min: 5_000, max: 30_000, def: 10_000 },
+  // (AIG_STREAM_PASSTHROUGH) Byte budget the first-event guard may absorb while
+  // waiting for the first meaningful SSE event before it gives up. The legacy
+  // guard keeps its dedicated 2MB constant; only the pass-through relay mode
+  // uses this smaller cap (64KB), so a prefix-only provider cannot make the
+  // isolate buffer megabytes before the first event is observed.
+  { name: 'AIG_STREAM_GUARD_PREFIX_BYTES', type: 'int', min: 16_384, max: 2 * 1024 * 1024, def: 65_536 },
 ] as const satisfies readonly RuntimeTunable[];
 
 export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
@@ -129,6 +135,14 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // behind: concurrent claims skip to another node, and the probe commits at
   // response headers / first SSE event.
   { name: 'AIG_TIER1_PROBE_V2', def: false },
+  // Pass-through native stream relay. false keeps the tracked relay (per-chunk
+  // decode + completion/usage/error scans + optional model rewrite). true moves
+  // every chunk byte-for-byte from the upstream to the client with no per-chunk
+  // scanning: no delivered usage, no model rewrite, no completion-marker or
+  // failure inference (a truncated stream that ends with a clean EOF is
+  // accounted as delivered), no synthetic interruption events. Idle timeout and
+  // cancel propagation stay active.
+  { name: 'AIG_STREAM_PASSTHROUGH', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.
