@@ -55,8 +55,11 @@ export function streamInterruptionChunk(
   route: string,
   requestId: string,
   reason: string | null,
-  { nextSequenceNumber = 0, message: messageOverride, code = 'stream_interrupted' }:
-    { nextSequenceNumber?: number; message?: string; code?: string } = {},
+  {
+    nextSequenceNumber = 0,
+    message: messageOverride,
+    code = 'stream_interrupted',
+  }: { nextSequenceNumber?: number; message?: string; code?: string } = {},
 ): Uint8Array {
   const message = messageOverride ?? `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
   let event: string;

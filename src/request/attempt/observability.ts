@@ -156,7 +156,8 @@ export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reaso
   );
 }
 
-export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {  if (node.tier === 'tier-1') {
+export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {
+  if (node.tier === 'tier-1') {
     const logicalModel = c.state.requestedModel;
     const rateLimited = () =>
       getTier1Account(node.id).consecutiveRateLimits > 0 || (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits ?? 0) > 0;

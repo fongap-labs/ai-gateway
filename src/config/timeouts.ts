@@ -333,9 +333,24 @@ export function getLimits(env: Record<string, unknown>): Limits {
     conversionBudget: getBool(env, 'AIG_CONVERSION_BUDGET', false),
     conversionBudgetMode: conversionBudgetModeOf(env),
     conversionBudgetCfg: {
-      maxEvents: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_EVENTS'), LIMITS.AIG_CONVERSION_MAX_EVENTS.min, LIMITS.AIG_CONVERSION_MAX_EVENTS.max, LIMITS.AIG_CONVERSION_MAX_EVENTS.def),
-      maxOutputUnits: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_BYTES'), LIMITS.AIG_CONVERSION_MAX_BYTES.min, LIMITS.AIG_CONVERSION_MAX_BYTES.max, LIMITS.AIG_CONVERSION_MAX_BYTES.def),
-      maxToolEvents: clampInt(readEnv(env, 'AIG_CONVERSION_MAX_TOOL_EVENTS'), LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.min, LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.max, LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.def),
+      maxEvents: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_EVENTS'),
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.min,
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.max,
+        LIMITS.AIG_CONVERSION_MAX_EVENTS.def,
+      ),
+      maxOutputUnits: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_BYTES'),
+        LIMITS.AIG_CONVERSION_MAX_BYTES.min,
+        LIMITS.AIG_CONVERSION_MAX_BYTES.max,
+        LIMITS.AIG_CONVERSION_MAX_BYTES.def,
+      ),
+      maxToolEvents: clampInt(
+        readEnv(env, 'AIG_CONVERSION_MAX_TOOL_EVENTS'),
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.min,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.max,
+        LIMITS.AIG_CONVERSION_MAX_TOOL_EVENTS.def,
+      ),
       maxToolArgUnits: clampInt(
         readEnv(env, 'AIG_CONVERSION_MAX_TOOL_ARG_BYTES'),
         LIMITS.AIG_CONVERSION_MAX_TOOL_ARG_BYTES.min,
@@ -383,7 +398,12 @@ export function getLimits(env: Record<string, unknown>): Limits {
     ),
     tier1AffinityWrite:
       readEnv(env, 'AIG_AFFINITY_WRITE') !== undefined
-        ? clampInt(readEnv(env, 'AIG_AFFINITY_WRITE'), LIMITS.AIG_AFFINITY_WRITE.min, LIMITS.AIG_AFFINITY_WRITE.max, LIMITS.AIG_AFFINITY_WRITE.def) === 1
+        ? clampInt(
+            readEnv(env, 'AIG_AFFINITY_WRITE'),
+            LIMITS.AIG_AFFINITY_WRITE.min,
+            LIMITS.AIG_AFFINITY_WRITE.max,
+            LIMITS.AIG_AFFINITY_WRITE.def,
+          ) === 1
         : !costGuards,
     tokenD1SamplePct: clampInt(
       readEnv(env, 'AIG_TOKEN_D1_SAMPLE_PCT'),

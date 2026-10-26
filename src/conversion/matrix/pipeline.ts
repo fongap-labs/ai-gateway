@@ -220,7 +220,15 @@ export function openMatrixStream(
       return true;
     },
   );
-  return { clientStream, collector, from, to, replyIfDone: () => finalReply, diagnostics: () => streamDiagnostics(finalReply, to), budgetExceeded: () => budgetStop };
+  return {
+    clientStream,
+    collector,
+    from,
+    to,
+    replyIfDone: () => finalReply,
+    diagnostics: () => streamDiagnostics(finalReply, to),
+    budgetExceeded: () => budgetStop,
+  };
 }
 
 function upstreamReportedError(message: string): Error {
@@ -322,7 +330,12 @@ export async function collectMatrixObject(
   fallbackId: string,
   clientSignal?: AbortSignal | null,
   deadlineMs?: number | null,
-  options: { seedInputTokens?: number; onUpstreamUsage?: (raw: unknown) => void; model?: string; budget?: { cfg: MatrixConversionBudget; mode: 'error' | 'truncate' } } = {},
+  options: {
+    seedInputTokens?: number;
+    onUpstreamUsage?: (raw: unknown) => void;
+    model?: string;
+    budget?: { cfg: MatrixConversionBudget; mode: 'error' | 'truncate' };
+  } = {},
 ): Promise<{ reply: IrReply; object: Record<string, unknown>; diagnostics: readonly ConversionDiagnostic[] }> {
   if (!upstreamBody) throw new Error('Upstream response has no body.');
   const collector = new IrCollector();

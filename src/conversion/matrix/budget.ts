@@ -80,7 +80,14 @@ export function usageOutputTokens(raw: unknown): number | undefined {
   if (!isRecord(raw)) return undefined;
   // Chat nests under .usage, Anthropic message_start under .message.usage,
   // message_delta under .usage, Responses under .response.usage.
-  const candidates = [raw, raw.usage, raw.message, isRecord(raw.message) ? raw.message.usage : undefined, raw.response, isRecord(raw.response) ? raw.response.usage : undefined];
+  const candidates = [
+    raw,
+    raw.usage,
+    raw.message,
+    isRecord(raw.message) ? raw.message.usage : undefined,
+    raw.response,
+    isRecord(raw.response) ? raw.response.usage : undefined,
+  ];
   for (const container of candidates) {
     const tokens = at(container);
     if (tokens !== undefined) return tokens;
