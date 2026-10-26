@@ -35,6 +35,11 @@ import { evaluateRouteFeasibility } from './route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './router.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
 
+// A streaming attempt on a model that still has a sibling after it gives up
+// after this long when the upstream stays silent. Only the last model in the
+// plan may use the whole remaining request budget.
+const SIBLING_HOP_CAP_MS = 45_000;
+
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
   // client is asked to retry instead (see ratelimit/body-budget.ts).
@@ -259,6 +264,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   // model is taken whenever it can take the request; when it is unavailable or
   // busy, the freest sibling goes next. A pass never runs twice.
   const pendingRounds = modelPlan.map((round) => [...round]);
+  const triedModels = new Set<string>();
   const availabilityOf = (model: string): number =>
     tier1ModelAvailability(
       tiers[1],
@@ -310,11 +316,22 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       }
 
       state.requestedModel = effectiveModel;
+      // "Later" means a model this request has not tried yet. Re-check passes for
+      // models already tried do not keep an earlier hop short.
+      const modelKey = effectiveModel.trim().toLowerCase();
+      const untriedLater = upcomingPasses(roundIndex, pending).some((later) => {
+        const laterKey = later.model.trim().toLowerCase();
+        return laterKey !== modelKey && !triedModels.has(laterKey);
+      });
+      const earlierModelTried = [...triedModels].some((tried) => tried !== modelKey);
+      triedModels.add(modelKey);
       const futureAttemptReserve = futureAttemptReserveFor(upcomingPasses(roundIndex, pending), passAttemptCeiling);
       const effectiveLoopCtx: LoopContext = {
         ...loopCtx,
         feasibility: effectiveFeasibility,
         policy: passPolicy,
+        attemptCapMs: untriedLater ? SIBLING_HOP_CAP_MS : null,
+        takeRemainingWindow: earlierModelTried && !untriedLater,
         futureAttemptReserve,
       };
 
@@ -505,6 +522,8 @@ async function runTierLoop(
           requestStartMs,
           reqDescriptor,
           remainingDispatchableAttempts,
+          attemptCapMs: loopCtx.attemptCapMs ?? null,
+          takeRemainingWindow: loopCtx.takeRemainingWindow ?? false,
           policy,
           tierNumber,
           tier1ReleaseToken: pick.tier1ReleaseToken || null,
