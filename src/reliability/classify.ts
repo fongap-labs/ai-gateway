@@ -26,7 +26,6 @@ export const KIND = {
   RATE_LIMIT_GLOBAL: 'rate_limit_global',
   INVALID_BASE_URL: 'invalid_base_url',
   STREAM_INTERRUPTED: 'stream_interrupted',
-  CONVERSION_BUDGET: 'conversion_budget',
   NON_JSON_BODY: 'upstream_200_non_json_body',
   EMPTY_200: 'upstream_200_no_meaningful_output',
   CANCELLED_AFTER_PEER_COMMIT: 'cancelled_after_peer_commit',
@@ -291,9 +290,12 @@ export function classifyOversizedReply(): FailureClassification {
 // The matrix-translated reply would exceed the gateway's per-reply conversion
 // budget (AIG_CONVERSION_*). Rotating would regenerate — and bill — the same
 // over-budget answer, so the request ends here; the node is not blamed, the
-// reply size is the client's demand, not the key's health.
+// reply size is the client's demand, not the key's health. Reuses the closed
+// vocabulary's `client` kind (a stop, never counted); the specific cause stays
+// visible through the conversion_budget_exceeded wire code and the
+// [conversion-budget] log line.
 export function classifyConversionBudget(): FailureClassification {
-  return { kind: KIND.CONVERSION_BUDGET, action: 'stop', cooldownMs: 0, counted: false };
+  return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }
 
 export function classifyClientAbort(): FailureClassification {

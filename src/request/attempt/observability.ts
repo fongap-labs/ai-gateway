@@ -152,7 +152,7 @@ export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reaso
     `[conversion-budget] request=${c.requestId} node=${node.id} provider=${node.provider}` +
       ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? node.surfaces?.[0] ?? ''}` +
       ` tier=${node.tier} model=${logicalModelOf(c)} reason=${reason} status=${status}` +
-      ` kind=conversion_budget counted=false latency_ms=${latencyMs}`,
+      ` kind=client code=conversion_budget_exceeded counted=false latency_ms=${latencyMs}`,
   );
 }
 

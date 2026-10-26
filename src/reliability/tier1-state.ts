@@ -566,7 +566,7 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
       isQuota: classification?.rateLimitClass === 'quota',
     };
   }
-  if (kind === 'client' || kind === 'client_abort' || kind === 'conversion_budget') {
+  if (kind === 'client' || kind === 'client_abort') {
     return { scope: 'none', action: 'neutral', counted: false, cooldownMs: 0, reason: kind };
   }
   if (kind === 'headers_timeout' || kind === 'first_event_timeout' || kind === 'network' || kind === 'stream_interrupted') {
