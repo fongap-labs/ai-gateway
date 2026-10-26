@@ -45,9 +45,15 @@ export type BudgetStopReason = 'events' | 'output_units' | 'tool_events' | 'tool
 
 /** Thrown by the object-collection path when the budget expires (AIG_CONVERSION_BUDGET_MODE=error). */
 export class ConversionBudgetStop extends Error {
-  constructor(readonly reason: BudgetStopReason) {
+  // A plain field, not a constructor parameter property: the test pack loads
+  // these sources through Node's strip-only TypeScript mode, which rejects
+  // parameter properties (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX).
+  readonly reason: BudgetStopReason;
+
+  constructor(reason: BudgetStopReason) {
     super(`matrix conversion budget stop: ${reason}`);
     this.name = 'ConversionBudgetStop';
+    this.reason = reason;
   }
 }
 
@@ -97,12 +103,15 @@ export function usageOutputTokens(raw: unknown): number | undefined {
 
 export class MatrixBudgetTracker {
   stopped: BudgetStopReason | null = null;
+  private readonly cfg: MatrixConversionBudget;
   private events = 0;
   private outputUnits = 0;
   private toolEvents = 0;
   private currentToolArgUnits = 0;
 
-  constructor(private readonly cfg: MatrixConversionBudget) {}
+  constructor(cfg: MatrixConversionBudget) {
+    this.cfg = cfg;
+  }
 
   /** Probe one decoded IR event. false means the caller must stop before using it. */
   beginEvent(event: IrEvent): boolean {
