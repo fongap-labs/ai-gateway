@@ -171,7 +171,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
       return { response: tracked };
     }
     const read = await readBodyTextBounded(upstream, MAX_BUFFERED_REPLY_BYTES, c.attemptDeadlineMs);
-    if (read.truncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+    if (read.isTruncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
     const text = read.text;
     let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
     try {

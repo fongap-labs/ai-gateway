@@ -419,7 +419,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
       upstream = new Response(nativeBody, { status: 200, headers: wireHeaders });
     } else {
       const read = await readBodyTextBounded(upstream, MAX_BUFFERED_REPLY_BYTES, c.attemptDeadlineMs);
-      if (read.truncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+      if (read.isTruncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
       const text = read.text;
       let parsed: unknown;
       try {

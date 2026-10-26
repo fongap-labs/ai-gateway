@@ -169,15 +169,15 @@ export async function readBodyTextBounded(
   response: Response,
   maxBytes: number = 4096,
   deadlineMs?: number | null,
-): Promise<{ text: string; truncated: boolean }> {
+): Promise<{ text: string; isTruncated: boolean }> {
   try {
     const ct = (response.headers.get('content-type') || '').toLowerCase();
-    if (ct.includes('text/event-stream')) return { text: '[streaming body skipped]', truncated: false };
+    if (ct.includes('text/event-stream')) return { text: '[streaming body skipped]', isTruncated: false };
     const reader = response.body?.getReader();
-    if (!reader) return { text: '', truncated: false };
+    if (!reader) return { text: '', isTruncated: false };
     const chunks: Uint8Array[] = [];
     let total = 0;
-    let truncated = false;
+    let isTruncated = false;
     const deadline = deadlineMs && deadlineMs > 0 ? deadlineMs : null;
     for (;;) {
       let result: ReadableStreamReadResult<Uint8Array>;
@@ -185,7 +185,7 @@ export async function readBodyTextBounded(
         const remaining = deadline - Date.now();
         if (remaining <= 0) {
           await reader.cancel().catch(() => {});
-          return { text: '', truncated: false };
+          return { text: '', isTruncated: false };
         }
         let timerId: ReturnType<typeof setTimeout> | undefined;
         const timeoutP = new Promise<null>((resolve) => {
@@ -198,7 +198,7 @@ export async function readBodyTextBounded(
           ]);
           if (!raced.ok) {
             await reader.cancel().catch(() => {});
-            return { text: '', truncated: false };
+            return { text: '', isTruncated: false };
           }
           result = raced.value;
         } finally {
@@ -213,7 +213,7 @@ export async function readBodyTextBounded(
       chunks.push(slice);
       total += slice.byteLength;
       if (slice.byteLength < result.value.byteLength) {
-        truncated = true;
+        isTruncated = true;
         break;
       }
     }
@@ -224,9 +224,9 @@ export async function readBodyTextBounded(
       combined.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    return { text: new TextDecoder().decode(combined), truncated };
+    return { text: new TextDecoder().decode(combined), isTruncated };
   } catch {
-    return { text: '', truncated: false };
+    return { text: '', isTruncated: false };
   }
 }
 
@@ -242,8 +242,8 @@ export const MAX_BUFFERED_REPLY_BYTES = 2 * 1024 * 1024;
 // a truncated prefix: the read throws TOO_LARGE so the caller can stop instead
 // of regenerating the same oversized answer on another node.
 export async function readBufferedReplyText(response: Response, deadlineMs?: number | null): Promise<string> {
-  const { text, truncated } = await readBodyTextBounded(response, MAX_BUFFERED_REPLY_BYTES, deadlineMs);
-  if (truncated) {
+  const { text, isTruncated } = await readBodyTextBounded(response, MAX_BUFFERED_REPLY_BYTES, deadlineMs);
+  if (isTruncated) {
     throw upstreamProcessingError(
       UPSTREAM_PROCESSING_ERROR.TOO_LARGE,
       'Upstream reply exceeded the gateway buffered-response limit. Use stream:true.',
