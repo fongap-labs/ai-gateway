@@ -14,6 +14,10 @@
 //   Code-Ultra -> Code-Max -> Code-Pro and
 //   Audit-Ultra -> Audit-Max -> Audit-Pro.
 //   Bare Ultra/Max/Pro use the same tier policy with an empty prefix.
+//   Selection: the requested model runs whenever it can take the request. When
+//   it is unavailable or busy, the freest sibling (lowest live Tier 1 score) runs
+//   next; plan order only breaks ties (see pickNextModelPass). The switch is
+//   invisible to the client: the response keeps the requested model name.
 //   Air may move upward to Pro -> Max -> Ultra inside the same family, but once
 //   it moves upward it never returns to Air.
 //   Fallback never crosses logical-family prefixes.
@@ -174,6 +178,32 @@ export function buildModelFallbackPlan(
     if (second.length) out.push(second);
   }
   return out;
+}
+
+/**
+ * Pick the next pass to run from those still pending. The default (requested)
+ * model wins whenever it can take the request. Otherwise the sibling with the
+ * lowest live availability score (the freest one) goes next. `availabilityOf`
+ * returns Infinity for a model that cannot take the request right now. Ties keep
+ * plan order, and when nothing can take it the plan order is kept.
+ */
+export function pickNextModelPass(
+  pending: ReadonlyArray<ModelFallbackPass>,
+  requestedModel: string,
+  availabilityOf: (model: string) => number,
+): number {
+  const requestedKey = keyOf(requestedModel);
+  let best = 0;
+  let bestScore = Infinity;
+  for (const [index, pass] of pending.entries()) {
+    const score = availabilityOf(pass.model);
+    if (keyOf(pass.model) === requestedKey && Number.isFinite(score)) return index;
+    if (score < bestScore) {
+      best = index;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /** True when the requested model belongs to a configured fallback family. */
