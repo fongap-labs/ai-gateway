@@ -25,9 +25,16 @@ const TTL_SECONDS = 30 * 60;
 const CACHE_TTL_MS = 5_000;
 const CACHE_RETENTION_MS = TTL_SECONDS * 1000;
 // A KV read of a cold key can take far longer than the rest of the request
-// setup. Affinity is only a score bias, so a request waits at most this long for
-// it; an answer that arrives later still warms the cache for the next request.
-const READ_TIMEOUT_MS = 50;
+// setup. Affinity is only a score bias, so a request waits at most
+// AIG_AFFINITY_READ_TIMEOUT_MS for it (legacy default 50ms; AIG_HOT_PATH_GUARDS
+// switches the default to 15ms); an answer that arrives later still warms the
+// cache for the next request. Under AIG_HOT_PATH_GUARDS the read path is also
+// guarded by an isolate-local breaker: a KV endpoint that keeps timing out
+// would otherwise cost every request the same tail, so that many consecutive
+// timeouts stop issuing new reads for a cooldown (cached bindings are still
+// served; the binding is simply treated as unknown for cold keys).
+const BREAKER_TRIP_TIMEOUTS = 5;
+const BREAKER_OPEN_MS = 30_000;
 const TIMED_OUT = Symbol('timed out');
 const ESCAPE_CHECK_REQUESTS = 10;
 const ESCAPE_CHECK_MS = 5 * 60_000;
@@ -122,6 +129,9 @@ type CachedBinding = { accountId: string | null; freshUntil: number };
 const cache = new BoundedTtlMap<CachedBinding>(CACHE_MAX_ENTRIES, CACHE_TTL_MS);
 // One KV read per key at a time: concurrent requests of a session share it.
 const inflightReads = new Map<string, Promise<string | null | undefined>>();
+// Isolate-local breaker state for the affinity READ path (AIG_HOT_PATH_GUARDS).
+let breakerOpenUntilMs = 0;
+let consecutiveReadTimeouts = 0;
 // Escape counters have no natural TTL — they track request frequency per
 // session. Use a generous TTL (same as the escape check window) so stale
 // counters for sessions that stop sending are eventually cleaned up.
@@ -139,6 +149,8 @@ const stats = {
   timeouts: 0,
   readFailures: 0,
   staleServes: 0,
+  breakerSkips: 0,
+  breakerTrips: 0,
 };
 
 function kvOf(env: GatewayEnv): AffinityKV | null {
@@ -217,13 +229,14 @@ function lookupBinding(kv: AffinityKV, key: string): Promise<string | null | und
 }
 
 // Resolves to the bound account, null when there is none, or undefined when the
-// read failed or did not answer within READ_TIMEOUT_MS (the binding is unknown).
-// A binding this isolate already knows is returned at once, even past its
-// freshness window; the refresh then runs in the background.
+// read failed or did not answer within AIG_AFFINITY_READ_TIMEOUT_MS (the binding
+// is unknown). A binding this isolate already knows is returned at once, even
+// past its freshness window; the refresh then runs in the background.
 export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?: ExecutionContextLike): Promise<string | null | undefined> {
   if (!sessionId) return null;
   const kv = kvOf(env);
   if (!kv) return null;
+  const limits = getLimits(env);
   const key = await affinityKey(sessionId);
   const cached = cache.get(key);
   if (cached !== undefined) {
@@ -239,15 +252,33 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?
     }
     return cached.accountId;
   }
+  // Breaker (AIG_HOT_PATH_GUARDS): while open, a cold key is treated as unknown
+  // immediately instead of paying another timeout tail. Cached bindings above
+  // are unaffected.
+  if (limits.hotPathGuards && Date.now() < breakerOpenUntilMs) {
+    stats.breakerSkips++;
+    return undefined;
+  }
   const lookup = lookupBinding(kv, key);
   let timerId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
-    timerId = setTimeout(() => resolve(TIMED_OUT), READ_TIMEOUT_MS);
+    timerId = setTimeout(() => resolve(TIMED_OUT), limits.affinityReadTimeoutMs);
   });
   try {
     const accountId = await Promise.race([lookup, timeout]);
-    if (accountId !== TIMED_OUT) return accountId;
+    if (accountId !== TIMED_OUT) {
+      if (limits.hotPathGuards) consecutiveReadTimeouts = 0;
+      return accountId;
+    }
     stats.timeouts++;
+    if (limits.hotPathGuards) {
+      consecutiveReadTimeouts++;
+      if (consecutiveReadTimeouts >= BREAKER_TRIP_TIMEOUTS) {
+        consecutiveReadTimeouts = 0;
+        breakerOpenUntilMs = Date.now() + BREAKER_OPEN_MS;
+        stats.breakerTrips++;
+      }
+    }
     return undefined;
   } finally {
     clearTimeout(timerId);
@@ -333,6 +364,8 @@ export function __resetTier1AffinityForTests(): void {
   cache.clear();
   inflightReads.clear();
   escapeCounters.clear();
+  breakerOpenUntilMs = 0;
+  consecutiveReadTimeouts = 0;
   Object.assign(stats, {
     reads: 0,
     hits: 0,
@@ -345,5 +378,7 @@ export function __resetTier1AffinityForTests(): void {
     timeouts: 0,
     readFailures: 0,
     staleServes: 0,
+    breakerSkips: 0,
+    breakerTrips: 0,
   });
 }

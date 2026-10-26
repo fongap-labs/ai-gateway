@@ -22,7 +22,7 @@ import {
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
-import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
+import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
@@ -173,8 +173,15 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // Failed-authorization throttle. It is checked before any credential is
   // verified, and only failed attempts are charged, so valid traffic never
   // consumes the budget.
-  const authFingerprint = await authAttemptFingerprint(request);
-  const authAttemptVerdict = admitAuthAttempt(authFingerprint, getLimits(env).authAttemptRpm);
+  // AIG_HOT_PATH_GUARDS: the fingerprint is the SHA-256 of the presented
+  // credential, and the throttle state is keyed BY it. While no failed attempt
+  // is tracked (the healthy steady state for most isolates), both the admit
+  // check and the success clear are no-ops, so the hash is computed lazily: on
+  // this isolate's first failure, or when there is tracked state to consult.
+  // Legacy mode hashes on every request byte-for-byte.
+  const hotPathGuards = getLimits(env).hotPathGuards;
+  let authFingerprint: string | null = !hotPathGuards || hasTrackedAuthFailures() ? await authAttemptFingerprint(request) : null;
+  const authAttemptVerdict = admitAuthAttempt(authFingerprint ?? '', getLimits(env).authAttemptRpm);
   if (authAttemptVerdict.ok === false) {
     return {
       ok: false,
@@ -190,13 +197,20 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const authResult: AuthResult = await authorize(request, env);
   if (!authResult.authorized) {
+    authFingerprint ??= await authAttemptFingerprint(request);
     recordAuthFailure(authFingerprint);
     return {
       ok: false,
       response: gatewayError(request, env, route, 401, 'Unauthorized: gateway access key is invalid or missing.', requestId),
     };
   }
-  clearAuthFailures(authFingerprint);
+  if (authFingerprint !== null) {
+    clearAuthFailures(authFingerprint);
+  } else if (hasTrackedAuthFailures()) {
+    // A concurrent failure was charged while this request was authorizing;
+    // keep the legacy "success clears my fingerprint" semantics in that window.
+    clearAuthFailures(await authAttemptFingerprint(request));
+  }
 
   // Local diagnostics/model-list routes carry no upstream cost and do not
   // consume the client-key RPM budget.
@@ -218,17 +232,20 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     }
   }
 
-  const diag = await import('../observability/diagnostic-endpoints.ts');
-  if ((route === 'health' || route === 'metrics') && !diag.canReadDiagnostics(env, authResult)) {
-    return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
+  // AIG_HOT_PATH_GUARDS: the diagnostics bundle (dashboard / metrics views) is
+  // loaded only by the routes that render it; legacy mode keeps the historical
+  // unconditional import, which evaluates the module on every request path.
+  if (!hotPathGuards) await import('../observability/diagnostic-endpoints.ts');
+  if (route === 'health' || route === 'metrics' || route === 'models') {
+    const diag = await import('../observability/diagnostic-endpoints.ts');
+    if ((route === 'health' || route === 'metrics') && !diag.canReadDiagnostics(env, authResult)) {
+      return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
+    }
+    if (route === 'health') return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };
+    if (route === 'metrics') return { ok: false, response: diag.metricsResponse(request, env, requestId) };
+    return { ok: false, response: diag.modelsListResponse(request, env, requestId, authResult) };
   }
   switch (route) {
-    case 'health':
-      return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };
-    case 'metrics':
-      return { ok: false, response: diag.metricsResponse(request, env, requestId) };
-    case 'models':
-      return { ok: false, response: diag.modelsListResponse(request, env, requestId, authResult) };
     case 'openai_chat':
     case 'anthropic_messages':
     case 'anthropic_count_tokens':

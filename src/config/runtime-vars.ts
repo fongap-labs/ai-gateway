@@ -95,6 +95,15 @@ export const RUNTIME_TUNABLES = [
   // score bias whose write volume otherwise competes with the Free plan's
   // 1,000 KV writes/day. Explicit values always win on both sides.
   { name: 'AIG_AFFINITY_WRITE', type: 'int', min: 0, max: 1, def: 1 },
+  // (AIG_HOT_PATH_GUARDS) How long one request waits for a cold Tier 1
+  // session-affinity KV read before treating the binding as unknown. Affinity
+  // is a soft score bias, so the legacy 50ms paid a cold-KV tail on the first
+  // token path; the guard stack switches the DEFAULT to 15ms. The read itself
+  // continues in the background and warms the isolate cache for the next
+  // request. Under AIG_HOT_PATH_GUARDS the read path also gains an
+  // isolate-local breaker (see scheduler/tier1-affinity.ts): repeated timeouts
+  // stop issuing reads for a cooldown instead of paying the tail per request.
+  { name: 'AIG_AFFINITY_READ_TIMEOUT_MS', type: 'int', min: 1, max: 1_000, def: 50 },
   // (AIG_TIER1_PROBE_V2) How long an armed Tier 1 recovery probe holds its
   // single-flight window before the gate self-opens. The probe itself commits as
   // soon as the first meaningful evidence arrives (response headers for a
@@ -235,6 +244,15 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // both sides): AIG_AFFINITY_WRITE -> 0, AIG_TOKEN_D1_SAMPLE_PCT -> 1,
   // AIG_EDGE_CACHE_TTL_SEC -> 0 (off), AIG_LOG_LEVEL -> warn.
   { name: 'AIG_COST_GUARDS', def: false },
+  // Main-path CPU guards. false (default) keeps the legacy hot path
+  // byte-for-byte: the failed-auth throttle fingerprints (SHA-256) every
+  // request, the diagnostics bundle is imported on every request path, and an
+  // affinity KV read waits the legacy 50ms. true makes the fingerprint lazy
+  // (only when the throttle has state to consult or the attempt fails), loads
+  // the diagnostics bundle only for /health, /metrics and /models, and moves
+  // the affinity read wait to AIG_AFFINITY_READ_TIMEOUT_MS (default 15) behind
+  // an isolate-local breaker.
+  { name: 'AIG_HOT_PATH_GUARDS', def: false },
 ];
 
 // Every non-sensitive runtime variable name, for the deployment bridge.

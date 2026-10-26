@@ -150,6 +150,14 @@ export type Limits = {
   /** Default log level when AIG_LOG_LEVEL is unset. Legacy info; AIG_COST_GUARDS
    *  switches the default to warn. */
   logLevelDefault: string;
+  /** AIG_HOT_PATH_GUARDS: main-path CPU guard stack (lazy auth fingerprint,
+   *  route-scoped diagnostics import, tighter affinity read + breaker). false
+   *  keeps the legacy hot path byte-for-byte. */
+  hotPathGuards: boolean;
+  /** AIG_AFFINITY_READ_TIMEOUT_MS: wait for a cold affinity KV read before the
+   *  binding is treated as unknown. Legacy default 50; the guard stack switches
+   *  the default to 15. */
+  affinityReadTimeoutMs: number;
 };
 
 // Legacy/equal-share primitive retained as a pure helper. Some tests and
@@ -238,6 +246,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
   // AIG_COST_GUARDS switches observable-default VALUES only (never clamps an
   // explicit override); see each derived field below.
   const costGuards = getBool(env, 'AIG_COST_GUARDS', false);
+  const hotPathGuards = getBool(env, 'AIG_HOT_PATH_GUARDS', false);
   cached = {
     headersTimeoutMs: clampInt(
       readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS'),
@@ -384,6 +393,13 @@ export function getLimits(env: Record<string, unknown>): Limits {
     ),
     edgeCacheTtlDefaultSec: costGuards ? 0 : 14_400,
     logLevelDefault: costGuards ? 'warn' : 'info',
+    hotPathGuards,
+    affinityReadTimeoutMs: clampInt(
+      readEnv(env, 'AIG_AFFINITY_READ_TIMEOUT_MS'),
+      LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.min,
+      LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.max,
+      hotPathGuards ? 15 : LIMITS.AIG_AFFINITY_READ_TIMEOUT_MS.def,
+    ),
   };
   cache.set(env, cached);
   return cached;
