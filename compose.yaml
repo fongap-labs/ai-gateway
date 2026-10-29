@@ -1,0 +1,27 @@
+# Single-host deployment of ai-gateway with Docker Compose.
+# Operator setup: copy the variables you need into a git-ignored .env file (one value per line, JSON on one line).
+# See docs/operations/docker-deployment.md.
+
+services:
+  ai-gateway:
+    build:
+      context: .
+      args:
+        # Set to the deployed Git commit SHA so /health reports which build is running.
+        AIG_BUILD_SHA: ${AIG_BUILD_SHA:-unknown}
+    image: ai-gateway:local
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+    ports:
+      # Bind to loopback only. Put a TLS reverse proxy in front of it on the host.
+      - "127.0.0.1:8787:8787"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true

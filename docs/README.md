@@ -32,6 +32,7 @@ docs/
 | --- | --- |
 | [configuration.md](operations/configuration.md) | Node、访问组、模型、策略与运行时配置 |
 | [deployment.md](operations/deployment.md) | 从 CI 到生产的流程、D1 迁移、commit SHA 校验、回滚 |
+| [docker-deployment.md](operations/docker-deployment.md) | 主运行宿主：云主机 Docker 容器部署、反向代理、升级回滚，以及与 Worker 的功能差异 |
 | [troubleshooting.md](operations/troubleshooting.md) | 配置与运行时故障诊断 |
 | [provider-discovery.md](operations/provider-discovery.md) | 只读的 Provider 能力观测 |
 | [public-model-status.md](operations/public-model-status.md) | 只读的公开状态投影 |

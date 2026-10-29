@@ -10,6 +10,15 @@ ai-gateway 是一个面向家庭、个人运营者或小型可信团队的私有
 
 本产品应当保持易于部署、易于理解、易于运维。优先采用少量明确的概念，而不是泛化的框架、扩展层、兼容垫片或面向未来的抽象。
 
+## 运行宿主
+
+ai-gateway 的主运行宿主是运营者自有云主机上的 Docker 容器（见[Docker 部署](../operations/docker-deployment.md)）。选择它的原因是 Cloudflare Workers 的 CPU 时间额度不足以支撑长请求与流式转换的开销。
+
+- 容器与 Cloudflare Worker 运行同一份 `fetch` 处理函数，协议、流式、调度、冷却与 token 记账契约在两个宿主上必须一致。
+- Cloudflare Workers 仍可作为备选宿主保留，但不再是默认的生产路径。
+- 宿主专属的能力差异（D1、KV、Cache API、cron）必须在运维文档中明确列出；差异只能表现为功能降级，不能改变协议或路由语义。
+- 两个宿主不得各自维护一套运行时契约（one current runtime contract）。
+
 ## Tier 角色
 
 ### Tier 1 — free-token capacity（免费 token 容量）

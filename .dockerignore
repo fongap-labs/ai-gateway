@@ -1,0 +1,6 @@
+# Whitelist build context: everything is excluded unless listed below.
+# Keeps secrets (.env, .dev.vars, wrangler.user.jsonc, secrets*.json) out of the image and the build context.
+*
+!package.json
+!src
+!docker
