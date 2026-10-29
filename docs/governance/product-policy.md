@@ -50,6 +50,8 @@ Tier 1 的工程重点应放在：
 
 Tier 2 面向那些通过运营者自有的会员或订阅权益获得的 AI 容量（Claude Pro/Max、ChatGPT/Codex、Google One AI Premium）。三个主流 provider 均提供内置的订阅适配器，并带有第一方的 OAuth 接入默认值。
 
+Tier 2 只使用运营者本人持有的订阅，仅供运营者个人使用。不得把订阅凭据、由此产生的访问权限或网关访问密钥分享给其他用户（包括家庭成员与团队成员）。需要多人共用时，应使用 Tier 1 或 Tier 3 的容量，而不是 Tier 2。
+
 不要把 Tier 2 变成另一个通用的 API Key 池。除非有实测的生产证据表明需要，它不应引入 Tier 1 的自适应机制。
 
 ### Tier 3 — paid API capacity（付费 API 容量）
