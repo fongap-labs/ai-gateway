@@ -1,6 +1,6 @@
 # Docker 部署
 
-ai-gateway 的主运行宿主是云主机上的 Docker 容器。容器内运行的是与 Cloudflare Worker 相同的 `fetch` 处理函数，入口为 [`docker/server.mjs`](../../docker/server.mjs)。协议、流式、调度与冷却契约在两个宿主上一致；差异只在于 Workers 专属绑定缺失时的功能降级（见下文）。
+本文描述 `cloud-host-docker` 部署通道：在云主机上以 Docker 容器运行 ai-gateway。容器内运行的是与 Cloudflare Worker 相同的 `fetch` 处理函数，入口为 [`docker/server.mjs`](../../docker/server.mjs)。协议、流式、调度与冷却契约在两个通道上一致；差异只在于 Workers 专属绑定缺失时的功能降级（见下文）。两个通道的可信源都是 `main`，通道划分见[产品策略](../governance/product-policy.md)。
 
 ## 前置条件
 

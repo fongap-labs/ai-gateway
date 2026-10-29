@@ -1,3 +1,3 @@
-- 新增: Docker 容器作为主运行宿主。`Dockerfile`、`compose.yaml` 与 `.dockerignore`（白名单构建上下文，不把 `.env` 或密钥文件打进镜像）提供单机部署；`docker/server.mjs` 用 `node:http` 运行与 Worker 相同的 `fetch` 处理函数，支持请求体转发、流式背压、客户端断开时取消上游，并在 SIGTERM 时排空连接。镜像构建参数 `AIG_BUILD_SHA` 写入 `/health` 的 `build`。
-- 变更: 产品策略新增「运行宿主」一节：主路径改为云主机 Docker 容器，Cloudflare Workers 降为备选宿主；两个宿主必须共享同一份运行时契约。原因是 Workers 的 CPU 时间额度不足。
+- 新增: Docker 容器部署通道（`cloud-host-docker`）。`Dockerfile`、`compose.yaml` 与 `.dockerignore`（白名单构建上下文，不把 `.env` 或密钥文件打进镜像）提供单机部署；`docker/server.mjs` 用 `node:http` 运行与 Worker 相同的 `fetch` 处理函数，支持请求体转发、流式背压、客户端断开时取消上游，并在 SIGTERM 时排空连接。镜像构建参数 `AIG_BUILD_SHA` 写入 `/health` 的 `build`。
+- 变更: 产品策略新增「运行宿主与部署通道」一节：云主机 Docker 容器（`cloud-host-docker`）与 Cloudflare Workers（`cloudflare-worker`）为两个并行通道，共用 `main` 作为唯一可信源，部署同一个 commit SHA，并经由 Action Worker 治理。Docker 通道承担长期运行的主要负载，因为 Workers 的 CPU 时间额度不足。
 - 新增: 运维文档 `docs/operations/docker-deployment.md` 记录部署、反向代理（需关闭响应缓冲）、升级回滚，以及容器相对 Worker 的功能降级清单：D1 用量统计、KV 亲和、跨实例冷却共享、edge cache、cron 均不可用，**Tier 2 订阅 OAuth 在容器中不可用**。

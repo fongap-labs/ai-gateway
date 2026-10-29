@@ -10,14 +10,21 @@ ai-gateway 是一个面向家庭、个人运营者或小型可信团队的私有
 
 本产品应当保持易于部署、易于理解、易于运维。优先采用少量明确的概念，而不是泛化的框架、扩展层、兼容垫片或面向未来的抽象。
 
-## 运行宿主
+## 运行宿主与部署通道
 
-ai-gateway 的主运行宿主是运营者自有云主机上的 Docker 容器（见[Docker 部署](../operations/docker-deployment.md)）。选择它的原因是 Cloudflare Workers 的 CPU 时间额度不足以支撑长请求与流式转换的开销。
+ai-gateway 有两个部署通道，各自是 Action Worker 部署清单中的一个目标：
 
-- 容器与 Cloudflare Worker 运行同一份 `fetch` 处理函数，协议、流式、调度、冷却与 token 记账契约在两个宿主上必须一致。
-- Cloudflare Workers 仍可作为备选宿主保留，但不再是默认的生产路径。
+- `cloud-host-docker`：运营者自有云主机上的 Docker 容器（见[Docker 部署](../operations/docker-deployment.md)）。Cloudflare Workers 的 CPU 时间额度不足以支撑长请求与流式转换的开销，因此它承担长期运行的主要负载。
+- `cloudflare-worker`：Cloudflare Workers，保留为第二通道。
+
+规则：
+
+- `main` 是唯一可信源。两个通道部署的是同一个经过 PR 合并的 commit SHA，不存在第二条可信分支。
+- 两个通道运行同一份 `fetch` 处理函数，协议、流式、调度、冷却与 token 记账契约必须一致。
 - 宿主专属的能力差异（D1、KV、Cache API、cron）必须在运维文档中明确列出；差异只能表现为功能降级，不能改变协议或路由语义。
-- 两个宿主不得各自维护一套运行时契约（one current runtime contract）。
+- 两个通道各自使用独立的部署环境与密钥白名单，不共享凭据。
+- 部署经由 Action Worker 治理，ai-gateway 不实现独立的生产部署 workflow。
+- 两个通道不得各自维护一套运行时契约（one current runtime contract）。
 
 ## Tier 角色
 
