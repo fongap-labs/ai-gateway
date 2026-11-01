@@ -46,7 +46,7 @@
     "multi-provider"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
+    "@biomejs/biome": "^2.6.4",
     "typescript": "^7.0.2"
   }
 }
