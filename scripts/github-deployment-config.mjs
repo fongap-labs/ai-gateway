@@ -310,6 +310,19 @@ export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) 
 // Workers Analytics Engine dataset names: letters, digits and underscores.
 const ANALYTICS_DATASET_NAME = /^[A-Za-z0-9_]{1,64}$/;
 
+export const DEFAULT_OPTIMAL_VARS = {
+  AIG_STREAM_PASSTHROUGH: 'true',
+  AIG_HOT_PATH_GUARDS: 'true',
+  AIG_COST_GUARDS: 'true',
+  AIG_TIER1_PROBE_V2: 'true',
+  AIG_REQUEST_ADMISSION: 'true',
+  AIG_ISOLATE_MAX_IN_FLIGHT: '64',
+  AIG_UPSTREAM_HEADER_TIMEOUT_MS: '60000',
+  AIG_FIRST_EVENT_TIMEOUT_MS: '60000',
+  AIG_FAILOVER_BUDGET_MS: '90000',
+  AIG_EDGE_CACHE_AUTO: 'true',
+};
+
 export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {
   const out = {
     name: 'ai-gateway',
@@ -319,7 +332,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     keep_vars: false,
     observability: { enabled: true },
     triggers: { crons: ['0 3 * * *'] },
-    vars,
+    vars: { ...DEFAULT_OPTIMAL_VARS, ...vars },
   };
   if (String(d1DatabaseId || '').trim()) {
     out.d1_databases = [
