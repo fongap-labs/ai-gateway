@@ -9,16 +9,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWindows = process.platform === 'win32';
+const localWrangler = path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const hasLocalWrangler = fs.existsSync(localWrangler);
 const npxCliCandidates = [
   process.env.npm_execpath ? path.join(path.dirname(process.env.npm_execpath), 'npx-cli.js') : null,
   path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'),
 ].filter(Boolean);
 const npxCli = isWindows ? npxCliCandidates.find((candidate) => fs.existsSync(candidate)) : null;
-const command = npxCli ? process.execPath : isWindows ? 'npx.cmd' : 'npx';
-const commandPrefix = npxCli ? [npxCli] : [];
+const command = hasLocalWrangler ? process.execPath : npxCli ? process.execPath : isWindows ? 'npx.cmd' : 'npx';
+const commandPrefix = hasLocalWrangler ? [localWrangler] : npxCli ? [npxCli] : [];
 const passthrough = process.argv.slice(2);
 const wranglerVersion = 'wrangler@4.114.0';
-const args = ['--yes', wranglerVersion, ...passthrough];
+const args = hasLocalWrangler ? [...passthrough] : ['--yes', wranglerVersion, ...passthrough];
 
 // Operator config (real D1 id, bindings) is gitignored and lives next to the
 // public wrangler.jsonc. When it exists and the caller did not pick a config
