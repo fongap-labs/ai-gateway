@@ -6,6 +6,7 @@
 // fallback and hedge attempts do not inflate the public "requests" metric.
 
 import type { GatewayEnv } from '../../types/runtime.ts';
+import { flushBeforeRead } from './buffer.ts';
 import {
   DAY_MS,
   DISPLAY_TIMEZONE_OFFSET_MS,
@@ -35,6 +36,9 @@ type UpstreamTotalsRow = {
   upstream_cache_observed_input_tokens?: NumericCell;
   upstream_cache_read_reports?: NumericCell;
   upstream_total_tokens?: NumericCell;
+  total_tokens?: NumericCell;
+  requests?: NumericCell;
+  updated_at?: string | null;
   upstream_attempts?: NumericCell;
   upstream_usage_reports?: NumericCell;
   upstream_usage_missing?: NumericCell;
@@ -118,6 +122,9 @@ export async function loadUpstreamSummary(
         requests: number;
         reports: number;
         missing: number;
+        deliveredTotal: number;
+        deliveredRequests: number;
+        updatedAt: string | null;
         input: number;
         output: number;
         cacheRead: number;
@@ -129,6 +136,7 @@ export async function loadUpstreamSummary(
   | { available: false; error: string }
   | null
 > {
+  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const todayStart = normalizeHour(utc8DayStartUtcMs(now));
@@ -151,6 +159,9 @@ export async function loadUpstreamSummary(
          upstream_cache_observed_input_tokens,
          upstream_cache_read_reports,
          upstream_total_tokens,
+         total_tokens,
+         requests,
+         updated_at,
          upstream_attempts,
          upstream_usage_reports,
          upstream_usage_missing
@@ -339,6 +350,9 @@ export async function loadUpstreamSummary(
       requests: attempts,
       reports,
       missing,
+      deliveredTotal: Number(totalsRow?.total_tokens) || 0,
+      deliveredRequests: Number(totalsRow?.requests) || 0,
+      updatedAt: typeof totalsRow?.updated_at === 'string' ? totalsRow.updated_at : null,
       input: splitInput(cumulativeEffectiveInput, cumulativeObservedRead),
       output: cumulativeOutput,
       cacheRead: cumulativeObservedRead,
