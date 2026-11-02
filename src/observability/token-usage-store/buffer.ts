@@ -151,6 +151,9 @@ function armFlushTimer(): void {
       console.error('token-stats buffered flush failed:', (error as Error)?.message || error);
     });
   }, FLUSH_INTERVAL_MS);
+  // Node-based central tests must not remain alive solely for a statistics timer.
+  // Workers return a numeric timeout handle and ignore this optional method.
+  (flushTimer as unknown as { unref?: () => void }).unref?.();
 }
 
 function persistFailure(cause: unknown): Error & { scope: string } {
