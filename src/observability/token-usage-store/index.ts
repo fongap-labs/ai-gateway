@@ -4,7 +4,7 @@
 // Public re-export surface for the token-usage store.
 
 export { aggregateDailyToWeekly, aggregateHourlyToDaily } from './aggregation.ts';
-export { __resetUsageBufferForTests, flushUsageBuffer } from './buffer.ts';
+export { __resetUsageBufferForTests, flushUsageBuffer, flushBeforeRead } from './buffer.ts';
 export {
   DISPLAY_TIMEZONE_OFFSET_MS,
   isoDayUtc8,
