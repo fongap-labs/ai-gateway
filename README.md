@@ -63,7 +63,7 @@ npm run cf:login
 
 1. 参考 [节点示例](config/tier1-nodes.example.json) 准备自己的节点 JSON，并为需要静态凭据的节点准备本地凭据 JSON；节点配置不得包含密钥。
 2. 参考 [本地配置示例](wrangler.user.jsonc.example) 创建不提交到 Git 的 `wrangler.user.jsonc`，配置 Worker、`TIER1_AFFINITY` 绑定，以及按需使用的 D1 与域名。
-3. 配置 `AIG_TIER1_NODES_01` 等节点变量、`AIG_TIER1_CREDENTIALS_01` 等凭据密钥，以及至少一组 `AIG_ACCESS_KEY_<GROUP>` 与 `AIG_ACCESS_MODELS_<GROUP>`。各分片凭据以 **Tier + 节点 ID** 关联，后缀不需要对应；分组之间不继承模型权限。
+3. 配置 `AIG_TIER1_NODES_01` 等节点变量、`AIG_TIER1_CREDENTIALS_01` 等凭据密钥，以及至少一组 `AIG_ACCESS_KEY_<GROUP>` 与 `AIG_ACCESS_MODELS_<GROUP>`。节点 Config 和凭据 Secret 的分片相互独立，按 **Tier + 节点 ID** 关联，无需按分片后缀对应；分组之间不继承模型权限。
 4. 按 [配置文档](docs/operations/configuration.md) 校验全部生产变量、密钥和部署条件；如需使用订阅节点，另行完成 OAuth 授权、令牌加密密钥及 D1 配置。
 
 完成配置后，使用自己的文件路径运行：
