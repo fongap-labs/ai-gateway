@@ -190,14 +190,12 @@ assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '6');
 const policy = { maxAttempts: 5, tierAttempts: null };
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, policy), { 1: 3, 2: 3, 3: 1 });
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 2, 2, policy), { 1: 3, 2: 1, 3: 3 });
-assert.deepEqual(
-  redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }),
-  { 1: 3, 2: 1, 3: 3 },
-);
-assert.deepEqual(
-  redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1, tier3: 1 } }),
-  { 1: 3, 2: 1, 3: 1 },
-);
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }), { 1: 3, 2: 1, 3: 3 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1, tier3: 1 } }), {
+  1: 3,
+  2: 1,
+  3: 1,
+});
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 0, policy), { 1: 3, 2: 1, 3: 1 });
 
 console.log('Deployment configuration check passed.');
