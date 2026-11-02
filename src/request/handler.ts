@@ -35,7 +35,7 @@ import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, remembe
 import { preflight as runPreflight } from './preflight.ts';
 import { evaluateRouteFeasibility } from './route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './router.ts';
-import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier } from './tier-loop.ts';
+import { computeTierCaps, countRemainingDispatchableAttempts, makeTier1Rng, pickForTier, redistributeUnusedTierAttempts } from './tier-loop.ts';
 
 // A streaming attempt on a model that still has a sibling after it gives up
 // after this long when the upstream stays silent. Only the last model in the
@@ -590,6 +590,13 @@ async function runTierLoop(
       }
       if (outcome.response) return outcome.response;
       if (outcome.stop) break;
+    }
+    // A tier may have fewer live keys than its initial allocation predicted.
+    // Pass unused attempts down in priority order, keeping explicit tier caps
+    // and the shared request-wide ceiling intact. Protocol-fallback overrides
+    // have their own explicit budgets and are not redistributed here.
+    if (!overrideTierCaps && usedInTier < cap) {
+      redistributeUnusedTierAttempts(tierCaps, tierNumber, cap - usedInTier, policy);
     }
   }
   return null;

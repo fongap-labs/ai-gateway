@@ -163,6 +163,25 @@ export function computeTierCaps(
   return applyConsumed();
 }
 
+/**
+ * Reclaim attempts a higher-priority tier could not use (no further eligible
+ * node) for the next lower-priority tier without increasing the request's total
+ * attempt budget. Explicit tier_attempts remain hard caps, including zero.
+ * The caller invokes this only after the current tier has exhausted selection.
+ */
+export function redistributeUnusedTierAttempts(
+  caps: TierMap<number>,
+  afterTier: Tier,
+  unusedAttempts: number,
+  policy: PolicyConfig,
+): TierMap<number> {
+  const unused = Number.isFinite(unusedAttempts) ? Math.max(0, Math.trunc(unusedAttempts)) : 0;
+  if (unused === 0) return caps;
+  const next = TIER_ORDER.find((tier) => tier > afterTier && policy.tierAttempts?.[`tier${tier}`] === undefined);
+  if (next !== undefined) caps[next] = (caps[next] ?? 0) + unused;
+  return caps;
+}
+
 // Number of dispatches that can still happen in the current model/protocol pass.
 // This is recomputed before every attempt because availability can change while
 // a request is in flight. It observes tier caps; it does not redistribute them.
