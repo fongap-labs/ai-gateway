@@ -307,6 +307,7 @@ export async function usageSection(
     <div class="section-head"><span class="section-title">使用情况</span></div>
     ${persistenceState ? `<div class="panel-meta" role="status">${persistenceState}</div>` : ''}
     <div class="stat-row">${kpis}</div>
+    ${summaryOk ? `<div class="panel-meta" role="status">上游消耗：${fmtTokens(summary.cumulative.total)} Token（${fmtInt(summary.cumulative.requests)} 次上游尝试）；成功交付：${fmtTokens(summary.cumulative.deliveredTotal)} Token（${fmtInt(summary.cumulative.deliveredRequests)} 次请求）。用量覆盖率：${summary.coverage === null ? '暂无数据' : (summary.coverage * 100).toFixed(1) + '%'}（${fmtInt(summary.cumulative.reports)} 次上报，${fmtInt(summary.cumulative.missing)} 次缺失）。最近写入：${summary.cumulative.updatedAt ? escapeHtml(summary.cumulative.updatedAt) : '暂无记录'}。统计仅来自上游报告，未报告用量可能导致低估。</div>` : ''}
     ${summaryOk ? renderTokenComposition(summary.cumulative) : ''}
     <div class="usage-detail-grid">
       ${activityPanel}
@@ -326,6 +327,9 @@ import {
 type SummaryBucket = { total: number; requests: number };
 type SummaryH24 = SummaryBucket & { input: number; output: number; cacheRead: number; cacheReadReports: number; cacheHitRatio: number | null };
 type SummaryCumulative = SummaryBucket & {
+  deliveredTotal: number;
+  deliveredRequests: number;
+  updatedAt: string | null;
   reports: number;
   missing: number;
   input: number;
