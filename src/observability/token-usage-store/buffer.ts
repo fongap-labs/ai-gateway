@@ -308,10 +308,11 @@ export function flushUsageBuffer(): Promise<void> {
   return flushInFlight;
 }
 
-// Reading from the same isolate attempts to publish pending increments first.
-// Other isolates remain invisible until their own batches reach D1.
+// Read paths only nudge a flush after its normal interval, so dashboard
+// traffic cannot turn every buffered write into a new D1 transaction.
 export async function flushBeforeRead(): Promise<void> {
   if (pendingByDatabase.size === 0 && !flushInFlight) return;
+  if (!flushInFlight && Date.now() - lastFlushAt < FLUSH_INTERVAL_MS) return;
   await flushUsageBuffer().catch((error) => {
     console.error('token-stats flush before read failed:', (error as Error)?.message || error);
   });
