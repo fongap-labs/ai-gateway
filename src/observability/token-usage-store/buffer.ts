@@ -34,7 +34,8 @@ import {
 // the allowance on bookkeeping. Events merge by (kind, hour, model), so a longer
 // window reduces repeated writes but pending increments can be lost if the isolate
 // is recycled before a later event or explicit flush submits them.
-const FLUSH_INTERVAL_MS = 5 * 60_000;
+const FLUSH_INTERVAL_MS = 60_000;
+const FLUSH_EVENT_THRESHOLD = 500;
 
 export type UsageEvent = {
   /** Event time in epoch milliseconds; selects the hour row. */
@@ -72,7 +73,10 @@ type PendingBatch = {
 };
 
 const pendingByDatabase: Map<UsageDatabase, PendingBatch> = new Map();
-let databasesWithDeliveredFlush = new WeakSet<UsageDatabase>();
+let databasesWithInitialFlush = new WeakSet<UsageDatabase>();
+let bufferedEvents = 0;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let flushInFlight: Promise<void> | null = null;
 let lastFlushAt = 0;
 // After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
 // a D1 outage would retry the whole buffer on every event.
@@ -134,6 +138,21 @@ function mergeEntry(into: Map<string, UsageEntry>, entry: UsageEntry): void {
   current.events += entry.events;
 }
 
+function clearFlushTimer(): void {
+  if (flushTimer !== null) clearTimeout(flushTimer);
+  flushTimer = null;
+}
+
+function armFlushTimer(): void {
+  if (flushTimer !== null || pendingByDatabase.size === 0) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushUsageBuffer().catch((error) => {
+      console.error('token-stats buffered flush failed:', (error as Error)?.message || error);
+    });
+  }, FLUSH_INTERVAL_MS);
+}
+
 function persistFailure(cause: unknown): Error & { scope: string } {
   const rawMessage = (cause as { message?: unknown } | null | undefined)?.message || String(cause || 'D1 persistence failure');
   const error = new Error(String(rawMessage), { cause }) as Error & { scope: string };
@@ -192,18 +211,19 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     mergeEntry(batch.entries, entry(model, event.usage, true, kind === 'delivered' && model !== null ? event.usage : null));
   }
   batch.events += 1;
+  bufferedEvents += 1;
 
   const now = Date.now();
   if (lastFlushAt === 0) lastFlushAt = now;
   const isRetryWindowOpen = now - lastFailureAt >= FLUSH_INTERVAL_MS;
-  const isFlushDue = now - lastFlushAt >= FLUSH_INTERVAL_MS;
-  // A cold isolate may disappear before a second event arrives. Flush its first
-  // delivered response once, then retain the five-minute write throttle.
-  if (kind === 'delivered' && !databasesWithDeliveredFlush.has(database) && isRetryWindowOpen) {
-    databasesWithDeliveredFlush.add(database);
+  const isFlushDue = bufferedEvents >= FLUSH_EVENT_THRESHOLD || now - lastFlushAt >= FLUSH_INTERVAL_MS;
+  // Cold isolates must persist their first attempt, including failure-only traffic.
+  if (!databasesWithInitialFlush.has(database) && isRetryWindowOpen) {
+    databasesWithInitialFlush.add(database);
     return flushUsageBuffer();
   }
   if (isFlushDue && isRetryWindowOpen) return flushUsageBuffer();
+  armFlushTimer();
   return Promise.resolve();
 }
 
@@ -251,6 +271,7 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
   pendingByDatabase.delete(database);
   try {
     await database.batch(buildFlushStatements(database, batch.entries.values()));
+    bufferedEvents = Math.max(0, bufferedEvents - batch.events);
   } catch (cause) {
     const current = pendingFor(database);
     for (const entry of batch.entries.values()) mergeEntry(current.entries, entry);
@@ -265,22 +286,43 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
  * fails, the other bindings are still written, and the first failure is rethrown
  * after all of them have run.
  */
-export async function flushUsageBuffer(): Promise<void> {
+export function flushUsageBuffer(): Promise<void> {
+  if (flushInFlight) return flushInFlight;
+  clearFlushTimer();
   lastFlushAt = Date.now();
-  let failure: { error: unknown } | null = null;
-  for (const [database, batch] of [...pendingByDatabase.entries()]) {
-    try {
-      await flushDatabase(database, batch);
-    } catch (error) {
-      failure ??= { error };
+  const work = async (): Promise<void> => {
+    let failure: { error: unknown } | null = null;
+    for (const [database, batch] of [...pendingByDatabase.entries()]) {
+      try {
+        await flushDatabase(database, batch);
+      } catch (error) {
+        failure ??= { error };
+      }
     }
-  }
-  if (failure) throw failure.error;
+    if (failure) throw failure.error;
+  };
+  flushInFlight = work().finally(() => {
+    flushInFlight = null;
+    if (pendingByDatabase.size > 0) armFlushTimer();
+  });
+  return flushInFlight;
+}
+
+// Reading from the same isolate attempts to publish pending increments first.
+// Other isolates remain invisible until their own batches reach D1.
+export async function flushBeforeRead(): Promise<void> {
+  if (pendingByDatabase.size === 0 && !flushInFlight) return;
+  await flushUsageBuffer().catch((error) => {
+    console.error('token-stats flush before read failed:', (error as Error)?.message || error);
+  });
 }
 
 export function __resetUsageBufferForTests(): void {
+  clearFlushTimer();
   pendingByDatabase.clear();
-  databasesWithDeliveredFlush = new WeakSet();
+  databasesWithInitialFlush = new WeakSet();
+  bufferedEvents = 0;
+  flushInFlight = null;
   lastFlushAt = 0;
   lastFailureAt = 0;
 }
