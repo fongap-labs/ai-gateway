@@ -292,12 +292,10 @@ export async function usageSection(
     ${activity}
   </div>`;
 
-  let coverageText = '';
-  if (summaryOk && summary.coverage != null) coverageText = `（覆盖率 ${(summary.coverage * 100).toFixed(1)}%）`;
   const persistenceState = summaryOk
     ? summary.cumulative.requests === 0
       ? 'D1 暂无已持久化的物理上游尝试记录；这不能证明实际流量为零，缓冲计数可能尚未提交或已随隔离区回收而丢失。'
-      : `D1 已持久化 ${fmtInt(summary.cumulative.reports)} / ${fmtInt(summary.cumulative.reports + summary.cumulative.missing)} 次上游 usage 报告${coverageText}；未报告的 Token 不估算。统计批次在约 5 分钟节流窗口后的下一次 usage 写入时提交；低流量或隔离区回收可能使待写计数丢失，历史数据也可能包含旧版采样。Worker 无法读取账户级 D1 配额或跨隔离区写入失败状态，因此已显示的数字只代表当前可读的持久化记录。`
+      : ''
     : summary?.available === false
       ? summary.error.includes('binding missing')
         ? 'Token 统计数据库未绑定。'
@@ -307,7 +305,7 @@ export async function usageSection(
   return `<section id="usage">
   <div class="wrap">
     <div class="section-head"><span class="section-title">使用情况</span></div>
-    <div class="panel-meta" role="status">${persistenceState}</div>
+    ${persistenceState ? `<div class="panel-meta" role="status">${persistenceState}</div>` : ''}
     <div class="stat-row">${kpis}</div>
     ${summaryOk ? renderTokenComposition(summary.cumulative) : ''}
     <div class="usage-detail-grid">
@@ -420,7 +418,7 @@ async function loadDashboardStats(env: Record<string, unknown>, now: number): Pr
     queryRecentModelEvidence(env, MODEL_STATUS_HISTORICAL_WINDOW_MS, now),
     queryAllModelsTtftPercentiles(env, MODEL_STATUS_RECENT_WINDOW_MS, now),
   ]);
-  const ttft = ttftQuery?.available && ttftQuery.ttft instanceof Map ? ttftQuery.ttft : new Map<string, TtftEntry>();
+  const ttft = ttftQuery?.available && ttftQuery.ttft instanceof Map ? ttftQuery.ttft : null;
   return {
     summary,
     daily,

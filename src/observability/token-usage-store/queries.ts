@@ -318,7 +318,8 @@ export async function queryTokenDailySeries(
   return map;
 }
 
-// Per-model totals for the homepage's "Model Usage · Last 7d" panel.
+// Per-model delivered usage: token totals follow model-detail sampling while
+// request counts retain all delivered success evidence.
 //
 // Reader canonicalization: rows are grouped by LOWER(TRIM(model)) so
 // historical case variants (Code-Max / code-max / CODE-MAX) merge into ONE
@@ -375,6 +376,8 @@ export const MODEL_STATUS_HISTORICAL_WINDOW_MS = 7 * DAY_MS;
 // (src/runtime/model-status.ts). Returns a Set<string> of canonical
 // statistical model keys (trim + lowercase) that have at least one request
 // in the per-model hourly aggregate within the last `windowMs` milliseconds.
+// Successful request evidence and TTFT samples are independent of the optional
+// per-model token-detail sampling rate.
 // `requests > 0` is the success-evidence signal: the per-model table is
 // written exactly once per delivered response by persistTokenUsage(), so a
 // row with requests > 0 in the recent window means the model successfully

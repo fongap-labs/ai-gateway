@@ -30,9 +30,10 @@ import type { UsagePayload } from './statements.ts';
 
 /**
  * AIG_TOKEN_D1_SAMPLE_PCT (default 100; cost-guard profile defaults to 1%)
- * samples only per-model detail rows. Global hourly and lifetime aggregates
- * are always persisted from provider-reported usage, and model detail is never
- * extrapolated. Isolate-local counters remain best-effort and separate.
+ * samples per-model token and physical-attempt details. Successful request
+ * counts and TTFT histograms remain unsampled for public model status. Global
+ * hourly and lifetime aggregates are also unsampled; model token detail is
+ * never extrapolated. Isolate-local counters remain best-effort and separate.
  */
 function shouldSampleModel(env: GatewayEnv): boolean {
   const pct = getLimits(env).tokenD1SamplePct;

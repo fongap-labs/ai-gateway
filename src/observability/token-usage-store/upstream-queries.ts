@@ -451,7 +451,7 @@ export async function loadUpstreamModels(
       available: true,
       rows: rows
         .map((r) => ({ model: normalizeModelKey(r?.model), total: Number(r?.total) || 0, requests: Number(r?.attempts) || 0 }))
-        .filter((r) => r.model.length > 0),
+        .filter((r) => r.model.length > 0 && (r.total > 0 || r.requests > 0)),
     };
   } catch (e) {
     return { available: false, error: `loadUpstreamModels: ${asMessage(e)}` };

@@ -119,7 +119,7 @@ AIG_TIER1_NODES_01='[
 # AIG_NONSTREAM_MAX_ATTEMPTS="3"                # default: 3; buffered logical-attempt cap (admission stack)
 # AIG_COST_GUARDS="false"                       # default: false; flips the four cost defaults below
 # AIG_AFFINITY_WRITE="1"                        # default: 1; cost guards switch the default to 0
-# AIG_TOKEN_D1_SAMPLE_PCT="100"                 # default: 100; cost guards switch the default to 1 (0 = no D1 token writes)
+# AIG_TOKEN_D1_SAMPLE_PCT="100"                 # default: 100; cost guards use 1 (0 = no per-model token detail)
 # AIG_AFFINITY_READ_TIMEOUT_MS="50"             # default: 50 ms; hot-path guards switch the default to 15
 # AIG_HOT_PATH_GUARDS="false"                   # default: false; lazy auth fingerprint, route-scoped diagnostics, affinity breaker
 
