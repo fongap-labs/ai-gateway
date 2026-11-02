@@ -227,7 +227,7 @@ export function normalizeUsageReport(usage: unknown): UsageReport | null {
   // rather than silently fabricating a negative uncached portion.
   if (isCacheSubset && inputRaw !== undefined && cacheRead > input) return null;
 
-  if (inputRaw === undefined && outputRaw === undefined && cacheCreationRaw === undefined && !hasCacheRead) {
+  if (inputRaw === undefined && outputRaw === undefined && cacheCreationRaw === undefined && !hasCacheRead && report.total_tokens === undefined) {
     return null;
   }
 
