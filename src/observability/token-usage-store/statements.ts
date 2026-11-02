@@ -48,9 +48,10 @@ export function buildModelStatement(
   p: UsagePayload,
   successTtftCount: number,
   ttftBuckets: readonly number[],
+  modelUpstream: UsagePayload | null,
 ): UsageStatement {
   return kind === 'delivered'
-    ? deliveredModelStatement(d1, hour, model, p, successTtftCount, ttftBuckets)
+    ? deliveredModelStatement(d1, hour, model, p, successTtftCount, ttftBuckets, modelUpstream ?? p)
     : upstreamModelStatement(d1, hour, model, p);
 }
 
@@ -184,6 +185,7 @@ function deliveredModelStatement(
   p: UsagePayload,
   successTtftCount: number,
   buckets: readonly number[],
+  upstream: UsagePayload,
 ): UsageStatement {
   return d1
     .prepare(
@@ -249,18 +251,18 @@ function deliveredModelStatement(
       buckets[4],
       buckets[5],
       buckets[6],
-      p.input,
-      p.output,
-      p.cacheCreation,
-      p.cacheRead,
-      p.total,
-      p.requests,
-      p.reports,
-      p.missing,
-      p.effectiveInput,
-      p.observedCacheRead,
-      p.observedCacheInput,
-      p.cacheReadReports,
+      upstream.input,
+      upstream.output,
+      upstream.cacheCreation,
+      upstream.cacheRead,
+      upstream.total,
+      upstream.requests,
+      upstream.reports,
+      upstream.missing,
+      upstream.effectiveInput,
+      upstream.observedCacheRead,
+      upstream.observedCacheInput,
+      upstream.cacheReadReports,
     );
 }
 

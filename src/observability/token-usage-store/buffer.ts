@@ -9,10 +9,9 @@
 // (kind, hour, model) and writes the merged increments in one d1.batch() call
 // per database binding.
 //
-// Flushes are rate-limited to one per isolate per interval and triggered by a
-// later usage event or explicit maintenance flush. Event-count flushes caused
-// hot hourly rows to be rewritten repeatedly under burst load, spending D1's
-// daily row-write allowance on the same aggregates.
+// The first delivered event per database and isolate is flushed promptly so a
+// short-lived isolate can contribute success evidence. Subsequent flushes are
+// rate-limited and triggered by a later event or explicit maintenance flush.
 //
 // Best effort, like the isolate-local /metrics counters. Increments that are
 // still buffered are lost if the isolate is recycled before they flush. A failed
@@ -46,7 +45,7 @@ export type UsageEvent = {
   ttftMs?: number | null;
   /** Persist global aggregates independently from optional per-model samples. */
   exactGlobal?: boolean;
-  /** Include the per-model aggregate when exactGlobal is enabled. */
+  /** Include sampled per-model token and physical-attempt details. */
   includeModel?: boolean;
 };
 
@@ -55,6 +54,9 @@ type UsageEntry = {
   hour: string;
   model: string | null;
   payload: UsagePayload;
+  // The delivered model row always contains success evidence. Its upstream
+  // counters remain sampled independently from that evidence.
+  modelUpstream: UsagePayload | null;
   successTtftCount: number;
   ttftBuckets: number[];
   updatedAt: number;
@@ -70,6 +72,7 @@ type PendingBatch = {
 };
 
 const pendingByDatabase: Map<UsageDatabase, PendingBatch> = new Map();
+let databasesWithDeliveredFlush = new WeakSet<UsageDatabase>();
 let lastFlushAt = 0;
 // After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
 // a D1 outage would retry the whole buffer on every event.
@@ -113,10 +116,16 @@ function mergeEntry(into: Map<string, UsageEntry>, entry: UsageEntry): void {
   const key = entryKey(entry.kind, entry.hour, entry.model, entry.countTowardGlobal);
   const current = into.get(key);
   if (!current) {
-    into.set(key, { ...entry, payload: { ...entry.payload }, ttftBuckets: [...entry.ttftBuckets] });
+    into.set(key, {
+      ...entry,
+      payload: { ...entry.payload },
+      modelUpstream: entry.modelUpstream && { ...entry.modelUpstream },
+      ttftBuckets: [...entry.ttftBuckets],
+    });
     return;
   }
   addPayload(current.payload, entry.payload);
+  if (current.modelUpstream && entry.modelUpstream) addPayload(current.modelUpstream, entry.modelUpstream);
   current.successTtftCount += entry.successTtftCount;
   current.ttftBuckets.forEach((count, index) => {
     current.ttftBuckets[index] = count + (entry.ttftBuckets[index] ?? 0);
@@ -153,11 +162,17 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     }
   }
   const batch = pendingFor(database);
-  const entry = (entryModel: string | null, payload: UsagePayload, shouldCountTowardGlobal: boolean): UsageEntry => ({
+  const entry = (
+    entryModel: string | null,
+    payload: UsagePayload,
+    shouldCountTowardGlobal: boolean,
+    modelUpstream: UsagePayload | null,
+  ): UsageEntry => ({
     kind,
     hour,
     model: entryModel,
     payload: { ...payload },
+    modelUpstream: modelUpstream && { ...modelUpstream },
     successTtftCount: entryModel === null ? 0 : successTtftCount,
     ttftBuckets: entryModel === null ? Array.from({ length: TTFT_BUCKET_COUNT }, () => 0) : [...ttftBuckets],
     updatedAt: event.now,
@@ -165,10 +180,16 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     countTowardGlobal: shouldCountTowardGlobal,
   });
   if (event.exactGlobal) {
-    mergeEntry(batch.entries, entry(null, event.usage, true));
-    if (model !== null && event.includeModel) mergeEntry(batch.entries, entry(model, event.usage, false));
+    mergeEntry(batch.entries, entry(null, event.usage, true, null));
+    if (model !== null && (kind === 'delivered' || event.includeModel)) {
+      const sampled = event.includeModel === true;
+      const payload = sampled
+        ? event.usage
+        : { ...emptyPayload(), requests: event.usage.requests, reports: event.usage.reports, missing: event.usage.missing };
+      mergeEntry(batch.entries, entry(model, payload, false, kind === 'delivered' ? (sampled ? event.usage : emptyPayload()) : null));
+    }
   } else {
-    mergeEntry(batch.entries, entry(model, event.usage, true));
+    mergeEntry(batch.entries, entry(model, event.usage, true, kind === 'delivered' && model !== null ? event.usage : null));
   }
   batch.events += 1;
 
@@ -176,6 +197,12 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
   if (lastFlushAt === 0) lastFlushAt = now;
   const isRetryWindowOpen = now - lastFailureAt >= FLUSH_INTERVAL_MS;
   const isFlushDue = now - lastFlushAt >= FLUSH_INTERVAL_MS;
+  // A cold isolate may disappear before a second event arrives. Flush its first
+  // delivered response once, then retain the five-minute write throttle.
+  if (kind === 'delivered' && !databasesWithDeliveredFlush.has(database) && isRetryWindowOpen) {
+    databasesWithDeliveredFlush.add(database);
+    return flushUsageBuffer();
+  }
   if (isFlushDue && isRetryWindowOpen) return flushUsageBuffer();
   return Promise.resolve();
 }
@@ -197,7 +224,18 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
       total.updatedAt = Math.max(total.updatedAt, entry.updatedAt);
     }
     if (entry.model !== null) {
-      statements.push(buildModelStatement(database, entry.kind, entry.hour, entry.model, entry.payload, entry.successTtftCount, entry.ttftBuckets));
+      statements.push(
+        buildModelStatement(
+          database,
+          entry.kind,
+          entry.hour,
+          entry.model,
+          entry.payload,
+          entry.successTtftCount,
+          entry.ttftBuckets,
+          entry.modelUpstream,
+        ),
+      );
     }
   }
   for (const total of hourTotals.values()) {
@@ -242,6 +280,7 @@ export async function flushUsageBuffer(): Promise<void> {
 
 export function __resetUsageBufferForTests(): void {
   pendingByDatabase.clear();
+  databasesWithDeliveredFlush = new WeakSet();
   lastFlushAt = 0;
   lastFailureAt = 0;
 }

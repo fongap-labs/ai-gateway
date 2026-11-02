@@ -197,7 +197,7 @@ export async function dashboardResponse(request: Request, env: Record<string, un
       }
     }
 
-    const modelsResult = renderModels(models, ensureModelTtftContainers(stats.ttft, models));
+    const modelsResult = renderModels(models, stats.ttft ? ensureModelTtftContainers(stats.ttft, models) : null);
     const usageHtml = await usageSection(gatewayEnv, now, stats, officialNames);
     const quickHtml = quickStartSection({ apiBase });
 
