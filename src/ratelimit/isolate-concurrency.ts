@@ -45,10 +45,10 @@ export function releaseIsolateRequestAfterResponse(response: Response, release: 
     return response;
   }
   const reader = response.body.getReader();
-  let released = false;
+  let isReleased = false;
   const releaseOnce = () => {
-    if (released) return;
-    released = true;
+    if (isReleased) return;
+    isReleased = true;
     release();
   };
   const body = new ReadableStream<Uint8Array>({

@@ -100,15 +100,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       true,
     );
   }
-  let concurrencyOwnedByResponse = false;
+  let isConcurrencyOwnedByResponse = false;
   try {
     const response = await handleAdmittedRequest(request, env, ctx);
     const responseWithRelease = releaseIsolateRequestAfterResponse(response, releaseConcurrency);
-    concurrencyOwnedByResponse = true;
+    isConcurrencyOwnedByResponse = true;
     return responseWithRelease;
   } finally {
     releaseBody();
-    if (!concurrencyOwnedByResponse) releaseConcurrency();
+    if (!isConcurrencyOwnedByResponse) releaseConcurrency();
   }
 }
 

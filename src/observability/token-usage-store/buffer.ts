@@ -75,8 +75,8 @@ let lastFlushAt = 0;
 // a D1 outage would retry the whole buffer on every event.
 let lastFailureAt = 0;
 
-function entryKey(kind: UsageKind, hour: string, model: string | null, countTowardGlobal: boolean): string {
-  return `${kind}\u0000${hour}\u0000${model ?? ''}\u0000${countTowardGlobal ? 'global' : 'detail'}`;
+function entryKey(kind: UsageKind, hour: string, model: string | null, shouldCountTowardGlobal: boolean): string {
+  return `${kind}\u0000${hour}\u0000${model ?? ''}\u0000${shouldCountTowardGlobal ? 'global' : 'detail'}`;
 }
 
 function pendingFor(database: UsageDatabase): PendingBatch {
@@ -153,7 +153,7 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     }
   }
   const batch = pendingFor(database);
-  const entry = (entryModel: string | null, payload: UsagePayload, countTowardGlobal: boolean): UsageEntry => ({
+  const entry = (entryModel: string | null, payload: UsagePayload, shouldCountTowardGlobal: boolean): UsageEntry => ({
     kind,
     hour,
     model: entryModel,
@@ -162,7 +162,7 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     ttftBuckets: entryModel === null ? Array.from({ length: TTFT_BUCKET_COUNT }, () => 0) : [...ttftBuckets],
     updatedAt: event.now,
     events: 1,
-    countTowardGlobal,
+    countTowardGlobal: shouldCountTowardGlobal,
   });
   if (event.exactGlobal) {
     mergeEntry(batch.entries, entry(null, event.usage, true));
