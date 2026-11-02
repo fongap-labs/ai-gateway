@@ -320,7 +320,6 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_UPSTREAM_HEADER_TIMEOUT_MS: '60000',
   AIG_FIRST_EVENT_TIMEOUT_MS: '60000',
   AIG_FAILOVER_BUDGET_MS: '90000',
-  AIG_EDGE_CACHE_AUTO: 'true',
 };
 
 export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {

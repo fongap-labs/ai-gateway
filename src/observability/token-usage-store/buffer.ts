@@ -9,10 +9,10 @@
 // (kind, hour, model) and writes the merged increments in one d1.batch() call
 // per database binding.
 //
-// Flush triggers: at least FLUSH_EVENT_THRESHOLD buffered events, or at least
-// FLUSH_INTERVAL_MS since the last flush (checked lazily on each event, with an
-// idle timer as a backstop). flushUsageBuffer() forces a flush, and read paths
-// and scheduled maintenance call it first.
+// Flushes are rate-limited to one per isolate per interval and triggered by a
+// later usage event or explicit maintenance flush. Event-count flushes caused
+// hot hourly rows to be rewritten repeatedly under burst load, spending D1's
+// daily row-write allowance on the same aggregates.
 //
 // Best effort, like the isolate-local /metrics counters. Increments that are
 // still buffered are lost if the isolate is recycled before they flush. A failed
@@ -33,9 +33,9 @@ import {
 // Workers Free allows 100,000 D1 row writes a day and every flush upserts a few
 // rows per table, so flushing every couple of seconds under steady traffic spends
 // the allowance on bookkeeping. Events merge by (kind, hour, model), so a longer
-// window loses nothing but the increments of a recycled isolate.
-const FLUSH_EVENT_THRESHOLD = 500;
-const FLUSH_INTERVAL_MS = 30_000;
+// window reduces repeated writes but pending increments can be lost if the isolate
+// is recycled before a later event or explicit flush submits them.
+const FLUSH_INTERVAL_MS = 5 * 60_000;
 
 export type UsageEvent = {
   /** Event time in epoch milliseconds; selects the hour row. */
@@ -44,6 +44,10 @@ export type UsageEvent = {
   usage: UsagePayload;
   /** Time to first token, delivered responses only. */
   ttftMs?: number | null;
+  /** Persist global aggregates independently from optional per-model samples. */
+  exactGlobal?: boolean;
+  /** Include the per-model aggregate when exactGlobal is enabled. */
+  includeModel?: boolean;
 };
 
 type UsageEntry = {
@@ -55,6 +59,7 @@ type UsageEntry = {
   ttftBuckets: number[];
   updatedAt: number;
   events: number;
+  countTowardGlobal: boolean;
 };
 
 // Pending increments for one D1 binding. Keyed by the binding object, so events
@@ -65,15 +70,13 @@ type PendingBatch = {
 };
 
 const pendingByDatabase: Map<UsageDatabase, PendingBatch> = new Map();
-let bufferedEvents = 0;
 let lastFlushAt = 0;
 // After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
 // a D1 outage would retry the whole buffer on every event.
 let lastFailureAt = 0;
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-function entryKey(kind: UsageKind, hour: string, model: string | null): string {
-  return `${kind}\u0000${hour}\u0000${model ?? ''}`;
+function entryKey(kind: UsageKind, hour: string, model: string | null, shouldCountTowardGlobal: boolean): string {
+  return `${kind}\u0000${hour}\u0000${model ?? ''}\u0000${shouldCountTowardGlobal ? 'global' : 'detail'}`;
 }
 
 function pendingFor(database: UsageDatabase): PendingBatch {
@@ -107,7 +110,7 @@ function addPayload(target: UsagePayload, source: UsagePayload): void {
 }
 
 function mergeEntry(into: Map<string, UsageEntry>, entry: UsageEntry): void {
-  const key = entryKey(entry.kind, entry.hour, entry.model);
+  const key = entryKey(entry.kind, entry.hour, entry.model, entry.countTowardGlobal);
   const current = into.get(key);
   if (!current) {
     into.set(key, { ...entry, payload: { ...entry.payload }, ttftBuckets: [...entry.ttftBuckets] });
@@ -130,22 +133,6 @@ function persistFailure(cause: unknown): Error & { scope: string } {
   return error;
 }
 
-function clearFlushTimer(): void {
-  if (flushTimer === null) return;
-  clearTimeout(flushTimer);
-  flushTimer = null;
-}
-
-function armFlushTimer(): void {
-  if (flushTimer !== null) return;
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    flushUsageBuffer().catch((error) => {
-      console.error('token-stats buffered flush failed:', (error as { message?: unknown } | null | undefined)?.message || error);
-    });
-  }, FLUSH_INTERVAL_MS);
-}
-
 /**
  * Buffers one usage event. Resolves immediately while buffering. When this event
  * triggers a flush, the returned promise settles with that flush, so a caller that
@@ -166,24 +153,30 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
     }
   }
   const batch = pendingFor(database);
-  mergeEntry(batch.entries, {
+  const entry = (entryModel: string | null, payload: UsagePayload, shouldCountTowardGlobal: boolean): UsageEntry => ({
     kind,
     hour,
-    model,
-    payload: { ...event.usage },
-    successTtftCount,
-    ttftBuckets,
+    model: entryModel,
+    payload: { ...payload },
+    successTtftCount: entryModel === null ? 0 : successTtftCount,
+    ttftBuckets: entryModel === null ? Array.from({ length: TTFT_BUCKET_COUNT }, () => 0) : [...ttftBuckets],
     updatedAt: event.now,
     events: 1,
+    countTowardGlobal: shouldCountTowardGlobal,
   });
+  if (event.exactGlobal) {
+    mergeEntry(batch.entries, entry(null, event.usage, true));
+    if (model !== null && event.includeModel) mergeEntry(batch.entries, entry(model, event.usage, false));
+  } else {
+    mergeEntry(batch.entries, entry(model, event.usage, true));
+  }
   batch.events += 1;
-  bufferedEvents += 1;
 
   const now = Date.now();
+  if (lastFlushAt === 0) lastFlushAt = now;
   const isRetryWindowOpen = now - lastFailureAt >= FLUSH_INTERVAL_MS;
-  const isFlushDue = (bufferedEvents >= FLUSH_EVENT_THRESHOLD && isRetryWindowOpen) || now - lastFlushAt >= FLUSH_INTERVAL_MS;
+  const isFlushDue = now - lastFlushAt >= FLUSH_INTERVAL_MS;
   if (isFlushDue && isRetryWindowOpen) return flushUsageBuffer();
-  armFlushTimer();
   return Promise.resolve();
 }
 
@@ -194,13 +187,15 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
   const statements: UsageStatement[] = [];
   for (const entry of taken) {
     const totalKey = `${entry.kind}\u0000${entry.hour}`;
-    let total = hourTotals.get(totalKey);
-    if (!total) {
-      total = { kind: entry.kind, hour: entry.hour, payload: emptyPayload(), updatedAt: 0 };
-      hourTotals.set(totalKey, total);
+    if (entry.countTowardGlobal) {
+      let total = hourTotals.get(totalKey);
+      if (!total) {
+        total = { kind: entry.kind, hour: entry.hour, payload: emptyPayload(), updatedAt: 0 };
+        hourTotals.set(totalKey, total);
+      }
+      addPayload(total.payload, entry.payload);
+      total.updatedAt = Math.max(total.updatedAt, entry.updatedAt);
     }
-    addPayload(total.payload, entry.payload);
-    total.updatedAt = Math.max(total.updatedAt, entry.updatedAt);
     if (entry.model !== null) {
       statements.push(buildModelStatement(database, entry.kind, entry.hour, entry.model, entry.payload, entry.successTtftCount, entry.ttftBuckets));
     }
@@ -216,14 +211,12 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
 // rethrown.
 async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Promise<void> {
   pendingByDatabase.delete(database);
-  bufferedEvents -= batch.events;
   try {
     await database.batch(buildFlushStatements(database, batch.entries.values()));
   } catch (cause) {
     const current = pendingFor(database);
     for (const entry of batch.entries.values()) mergeEntry(current.entries, entry);
     current.events += batch.events;
-    bufferedEvents += batch.events;
     lastFailureAt = Date.now();
     throw persistFailure(cause);
   }
@@ -235,7 +228,6 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
  * after all of them have run.
  */
 export async function flushUsageBuffer(): Promise<void> {
-  clearFlushTimer();
   lastFlushAt = Date.now();
   let failure: { error: unknown } | null = null;
   for (const [database, batch] of [...pendingByDatabase.entries()]) {
@@ -248,21 +240,8 @@ export async function flushUsageBuffer(): Promise<void> {
   if (failure) throw failure.error;
 }
 
-/**
- * Read paths call this first, so dashboard, model-status and /health numbers include
- * the increments this isolate has counted but not yet written. A failed flush is
- * logged, and the read continues with the stored rows.
- */
-export async function flushBeforeRead(): Promise<void> {
-  await flushUsageBuffer().catch((error) => {
-    console.error('token-stats flush before read failed:', (error as { message?: unknown } | null | undefined)?.message || error);
-  });
-}
-
 export function __resetUsageBufferForTests(): void {
-  clearFlushTimer();
   pendingByDatabase.clear();
-  bufferedEvents = 0;
   lastFlushAt = 0;
   lastFailureAt = 0;
 }

@@ -16,7 +16,7 @@
 import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { admitRequestBody } from '../ratelimit/body-budget.ts';
-import { admitIsolateRequest } from '../ratelimit/isolate-concurrency.ts';
+import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../ratelimit/isolate-concurrency.ts';
 import { isSpeculativeRetryAfter, RetrySlot } from '../reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../reliability/tier1-state.ts';
@@ -100,11 +100,15 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       true,
     );
   }
+  let isConcurrencyOwnedByResponse = false;
   try {
-    return await handleAdmittedRequest(request, env, ctx);
+    const response = await handleAdmittedRequest(request, env, ctx);
+    const responseWithRelease = releaseIsolateRequestAfterResponse(response, releaseConcurrency);
+    isConcurrencyOwnedByResponse = true;
+    return responseWithRelease;
   } finally {
     releaseBody();
-    releaseConcurrency();
+    if (!isConcurrencyOwnedByResponse) releaseConcurrency();
   }
 }
 
@@ -458,7 +462,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
 function deliver(response: Response, loopCtx: LoopContext): Response {
   const plan = loopCtx.edgeCachePlan;
   if (!plan || response.status !== 200) return response;
-  storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream);
+  storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream, plan.route, loopCtx.request.signal);
   return injectMissHeader(response, loopCtx.request, loopCtx.env);
 }
 

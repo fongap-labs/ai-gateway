@@ -106,13 +106,15 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
 
-  // Pass-through relay (AIG_STREAM_PASSTHROUGH): no per-chunk decode/regex/
-  // rewrite/usage scan; up to the trade-offs documented in relayStreamResponse.
-  // makeNodeStreamTrack supplies the same accounting callbacks the tracked
-  // path uses, so reliability and slot bookkeeping stay identical.
+  // Pass-through relay (AIG_STREAM_PASSTHROUGH): preserve upstream bytes while
+  // observing bounded SSE control/usage frames. makeNodeStreamTrack supplies
+  // the same accounting callbacks the tracked path uses, so reliability and
+  // slot bookkeeping stay identical.
   if (limits.streamPassthrough) {
     const relayed = relayStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
+      protocol: route === 'openai_chat' ? 'openai_chat' : route === 'openai_responses' ? 'openai_responses' : 'anthropic',
+      onUsage: (usage: unknown) => recordTokens(c, node, usage),
       ...makeNodeStreamTrack(c, node, latencyMs),
     });
     return { response: relayed };
@@ -121,9 +123,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   if (route === 'openai_chat') {
     const tracked = trackStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
-      completionMarker: /(?:data:\s*\[DONE\]|"finish_reason"\s*:\s*"(?:stop|length|tool_calls|content_filter|function_call)")/,
-      closeMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
-      completionGraceMs: 500,
+      protocol: 'openai_chat',
       ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
       onUsage: (u: unknown) => recordTokens(c, node, u),
       interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
@@ -136,8 +136,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   if (route === 'openai_responses') {
     const tracked = trackStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
-      completionMarker: /event:\s*response\.(?:completed|incomplete)\b/,
-      failureMarker: /event:\s*response\.failed\b/,
+      protocol: 'openai_responses',
       ...(needsModelRewrite ? { rewriteModel: requestedModel, rewriteModelAt: 'response.model' } : {}),
       onUsage: (u: unknown) => recordTokens(c, node, u),
       interruptionChunk: (reason: string | null, details?: { nextSequenceNumber?: number }) =>
@@ -150,7 +149,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
 
   const tracked = trackStreamResponse(new Response(guarded.body, { status: 200, headers }), {
     idleTimeoutMs: limits.streamIdleTimeoutMs,
-    completionMarker: /event:\s*message_stop\b/,
+    protocol: 'anthropic',
     ...(needsModelRewrite ? { rewriteModel: requestedModel, rewriteModelAt: 'message.model' } : {}),
     onUsage: (u: unknown) => recordTokens(c, node, u),
     interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),

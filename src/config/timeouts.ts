@@ -141,12 +141,9 @@ export type Limits = {
   /** Whether Tier 1 session-affinity KV writes are enabled. Legacy default on;
    *  AIG_COST_GUARDS switches the default off. */
   tier1AffinityWrite: boolean;
-  /** AIG_TOKEN_D1_SAMPLE_PCT: percent of token-usage events persisted into the
-   *  D1 aggregate (isolate counters stay exact). Legacy default 100. */
+  /** AIG_TOKEN_D1_SAMPLE_PCT: percent of per-model token details persisted to
+   *  D1. Global aggregates remain unsampled. */
   tokenD1SamplePct: number;
-  /** Default edge-cache TTL when AIG_EDGE_CACHE_TTL_SEC is unset. Legacy 4h;
-   *  AIG_COST_GUARDS switches the default off. */
-  edgeCacheTtlDefaultSec: number;
   /** Default log level when AIG_LOG_LEVEL is unset. Legacy info; AIG_COST_GUARDS
    *  switches the default to warn. */
   logLevelDefault: string;
@@ -322,7 +319,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC'),
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.min,
       LIMITS.AIG_EDGE_CACHE_TTL_SEC.max,
-      LIMITS.AIG_EDGE_CACHE_TTL_SEC.def,
+      costGuards ? 3_600 : LIMITS.AIG_EDGE_CACHE_TTL_SEC.def,
     ),
     tier1ProbeV2: getBool(env, 'AIG_TIER1_PROBE_V2', false),
     tier1ProbeTimeoutMs: clampInt(
@@ -419,7 +416,6 @@ export function getLimits(env: Record<string, unknown>): Limits {
       LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.max,
       costGuards ? 1 : LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.def,
     ),
-    edgeCacheTtlDefaultSec: costGuards ? 0 : 14_400,
     logLevelDefault: costGuards ? 'warn' : 'info',
     hotPathGuards,
     affinityReadTimeoutMs: clampInt(
