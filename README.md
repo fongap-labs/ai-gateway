@@ -2,110 +2,189 @@
 
 # AI Gateway
 
-**基于 Cloudflare Workers 的自托管 AI API 网关，将多个模型提供方、密钥和额度汇聚为统一的 OpenAI / Anthropic 兼容入口。**
+**将分散的 AI 模型、服务商账号与额度，整合为一个自托管的 API 入口。**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/fongap-labs/ai-gateway/ci.yml?branch=main&label=CI&style=flat-square&labelColor=1D3F45)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?label=License&style=flat-square&labelColor=1D3F45&color=0f5d53)](LICENSE)
-![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-0f5d53?style=flat-square&logo=cloudflare&logoColor=ffffff&labelColor=1D3F45)
+基于 Cloudflare Workers，兼容 OpenAI 与 Anthropic 客户端，优先利用免费容量，在失败、限流或额度不足时执行有界回退。
 
-[快速开始](#快速开始) · [配置说明](docs/operations/configuration.md) · [部署文档](docs/operations/deployment.md) · [安全策略](SECURITY.md)
+[![CI](https://img.shields.io/github/actions/workflow/status/fongap-labs/ai-gateway/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/fongap-labs/ai-gateway/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/fongap-labs/ai-gateway?style=flat-square)](LICENSE)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)
+
+[快速开始](#快速开始) · [配置文档](docs/operations/configuration.md) · [部署说明](docs/operations/deployment.md) · [架构说明](docs/architecture/overview.md)
 
 </div>
 
-## 这是什么
+## 项目定位
 
-AI Gateway 面向个人、家庭和可信小团队，适合把多家服务商提供的免费额度、订阅权益及付费 API 整合到自己的网关。客户端使用一个网关地址和自己的访问密钥，无须持有上游密钥。
+AI Gateway 为**个人、家庭和可信的小团队**管理多个上游账号与模型。客户端只需要网关地址、网关访问密钥和逻辑模型名；上游账号的密钥留在网关侧，不必分发给每个客户端。
 
-它不是公共 API 转售服务，也不提供用户计费、多租户组织或企业级权限管理。**自托管不等于零成本**：Cloudflare 资源用量、上游 API 费用与订阅使用限制由运营者自行承担。
+项目首先解决免费额度分散、多个账号限流和上游不稳定的问题。订阅权益和付费 API 是后续容量来源，而非默认将每次请求转交给付费服务。
 
-## 核心能力
+**这不是公共 AI API 平台。** 项目不提供多租户计费、API 转售、企业级组织权限或通用工作流编排。免费容量、订阅权益与付费接口的使用都受服务商规则约束；自托管也不意味着无限额度或零成本。
 
-| 能力 | 当前实现 |
+## 当前能力
+
+| 领域 | 当前实现 |
 | --- | --- |
-| 统一接口 | 提供 OpenAI Chat Completions、Responses 和 Anthropic Messages 接口；按请求能力进行协议转换 |
-| 分层调度 | 按 Tier 1（免费容量）→ Tier 2（订阅或其他配置容量）→ Tier 3（付费 API）选择可用节点 |
-| 故障恢复 | 根据限流、额度和上游故障实施冷却、重试与回退；允许同一逻辑模型跨协议回退及兼容模型家族回退 |
-| 订阅接入 | 内置 Anthropic、OpenAI 和 Google 的 OAuth 适配器；需自行配置、授权，并遵守服务商条款 |
-| 权限与隔离 | 使用网关密钥和独立模型允许列表，对 AIR、PRO、MAX、ULTRA、AGENT 五个分组授权 |
-| 运行观测 | 提供健康检查、运行指标、仪表盘及可选 D1 用量存储；统计覆盖范围受配置和资源限制影响 |
+| 统一协议 | 支持 `/v1/chat/completions`、`/v1/responses`、`/v1/messages`；提供 `/v1/models` 和 Anthropic 兼容的近似 token 计数接口 |
+| 多层容量 | Tier 1 为免费或实际上免费的容量；Tier 2 为订阅权益；Tier 3 为付费 API 兜底，按顺序评估可调度候选 |
+| Tier 1 调度 | 资格过滤、软性会话亲和、双随机选择（P2C）、被动首字延迟、在途压力和限流热度保护 |
+| 故障恢复 | 按真实的 429、超时、上游故障与额度提示冷却及恢复；在请求次数和总耗时预算内重试、故障转移及按条件对冲 |
+| 模型与协议回退 | 原生协议优先；原生候选耗尽后，可进行已配置的跨协议转换及同家族逻辑模型回退 |
+| 订阅适配 | 提供 Anthropic、OpenAI、Google 的 OAuth 接入适配器；是否能使用取决于实际授权、订阅权益及上游条款 |
+| 访问控制 | `AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 五个独立密钥分组，各自按逻辑模型允许列表授权 |
+| 运行观测 | 鉴权健康检查、指标、模型清单、公开仪表盘；可选 D1 用量记录与 Workers Analytics Engine 上游调用数据 |
+| 资源保护 | 鉴权失败限流、可选客户端密钥限流、请求体与并发保护、可显式开启的边缘响应缓存 |
 
-~~~mermaid
-flowchart LR
-    A["客户端请求"] --> B{"密钥有效且<br/>模型已授权？"}
-    B -- 否 --> X["拒绝请求"]
-    B -- 是 --> C["Tier 1<br/>免费容量"]
-    C -- 成功 --> F["返回结果"]
-    C -. 不可用 .-> D["Tier 2<br/>订阅等容量"]
-    D -- 成功 --> F
-    D -. 不可用 .-> E["Tier 3<br/>付费 API"]
-    E -- 成功 --> F
-    E -- 仍不可用 --> G["返回错误"]
-    classDef primary fill:#0f5d53,stroke:#0f5d53,color:#ffffff
-    classDef neutral fill:#e7f0f1,stroke:#0f5d53,color:#17211f
-    class B,F primary
-    class A,C,D,E,X,G neutral
-~~~
+**可靠性边界：** 这些机制提高故障恢复能力，不保证每次请求成功。所有重试、协议转换、模型回退和对冲受共同预算约束。流式响应一旦向客户端提交有效输出，便不会再静默切换上游；跨协议转换也不保证保留每项专有能力。
 
-图示为容量顺序，不代表无限次重试。请求共享尝试次数和时间预算；**流式响应开始输出后不会再透明切换上游**。不同接口和模型能力可能限制回退路径。
+详见[路由模型](docs/architecture/routing-model.md)、[可靠性模型](docs/architecture/reliability-model.md)及[协议模型](docs/architecture/protocol-model.md)。
+
+## 请求如何处理
+
+```text
+客户端（OpenAI / Anthropic 兼容）
+           │
+           ▼
+       鉴权与模型授权
+           │
+           ▼
+       原生协议候选
+           │
+           ▼
+   Tier 1 → Tier 2 → Tier 3
+           │
+           ├─ 成功 → 按客户端协议返回
+           │
+           └─ 候选耗尽
+                ├─ 已启用且可安全转换 → 跨协议回退
+                └─ 同家族模型仍可尝试 → 兼容模型回退
+                         │
+                         └─ 受同一请求预算约束
+```
+
+Tier 1 并不是按账号列表顺序轮询，也不把访问密钥分组当作调度优先级。逻辑模型首先尝试请求的模型；需要回退时，依据同家族候选的可用性和负载选择，不跨模型家族，也不会绕过访问密钥授权。`Air` 只能向同家族更高等级回退，其他等级不会回落至 `Air`。
+
+节点只描述账号、提供商、地址与逻辑模型映射。协议及可路由接口由[提供商适配器](src/providers/registry.ts)确定，不能在节点 JSON 中自行添加 `protocol`、`surfaces` 或 `limits` 字段。
 
 ## 快速开始
 
-需要 Node.js **22.18.0 或更高版本**、Cloudflare 账户、一个可用的上游节点，以及部署后可访问的 HTTPS 域名。直接部署需要创建并绑定名为 `TIER1_AFFINITY` 的 Cloudflare KV 命名空间；D1 用量统计为可选功能，OAuth 订阅的加密令牌存储则需要 D1。
+### 1. 准备环境
 
-~~~bash
+需要 Node.js **22.18.0 或更高版本**、Cloudflare 账号、至少一个真实可用的上游接口，以及部署所用的 Worker 域名。
+
+```bash
 git clone https://github.com/fongap-labs/ai-gateway.git
 cd ai-gateway
 npm ci
 npm run cf:login
-~~~
+npm run cf:whoami
+```
 
-部署前按以下顺序完成配置：
+### 2. 配置节点与访问权限
 
-1. 参考 [节点示例](config/tier1-nodes.example.json) 准备自己的节点 JSON，并为需要静态凭据的节点准备本地凭据 JSON；节点配置不得包含密钥。
-2. 参考 [本地配置示例](wrangler.user.jsonc.example) 创建不提交到 Git 的 `wrangler.user.jsonc`，配置 Worker、`TIER1_AFFINITY` 绑定，以及按需使用的 D1 与域名。
-3. 配置 `AIG_TIER1_NODES_01` 等节点变量、`AIG_TIER1_CREDENTIALS_01` 等凭据密钥，以及至少一组 `AIG_ACCESS_KEY_<GROUP>` 与 `AIG_ACCESS_MODELS_<GROUP>`。节点 Config 和凭据 Secret 的分片相互独立，按 **Tier + 节点 ID** 关联，无需按分片后缀对应；分组之间不继承模型权限。
-4. 按 [配置文档](docs/operations/configuration.md) 校验全部生产变量、密钥和部署条件；如需使用订阅节点，另行完成 OAuth 授权、令牌加密密钥及 D1 配置。
+以下示例仅说明变量结构；服务商地址、上游模型与密钥都需要替换为实际值。
 
-完成配置后，使用自己的文件路径运行：
+普通变量 `AIG_TIER1_NODES_01`：
 
-~~~bash
+```json
+[
+  {
+    "id": "example-01",
+    "provider": "custom",
+    "base_url": "https://provider.example.com/v1",
+    "models": {
+      "code-pro": "upstream-model"
+    }
+  }
+]
+```
+
+与之对应的 Secret `AIG_TIER1_CREDENTIALS_01`：
+
+```json
+{
+  "example-01": "YOUR_UPSTREAM_API_KEY"
+}
+```
+
+再配置一个网关访问密钥分组，例如：
+
+| 配置项 | 类型 | 示例 |
+| --- | --- | --- |
+| `AIG_ACCESS_KEY_MAX` | Secret | 自行生成的长随机密钥 |
+| `AIG_ACCESS_MODELS_MAX` | 普通变量 | `code-pro` |
+
+访问分组彼此独立，不会自动继承其他组权限；模型允许列表缺失或为空时，该密钥不能调用任何模型。节点与凭据按 **Tier + 节点 ID** 匹配，不要求配置分片与密钥分片的数字后缀一致。
+
+配置参考：[节点示例](config/tier1-nodes.example.json)、[访问密钥示例](config/access-keys.example.json)、[完整配置说明](docs/operations/configuration.md)。不要把真正的上游密钥、网关密钥或 OAuth token 放入节点 JSON、源码或提交记录。
+
+### 3. 准备 Cloudflare 绑定
+
+按[部署说明](docs/operations/deployment.md)准备 Cloudflare 配置和部署所需的 Variables / Secrets。
+
+- 本地直接部署使用不提交到 Git 的 `wrangler.user.jsonc`；可参考[运营者配置模板](wrangler.user.jsonc.example)。直接部署脚本要求实际使用的配置包含名为 `TIER1_AFFINITY` 的 KV 绑定及有效命名空间 ID。
+- 直接部署脚本会用标准 JSON 解析器检查运营者配置，因此该文件中不要保留示例模板里的注释。
+- D1 用量统计为可选能力；使用 OAuth 订阅时，需额外准备 D1 token 存储、`AIG_TOKEN_ENCRYPTION_KEY`、`AIG_PUBLIC_URL` 和允许发起授权的访问分组。
+- 若要使用自定义域名，需在 Cloudflare 中完成域名与路由配置。未配置的第三方上游账号不会由本项目自动创建。
+
+### 4. 校验并部署
+
+准备本地节点和凭据文件后，可先做独立配置校验：
+
+```bash
 npm run config:check -- --tier1 ./my-nodes.json --secrets ./my-secrets.json
+npm run validate:merge
+npm run check:deploy
 npm run deploy
-~~~
+```
 
-`config:check` 只校验本地节点与凭据文件，不会自动把它们上传到 Cloudflare。`npm run deploy` 是运营者的直接部署入口；仓库正式生产环境采用 [Action Worker 中央 CI、受控部署和回滚](docs/operations/deployment.md)，不应使用直接部署绕过其门禁。
+`config:check` 只检查指定的本地 JSON 文件，**不会上传**节点变量或密钥；真实部署还须事先完成 Cloudflare 配置。`check:deploy` 为本地部署预检，`deploy` 是运营者的直接部署入口，并会在配置 D1 时先执行相应迁移。
 
-### 验证与客户端接入
+本仓库的**正式生产环境**不是用以上命令绕过门禁：代码经 Pull Request、Action Worker 中央 CI、可信主分支校验后，才由受控部署流程执行。具体前置条件与回滚机制见[部署文档](docs/operations/deployment.md)。
 
-~~~bash
-curl -H "Authorization: Bearer YOUR_MAX_OR_ULTRA_KEY" https://your-gateway.example/health
-curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1/models
-~~~
+## 接入客户端
 
-`/health` 默认仅允许 MAX、ULTRA 分组读取，可通过 `AIG_DIAGNOSTICS_GROUPS` 调整；`/v1/models` 仅展示调用密钥获准访问的模型。客户端使用网关的逻辑模型名（例如 `code-pro`），而不是必然使用上游原始模型名。
+将客户端的 API 地址指向自己的 Worker 域名，并使用**网关访问密钥**代替上游服务商密钥。客户端发送的是逻辑模型名，例如 `code-pro`，不是必须填写上游的原始模型名。
 
-| 客户端协议 | 网关地址 | 请求入口 |
+| 客户端类型 | API 基础地址 | 典型接口 |
 | --- | --- | --- |
 | OpenAI 兼容 | `https://your-gateway.example/v1` | `/chat/completions`、`/responses`、`/models` |
 | Anthropic 兼容 | `https://your-gateway.example` | `/v1/messages`、`/v1/messages/count_tokens` |
 
-客户端将原始服务商密钥替换为网关访问密钥。实际环境变量名依客户端而定；接入细节参见 [配置说明](docs/operations/configuration.md)。
+部署后可验证：
 
-## 安全与运行边界
+```bash
+curl -H "Authorization: Bearer YOUR_MAX_OR_ULTRA_KEY" \
+  https://your-gateway.example/health
 
-上游凭据和网关访问密钥必须放在 Secrets 中，不得写入仓库、节点 JSON 或请求网址。`/health`、`/metrics` 与模型接口要求鉴权；**仪表盘 `/` 和状态图 `/readme-status.svg` 默认公开**，不希望公开时设置 `AIG_PUBLIC_DASHBOARD=false`。
+curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" \
+  https://your-gateway.example/v1/models
+```
 
-Tier 2 订阅权益并不等于通用、无限制的 API 配额；可用性受账号授权、上游接口和服务商条款约束。KV、D1 或边缘资源达到限额时，部分共享状态及统计能力可能退化；不要把网关视为零故障或零成本服务。
+`/health` 与 `/metrics` 默认只对 `MAX`、`ULTRA` 访问分组开放，可通过 `AIG_DIAGNOSTICS_GROUPS` 修改。`/v1/models` 只展示当前访问密钥获准调用的已配置模型；因此不能将其视为所有上游模型的完整目录。
 
-## 文档与贡献
+## 安全和运行边界
 
-| 内容 | 文档 |
+- **默认公开内容：** 仪表盘 `/` 与状态图 `/readme-status.svg` 默认可公开访问。私有部署可设置 `AIG_PUBLIC_DASHBOARD=false` 关闭两者。`/health`、`/metrics` 与模型 API 需要鉴权。
+- **容量和费用：** Cloudflare Workers、KV、D1、Analytics Engine 与各上游均有独立用量、费用及服务限制。KV 或 D1 写入失败时，相关共享状态或统计可能退化，不等于全部请求不可用。
+- **统计口径：** 客户端成功请求数、真实上游调用次数及实际 token 用量并非同一指标；重试和对冲会放大上游调用。跨 isolate 的聚合观测需要相应的持久化或分析配置。
+- **可选缓存：** 只有显式携带 `x-gateway-cache: true` 的合适请求才会尝试边缘缓存；缓存依赖 Cloudflare 实际部署条件，不是跨地域共享的统一缓存。
+- **订阅授权：** OAuth 适配器不能绕过订阅账号限制或服务商条款，不应将订阅权益理解为无限量的通用 API 配额。
+
+安全漏洞、凭据处理及报告方式见[安全策略](SECURITY.md)；部署问题见[故障排查](docs/operations/troubleshooting.md)。
+
+## 文档索引
+
+| 主题 | 入口 |
 | --- | --- |
-| 系统架构、路由与协议 | [架构概览](docs/architecture/overview.md) · [路由模型](docs/architecture/routing-model.md) · [协议模型](docs/architecture/protocol-model.md) |
-| 配置、OAuth 与故障排查 | [配置](docs/operations/configuration.md) · [故障排查](docs/operations/troubleshooting.md) |
-| 部署、CI 与回滚 | [部署](docs/operations/deployment.md) |
-| 贡献、安全及全部文档 | [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [文档索引](docs/README.md) |
+| 架构与模块职责 | [架构概览](docs/architecture/overview.md) · [仓库布局](docs/architecture/repository-layout.md) |
+| 调度、回退及协议 | [路由模型](docs/architecture/routing-model.md) · [可靠性模型](docs/architecture/reliability-model.md) · [协议模型](docs/architecture/protocol-model.md) |
+| 订阅权益与 OAuth | [订阅模型](docs/architecture/subscription-model.md) · [配置说明](docs/operations/configuration.md) |
+| 部署与排障 | [部署说明](docs/operations/deployment.md) · [故障排查](docs/operations/troubleshooting.md) |
+| 观测与数据 | [公开模型状态](docs/operations/public-model-status.md) · [Provider 发现](docs/operations/provider-discovery.md) |
+| 开发与治理 | [贡献指南](CONTRIBUTING.md) · [产品策略](docs/governance/product-policy.md) · [完整文档索引](docs/README.md) |
 
 ## 许可证
 
-本项目以 [MIT 许可证](LICENSE) 发布。第三方组件仍遵循各自的许可条款。
+本项目采用 [MIT 许可证](LICENSE)。第三方组件与上游服务仍受各自许可证及服务条款约束。
