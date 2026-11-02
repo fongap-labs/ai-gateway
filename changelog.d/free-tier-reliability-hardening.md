@@ -1,0 +1,3 @@
+- 修复: 流式响应占用的 isolate 并发名额持续到响应体结束；Chat、Responses、Anthropic 和矩阵转换流均使用协议终止事件结算，EOF 或 Responses `incomplete` 记为失败。透传继续逐字节转发并仅保留有界 SSE 观察。
+- 修复: Edge Cache API 现在使用真实请求域名和有效过期头，客户端 HIT/MISS 都是 `private, no-store`；只有显式请求 opt-in 才查缓存，工具调用、畸形/不完整流、观察超限、客户端取消和超过 256 KiB 的响应不缓存。
+- 变更: D1 全局上游 Token 汇总继续持久化全部已报告 usage，模型明细可通过 `AIG_TOKEN_D1_SAMPLE_PCT` 抽样；dashboard 明确显示抽样、历史数据口径、D1 缺失/失败与未提交缓冲状态。D1 批次每 isolate 最多每 5 分钟提交一次，读取页面不触发 flush。

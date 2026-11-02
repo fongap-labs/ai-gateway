@@ -2,6 +2,7 @@
   "name": "ai-gateway",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,
   "inherit": "wrangler.user.jsonc",
   "keep_vars": true,

@@ -6,6 +6,7 @@
 
 import { mergeReportedUsage, normalizeTokenUsage } from '../observability/token-usage.ts';
 import { FIRST_EVENT_MAX_SSE_LINE } from './guard.ts';
+import { SseLifecycleObserver, type SseProtocol } from './sse-lifecycle.ts';
 
 const TRACK_MAX_LINE_BUFFER = FIRST_EVENT_MAX_SSE_LINE;
 
@@ -25,6 +26,8 @@ export type TrackOptions = {
   onStreamStart?: () => void;
   onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
   completionMarker?: RegExp;
+  /** Use protocol-frame parsing for terminal and usage semantics. */
+  protocol?: SseProtocol;
   closeMarker?: RegExp;
   completionGraceMs?: number;
   failureMarker?: RegExp;
@@ -42,6 +45,25 @@ export type TrackOptions = {
   upstreamFailureReason?: () => string | null;
 };
 
+function hasCleanCompletion(lifecycle: SseLifecycleObserver | null): boolean {
+  return (
+    lifecycle?.terminal === 'success' &&
+    !lifecycle.incompleteResponse &&
+    !lifecycle.observationTruncated &&
+    !lifecycle.malformedEvent &&
+    !lifecycle.bytesAfterTerminal
+  );
+}
+
+function lifecycleFailureReason(lifecycle: SseLifecycleObserver | null): string | null {
+  if (lifecycle?.terminal === 'failure') return 'upstream_terminal_failure';
+  if (lifecycle?.incompleteResponse) return 'incomplete_response';
+  if (lifecycle?.observationTruncated) return 'sse_observation_truncated';
+  if (lifecycle?.malformedEvent) return 'malformed_sse';
+  if (lifecycle?.bytesAfterTerminal) return 'bytes_after_terminal';
+  return null;
+}
+
 export function trackStreamResponse(
   response: Response,
   {
@@ -52,6 +74,7 @@ export function trackStreamResponse(
     onStreamStart,
     onStreamEnd,
     completionMarker,
+    protocol,
     closeMarker,
     completionGraceMs = 0,
     failureMarker,
@@ -79,9 +102,12 @@ export function trackStreamResponse(
   let diagnosticTail = '';
   let hasSeenErrorEvent = false;
   let hasSeenTerminalFailure = false;
-  let completionSeen = !completionMarker;
+  const lifecycle = protocol ? new SseLifecycleObserver(protocol) : null;
+  const sequenceDecoder = interruptionChunk ? new TextDecoder() : null;
+  let sequenceTail = '';
+  let completionSeen = lifecycle ? false : !completionMarker;
   let completionAt: number | null = null;
-  let closeSeen = !(closeMarker ?? completionMarker);
+  let closeSeen = lifecycle ? false : !(closeMarker ?? completionMarker);
   let nextSequenceNumber = 0;
   let isFinished = false;
   const usageScan = typeof onUsage === 'function' || typeof onAttemptUsage === 'function';
@@ -135,6 +161,20 @@ export function trackStreamResponse(
       } catch {
         /* passive scan */
       }
+    }
+  };
+
+  const scanSequenceNumbers = (bytes: Uint8Array) => {
+    if (!sequenceDecoder) return;
+    for (let offset = 0; offset < bytes.byteLength; offset += 16 * 1024) {
+      const text = sequenceTail + sequenceDecoder.decode(bytes.subarray(offset, offset + 16 * 1024), { stream: true });
+      const sequencePattern = /"sequence_number"\s*:\s*(\d+)/g;
+      let match = sequencePattern.exec(text);
+      while (match) {
+        nextSequenceNumber = Math.max(nextSequenceNumber, Number(match[1]) + 1);
+        match = sequencePattern.exec(text);
+      }
+      sequenceTail = text.slice(-128);
     }
   };
 
@@ -287,13 +327,26 @@ export function trackStreamResponse(
       }
       const { done, value } = result.value;
       if (done) {
+        lifecycle?.finishBytes();
+        if (lifecycle) {
+          completionSeen = hasCleanCompletion(lifecycle);
+          hasSeenTerminalFailure = Boolean(
+            lifecycle.terminal === 'failure' ||
+              lifecycle.incompleteResponse ||
+              lifecycle.observationTruncated ||
+              lifecycle.malformedEvent ||
+              lifecycle.bytesAfterTerminal,
+          );
+          usageCandidate = lifecycle.usage;
+        }
         let hiddenReason: string | null = null;
         try {
           hiddenReason = upstreamFailureReason?.() || null;
         } catch {
           /* diagnostic only */
         }
-        failureReason = hiddenReason || 'missing_completion_marker';
+        failureReason =
+          hiddenReason || lifecycleFailureReason(lifecycle) || (hasSeenTerminalFailure ? 'upstream_terminal_failure' : 'missing_completion_marker');
         if (encoder && lineBuffer) {
           controller.enqueue(encoder.encode(lineBuffer));
           lineBuffer = '';
@@ -305,30 +358,38 @@ export function trackStreamResponse(
       }
       chunkCount++;
       receivedBytes += value.byteLength;
-      // Decoded once per chunk and shared by the scans and the model rewrite. The
-      // rewrite needs every chunk decoded, so the decoder never skips one.
+      // The protocol observer decodes in bounded pieces. Decode a full upstream
+      // chunk only for legacy marker scanning or when model rewriting needs it.
       let decoded = '';
-      if (encoder || !hasSeenErrorEvent || !completionSeen) decoded = tailDecoder.decode(value, { stream: true });
+      if (encoder || !lifecycle) decoded = tailDecoder.decode(value, { stream: true });
+      lifecycle?.pushBytes(value);
+      scanSequenceNumbers(value);
       if (!hasSeenErrorEvent || !completionSeen) {
-        if (usageScan && !closeSeen) scanUsageLine(decoded);
+        if (lifecycle) {
+          completionSeen = hasCleanCompletion(lifecycle);
+          hasSeenTerminalFailure = Boolean(
+            lifecycle.terminal === 'failure' ||
+              lifecycle.incompleteResponse ||
+              lifecycle.observationTruncated ||
+              lifecycle.malformedEvent ||
+              lifecycle.bytesAfterTerminal,
+          );
+          if (lifecycle.usage !== null) usageCandidate = lifecycle.usage;
+        } else if (usageScan && !closeSeen) scanUsageLine(decoded);
         const scanWindow = diagnosticTail + decoded;
-        if (interruptionChunk) {
-          const sequencePattern = /"sequence_number"\s*:\s*(\d+)/g;
-          let match = sequencePattern.exec(scanWindow);
-          while (match) {
-            nextSequenceNumber = Math.max(nextSequenceNumber, Number(match[1]) + 1);
-            match = sequencePattern.exec(scanWindow);
-          }
-        }
-        if (!hasSeenErrorEvent) {
+        if (!lifecycle && !hasSeenErrorEvent) {
           hasSeenErrorEvent = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
         }
-        if (!hasSeenTerminalFailure && failureMarker?.test(scanWindow)) hasSeenTerminalFailure = true;
-        if (!completionSeen && completionMarker?.test(scanWindow)) {
+        if (!lifecycle && !hasSeenTerminalFailure && failureMarker?.test(scanWindow)) hasSeenTerminalFailure = true;
+        if (!lifecycle && !completionSeen && completionMarker?.test(scanWindow)) {
           completionSeen = true;
           completionAt = Date.now();
         }
-        if (!closeSeen && (closeMarker ?? completionMarker)?.test(scanWindow)) closeSeen = true;
+        if (!lifecycle && !closeSeen && (closeMarker ?? completionMarker)?.test(scanWindow)) closeSeen = true;
+        if (lifecycle && completionSeen) {
+          closeSeen = true;
+          completionAt = Date.now();
+        }
         diagnosticTail = scanWindow.slice(-256);
       }
       let forwarded: Uint8Array;
@@ -347,7 +408,14 @@ export function trackStreamResponse(
         return;
       }
       controller.enqueue(forwarded);
-      if ((closeMarker ?? completionMarker) && closeSeen) {
+      if ((hasSeenErrorEvent || hasSeenTerminalFailure) && (lifecycle || failureMarker)) {
+        reader.cancel().catch(() => {});
+        failureReason = 'upstream_terminal_failure';
+        finalize('failure');
+        controller.close();
+        return;
+      }
+      if ((lifecycle && completionSeen) || (!lifecycle && (closeMarker ?? completionMarker) && closeSeen)) {
         reader.cancel().catch(() => {});
         try {
           if (encoder && lineBuffer) {
@@ -395,6 +463,7 @@ async function raceWithIdle(
 
 export type RelayOptions = {
   idleTimeoutMs: number;
+  protocol?: SseProtocol;
   onSuccess: () => void;
   onFailure: () => void;
   onNeutral: () => void;
@@ -403,43 +472,34 @@ export type RelayOptions = {
   onAttemptUsage?: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => void;
   /** Delivered-response usage callback, mirroring TrackOptions.onUsage
    *  semantics: fires once on a cleanly completed stream, before onSuccess. */
-  onUsage?: () => void;
+  onUsage?: (usage: unknown) => void;
 };
 
 /**
- * Pass-through stream relay (AIG_STREAM_PASSTHROUGH): move every byte from the
- * upstream to the client without decoding, scanning, rewriting or usage
- * observation. Each chunk is forwarded as received, so per-chunk cost is one
- * read + one enqueue instead of a decode plus several regex scans.
- *
- * Accepted trade-offs (documented in changelog.d/stream-passthrough.md):
- *   - no completion-marker knowledge: a truncated stream that ends with a
- *     clean transport EOF is accounted as delivered output;
- *   - no model rewrite: the client sees the upstream's model spelling;
- *   - no usage sampling: delivered/attempts token rows carry no usage;
- *   - no synthetic interruption events: a lost stall ends like a normal close.
- * Kept for reliability: the idle timeout (a stalled upstream is cut and the
- * attempt is recorded as failed) and cancel() propagation (a disconnecting
- * client cancels the upstream body). Semantics of onSuccess/onFailure/
- * onNeutral/onStreamStart/onStreamEnd/onAttemptUsage match
- * makeNodeStreamTrack's callbacks exactly, so callers can reuse them.
+ * Byte-preserving stream relay. It performs bounded SSE frame observation for
+ * terminal and usage semantics, but forwards every upstream byte unchanged.
+ * Transport EOF alone is never success when a protocol is supplied.
  */
 export function relayStreamResponse(
   response: Response,
-  { idleTimeoutMs, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage, onUsage }: RelayOptions,
+  { idleTimeoutMs, protocol, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage, onUsage }: RelayOptions,
 ): Response {
+  const lifecycle = protocol ? new SseLifecycleObserver(protocol) : null;
   if (!response.body) {
     try {
-      onAttemptUsage?.(null, 'success');
+      onAttemptUsage?.(null, lifecycle ? 'failure' : 'success');
     } catch {
       /* observability only */
     }
-    try {
-      onUsage?.();
-    } catch {
-      /* observability only */
+    if (lifecycle) onFailure();
+    else {
+      try {
+        onUsage?.(null);
+      } catch {
+        /* observability only */
+      }
+      onSuccess();
     }
-    onSuccess();
     return response;
   }
   const reader = response.body.getReader();
@@ -447,33 +507,35 @@ export function relayStreamResponse(
   let chunkCount = 0;
   let receivedBytes = 0;
   let isFinished = false;
+  let failureReason: string | null = null;
 
   const finalize = (result: 'success' | 'failure' | 'neutral'): void => {
     if (isFinished) return;
     isFinished = true;
-    const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : 'success';
+    const failed = result === 'failure' || (result === 'success' && lifecycle !== null && !hasCleanCompletion(lifecycle));
+    const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : failed ? 'failure' : 'success';
     try {
-      onAttemptUsage?.(null, attemptOutcome);
+      onAttemptUsage?.(lifecycle?.usage ?? null, attemptOutcome);
     } catch {
       /* fail-open */
     }
-    if (result === 'success') onSuccess();
-    else if (result === 'failure') onFailure();
+    if (result === 'success' && !failed) onSuccess();
+    else if (result === 'success' || result === 'failure') onFailure();
     else onNeutral();
     // Success-only delivered usage, mirroring TrackOptions.onUsage semantics.
-    if (result === 'success') {
+    if (attemptOutcome === 'success') {
       try {
-        onUsage?.();
+        onUsage?.(lifecycle?.usage ?? null);
       } catch {
         /* observability must never break relay */
       }
     }
-    onStreamEnd?.(attemptOutcome === 'neutral' ? 'neutral' : 'completed', {
-      reason: null,
+    onStreamEnd?.(attemptOutcome === 'neutral' ? 'neutral' : attemptOutcome === 'failure' ? 'interrupted' : 'completed', {
+      reason: attemptOutcome === 'failure' ? failureReason || lifecycleFailureReason(lifecycle) || 'missing_completion_marker' : null,
       durationMs: Date.now() - startMs,
       chunkCount,
       receivedBytes,
-      completionMarkerSeen: false,
+      completionMarkerSeen: hasCleanCompletion(lifecycle),
     });
   };
 
@@ -487,6 +549,7 @@ export function relayStreamResponse(
       try {
         result = await raceWithIdle(reader.read(), idleTimeoutMs);
       } catch {
+        failureReason = 'reader_error';
         finalize('failure');
         try {
           controller.close();
@@ -497,19 +560,30 @@ export function relayStreamResponse(
       }
       if (result.timeout) {
         reader.cancel().catch(() => {});
+        failureReason = 'idle_timeout';
         finalize('failure');
         controller.close();
         return;
       }
       const { done, value } = result.value;
       if (done) {
-        finalize('success');
+        lifecycle?.finishBytes();
+        failureReason = lifecycleFailureReason(lifecycle);
+        if (!failureReason && lifecycle && lifecycle.terminal !== 'success') failureReason = 'missing_completion_marker';
+        finalize(lifecycle && !hasCleanCompletion(lifecycle) ? 'failure' : 'success');
         controller.close();
         return;
       }
       chunkCount++;
       receivedBytes += value.byteLength;
+      lifecycle?.pushBytes(value);
       controller.enqueue(value);
+      if (lifecycle?.terminal) {
+        reader.cancel().catch(() => {});
+        failureReason = lifecycleFailureReason(lifecycle);
+        finalize(lifecycle.terminal);
+        controller.close();
+      }
     },
     cancel() {
       finalize('neutral');

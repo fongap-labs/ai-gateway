@@ -161,7 +161,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         new Response(upstream.body, { status: 200, headers: finalHeaders(env, request, upstream.headers, extraHeaders) }),
         {
           idleTimeoutMs: limits.streamIdleTimeoutMs,
-          completionMarker: /data:\s*\[DONE\]\s*(?:\r?\n|$)/,
+          protocol: 'openai_chat',
           ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
           onUsage: (u: unknown) => recordTokens(c, node, u),
           interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),

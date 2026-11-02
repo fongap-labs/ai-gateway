@@ -68,13 +68,6 @@ function fallbackToIr(protocol: string, surface: string): IrProtocol | null {
   return null;
 }
 
-const COMPLETION_MARKERS: Record<IrProtocol, RegExp> = {
-  openai_chat: /(?:data:\s*\[DONE\]|"finish_reason"\s*:\s*"(?:stop|length|tool_calls|content_filter|function_call)")/,
-  anthropic: /event:\s*message_stop\b/,
-  openai_responses: /event:\s*response\.(?:completed|incomplete)\b/,
-};
-const CHAT_CLOSE_MARKER = /data:\s*\[DONE\]\s*(?:\r?\n|$)/;
-
 // The SSE frames the matrix stream ends with when the AIG_CONVERSION_BUDGET
 // expired in "error" mode. Route-specific strait of streamInterruptionChunk
 // with the budget wording; OpenAI Chat additionally gets the [DONE] sentinel
@@ -322,6 +315,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     if (limits.streamPassthrough) {
       const relayed = relayStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
         idleTimeoutMs: limits.streamIdleTimeoutMs,
+        protocol: clientIr,
         ...trackCallbacks,
         onUsage: guardedUsage,
       });
@@ -330,8 +324,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
 
     const tracked = trackStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
-      completionMarker: COMPLETION_MARKERS[clientIr],
-      ...(clientIr === 'openai_chat' ? { closeMarker: CHAT_CLOSE_MARKER, completionGraceMs: 500 } : {}),
+      protocol: clientIr,
       onUsage: guardedUsage,
       interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
       upstreamFailureReason: hiddenStreamFailure,

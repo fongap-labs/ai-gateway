@@ -29,14 +29,12 @@ import { bufferPersist } from './buffer.ts';
 import type { UsagePayload } from './statements.ts';
 
 /**
- * AIG_TOKEN_D1_SAMPLE_PCT (default 100 = every event; the AIG_COST_GUARDS
- * stack switches the default to 1%). Sampling gates the D1 write only — the
- * isolate-local /metrics counters and node token statistics stay exact, and
- * the D1 aggregate becomes an explicitly sampled basis that is never
- * extrapolated. 0 turns D1 token persistence into a no-op (events resolve
- * immediately, matching the buffer's own no-flush contract).
+ * AIG_TOKEN_D1_SAMPLE_PCT (default 100; cost-guard profile defaults to 1%)
+ * samples only per-model detail rows. Global hourly and lifetime aggregates
+ * are always persisted from provider-reported usage, and model detail is never
+ * extrapolated. Isolate-local counters remain best-effort and separate.
  */
-function shouldPersistEvent(env: GatewayEnv): boolean {
+function shouldSampleModel(env: GatewayEnv): boolean {
   const pct = getLimits(env).tokenD1SamplePct;
   if (pct >= 100) return true;
   if (pct <= 0) return false;
@@ -87,14 +85,25 @@ export function persistTokenUsage(
   model: string | null = null,
   ttftMs: number | null = null,
 ): Promise<void> {
-  if (!shouldPersistEvent(env)) return Promise.resolve();
-  return bufferPersist(env, 'delivered', { now, model, usage: tokenUsagePayload(usage), ttftMs });
+  return bufferPersist(env, 'delivered', {
+    now,
+    model,
+    usage: tokenUsagePayload(usage),
+    ttftMs,
+    exactGlobal: true,
+    includeModel: model !== null && shouldSampleModel(env),
+  });
 }
 
 // Buffer one physical upstream attempt that did NOT become the delivered
 // response (failure, retry/fallback loss, hedge loser, or client-cancelled live
 // upstream). It touches upstream_* columns only.
 export function persistUpstreamAttemptUsage(env: GatewayEnv, usage: unknown, now: number = Date.now(), model: string | null = null): Promise<void> {
-  if (!shouldPersistEvent(env)) return Promise.resolve();
-  return bufferPersist(env, 'upstream', { now, model, usage: tokenUsagePayload(usage) });
+  return bufferPersist(env, 'upstream', {
+    now,
+    model,
+    usage: tokenUsagePayload(usage),
+    exactGlobal: true,
+    includeModel: model !== null && shouldSampleModel(env),
+  });
 }

@@ -6,7 +6,6 @@
 // fallback and hedge attempts do not inflate the public "requests" metric.
 
 import type { GatewayEnv } from '../../types/runtime.ts';
-import { flushBeforeRead } from './buffer.ts';
 import {
   DAY_MS,
   DISPLAY_TIMEZONE_OFFSET_MS,
@@ -130,7 +129,6 @@ export async function loadUpstreamSummary(
   | { available: false; error: string }
   | null
 > {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const todayStart = normalizeHour(utc8DayStartUtcMs(now));
@@ -356,7 +354,6 @@ export async function loadUpstreamDaily(
   startDayIso: string,
   now: number = Date.now(),
 ): Promise<Map<string, UpstreamDailyWindowRow> | { available: false; error: string } | null> {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const map = new Map<string, UpstreamDailyWindowRow>();
@@ -433,7 +430,6 @@ export async function loadUpstreamModels(
   days: number = 7,
   now: number = Date.now(),
 ): Promise<{ available: true; rows: Array<{ model: string; total: number; requests: number }> } | { available: false; error: string }> {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);

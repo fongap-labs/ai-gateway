@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Edge idempotent cache for inference requests that opt in with
-// x-gateway-cache: true, or that send temperature=0 when AIG_EDGE_CACHE_AUTO
-// is enabled. Uses the Cloudflare Cache API at the edge colo. A HIT replays the exact client-facing
+// Edge idempotent cache for inference requests that explicitly opt in with
+// x-gateway-cache: true. Uses the Cloudflare Cache API at the edge colo. A HIT replays the exact client-facing
 // response with zero upstream consumption; a MISS continues the normal
 // pipeline and stores the successful response non-blocking via waitUntil.
 //
@@ -12,15 +11,14 @@
 // returns null and the edge cache is disabled entirely (no lookup, no store),
 // even for requests that opt in. This matches the token store's no-key policy.
 
-import { getBool, readEnv } from '../config/env.ts';
+import { readEnv } from '../config/env.ts';
 import { getLimits } from '../config/timeouts.ts';
 import { getLogger } from '../observability/logger.ts';
 import { corsHeaders } from '../protocol/http.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
+import { SseLifecycleObserver, type SseProtocol } from '../stream/sse-lifecycle.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { presentedCredentials } from './auth.ts';
-
-const EDGE_CACHE_HOST = 'edge-cache.ai-gateway.internal';
 
 // The Cloudflare Cache API default cache. Typed defensively because the
 // `caches` global may be absent (dev harness) or untyped in some runtimes.
@@ -34,25 +32,20 @@ const ELIGIBLE_ROUTES = new Set(['openai_chat', 'openai_responses', 'anthropic_m
 
 // A response that asks the client to run a tool is never replayed, and a body this large is not
 // worth a cache slot.
-const NON_CACHEABLE_MARKER = /"(?:tool_calls|function_call|tool_use)"/;
-const MAX_CACHED_BYTES = 2 * 1024 * 1024;
+const MAX_CACHED_BYTES = 256 * 1024;
 // Canonicalising and hashing a large request body costs another full copy.
 // Large prompts are not useful cache candidates, so skip them before sortKeys.
 const MAX_CACHEABLE_REQUEST_CHARS = 256 * 1024;
-// A streamed response is only stored when the stream ended normally.
-const STREAM_END_MARKER = /\[DONE\]|"message_stop"|response\.completed/;
 
 /**
  * Determines whether a request is eligible for edge cache lookup.
- * Eligible if: (1) route is an inference route, and (2) the caller sent
- * x-gateway-cache: true, or temperature === 0 while AIG_EDGE_CACHE_AUTO is on.
- * Automatic caching is off by default: a replayed answer is visible to every holder of the key.
+ * Only an explicit caller opt-in enables replay. Temperature zero does not
+ * establish that a response is safe to reuse.
  */
-export function edgeCacheEligible(route: string, bodyJson: Record<string, unknown>, request: Request, env: GatewayEnv = {}): boolean {
+export function edgeCacheEligible(route: string, request: Request): boolean {
   if (!ELIGIBLE_ROUTES.has(route)) return false;
   const header = request.headers.get('x-gateway-cache');
-  if (header && header.trim().toLowerCase() === 'true') return true;
-  return getBool(env, 'AIG_EDGE_CACHE_AUTO', false) && bodyJson?.temperature === 0;
+  return header?.trim().toLowerCase() === 'true';
 }
 
 /**
@@ -104,7 +97,7 @@ export async function buildEdgeCacheKeyRequest(
   requestedModel: string,
   bodyJson: Record<string, unknown>,
   keyGroup: string,
-  options: { stream?: boolean; scope?: string } = {},
+  options: { stream?: boolean; scope?: string; host: string },
 ): Promise<Request> {
   const { stream, stream_options, ...restBody } = bodyJson;
   const isStreamRequested = options.stream ?? stream === true;
@@ -125,7 +118,7 @@ export async function buildEdgeCacheKeyRequest(
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  const url = `https://${EDGE_CACHE_HOST}/${route}/${hashHex}`;
+  const url = `https://${options.host}/__gateway_cache/v3/${encodeURIComponent(route)}/${hashHex}`;
   return new Request(url, { method: 'GET' });
 }
 
@@ -146,6 +139,7 @@ export async function matchEdgeCache(keyRequest: Request, request: Request, env:
   // Clone headers, inject HIT marker and CORS
   const headers = new Headers(cached.headers);
   headers.set('x-gateway-cache-status', 'HIT');
+  headers.set('cache-control', 'private, no-store');
   for (const [k, v] of Object.entries(corsHeaders(request, env))) {
     headers.set(k, v);
   }
@@ -166,6 +160,7 @@ export type EdgeCachePlan = {
   keyRequest: Request;
   ttlSec: number;
   stream: boolean;
+  route: string;
 };
 
 // Logged once per isolate: an operator who opted in but left the key unset
@@ -192,37 +187,54 @@ export async function resolveEdgeCachePlan(
   isStreamRequested: boolean,
   bodyChars?: number,
 ): Promise<EdgeCachePlan | null> {
-  if (!edgeCacheEligible(route, bodyJson, request, env)) return null;
+  if (!edgeCacheEligible(route, request)) return null;
   if (typeof bodyChars === 'number' && bodyChars > MAX_CACHEABLE_REQUEST_CHARS) return null;
-  const ttlSec = readEnv(env, 'AIG_EDGE_CACHE_TTL_SEC');
-  // An explicit AIG_EDGE_CACHE_TTL_SEC wins; the DEFAULT is limits-owned
-  // (AIG_COST_GUARDS switches it from the 4h prompt cache to off entirely —
-  // edge PUTs are their own storage-IO cost).
-  const ttl = ttlSec ? Number(ttlSec) : getLimits(env).edgeCacheTtlDefaultSec;
+  // The cost-guard profile defaults opt-in cache requests to a one-hour TTL;
+  // an explicit AIG_EDGE_CACHE_TTL_SEC, including zero, wins.
+  const ttl = getLimits(env).edgeCacheTtlSec;
   if (!Number.isFinite(ttl) || ttl <= 0) return null;
   const scope = await callerCacheScope(request, env);
   if (scope === null) {
     logEdgeCacheDisabledOnce(env);
     return null;
   }
-  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: isStreamRequested, scope });
-  return { keyRequest, ttlSec: ttl, stream: isStreamRequested };
+  const host = new URL(request.url).host;
+  const keyRequest = await buildEdgeCacheKeyRequest(route, requestedModel, bodyJson, keyGroup, { stream: isStreamRequested, scope, host });
+  return { keyRequest, ttlSec: ttl, stream: isStreamRequested, route };
 }
 
 /**
  * Reads at most maxBytes without materialising an unbounded response. Returns
  * null when the body is too large or the stream fails.
  */
-async function readCachedResponseText(response: Response, maxBytes: number): Promise<string | null> {
+async function readCachedResponseBytes(
+  response: Response,
+  maxBytes: number,
+  protocol?: SseProtocol,
+  signal?: AbortSignal,
+): Promise<Uint8Array | null> {
+  if (signal?.aborted) {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
   const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) return null;
-  if (!response.body) return '';
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
+  if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
+  const observer = protocol ? new SseLifecycleObserver(protocol, { strictDataValidation: true }) : null;
   const chunks: Uint8Array[] = [];
   let total = 0;
+  const cancel = () => {
+    reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener('abort', cancel, { once: true });
   try {
     for (;;) {
       const { done, value } = await reader.read();
+      if (signal?.aborted) return null;
       if (done) break;
       if (total + value.byteLength > maxBytes) {
         await reader.cancel().catch(() => {});
@@ -230,17 +242,65 @@ async function readCachedResponseText(response: Response, maxBytes: number): Pro
       }
       chunks.push(value);
       total += value.byteLength;
+      observer?.pushBytes(value);
     }
   } catch {
+    await reader.cancel().catch(() => {});
     return null;
+  } finally {
+    signal?.removeEventListener('abort', cancel);
   }
+  observer?.finishBytes();
+  if (
+    observer &&
+    (observer.terminal !== 'success' ||
+      observer.unsafeToolUse ||
+      observer.incompleteResponse ||
+      observer.observationTruncated ||
+      observer.malformedEvent ||
+      observer.bytesAfterTerminal)
+  )
+    return null;
   const combined = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
     combined.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(combined);
+  return combined;
+}
+
+function jsonResponseIsCacheSafe(bytes: Uint8Array): boolean {
+  try {
+    const root = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    if (!root || typeof root !== 'object' || root.error != null) return false;
+    const visit = (value: unknown, key = ''): boolean => {
+      if (/^(?:tool_calls|function_call|tool_use|computer_call)$/i.test(key)) return true;
+      if (!value || typeof value !== 'object') return false;
+      if (Array.isArray(value)) return value.some((item) => visit(item));
+      for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+        if (
+          /^(?:finish_reason|stop_reason)$/i.test(childKey) &&
+          /^(?:tool_calls|function_call|tool_use|max_tokens|length|content_filter)$/i.test(String(childValue))
+        )
+          return true;
+        if (/^status$/i.test(childKey) && /^(?:failed|incomplete)$/i.test(String(childValue))) return true;
+        if (/^type$/i.test(childKey) && /^(?:function_call|tool_use|computer_call)$/i.test(String(childValue))) return true;
+        if (visit(childValue, childKey)) return true;
+      }
+      return false;
+    };
+    return !visit(root);
+  } catch {
+    return false;
+  }
+}
+
+function protocolForRoute(route: string): SseProtocol | undefined {
+  if (route === 'openai_chat') return 'openai_chat';
+  if (route === 'openai_responses') return 'openai_responses';
+  if (route === 'anthropic_messages') return 'anthropic';
+  return undefined;
 }
 
 /**
@@ -249,8 +309,7 @@ async function readCachedResponseText(response: Response, maxBytes: number): Pro
  * Cache.put() reads the body fully and the original response must
  * remain readable for the client.
  *
- * The stored response carries a baked-in x-gateway-cache-status: HIT
- * so a future matchEdgeCache call returns it with the marker already set.
+ * Client-facing cache markers are added only on lookup; they are not stored.
  */
 export function storeEdgeCacheResponse(
   ctx: { waitUntil?: (p: Promise<unknown>) => void } | undefined,
@@ -258,6 +317,8 @@ export function storeEdgeCacheResponse(
   response: Response,
   ttlSec: number,
   isStreamExpected: boolean,
+  routeHint?: string,
+  signal?: AbortSignal,
 ): void {
   const cache = defaultCache();
   if (!cache) return;
@@ -268,15 +329,16 @@ export function storeEdgeCacheResponse(
   if (isStream !== isStreamExpected || (!isStream && !/json/i.test(ct))) return;
   const buffering = response.headers.get('x-accel-buffering');
   const task = (async () => {
-    const text = await readCachedResponseText(response, MAX_CACHED_BYTES);
-    if (text === null || NON_CACHEABLE_MARKER.test(text)) return;
-    if (isStream && !STREAM_END_MARKER.test(text)) return;
-    // Build the stored response with TTL and baked HIT marker
+    const keyPath = new URL(keyRequest.url).pathname.split('/').filter(Boolean);
+    const route = routeHint || decodeURIComponent(keyPath.at(-2) || '');
+    const bytes = await readCachedResponseBytes(response, MAX_CACHED_BYTES, isStream ? protocolForRoute(route) : undefined, signal);
+    if (bytes === null || (!isStream && !jsonResponseIsCacheSafe(bytes))) return;
+    if (signal?.aborted) return;
     const headers = new Headers({ 'content-type': ct });
     if (buffering) headers.set('x-accel-buffering', buffering);
-    headers.set('cache-control', `private, no-store`);
-    headers.set('x-gateway-cache-status', 'HIT');
-    await cache.put(keyRequest, new Response(text, { status: 200, headers }));
+    headers.set('cache-control', `public, max-age=${Math.max(1, Math.trunc(ttlSec))}`);
+    const cacheBody = bytes.buffer as ArrayBuffer;
+    await cache.put(keyRequest, new Response(cacheBody, { status: 200, headers }));
   })().catch(() => {});
   if (ctx?.waitUntil) ctx.waitUntil(task);
 }
@@ -289,6 +351,7 @@ export function storeEdgeCacheResponse(
 export function injectMissHeader(response: Response, request: Request, env: GatewayEnv): Response {
   const headers = new Headers(response.headers);
   headers.set('x-gateway-cache-status', 'MISS');
+  headers.set('cache-control', 'private, no-store');
   for (const [k, v] of Object.entries(corsHeaders(request, env))) {
     headers.set(k, v);
   }
