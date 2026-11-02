@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
+import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
+import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -175,5 +177,27 @@ for (const file of srcFiles) {
   const source = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(source, /\bbudgetSplit\b|\bbudget_split\b/, `${file} must not contain alternate tier-budget config`);
 }
+
+// Live deployment defaults must not silently cut the built-in five/six-attempt
+// model policies to two attempts when request admission is enabled.
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_STREAM_MAX_ATTEMPTS, '6');
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_NONSTREAM_MAX_ATTEMPTS, '6');
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_REQUEST_HEDGE_MAX, '0');
+assert.equal(buildWranglerConfig({ AIG_STREAM_MAX_ATTEMPTS: '4' }).vars.AIG_STREAM_MAX_ATTEMPTS, '4');
+assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '6');
+
+// A free tier that runs out of selectable nodes must not strand attempts.
+const policy = { maxAttempts: 5, tierAttempts: null };
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, policy), { 1: 3, 2: 3, 3: 1 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 2, 2, policy), { 1: 3, 2: 1, 3: 3 });
+assert.deepEqual(
+  redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }),
+  { 1: 3, 2: 1, 3: 3 },
+);
+assert.deepEqual(
+  redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1, tier3: 1 } }),
+  { 1: 3, 2: 1, 3: 1 },
+);
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 0, policy), { 1: 3, 2: 1, 3: 1 });
 
 console.log('Deployment configuration check passed.');
