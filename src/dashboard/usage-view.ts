@@ -195,7 +195,8 @@ function renderModelUsage(
       ? '模型维度抽样率为 0%，未持久化'
       : '近 7 天暂无数据';
   const body = rows.length ? renderBars(rows) : `<div class="model-usage-empty">${emptyText}</div>`;
-  const samplingNote = modelSamplePct < 100 ? `模型维度数据按 ${modelSamplePct}% 抽样，未外推。` : '模型维度数据未抽样。';
+  let samplingNote = '模型维度数据未抽样。';
+  if (modelSamplePct < 100) samplingNote = `模型维度数据按 ${modelSamplePct}% 抽样，未外推。`;
 
   return `<div class="usage-panel model-panel">
     <div class="panel-head">
@@ -263,6 +264,8 @@ export async function usageSection(
     } catch {}
   }
 
+  let dailyUnavailable = 'D1 查询失败';
+  if (!daily || (isDailyError(daily) && daily.error.includes('binding missing'))) dailyUnavailable = 'D1 未绑定';
   const activity = dailyMap
     ? (() => {
         const { cells, labels, ariaLabel, weekCount } = buildHeatmap(
@@ -277,7 +280,7 @@ export async function usageSection(
           `<div class="months" style="${weekTracks}" aria-hidden="true">${labels.join('')}</div></div>`
         );
       })()
-    : `<div class="model-usage-empty">${!daily ? 'D1 未绑定' : isDailyError(daily) && daily.error.includes('binding missing') ? 'D1 未绑定' : 'D1 查询失败'}</div>`;
+    : `<div class="model-usage-empty">${dailyUnavailable}</div>`;
 
   const activityPanel = `<div class="usage-panel activity-panel">
     <div class="panel-head">
@@ -289,10 +292,12 @@ export async function usageSection(
     ${activity}
   </div>`;
 
+  let coverageText = '';
+  if (summaryOk && summary.coverage != null) coverageText = `（覆盖率 ${(summary.coverage * 100).toFixed(1)}%）`;
   const persistenceState = summaryOk
     ? summary.cumulative.requests === 0
       ? 'D1 暂无已持久化的物理上游尝试记录；这不能证明实际流量为零，缓冲计数可能尚未提交或已随隔离区回收而丢失。'
-      : `D1 已持久化 ${fmtInt(summary.cumulative.reports)} / ${fmtInt(summary.cumulative.reports + summary.cumulative.missing)} 次上游 usage 报告${summary.coverage == null ? '' : `（覆盖率 ${(summary.coverage * 100).toFixed(1)}%）`}；未报告的 Token 不估算。统计批次在约 5 分钟节流窗口后的下一次 usage 写入时提交；低流量或隔离区回收可能使待写计数丢失，历史数据也可能包含旧版采样。Worker 无法读取账户级 D1 配额或跨隔离区写入失败状态，因此已显示的数字只代表当前可读的持久化记录。`
+      : `D1 已持久化 ${fmtInt(summary.cumulative.reports)} / ${fmtInt(summary.cumulative.reports + summary.cumulative.missing)} 次上游 usage 报告${coverageText}；未报告的 Token 不估算。统计批次在约 5 分钟节流窗口后的下一次 usage 写入时提交；低流量或隔离区回收可能使待写计数丢失，历史数据也可能包含旧版采样。Worker 无法读取账户级 D1 配额或跨隔离区写入失败状态，因此已显示的数字只代表当前可读的持久化记录。`
     : summary?.available === false
       ? summary.error.includes('binding missing')
         ? 'Token 统计数据库未绑定。'
