@@ -21,8 +21,8 @@ let inFlightRequests = 0;
 /**
  * Count one request as in flight; returns the release function, or null when
  * the isolate is already at its cap (a limit <= 0 admits unconditionally).
- * The caller must invoke the release function exactly once, from a finally
- * block, on every exit path that was granted a slot.
+ * The caller must release from a finally block on errors before it hands the
+ * response to `releaseIsolateRequestAfterResponse`.
  */
 export function admitIsolateRequest(maxInFlight: number): (() => void) | null {
   // Defensive: a disabled limit admits unconditionally instead of denying
@@ -36,6 +36,46 @@ export function admitIsolateRequest(maxInFlight: number): (() => void) | null {
     isReleased = true;
     inFlightRequests = Math.max(0, inFlightRequests - 1);
   };
+}
+
+/** Keep an admitted slot until the response body reaches EOF, errors, or is cancelled. */
+export function releaseIsolateRequestAfterResponse(response: Response, release: () => void): Response {
+  if (!response.body) {
+    release();
+    return response;
+  }
+  const reader = response.body.getReader();
+  let isReleased = false;
+  const releaseOnce = () => {
+    if (isReleased) return;
+    isReleased = true;
+    release();
+  };
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          releaseOnce();
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        releaseOnce();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      releaseOnce();
+      try {
+        await reader.cancel(reason);
+      } catch {
+        /* best-effort cancellation */
+      }
+    },
+  });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
 export function __resetIsolateConcurrencyForTests(): void {

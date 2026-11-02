@@ -22,7 +22,6 @@
 //   queryAllModelsTtftPercentiles
 
 import type { GatewayEnv } from '../../types/runtime.ts';
-import { flushBeforeRead } from './buffer.ts';
 import {
   DAY_MS,
   DISPLAY_TIMEZONE_OFFSET_MS,
@@ -118,7 +117,6 @@ export async function queryTokenSummary(
   | { available: false; error: string }
   | null
 > {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const todayStart = normalizeHour(utc8DayStartUtcMs(now));
@@ -229,7 +227,6 @@ export async function queryTokenDailySeries(
   startDayIso: string,
   now: number = Date.now(),
 ): Promise<Map<string, DailyWindowRow> | { available: false; error: string } | null> {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return null;
   const map = new Map<string, DailyWindowRow>();
@@ -333,7 +330,6 @@ export async function queryTokenModelUsage(
   days: number = 7,
   now: number = Date.now(),
 ): Promise<{ available: true; rows: Array<{ model: string; total: number; requests: number }> } | { available: false; error: string }> {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);
@@ -392,7 +388,6 @@ export async function queryRecentModelEvidence(
   windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS,
   now: number = Date.now(),
 ): Promise<Set<string>> {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return new Set();
   const startHour = normalizeHour(now - windowMs);
@@ -437,7 +432,6 @@ export async function queryRecentModelEvidence(
 // as `>=10s`, never as a missing value. `windowMs` is an explicit millisecond
 // window (the model-status section passes the 24h recent-evidence window).
 export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS, now: number = Date.now()) {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - windowMs);
@@ -523,7 +517,6 @@ function percentileFromBuckets(buckets: number[], total: number, pct: number): n
 // canonical (LOWER(TRIM(model))) so historical case variants merge
 // instead of splitting requests / reports / missing across keys.
 export async function queryModelUsageCoverage(env: GatewayEnv, days: number = 7, now: number = Date.now()) {
-  await flushBeforeRead();
   const d1 = tokenStatsD1(env);
   if (!d1) return { available: false, error: 'TOKEN_STATS_DB binding missing' };
   const startHour = normalizeHour(now - days * DAY_MS);

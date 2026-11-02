@@ -76,19 +76,15 @@ export const RUNTIME_TUNABLES = [
   // sliding window. Checked before authorize(); only failures are counted, and a
   // successful authorization clears the fingerprint. 0 disables the throttle.
   { name: 'AIG_AUTH_ATTEMPT_RPM', type: 'int', min: 0, max: 100_000, def: 60 },
-  // Edge idempotent-cache TTL for zero-temperature (or x-gateway-cache
-  // opt-in) inference requests. Stored through the Cloudflare Cache API at
+  // Edge idempotent-cache TTL for requests with explicit x-gateway-cache
+  // opt-in. Stored through the Cloudflare Cache API at
   // the edge colo; a HIT replays the exact client-facing response with zero
   // upstream consumption. 0 disables the edge cache entirely (match and put
   // are skipped), matching the AIG_ACCESS_KEY_RPM disable convention.
   { name: 'AIG_EDGE_CACHE_TTL_SEC', type: 'int', min: 0, max: 7 * 86_400, def: 14_400 },
-  // (AIG_COST_GUARDS) Percent of token-usage events persisted into the D1
-  // aggregate (delivered + upstream views both). 100 keeps every event; the
-  // guard stack switches the DEFAULT to 1%. Sampling applies to the D1 writes
-  // only: the isolate-local /metrics counters and node token statistics stay
-  // exact, and the D1 aggregate becomes an explicitly sampled basis (never
-  // extrapolated), which frees write cadence on the Free plan's 100k writes/day.
-  // 0 disables D1 token persistence entirely.
+  // (AIG_COST_GUARDS) Percent of per-model detail rows persisted into D1.
+  // Global token totals and usage coverage remain unsampled. Model rows are
+  // explicitly sampled and never extrapolated.
   { name: 'AIG_TOKEN_D1_SAMPLE_PCT', type: 'int', min: 0, max: 100, def: 100 },
   // (AIG_COST_GUARDS) KV Tier 1 session-affinity writes. 1 (default) keeps the
   // binding write; the guard stack switches the DEFAULT to 0 — it is a soft
@@ -198,8 +194,6 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
   // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.
   { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
-  // Cache temperature=0 requests without the x-gateway-cache: true opt-in. Off by default.
-  { name: 'AIG_EDGE_CACHE_AUTO', def: false },
   // v2 Tier 1 rate-limit recovery gate. false keeps the legacy behavior: a
   // 15s account-wide (or model-wide) hard gate after each 429 cooldown expires,
   // with the recovery probe committed only at stream end. true replaces the
@@ -207,13 +201,11 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // behind: concurrent claims skip to another node, and the probe commits at
   // response headers / first SSE event.
   { name: 'AIG_TIER1_PROBE_V2', def: false },
-  // Pass-through native stream relay. false keeps the tracked relay (per-chunk
-  // decode + completion/usage/error scans + optional model rewrite). true moves
-  // every chunk byte-for-byte from the upstream to the client with no per-chunk
-  // scanning: no delivered usage, no model rewrite, no completion-marker or
-  // failure inference (a truncated stream that ends with a clean EOF is
-  // accounted as delivered), no synthetic interruption events. Idle timeout and
-  // cancel propagation stay active.
+  // Byte-preserving native stream relay. true forwards upstream bytes unchanged
+  // while a bounded SSE observer records provider usage and protocol terminals;
+  // no model rewrite or synthetic interruption frames are added. EOF without
+  // the protocol terminal is a failed attempt. Idle timeout and cancellation
+  // propagation stay active.
   { name: 'AIG_STREAM_PASSTHROUGH', def: false },
   // Per-request budget enforcement for matrix (cross-protocol) conversions.
   // false (default) keeps the legacy unlimited translation byte-for-byte. true
@@ -241,8 +233,8 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // documented default byte-for-byte: KV affinity writes ON, every token-usage
   // event persisted to D1, a 4h edge-cache TTL, and AIG_LOG_LEVEL defaulting
   // to info. true switches those four DEFAULTS (explicit values always win on
-  // both sides): AIG_AFFINITY_WRITE -> 0, AIG_TOKEN_D1_SAMPLE_PCT -> 1,
-  // AIG_EDGE_CACHE_TTL_SEC -> 0 (off), AIG_LOG_LEVEL -> warn.
+  // both sides): AIG_AFFINITY_WRITE -> 0 and AIG_TOKEN_D1_SAMPLE_PCT -> 1,
+  // and AIG_LOG_LEVEL -> warn. Edge caching still requires a per-request opt-in.
   { name: 'AIG_COST_GUARDS', def: false },
   // Main-path CPU guards. false (default) keeps the legacy hot path
   // byte-for-byte: the failed-auth throttle fingerprints (SHA-256) every

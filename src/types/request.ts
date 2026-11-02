@@ -149,7 +149,7 @@ export type LoopContext = {
   tier1Session: string | null;
   knownModels: Set<string>;
   feasibility: RouteFeasibilityResult;
-  /** Edge cache plan (key + TTL) for idempotent temperature=0 requests. Null if ineligible. */
+  /** Edge cache plan (key + TTL) for requests with explicit cache opt-in. */
   edgeCachePlan: EdgeCachePlan | null;
   /**
    * Logical-attempt slots intentionally preserved for later model-family
