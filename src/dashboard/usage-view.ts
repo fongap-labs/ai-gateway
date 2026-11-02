@@ -209,15 +209,6 @@ function renderModelUsage(
   </div>`;
 }
 
-function renderAccountingQuality(summary: Extract<SummaryResult, { available: true }>): string {
-  const cumulative = summary.cumulative;
-  let coverage = '暂无数据';
-  if (summary.coverage !== null) coverage = `${(summary.coverage * 100).toFixed(1)}%`;
-  let lastPersisted = '暂无记录';
-  if (cumulative.updatedAt) lastPersisted = escapeHtml(cumulative.updatedAt);
-  return `<div class="panel-meta" role="status">上游消耗：${fmtTokens(cumulative.total)} Token（${fmtInt(cumulative.requests)} 次上游尝试）；成功交付：${fmtTokens(cumulative.deliveredTotal)} Token（${fmtInt(cumulative.deliveredRequests)} 次请求）。用量覆盖率：${coverage}（${fmtInt(cumulative.reports)} 次上报，${fmtInt(cumulative.missing)} 次缺失）。最近写入：${lastPersisted}。统计仅来自上游报告，未报告用量可能导致低估。</div>`;
-}
-
 function isSummaryAvailable(s: SummaryResult | null): s is Extract<SummaryResult, { available: true }> {
   return s != null && s.available === true;
 }
@@ -316,7 +307,6 @@ export async function usageSection(
     <div class="section-head"><span class="section-title">使用情况</span></div>
     ${persistenceState ? `<div class="panel-meta" role="status">${persistenceState}</div>` : ''}
     <div class="stat-row">${kpis}</div>
-    ${summaryOk ? renderAccountingQuality(summary) : ''}
     ${summaryOk ? renderTokenComposition(summary.cumulative) : ''}
     <div class="usage-detail-grid">
       ${activityPanel}
