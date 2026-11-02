@@ -163,9 +163,13 @@ function renderModelRow(m: PublicModelStatusEntry, ttft: Map<string, TtftEntry> 
   const style = STATE_STYLE[m.status] ?? ' down';
   const t = fmtModelTtft(ttft?.get?.(normalizeModelKey(m.id)));
   const samplesText = t.noSamples ? '--' : String(t.samples);
-  const p50Title = !ttft ? 'TTFT 统计暂不可用' : t.p50Insufficient ? 'P50 样本不足（需 ≥5）' : 'P50：近 24 小时成功请求 TTFT 第 50 百分位';
-  const p95Title = !ttft ? 'TTFT 统计暂不可用' : t.p95Insufficient ? 'P95 样本不足（需 ≥20）' : 'P95：近 24 小时成功请求 TTFT 第 95 百分位';
-  const sampleTitle = !ttft ? 'TTFT 统计暂不可用' : t.noSamples ? '暂无 TTFT 样本' : '近 24 小时成功请求的 TTFT samples';
+  let p50Title = 'P50：近 24 小时成功请求 TTFT 第 50 百分位';
+  let p95Title = 'P95：近 24 小时成功请求 TTFT 第 95 百分位';
+  let sampleTitle = '近 24 小时成功请求的 TTFT samples';
+  if (t.p50Insufficient) p50Title = 'P50 样本不足（需 ≥5）';
+  if (t.p95Insufficient) p95Title = 'P95 样本不足（需 ≥20）';
+  if (t.noSamples) sampleTitle = '暂无 TTFT 样本';
+  if (!ttft) p50Title = p95Title = sampleTitle = 'TTFT 统计暂不可用';
   return `<div class="model-row">
     <div class="mr-name" title="${escapeHtml(stateTooltip)}">${escapeHtml(m.id)}</div>
     <div class="mr-status-cell" title="${escapeHtml(stateTooltip)}">
