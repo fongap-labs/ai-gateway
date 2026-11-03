@@ -1,0 +1,7 @@
+- 安全 [breaking, security]: 鉴权失败的请求由独立的失败尝试窗口节流（`AIG_AUTH_ATTEMPT_RPM`，默认每分钟 60 次，`0` 关闭）。超限返回 429，错误码为 `gateway_auth_throttled`，并带 `Retry-After`；鉴权成功的请求不消耗失败预算。
+- 安全 [security]: 公开仪表盘的快速开始不再列出访问密钥分组名；仪表盘开关 `AIG_PUBLIC_DASHBOARD` 默认值保持 `true`。
+- 安全 [breaking, security]: 边缘缓存在未配置 `AIG_TOKEN_ENCRYPTION_KEY` 时失败关闭：不查询也不写入缓存，凭据指纹不再用公开常量派生。
+- 安全 [breaking, security]: 没有可用 `Content-Length` 的请求体（例如 chunked 传输）按 `AIG_REQUEST_BODY_MAX_BYTES` 计入在途请求体预算，不再绕过 32 MiB 的预算。
+- 修复: 流式边缘缓存命中现在与上游流一样计入完成与取消，`activeRequests` 不再随每次命中单调增长。
+- 变更: D1 token 用量写入改为 isolate 内缓冲，按小时与模型合并，每 50 条或每 2 秒以一次 `d1.batch()` 提交；写入失败时增量回滚并在下次刷写时重试。
+- 变更: 大请求体读取改为收集分块后一次解码，减少峰值内存拷贝；超限仍返回 `BodyTooLargeError`。

@@ -1,0 +1,3 @@
+- 新增: `AIG_STREAM_PASSTHROUGH`（默认关闭）让同协议原生流式响应改为逐字节透传。旧行为对每个 chunk 做 UTF-8 解码、若干正则扫描（completion/failure/error/usage/sequence）、必要时逐行 parse+stringify 做 model 重写，是 25 万 TPM 量级的主要 isolate CPU 消耗点之一；新行为每个 chunk 只做一次 read 加一次 enqueue，并保留空闲超时（上游卡死则断开并记失败）与客户端 cancel 透传（取消即取消上游）。
+- 变更: 透传模式接受的代价：不做 model 重写（客户端看到上游原始 model 名）；不采样 usage（交付与尝试两级 token 记账没有 token 数）；无完成标记或失败隐式推断——干净 EOF 的截断流按正常交付记账；不再合成中断事件。逐字节跟踪 relay 在开关关闭时保留。
+- 新增: `AIG_STREAM_GUARD_PREFIX_BYTES`（默认 64KB，范围 16KB–2MB）：透传模式下首事件守卫的预事件字节预算由 2MB 常量降到这里配置的值，防止前缀型 provider 把 isolate 缓冲拖成 MB 级；旧模式仍用 2MB 常量。
