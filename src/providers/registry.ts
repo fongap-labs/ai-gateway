@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Provider registry: the single authority mapping provider names to their
-// adapters. Every consumer (node config, dispatch, OAuth onboarding,
-// discovery tooling) resolves provider knowledge through this module;
-// there is no second provider switch anywhere in the gateway.
-//
-// Unknown providers resolve to the generic OpenAI-compatible adapter, so
-// adding a plain OpenAI-compatible provider is pure configuration. A
-// provider with its own wire contract, OAuth defaults, or subscription
-// backend adds one module in src/providers/ plus one registry line.
 
 import { anthropicProviderAdapter } from './anthropic.ts';
 import { genericOpenAIProviderAdapter } from './generic-openai.ts';
@@ -23,8 +13,7 @@ const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.free
   google: googleProviderAdapter,
 });
 
-/** Resolve a provider name to its adapter. Unknown names resolve to the
- *  generic OpenAI-compatible adapter - never null. */
+/** Unknown providers use the generic OpenAI-compatible adapter. */
 export function getProviderAdapter(provider: string): ProviderAdapter {
   const key = String(provider || '')
     .trim()
@@ -32,16 +21,12 @@ export function getProviderAdapter(provider: string): ProviderAdapter {
   return PROVIDER_REGISTRY[key] ?? genericOpenAIProviderAdapter;
 }
 
-/** The structural wire contract (protocol + routable surfaces) for a
- *  provider name. Single owner of the provider -> wire mapping. */
+
 export function providerWire(provider: string): ProviderWire {
   return getProviderAdapter(provider).wire;
 }
 
-/** Built-in OAuth onboarding defaults for every registered provider that
- *  declares them, keyed by provider name. src/oauth/provider-configs.ts
- *  merges operator overrides (AIG_OAUTH_PROVIDERS) on top of this
- *  snapshot and never hardcodes provider defaults itself. */
+
 export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfig> {
   const defaults: Record<string, OAuthProviderConfig> = {};
   for (const [name, adapter] of Object.entries(PROVIDER_REGISTRY)) {
@@ -50,14 +35,7 @@ export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfi
   return defaults;
 }
 
-/** Whether a streaming OpenAI chat dispatch should carry the passive
- *  `stream_options.include_usage` hint. Order:
- *    1. global kill switch  AIG_USAGE_INCLUDE_MODE=off -> never
- *    2. global force switch AIG_USAGE_INCLUDE_MODE=on  -> always
- *    3. auto: adapter-declared capability for this provider, minus the
- *       explicit AIG_USAGE_EXCLUDE_PROVIDERS off-list.
- *  Callers consult this only for effective chat_completions streams; the
- *  node's declared surfaces must still include chat_completions. */
+
 export function streamUsageEnabled(
   node: { protocol?: string; surfaces?: ReadonlyArray<string>; provider?: string },
   env: Record<string, unknown> = {},
