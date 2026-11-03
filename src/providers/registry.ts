@@ -21,11 +21,9 @@ export function getProviderAdapter(provider: string): ProviderAdapter {
   return PROVIDER_REGISTRY[key] ?? genericOpenAIProviderAdapter;
 }
 
-
 export function providerWire(provider: string): ProviderWire {
   return getProviderAdapter(provider).wire;
 }
-
 
 export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfig> {
   const defaults: Record<string, OAuthProviderConfig> = {};
@@ -34,7 +32,6 @@ export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfi
   }
   return defaults;
 }
-
 
 export function streamUsageEnabled(
   node: { protocol?: string; surfaces?: ReadonlyArray<string>; provider?: string },
