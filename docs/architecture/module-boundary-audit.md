@@ -11,7 +11,7 @@ All material P1/P2 ownership findings from the baseline audit are resolved. 当�
 - `src/scheduler/tier1-scoring.ts`：评分公式
 - `src/scheduler/tier1-scheduler.ts`：资格、亲和、P2C 与槽位
 
-## 成功收尾与协议
+## Success finalization（成功收尾与协议）
 
 - `src/request/attempt/success.ts` 是薄分发器；流和对象收尾分别属于 `success-stream.ts` 与 `success-object.ts`。
 - 跨层错误词汇表属于 `src/types/upstream-processing.ts`；可靠性层不得反向依赖 transport。
@@ -22,7 +22,7 @@ All material P1/P2 ownership findings from the baseline audit are resolved. 当�
 
 `src/reliability/cooldown-jitter.ts` 只负责 ±10% 的计算。是否抖动由调用者决定；provider 显式给出的 `Retry-After` 不参与抖动。
 
-## 有意保留的差异
+## Intentional duplication（有意保留的差异）
 
 - `token-usage-store/queries.ts` 和 `upstream-queries.ts` 分别回答已交付请求和物理上游消耗，不能仅凭 SQL 结构相似而合并。
 - OpenAI 与 Anthropic 的流结束/EOF 规则不同，保留各自状态机。
