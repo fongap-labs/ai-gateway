@@ -346,6 +346,10 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
 除非解析后的模型策略提供了 `failover_budget_ms`，否则 `AIG_FAILOVER_BUDGET_MS` 即为一次请求的全局墙钟预算。`AIG_UPSTREAM_HEADER_TIMEOUT_MS` 与 `AIG_FIRST_EVENT_TIMEOUT_MS` 仍是全局的阶段默认值，而模型策略可以用 `headers_timeout_ms` 与 `first_event_timeout_ms` 覆盖它们。Native Tier、协议回退、模型家族回退以及有界复检都不会重置已解析的预算。一次物理 dispatch 会在 header、首个有意义的输出、响应体组装以及有界的诊断读取之间共享同一个绝对 attempt 截止时间。hedge 孪生请求继承该截止时间。
 
+中央部署默认启用已有的请求准入、流式透传、热路径保护、成本保护与恢复探测开关，并将流式和非流式尝试上限都设为 3、每个 isolate 的在途请求上限设为 8、hedge 上限设为 0。部署时的显式变量可以覆盖这些值；直接部署应自行设置对应变量。模型策略仍保留其原有定义，启用 `AIG_REQUEST_ADMISSION` 时再应用尝试上限。这里的并发限制只在单个 isolate 生效，不能当作 provider 的全局额度。
+
+Agent 客户端应让网关承担一次请求内的有限回退，客户端最多补一次有界重试；同一步的重试复用 `x-gateway-deadline-ms`，并遵守 `Retry-After`。不要仅按 HTTP 503/504 判断是否重试，应读取网关错误元数据。Cloudflare 返回的 1102 可能绕过 Worker 的错误处理器：客户端需另外识别资源错误，停止原样重试并保存进度。协议响应头和截止时间的完整说明见[协议模型](../architecture/protocol-model.md#错误信封)。
+
 ## 用量计费
 
 仪表盘的用量展示有意将公共服务量与物理上游工作量分开：

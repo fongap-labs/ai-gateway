@@ -30,6 +30,8 @@ export function corsHeaders(request: Request, env: Record<string, unknown>): Rec
     'idempotency-key',
     'anthropic-version',
     'anthropic-beta',
+    'x-session-id',
+    'x-gateway-deadline-ms',
   ]);
   const accepted = requested.filter((v) => allowedRequestHeaders.has(v));
   const headers: Record<string, string> = {
@@ -37,6 +39,8 @@ export function corsHeaders(request: Request, env: Record<string, unknown>): Rec
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': accepted.length > 0 ? accepted.join(', ') : 'Authorization,X-Api-Key,Content-Type,Accept',
     'Access-Control-Max-Age': '86400',
+    'Access-Control-Expose-Headers':
+      'X-Request-Id,Request-Id,Retry-After,X-Should-Retry,X-Gateway-Error-Code,X-Gateway-Retryable,X-Gateway-Budget-Exhausted,X-Gateway-Attempts,X-Gateway-Dispatches,X-Gateway-Hedges,X-Gateway-Failure-Kinds',
     ...SECURITY_HEADERS,
   };
   if (origin !== '*') headers.Vary = 'Origin';

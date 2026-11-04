@@ -256,6 +256,30 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   const limits = getLimits(env);
+  const deadlineHeader = request.headers.get('x-gateway-deadline-ms');
+  const clientDeadlineMs = deadlineHeader === null ? null : Number(deadlineHeader);
+  if (deadlineHeader !== null && (!/^\d+$/.test(deadlineHeader) || !Number.isSafeInteger(clientDeadlineMs) || (clientDeadlineMs ?? 0) <= 0)) {
+    return {
+      ok: false,
+      response: gatewayError(request, env, route, 400, 'X-Gateway-Deadline-Ms must be a positive Unix timestamp in milliseconds.', requestId),
+    };
+  }
+  if (clientDeadlineMs !== null && clientDeadlineMs <= Date.now()) {
+    return {
+      ok: false,
+      response: gatewayError(
+        request,
+        env,
+        route,
+        408,
+        'The client deadline has expired.',
+        requestId,
+        undefined,
+        undefined,
+        'gateway_client_deadline_exceeded',
+      ),
+    };
+  }
   let bodyJson: Record<string, unknown>;
   let rawBody: RawBody | undefined;
   let bodyChars = 0;
@@ -433,7 +457,8 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   const requestPolicy = limits.requestAdmission ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, attemptCap) } : policy;
   // A large prompt needs proportionally more wall-clock time for prefill, so the
   // request budget grows with its size instead of timing out healthy upstreams.
-  const failoverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);
+  const serverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);
+  const failoverBudgetMs = clientDeadlineMs === null ? serverBudgetMs : Math.min(serverBudgetMs, clientDeadlineMs - requestStartMs);
   return {
     ok: true,
     request,

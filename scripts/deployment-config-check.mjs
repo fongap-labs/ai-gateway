@@ -178,13 +178,12 @@ for (const file of srcFiles) {
   assert.doesNotMatch(source, /\bbudgetSplit\b|\bbudget_split\b/, `${file} must not contain alternate tier-budget config`);
 }
 
-// Live deployment defaults must not silently cut the built-in five/six-attempt
-// model policies to two attempts when request admission is enabled.
-assert.equal(DEFAULT_OPTIMAL_VARS.AIG_STREAM_MAX_ATTEMPTS, '6');
-assert.equal(DEFAULT_OPTIMAL_VARS.AIG_NONSTREAM_MAX_ATTEMPTS, '6');
+// Deployment defaults bound free-tier attempts while retaining explicit overrides.
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_STREAM_MAX_ATTEMPTS, '3');
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_NONSTREAM_MAX_ATTEMPTS, '3');
 assert.equal(DEFAULT_OPTIMAL_VARS.AIG_REQUEST_HEDGE_MAX, '0');
 assert.equal(buildWranglerConfig({ AIG_STREAM_MAX_ATTEMPTS: '4' }).vars.AIG_STREAM_MAX_ATTEMPTS, '4');
-assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '6');
+assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '3');
 
 // A free tier that runs out of selectable nodes must not strand attempts.
 const policy = { maxAttempts: 5, tierAttempts: null };

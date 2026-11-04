@@ -151,6 +151,12 @@ OpenAI Chat 上游的完成边界：`finish_reason` 之后，尾随的 usage 帧
 
 回退失败时，绝不能将目标上游的协议信封泄漏给原始客户端。
 
+三个协议的网关错误保留各自的 JSON 正文格式，并统一通过响应头提供恢复信息：`x-gateway-error-code` 是已分类的网关错误码，`x-gateway-retryable` 表示该错误能否重试，`x-gateway-budget-exhausted: true` 表示请求的时间或尝试预算已经耗尽。已有聚合诊断同时提供 `x-gateway-attempts`、`x-gateway-dispatches`、`x-gateway-hedges` 和 `x-gateway-failure-kinds`；不暴露节点、凭据或原始上游错误。`Retry-After` 仍负责说明等待时间。浏览器通过 CORS 读取这些响应头，需要运营者配置允许的来源。
+
+Chat 和 Messages 的已分类网关错误还在 `error.details` 中提供 `gateway_code`、`retryable`，以及存在等待提示时的 `retry_after_ms`，供只保留错误正文的客户端适配器使用。Responses 保持标准正文与 `error.code: null`，通过响应头传递这些诊断。
+
+客户端可发送 `x-gateway-deadline-ms`，值为正整数形式的 Unix 毫秒时间戳。这个截止时间只会缩短网关提交首个有效输出之前的回退预算，不能延长服务端策略；它不限制已提交流的正常生成。客户端重试同一步时必须复用原值，不能每次重新计算。已过期的截止时间在 dispatch 前返回不可重试的 408，错误码为 `gateway_client_deadline_exceeded`；不合法的值返回 400。客户端应保存任务进度并在新的任务步骤中恢复，避免重新遍历已耗尽的上游池。
+
 - OpenAI Chat 客户端收到 OpenAI 格式的错误。
 - Anthropic Messages 客户端收到 Anthropic 格式的错误。
 - 转换失败会在无效的目标请求被 dispatch 之前，以网关转换失败的形式上报（502 `conversion_not_supported`）。
