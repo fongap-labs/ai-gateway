@@ -11,6 +11,7 @@
 // details stay hidden. Both are exposed only when the caller passes
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
+import { parseRetryAfterMs } from '../config/timeouts.ts';
 import { anthropicErrorTypeForStatus } from '../protocol/anthropic.ts';
 import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../protocol/http.ts';
 import { responsesErrorResponse } from '../protocol/responses/index.ts';
@@ -31,6 +32,7 @@ const GATEWAY_ERROR_CODE = Object.freeze({
   NO_DISPATCHABLE_NODE: 'gateway_no_dispatchable_node',
   ATTEMPT_BUDGET_EXHAUSTED: 'gateway_attempt_budget_exhausted',
   UPSTREAM_EXHAUSTED: 'gateway_upstream_exhausted',
+  CLIENT_DEADLINE_EXCEEDED: 'gateway_client_deadline_exceeded',
 });
 
 function responsesDiagnosticHeaders(details?: Record<string, unknown>, extraHeaders?: Record<string, string>): Record<string, string> | undefined {
@@ -80,11 +82,22 @@ export function gatewayError(
   gatewayCode: string | null = null,
   isRetryable: boolean = false,
 ): Response {
+  const diagnosticHeaders = responsesDiagnosticHeaders(details, extraHeaders) ?? {};
+  const retryable = isRetryable || status === 429 || status === 503;
+  diagnosticHeaders['x-gateway-retryable'] = String(retryable);
+  if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
+  if (gatewayCode === GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED || gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
+    diagnosticHeaders['x-gateway-budget-exhausted'] = 'true';
+  }
+  const retryAfterMs = parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER);
+  const errorDetails = gatewayCode
+    ? { ...details, gateway_code: gatewayCode, retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
+    : details;
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
       JSON.stringify({
         type: 'error',
-        error: { type: anthropicErrorTypeForStatus(status), message, ...(details ? { details } : {}) },
+        error: { type: anthropicErrorTypeForStatus(status), message, ...(errorDetails ? { details: errorDetails } : {}) },
       }),
       {
         status,
@@ -93,7 +106,7 @@ export function gatewayError(
           'cache-control': 'no-store',
           'request-id': requestId || '',
           'x-request-id': requestId || '',
-          ...(extraHeaders || {}),
+          ...diagnosticHeaders,
           ...shouldNotRetryHeaders(status, isRetryable),
           ...corsHeaders(request, env),
         },
@@ -101,24 +114,15 @@ export function gatewayError(
     );
   }
   if (route === 'openai_responses') {
-    return responsesErrorResponse(
-      request,
-      env,
-      status,
-      message,
-      requestId,
-      responsesDiagnosticHeaders(details, extraHeaders),
-      gatewayCode,
-      isRetryable,
-    );
+    return responsesErrorResponse(request, env, status, message, requestId, diagnosticHeaders, gatewayCode, isRetryable);
   }
-  return new Response(JSON.stringify({ error: { message, ...(details ? { details } : {}) } }), {
+  return new Response(JSON.stringify({ error: { message, ...(errorDetails ? { details: errorDetails } : {}) } }), {
     status,
     headers: {
       'content-type': 'application/json;charset=UTF-8',
       'cache-control': 'no-store',
       'x-request-id': requestId || '',
-      ...(extraHeaders || {}),
+      ...diagnosticHeaders,
       ...shouldNotRetryHeaders(status, isRetryable),
       ...corsHeaders(request, env),
     },
@@ -134,7 +138,8 @@ export function buildBudgetExhaustedResponse(
   state: LoopState,
   shouldExposeUpstreamInfo: boolean,
 ): Response {
-  const status = 504;
+  const isClientDeadlineExceeded = clientDeadlineExceeded(request);
+  const status = isClientDeadlineExceeded ? 408 : 504;
   const details = {
     requested_model: requestedModel,
     attempts: state.logicalAttempts,
@@ -149,12 +154,14 @@ export function buildBudgetExhaustedResponse(
     env,
     route,
     status,
-    `Gateway failover budget exhausted after ${state.logicalAttempts} attempt(s).`,
+    isClientDeadlineExceeded
+      ? 'The client deadline expired; resume the task with a new deadline instead of retrying this step.'
+      : `Gateway failover budget exhausted after ${state.logicalAttempts} attempt(s).`,
     requestId,
     details,
     undefined,
-    GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED,
-    true,
+    isClientDeadlineExceeded ? GATEWAY_ERROR_CODE.CLIENT_DEADLINE_EXCEEDED : GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED,
+    !isClientDeadlineExceeded,
   );
 }
 
@@ -171,6 +178,9 @@ export function buildExhaustedResponse(
   knownModels?: ReadonlySet<string>,
   isRetryableFamilyExhaustion: boolean = false,
 ): Response {
+  if (clientDeadlineExceeded(request)) {
+    return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, shouldExposeUpstreamInfo);
+  }
   const last = state.attempts[state.attempts.length - 1];
   const nothingAttempted = state.attempts.length === 0;
   const knownModels_ = knownModels ?? state.knownModels;
@@ -232,6 +242,11 @@ export function buildExhaustedResponse(
     gatewayCode,
     !nothingAttempted && familyFailureSetIsRetryable(state.failureKinds),
   );
+}
+
+function clientDeadlineExceeded(request: Request): boolean {
+  const raw = request.headers.get('x-gateway-deadline-ms');
+  return raw !== null && /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) && Number(raw) <= Date.now();
 }
 
 function earliestBlockingRetryAfterSec(

@@ -320,10 +320,10 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_COST_GUARDS: 'true',
   AIG_TIER1_PROBE_V2: 'true',
   AIG_REQUEST_ADMISSION: 'true',
-  AIG_ISOLATE_MAX_IN_FLIGHT: '64',
-  // Preserve built-in model policies (default=5, long-reasoning=6) instead of silently cutting streaming to two tries.
-  AIG_STREAM_MAX_ATTEMPTS: '6',
-  AIG_NONSTREAM_MAX_ATTEMPTS: '6',
+  AIG_ISOLATE_MAX_IN_FLIGHT: '8',
+  // Bound free-tier amplification; explicit operator values still win.
+  AIG_STREAM_MAX_ATTEMPTS: '3',
+  AIG_NONSTREAM_MAX_ATTEMPTS: '3',
   AIG_REQUEST_HEDGE_MAX: '0',
   AIG_UPSTREAM_HEADER_TIMEOUT_MS: '60000',
   AIG_FIRST_EVENT_TIMEOUT_MS: '60000',
