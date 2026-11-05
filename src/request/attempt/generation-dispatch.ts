@@ -8,7 +8,7 @@
 import { attemptBudgetWindowMs } from '../../config/timeouts.ts';
 import { invokeGenerationNode } from '../../generation/generation-client-request.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
-import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
+import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { quotaFromCenter } from '../../reliability/center-quota.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
