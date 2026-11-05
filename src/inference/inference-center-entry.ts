@@ -23,14 +23,14 @@ const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
 const ALLOWED_SURFACES: ReadonlySet<string> = new Set(['chat_completions', 'responses', 'messages']);
 
-function problem(status: number, code: string, retryable = false): Response {
-  return new Response(JSON.stringify({ error: { code, retryable } }), {
+function problem(status: number, code: string, isRetryable = false): Response {
+  return new Response(JSON.stringify({ error: { code, retryable: isRetryable } }), {
     status,
     headers: {
       'content-type': 'application/json',
       'cache-control': 'no-store',
       'x-aig-error-kind': code,
-      'x-aig-retryable': String(retryable),
+      'x-aig-retryable': String(isRetryable),
     },
   });
 }
