@@ -16,6 +16,7 @@ export type InferenceInvocation = {
   surface: Surface;
   deadlineMs: number;
   body: string;
+  signal?: AbortSignal;
 };
 
 export class InferenceCenterUnavailable extends Error {
@@ -58,7 +59,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
     method: 'POST',
     headers,
     body: invocation.body,
-    signal: invocation.request.signal,
+    signal: invocation.signal ?? invocation.request.signal,
   });
 }
 
