@@ -4,26 +4,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { KEY_GROUPS } from '../src/config/access-keys.ts';
-import { loadGatewayConfig } from '../src/config/nodes.ts';
-import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
-const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
-const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
-const GROUP_KEY_PATTERN = `AIG_ACCESS_KEY_(?:${KEY_GROUPS.join('|')})`;
-const GROUP_MODELS_PATTERN = `AIG_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
-const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
-const GROUP_LABEL = KEY_GROUPS.join(', ');
-
-const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)#!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { diagnosticsGroups, KEY_GROUPS } from '../src/config/access-keys.ts';
 import { loadGatewayConfig } from '../src/config/nodes.ts';
 import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
@@ -43,7 +23,7 @@ function diagnosticsKeyName(names, diagnosticsGroupsValue) {
   return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
 }
 const SECRET_NAME = new RegExp(
-,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
@@ -54,7 +34,6 @@ const CREDENTIAL_NAMES = new Set([
   'CLOUDFLARE_API_TOKEN',
   'AIG_INFERENCE_AUTH_KEY',
   'AIG_GENERATION_AUTH_KEY',
-  'AIG_DEPLOY_HEALTH_KEY',
   ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`),
 ]);
 
@@ -222,8 +201,11 @@ export function preflight(env) {
   }
   const groupKeys = Object.keys(env).filter((k) => GROUP_KEY_RE.test(k) && env[k] && String(env[k]).trim() !== '');
   if (!groupKeys.length) errors.push(`At least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
-  if (typeof env.AIG_DEPLOY_HEALTH_KEY !== 'string' || env.AIG_DEPLOY_HEALTH_KEY.trim().length < 32) {
-    errors.push('AIG_DEPLOY_HEALTH_KEY must be a dedicated Secret containing at least 32 characters.');
+  else if (!diagnosticsKeyName(groupKeys, env.AIG_DIAGNOSTICS_GROUPS)) {
+    const allowed = [...(diagnosticsGroups(env.AIG_DIAGNOSTICS_GROUPS) ?? [])].join(', ');
+    errors.push(
+      `No configured access key may read /health, which the post-deploy check needs: AIG_DIAGNOSTICS_GROUPS allows ${allowed}. Add an AIG_ACCESS_KEY_<GROUP> for one of them, or set AIG_DIAGNOSTICS_GROUPS to a configured group ("*" allows every key).`,
+    );
   }
 
   const v = collectVarsFromEnv(env);
@@ -563,10 +545,10 @@ async function main() {
   }
   if (command === 'health-check') {
     const runtime = resolveRuntime(argv);
-    const healthKey = runtime.secrets.AIG_DEPLOY_HEALTH_KEY;
-    if (!healthKey) throw new Error('AIG_DEPLOY_HEALTH_KEY Secret is required for the deployment health check.');
+    const groupKey = diagnosticsKeyName(Object.keys(runtime.secrets), runtime.vars.AIG_DIAGNOSTICS_GROUPS);
+    if (!groupKey) throw new Error('No AIG_ACCESS_KEY_<GROUP> secret allowed by AIG_DIAGNOSTICS_GROUPS found for health check');
     const allowDegraded = String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true';
-    await verifyRemote(process.env.AIG_PUBLIC_URL, healthKey, argValue(argv, '--expected-build') || undefined, {
+    await verifyRemote(process.env.AIG_PUBLIC_URL, runtime.secrets[groupKey], argValue(argv, '--expected-build') || undefined, {
       allowDegraded,
     });
     console.log('Remote health checks passed.');
