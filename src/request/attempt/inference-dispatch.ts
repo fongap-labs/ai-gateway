@@ -46,7 +46,7 @@ function quotaFromCenter(headers: Headers): QuotaSignal | null {
       const value = record[field];
       if (value === undefined) continue;
       if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return null;
-      (signal as Record<string, unknown>)[field] = value;
+      Object.assign(signal, { [field]: value });
     }
     return signal.remainingRequests === undefined && signal.remainingTokens === undefined ? null : signal;
   } catch {
@@ -57,7 +57,7 @@ function quotaFromCenter(headers: Headers): QuotaSignal | null {
 export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Record<string, unknown>): Promise<AttemptOutcome> {
   const { request, env, node, state, reqDescriptor, policy, limits, requestedModel, route } = c;
   const effectiveModel = reqDescriptor.model;
-  const body = { ...sourceBody, model: effectiveModel };
+  const body: Record<string, unknown> = { ...sourceBody, model: effectiveModel };
   if (c.fakeStream && (c.surface === 'chat_completions')) body.stream = true;
   // Avoid a second copy for normal native requests with no alias or stream mutation.
   const reuseRaw =
