@@ -123,3 +123,5 @@ docs/governance/README.md
 ```
 
 文件名遵守平台约定；项目自有新增名称遵守中央命名规范。历史修改通过 Git 追溯。
+
+`CHANGELOG.md` 是唯一变更记录来源。禁止 `changelog.d/`；已发布版本小节不得由普通合并请求改写。
