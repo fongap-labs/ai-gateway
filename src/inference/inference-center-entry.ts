@@ -11,8 +11,8 @@ import { getOAuthProvider } from '../oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../oauth/resolve.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../protocol/http.ts';
 import { withUsageStreamOptions } from '../protocol/openai.ts';
-import { extractQuotaSignal } from '../reliability/quota-signal.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../providers/registry.ts';
+import { extractQuotaSignal } from '../reliability/quota-signal.ts';
 import { isSubscriptionNode } from '../subscription/index.ts';
 import type { SubscriptionWire } from '../subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/index.ts';
@@ -215,13 +215,16 @@ async function executeNative(request: Request, env: GatewayEnv, invocation: Invo
   // values remain unknown; this hint is never a globally consistent counter.
   const quota = extractQuotaSignal(node.protocol, upstream.headers);
   if (quota) {
-    outgoing.set('x-aig-quota-signal', JSON.stringify({
-      remainingRequests: quota.remainingRequests,
-      remainingTokens: quota.remainingTokens,
-      limitRequests: quota.limitRequests,
-      limitTokens: quota.limitTokens,
-      resetAtMs: quota.resetAtMs,
-    }));
+    outgoing.set(
+      'x-aig-quota-signal',
+      JSON.stringify({
+        remainingRequests: quota.remainingRequests,
+        remainingTokens: quota.remainingTokens,
+        limitRequests: quota.limitRequests,
+        limitTokens: quota.limitTokens,
+        resetAtMs: quota.resetAtMs,
+      }),
+    );
   }
 
   if (wire && upstream.ok) {
