@@ -96,7 +96,7 @@ assert.deepEqual(deploySecretScope.sort(), [
   'CLOUDFLARE_API_TOKEN',
 ]);
 const deployRequired = read('.github/deploy.secrets.required')
-  .split(/\\r?\\n/)
+  .split(/\r?\n/)
   .map((line) => line.trim())
   .filter(Boolean);
 assert.deepEqual(deployRequired.sort(), deploySecretScope);
