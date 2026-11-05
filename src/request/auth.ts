@@ -115,10 +115,16 @@ export async function authorizeCredentials(credentials: readonly string[], env: 
   if (access.keys.length === 0) return { authorized: false, mode: 'none' };
 
   const candidateDigests = await Promise.all(presented.map((c) => sha256Digest(c)));
+  const deploymentHealthKey = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
+  const deployDigest = deploymentHealthKey ? await secretDigest(deploymentHealthKey) : null;
+  const userCredentialDigests = deployDigest
+    ? candidateDigests.filter((candidate) => !constantTimeEquals(new Uint8Array(candidate), deployDigest))
+    : candidateDigests;
+
   for (const key of access.keys) {
     if (!key.secret) continue;
     const expected = await secretDigest(key.secret);
-    for (const candidate of candidateDigests) {
+    for (const candidate of userCredentialDigests) {
       if (constantTimeEquals(new Uint8Array(candidate), expected)) {
         return {
           authorized: true,
