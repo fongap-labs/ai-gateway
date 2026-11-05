@@ -189,7 +189,11 @@ async function executeNative(request: Request, env: GatewayEnv, invocation: Invo
   try {
     upstream = await fetch(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' });
   } catch {
-    return problem(request.signal.aborted ? 499 : 502, request.signal.aborted ? 'center_client_aborted' : 'center_upstream_network', !request.signal.aborted);
+    return problem(
+      request.signal.aborted ? 499 : 502,
+      request.signal.aborted ? 'center_client_aborted' : 'center_upstream_network',
+      !request.signal.aborted,
+    );
   } finally {
     clearTimeout(timeoutId);
     request.signal.removeEventListener('abort', onAbort);
