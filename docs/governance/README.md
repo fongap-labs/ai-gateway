@@ -1,27 +1,70 @@
-# 治理
+# 治理索引
 
-ai-gateway 的共享命名、变更分类、开发、PR 门禁、发布与仓库治理规则，继承自 [Fongap Labs Action Worker](https://github.com/fongap-labs/action-worker/tree/main/docs)。
+## 1. 共用规则
 
-本目录仅包含 ai-gateway 专有的策略。
+组织规则只从中央继承。
 
-## 项目专有的权威文件
+### ❌ 错误做法 / 反面教材
 
-| 文档 | 权威范围 |
-| --- | --- |
-| [product-policy.md](product-policy.md) | 产品范围、Tier 1/2/3 的角色、干净替换、人工持有的发布标识，以及简洁性边界 |
-| [quality-policy.md](quality-policy.md) | ai-gateway 专有的 CI、协议、可靠性、安全与生产验证 |
-| [dependency-policy.md](dependency-policy.md) | Worker 运行时、GitHub Actions、Wrangler 与依赖更新规则 |
-| [documentation-policy.md](documentation-policy.md) | ai-gateway 文档的归属与代码-文档同步规则 |
-| [development-policy.md](development-policy.md) | 临时的非权威重定向页，为当前的策略契约测试而保留 |
+业务仓库复制通用提交类型。
 
-## 文档分类
+```text
+本仓库独立定义 11 类提交
+```
 
-| 目录 | 用途 |
-| --- | --- |
-| `docs/architecture/` | 持久的网关设计边界与运行时不变式 |
-| `docs/operations/` | 当前的配置、部署与故障排查流程 |
-| `docs/governance/` | ai-gateway 专有的产品与质量规则 |
+### ✅ 正确做法 / 规范范例
 
-共享的分支命名、PR 结构、变更日志分类与通用工程规则，属于 Action Worker 的职责范围。
+直接引用 Action Worker 权威文件。
 
-可执行行为仍以运行时代码、schema、配置解析器、测试与工作流为准。项目文档在与之偏离时必须予以修正。
+```text
+fongap-labs/action-worker/docs/01_SHARED_GOVERNANCE.md
+fongap-labs/action-worker/docs/04_CHANGELOG_CONVENTIONS.md
+```
+
+## 2. 项目规则
+
+网关专属规范只维护一份。
+
+### ❌ 错误做法 / 反面教材
+
+把同一规则写入多个文档。
+
+```text
+路由规则 → 产品策略 + 质量策略 + 开发策略（重复）
+```
+
+### ✅ 正确做法 / 规范范例
+
+按责任查阅唯一项目文档。
+
+```text
+product-policy.md       产品范围、三级容量、人工发布标识
+quality-policy.md       协议、可靠性、安全、生产验证
+dependency-policy.md    依赖与工具链
+documentation-policy.md 文档与变更日志
+development-policy.md   现有合同测试使用的入口
+```
+
+## 3. 执行证据
+
+实际行为以运行时和测试为准。
+
+### ❌ 错误做法 / 反面教材
+
+仅凭文档声称功能已上线。
+
+```text
+修改 README.md → 宣称部署成功
+```
+
+### ✅ 正确做法 / 规范范例
+
+先验证合同，再同步说明。
+
+```text
+运行时源码 + 配置解析 + 合同测试 + 工作流
+                   ↓
+               项目治理文档
+```
+
+架构见 `docs/architecture/`，运维见 `docs/operations/`；历史证据保存在 Git，不保留多份治理镜像。
