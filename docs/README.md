@@ -4,7 +4,8 @@
 
 ## 架构
 
-- [架构概览](architecture/overview.md)：产品边界与主请求流
+- [架构概览](architecture/overview.md)：当前实现与主请求流
+- [轻量网关与能力中心](architecture/edge-capability-boundaries.md)：待实施的职责边界与可迁移内部契约
 - [路由模型](architecture/routing-model.md)：Tier、亲和、尝试和对冲
 - [可靠性模型](architecture/reliability-model.md)：429、配额、冷却与恢复
 - [协议模型](architecture/protocol-model.md)：原生请求、转换和流
@@ -16,6 +17,7 @@
 ## 运维
 
 - [配置](operations/configuration.md)、[部署与回滚](operations/deployment.md)、[故障排查](operations/troubleshooting.md)
+- [能力中心迁移计划](operations/center-migration-plan.md)：本阶段仅 Cloudflare，Oracle 留作未来选项
 - [Provider 发现](operations/provider-discovery.md)、[公开模型状态](operations/public-model-status.md)
 - [免费资源预算](operations/free-tier-budget.md)、[GitHub 仓库设置](operations/github-repository-settings.md)
 
