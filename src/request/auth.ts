@@ -84,6 +84,10 @@ export function isDeploymentHealthRoute(route: string): boolean {
   return route === 'health' || route === 'models' || route === 'anthropic_count_tokens';
 }
 
+export function isDeploymentHealthCountTokensProbe(body: Record<string, unknown>): boolean {
+  return body.model === 'gateway-health-check' && Array.isArray(body.messages) && body.messages.length === 0;
+}
+
 export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
   const expected = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
   if (!expected) return null;
