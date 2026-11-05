@@ -274,9 +274,9 @@ for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: 
 }
 
 const deployScript = read('scripts/deploy.sh');
-assert.match(deployScript, /persistent-deployment\\.mjs verify-secrets/);
+assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
 assert.match(deployScript, /secret list/);
-assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\\.json/);
+assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\.json/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
 assert.match(deployScript, /persistent-deployment\.mjs health-check/);
