@@ -16,8 +16,8 @@ import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { buildTargetUrl, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
+import type { ImageSize, PreparedImageRequest } from '../../providers/image-generation.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
-import type { PreparedImageRequest, ImageSize } from '../../providers/image-generation.ts';
 import {
   classifyClientAbort,
   classifyEmptyResponse,
@@ -376,7 +376,17 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     // lost. Never resubmit it to another provider and double-charge the user.
     if (route === 'openai_images') {
       return {
-        response: gatewayError(request, env, route, 502, 'Image generation outcome is unknown after a connection failure; not retried.', requestId, undefined, undefined, 'gateway_image_outcome_unknown'),
+        response: gatewayError(
+          request,
+          env,
+          route,
+          502,
+          'Image generation outcome is unknown after a connection failure; not retried.',
+          requestId,
+          undefined,
+          undefined,
+          'gateway_image_outcome_unknown',
+        ),
       };
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -437,7 +447,17 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
         return { rotate: true, kind: classification.kind };
       }
       return {
-        response: gatewayError(request, env, route, 502, 'Image generation failed at the upstream; retry is disabled to prevent duplicate generation.', requestId, undefined, undefined, 'gateway_image_upstream_failed'),
+        response: gatewayError(
+          request,
+          env,
+          route,
+          502,
+          'Image generation failed at the upstream; retry is disabled to prevent duplicate generation.',
+          requestId,
+          undefined,
+          undefined,
+          'gateway_image_upstream_failed',
+        ),
       };
     }
     if (classification.action === 'stop') {
