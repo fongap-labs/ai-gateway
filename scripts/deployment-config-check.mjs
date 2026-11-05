@@ -178,6 +178,21 @@ assert.match(modelDiscoveryScript, /AW_TASK_STATE_DIR/);
 assert.match(modelDiscoveryScript, /provider-discovery\.mjs live/);
 assert.doesNotMatch(modelDiscoveryScript, /AW_CONTROL_TOKEN|AW_ADMIN_TOKEN|AIG_ACCESS_KEY_AGENT/);
 
+// Action Worker product discovery forbids mixing root deployment manifests with
+// product manifests under projects/. Task-only projects remain supported.
+const rootDeployManifest = JSON.parse(read('.github/deploy.json'));
+assert.equal(rootDeployManifest.environment, 'production');
+for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })) {
+  if (!item.isDirectory()) continue;
+  for (const marker of ['deploy.json', 'follows.json', 'release.manifest.json']) {
+    assert.equal(
+      fs.existsSync(path.join(root, 'projects', item.name, marker)),
+      false,
+      `Mixed root/project manifest is forbidden: projects/${item.name}/${marker}`,
+    );
+  }
+}
+
 const deployScript = read('scripts/deploy.sh');
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
