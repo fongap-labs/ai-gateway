@@ -96,14 +96,19 @@ export function trackStreamResponse(
     return response;
   }
   const reader = response.body.getReader();
-  const tailDecoder = new TextDecoder();
   const encoder = rewriteModel !== undefined ? new TextEncoder() : null;
+  // A protocol observer already decodes the wire. Allocate a second decoder
+  // only for model rewriting or legacy non-protocol marker matching.
+  const tailDecoder = encoder || !protocol ? new TextDecoder() : null;
   let lineBuffer = '';
   let diagnosticTail = '';
   let hasSeenErrorEvent = false;
   let hasSeenTerminalFailure = false;
   const lifecycle = protocol ? new SseLifecycleObserver(protocol) : null;
-  const sequenceDecoder = interruptionChunk ? new TextDecoder() : null;
+  // Only Responses error frames use nextSequenceNumber. Chat and Messages
+  // interruption frames ignore it, so they should not pay for another full
+  // UTF-8 decode and regex scan on every stream chunk.
+  const sequenceDecoder = interruptionChunk && (!protocol || protocol === 'openai_responses') ? new TextDecoder() : null;
   let sequenceTail = '';
   let completionSeen = lifecycle ? false : !completionMarker;
   let completionAt: number | null = null;
@@ -361,7 +366,7 @@ export function trackStreamResponse(
       // The protocol observer decodes in bounded pieces. Decode a full upstream
       // chunk only for legacy marker scanning or when model rewriting needs it.
       let decoded = '';
-      if (encoder || !lifecycle) decoded = tailDecoder.decode(value, { stream: true });
+      if (tailDecoder) decoded = tailDecoder.decode(value, { stream: true });
       lifecycle?.pushBytes(value);
       scanSequenceNumbers(value);
       if (!hasSeenErrorEvent || !completionSeen) {
@@ -376,7 +381,9 @@ export function trackStreamResponse(
           );
           if (lifecycle.usage !== null) usageCandidate = lifecycle.usage;
         } else if (usageScan && !closeSeen) scanUsageLine(decoded);
-        const scanWindow = diagnosticTail + decoded;
+        // When protocol parsing owns termination, this legacy diagnostic
+        // window is never consulted. Avoid copying and slicing every chunk.
+        const scanWindow = lifecycle ? '' : diagnosticTail + decoded;
         if (!lifecycle && !hasSeenErrorEvent) {
           hasSeenErrorEvent = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
         }
@@ -390,7 +397,7 @@ export function trackStreamResponse(
           closeSeen = true;
           completionAt = Date.now();
         }
-        diagnosticTail = scanWindow.slice(-256);
+        if (!lifecycle) diagnosticTail = scanWindow.slice(-256);
       }
       let forwarded: Uint8Array;
       try {
