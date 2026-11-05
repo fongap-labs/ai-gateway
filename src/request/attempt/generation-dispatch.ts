@@ -6,7 +6,7 @@
 // user's back or silently use the legacy direct-provider path.
 
 import { attemptBudgetWindowMs } from '../../config/timeouts.ts';
-import { invokeGenerationNode } from '../../generation/generation-client-request.ts';
+import { GenerationCenterUnavailable, invokeGenerationNode } from '../../generation/generation-client-request.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { quotaFromCenter } from '../../reliability/center-quota.ts';
@@ -64,9 +64,12 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
       body: outboundBody,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     clearTimeout(timeoutId);
     detach();
+    if (error instanceof GenerationCenterUnavailable) {
+      return terminate(c, 503, 'gateway_generation_center_unavailable', 'Private image-generation center is unavailable.');
+    }
     if (request.signal.aborted) {
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - startedAt });
       return { response: gatewayError(request, env, route, 499, 'Client closed image generation request.', requestId) };
