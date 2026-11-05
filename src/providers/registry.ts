@@ -3,9 +3,9 @@
 
 import { anthropicProviderAdapter } from './anthropic.ts';
 import { cloudflareImageProviderAdapter } from './cloudflare-image.ts';
-import { googleImageProviderAdapter } from './google-image.ts';
 import { genericOpenAIProviderAdapter } from './generic-openai.ts';
 import { googleProviderAdapter } from './google.ts';
+import { googleImageProviderAdapter } from './google-image.ts';
 import { openAIProviderAdapter } from './openai.ts';
 import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
