@@ -159,7 +159,11 @@ Chat 和 Messages 的已分类网关错误还在 `error.details` 中提供 `gate
 
 - OpenAI Chat 客户端收到 OpenAI 格式的错误。
 - Anthropic Messages 客户端收到 Anthropic 格式的错误。
-- 转换失败会在无效的目标请求被 dispatch 之前，以网关转换失败的形式上报（502 `conversion_not_supported`）。
+- 对于仅目标协议不支持的请求，继续保留 502 转换失败语义（不将有效的客户端请求误标为 400）；新增稳定的 `gateway_conversion_not_supported` 错误码与 `x-should-retry: false`，避免 SDK 把不可转换的请求当作瞬时故障。
+- 当唯一失败原因是顶层请求字段，返回 400 与 `gateway_unsupported_request_field`；该字段仅来自请求本身，且不暴露上游拓扑。
+- Chat Completions 跨协议转换允许标准 `stream_options.include_usage` 布尔提示，但不会把 Chat 专用字段透传到 Anthropic/Responses 目标。未知或非法值仍拒绝转换。
+- 全部上游在 dispatch 前因认证不可用失败时，返回 502 与 `gateway_upstream_auth_unavailable`；全部上游报告模型不存在时，返回 502 与 `gateway_upstream_model_unavailable`。错误不泄露节点/Token。
+- 流式直通仅在无需重写客户端模型别名时使用；同家族回退后的真实上游模型会以实际生效的路由模型判断。
 - 例外：请求被拒的唯一原因是客户端顶层字段无法被任何目标协议承载（例如 Claude Code auto 权限模式发送的 `safeguards`），且该模型没有任何 native 节点时，返回 400 `invalid_request_error`，`error.details.failure_kind` 为 `unsupported_request_field`，`error.details.unsupported_fields` 列出字段名。这个网关没有任何节点能承载这些字段，重试不会改变结果；客户端去掉它们后重发即可，Claude Code 会自动这样做。只要该模型有 native 节点（即使暂时不可用），仍返回 502，因为 native 节点恢复后能原样承载这些字段。
 - 原生尝试已经 dispatch、而某个回退目标随后被转换拒绝时，耗尽响应（含故障转移预算耗尽）的 `error.details.conversion_rejected` 给出被拒绝的转换次数。只报告次数：原因文本可能引用客户端可控的名称，仅保留在 `fallback_conversion_skipped` 服务器日志中。
 

@@ -24,7 +24,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     'x-request-id': requestId,
     ...(exposeUpstreamInfo ? { 'x-gateway-node': node.id, 'x-gateway-tier': node.tier } : {}),
   };
-  const needsModelRewrite = requestedModel !== upstreamModelOf(node, requestedModel);
+  const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
 
   // Run the first-event guard BEFORE returning anything to the client. Parsed
   // lifecycle events are also offered to the usage observer before commit, so
@@ -110,7 +110,10 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   // observing bounded SSE control/usage frames. makeNodeStreamTrack supplies
   // the same accounting callbacks the tracked path uses, so reliability and
   // slot bookkeeping stay identical.
-  if (limits.streamPassthrough) {
+  // A physical model alias must not leak when the fast byte-for-byte relay
+  // is enabled. Preserve its zero-copy path only when no model rewrite is
+  // necessary; otherwise the tracked SSE path restores the client alias.
+  if (limits.streamPassthrough && !needsModelRewrite) {
     const relayed = relayStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,
       protocol: route === 'openai_chat' ? 'openai_chat' : route === 'openai_responses' ? 'openai_responses' : 'anthropic',

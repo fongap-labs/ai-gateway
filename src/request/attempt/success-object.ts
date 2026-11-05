@@ -51,7 +51,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     'x-request-id': requestId,
     ...(exposeUpstreamInfo ? { 'x-gateway-node': node.id, 'x-gateway-tier': node.tier } : {}),
   };
-  const needsModelRewrite = requestedModel !== upstreamModelOf(node, requestedModel);
+  const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
 
   detach();
 
