@@ -22,6 +22,7 @@ import {
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateImageGenerationRequest } from '../protocol/image.ts';
+import { getProviderAdapter } from '../providers/registry.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -419,7 +420,14 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     };
   }
 
-  const tiers = config.tiers;
+  const tiers: TierMap<RuntimeNode[]> =
+    route === 'openai_images'
+      ? {
+          1: config.tiers[1].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+          2: config.tiers[2].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+          3: config.tiers[3].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+        }
+      : config.tiers;
   const requestDescriptor: RequestDescriptor = {
     route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'openai_images',
     model: requestedModel,
@@ -436,7 +444,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     env,
   });
   let familyReachable = feasibility.reachable;
-  if (!familyReachable) {
+  if (!familyReachable && route !== 'openai_images') {
     for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels)) {
       if (effectiveModel === requestedModel) continue;
       const effectiveDescriptor = { ...requestDescriptor, model: effectiveModel };
@@ -505,4 +513,21 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     knownModels: callableModels,
     feasibility,
   };
+}
+
+// Eligibility for the image surface is narrower than a provider's general
+// wire capability. It requires explicit model mapping and a real API-key node;
+// a wildcard or a Codex/Code Assist subscription cannot claim image support.
+function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
+  if (node.auth === 'oauth' || !Object.hasOwn(node.models, logical) || !node.surfaces.includes('images_generations')) return false;
+  const adapter = getProviderAdapter(node.provider).image;
+  if (!adapter) return false;
+  try {
+    return adapter.prepare(node.baseUrl, node.models[logical] as string, {
+      prompt: String(body.prompt),
+      size: (body.size ?? '1024x1024') as '1024x1024' | '1024x1536' | '1536x1024',
+    }) !== null;
+  } catch {
+    return false;
+  }
 }
