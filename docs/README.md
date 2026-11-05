@@ -12,6 +12,7 @@
 - [订阅模型](architecture/subscription-model.md)：Tier 2 OAuth 与适配器
 - [模块布局](architecture/repository-layout.md)：源码职责和依赖方向
 - [模块边界审计](architecture/module-boundary-audit.md)：已落实的模块归属与有意保留的差异
+- [推理中心部署](operations/inference-center-deployment.md)：私有服务的执行合同、命名与接入条件
 - [仪表盘日历图](architecture/calendar-heatmap.md)：统计口径与展示合同
 
 ## 运维
