@@ -30,7 +30,7 @@ import type { PolicyConfig } from '../types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { TierMap } from '../types/scheduler.ts';
-import { authorize, authorizeDeploymentHealth, presentedCredentials } from './auth.ts';
+import { authorize, authorizeDeploymentHealth, isDeploymentHealthRoute, presentedCredentials } from './auth.ts';
 import { gatewayError } from './errors.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from './model-authz.ts';
 import { modelFallbackCandidates } from './model-fallback.ts';
@@ -199,7 +199,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   let authResult: AuthResult = await authorize(request, env);
-  const deploymentHealthRoute = route === 'health' || route === 'models' || route === 'anthropic_count_tokens';
+  const deploymentHealthRoute = isDeploymentHealthRoute(route);
   if (!authResult.authorized && deploymentHealthRoute) {
     authResult = (await authorizeDeploymentHealth(request, env)) ?? authResult;
   }
