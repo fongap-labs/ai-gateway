@@ -222,6 +222,7 @@ assert.equal(isDeploymentHealthRoute('openai_chat'), false);
 assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [] }), true);
 assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [{ role: 'user', content: 'x' }] }), false);
 assert.equal(isDeploymentHealthCountTokensProbe({ model: 'other-model', messages: [] }), false);
+assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [], system: 'not allowed' }), false);
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
