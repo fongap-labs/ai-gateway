@@ -17,6 +17,7 @@
 // means adding one module in src/providers/ plus its registry line.
 
 import type { SubscriptionAdapter } from '../subscription/types.ts';
+import type { ImageGenerationAdapter } from './image-generation.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
 
 /** Structural wire contract: which protocol the provider speaks and which
@@ -56,6 +57,8 @@ export type ProviderAdapter = Readonly<{
    *  switches (AIG_USAGE_INCLUDE_MODE / AIG_USAGE_EXCLUDE_PROVIDERS) still
    *  apply on top of this declaration. */
   streamUsage: boolean;
+  /** Native image-generation wire contract, absent for chat-only providers. */
+  image?: ImageGenerationAdapter;
   /** Built-in OAuth onboarding defaults; absent for providers without an
    *  OAuth subscription onboarding story. */
   oauth?: OAuthProviderConfig;
