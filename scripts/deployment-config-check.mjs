@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
+import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 
@@ -27,6 +28,7 @@ const tooling = [
   'scripts/plan-node-configuration.mjs',
   'scripts/cloudflare-wrangler.mjs',
   'scripts/github-deployment-config.mjs',
+  'scripts/persistent-deployment.mjs',
   'scripts/deploy.sh',
 ];
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
@@ -88,9 +90,28 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
-assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
-assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
-assert.ok(deploySecretScope.includes('AIG_INFERENCE_AUTH_KEY'));
+assert.deepEqual(deploySecretScope.sort(), [
+  'AIG_DEPLOY_HEALTH_KEY',
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_API_TOKEN',
+]);
+const deployRequired = read('.github/deploy.secrets.required')
+  .split(/\\r?\\n/)
+  .map((line) => line.trim())
+  .filter(Boolean);
+assert.deepEqual(deployRequired.sort(), deploySecretScope);
+for (const runtimeSecret of [
+  'AIG_TOKEN_ENCRYPTION_KEY',
+  'AIG_INFERENCE_AUTH_KEY',
+  'AIG_GENERATION_AUTH_KEY',
+  'AIG_ACCESS_KEY_AIR',
+  'AIG_ACCESS_KEY_PRO',
+  'AIG_ACCESS_KEY_MAX',
+  'AIG_ACCESS_KEY_ULTRA',
+  'AIG_ACCESS_KEY_AGENT',
+]) {
+  assert.equal(deploySecretScope.includes(runtimeSecret), false, `${runtimeSecret} must stay in Cloudflare, not the production deploy environment`);
+}
 // The old inference-center product manifest was deleted. Keep testing the
 // underlying private center configuration builder, but never re-introduce a
 // second deploy product beside the root .github/ manifest.
@@ -112,7 +133,6 @@ assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVIC
 assert.equal(centerBindingConfig.vars.AIG_INFERENCE_TARGET, undefined);
 assert.equal(buildWranglerConfig({}).services, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_INFERENCE_TARGET: 'other-center' }));
-assert.ok(deploySecretScope.includes('AIG_GENERATION_AUTH_KEY'));
 const generationBound = buildWranglerConfig({ AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.deepEqual(generationBound.services, [{ binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' }]);
 assert.equal(generationBound.vars.AIG_GENERATION_ACTIVE, 'true');
@@ -121,6 +141,42 @@ assert.equal(buildWranglerConfig({}).vars.AIG_GENERATION_ACTIVE, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_GENERATION_TARGET: 'untrusted-target' }));
 const bothCenters = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center', AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.equal(bothCenters.services.length, 2);
+
+// Production deploy reads only deployment credentials; runtime secret values remain remote.
+const deployInputs = {
+  CLOUDFLARE_API_TOKEN: 'deploy-token',
+  CLOUDFLARE_ACCOUNT_ID: 'account-id',
+  AIG_PUBLIC_URL: 'https://api.example.test',
+  AIG_DEPLOY_HEALTH_KEY: 'health-key',
+  AIG_TIER1_NODES_01: JSON.stringify([{ id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } }]),
+  AIG_AFFINITY_KV_ID: 'affinity-kv-id',
+};
+const deployPrepared = validateDeploymentInputs(deployInputs);
+assert.equal(deployPrepared.config.name, 'ai-gateway');
+assert.equal(Object.hasOwn(deployPrepared.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: '' }), /AIG_DEPLOY_HEALTH_KEY/);
+const remoteSecretNames = [
+  { name: 'AIG_ACCESS_KEY_AGENT', type: 'secret_text' },
+  { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
+];
+assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 1);
+assert.throws(
+  () => validateRemoteSecretInventory([{ name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
+  /AIG_ACCESS_KEY_AGENT/,
+);
+const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
+assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
+const oauthPrepared = validateDeploymentInputs({
+  ...deployInputs,
+  AIG_TIER2_NODES_01: JSON.stringify([{ id: 'oauth-1', provider: 'anthropic', auth: 'oauth', models: { Chat: 'claude' } }]),
+});
+assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, oauthPrepared.config), /AIG_TOKEN_ENCRYPTION_KEY/);
+assert.doesNotThrow(() =>
+  validateRemoteSecretInventory(
+    [...remoteSecretNames, { name: 'AIG_TOKEN_ENCRYPTION_KEY', type: 'secret_text' }],
+    oauthPrepared.config,
+  ),
+);
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
@@ -178,6 +234,9 @@ for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: 
 }
 
 const deployScript = read('scripts/deploy.sh');
+assert.match(deployScript, /persistent-deployment\\.mjs verify-secrets/);
+assert.match(deployScript, /secret list/);
+assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\\.json/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
 assert.match(deployScript, /github-deployment-config\.mjs health-check/);
