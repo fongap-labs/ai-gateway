@@ -236,7 +236,7 @@ assert.match(deployScript, /secret list/);
 assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\\.json/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
-assert.match(deployScript, /github-deployment-config\.mjs health-check/);
+assert.match(deployScript, /persistent-deployment\.mjs health-check/);
 assert.match(deployScript, /DEPLOY_SOURCE_SHA/);
 assert.doesNotMatch(deployScript, /wrangler@\d+\.\d+\.\d+/);
 
