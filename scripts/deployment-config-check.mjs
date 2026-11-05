@@ -10,7 +10,11 @@ import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-c
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
-import { authorizeDeploymentHealth, isDeploymentHealthRoute } from '../src/request/auth.ts';
+import {
+  authorizeDeploymentHealth,
+  isDeploymentHealthCountTokensProbe,
+  isDeploymentHealthRoute,
+} from '../src/request/auth.ts';
 import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -215,6 +219,9 @@ assert.equal(isDeploymentHealthRoute('models'), true);
 assert.equal(isDeploymentHealthRoute('anthropic_count_tokens'), true);
 assert.equal(isDeploymentHealthRoute('metrics'), false);
 assert.equal(isDeploymentHealthRoute('openai_chat'), false);
+assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [] }), true);
+assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [{ role: 'user', content: 'x' }] }), false);
+assert.equal(isDeploymentHealthCountTokensProbe({ model: 'other-model', messages: [] }), false);
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
