@@ -77,10 +77,10 @@ for (const { protocol, wire, tokens } of wires) {
     idleTimeoutMs: 1000,
     ...callbacks,
   });
-  assert.equal(await result.text(), wire, `\${protocol}: must preserve exact SSE bytes`);
-  assert.equal(callbacks.record.success, 1, `\${protocol}: successful terminal marker`);
+  assert.equal(await result.text(), wire, `${protocol}: must preserve exact SSE bytes`);
+  assert.equal(callbacks.record.success, 1, `${protocol}: successful terminal marker`);
   assert.equal(callbacks.record.failure, 0);
-  assert.equal(callbacks.record.attempts.length, 1, `\${protocol}: exactly one physical settlement`);
+  assert.equal(callbacks.record.attempts.length, 1, `${protocol}: exactly one physical settlement`);
   assert.equal(callbacks.record.attempts[0].outcome, 'success');
   assert.equal(callbacks.record.deliveries.length, 1);
   assert.equal(callbacks.record.deliveries[0][tokens], 3);
