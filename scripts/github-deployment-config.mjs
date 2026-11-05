@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diagnosticsGroups, KEY_GROUPS } from '../src/config/access-keys.ts';
+import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { loadGatewayConfig } from '../src/config/nodes.ts';
 import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
 
@@ -17,11 +17,6 @@ const GROUP_MODELS_PATTERN = `AIG_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
-// The post-deploy check reads /health, so it needs a key from a group AIG_DIAGNOSTICS_GROUPS allows.
-function diagnosticsKeyName(names, diagnosticsGroupsValue) {
-  const allowed = diagnosticsGroups(diagnosticsGroupsValue);
-  return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
-}
 const SECRET_NAME = new RegExp(
   `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)#!/usr/bin/env node
 // SPDX-License-Identifier: MIT
@@ -227,11 +222,8 @@ export function preflight(env) {
   }
   const groupKeys = Object.keys(env).filter((k) => GROUP_KEY_RE.test(k) && env[k] && String(env[k]).trim() !== '');
   if (!groupKeys.length) errors.push(`At least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
-  else if (!diagnosticsKeyName(groupKeys, env.AIG_DIAGNOSTICS_GROUPS)) {
-    const allowed = [...(diagnosticsGroups(env.AIG_DIAGNOSTICS_GROUPS) ?? [])].join(', ');
-    errors.push(
-      `No configured access key may read /health, which the post-deploy check needs: AIG_DIAGNOSTICS_GROUPS allows ${allowed}. Add an AIG_ACCESS_KEY_<GROUP> for one of them, or set AIG_DIAGNOSTICS_GROUPS to a configured group ("*" allows every key).`,
-    );
+  if (typeof env.AIG_DEPLOY_HEALTH_KEY !== 'string' || env.AIG_DEPLOY_HEALTH_KEY.trim().length < 32) {
+    errors.push('AIG_DEPLOY_HEALTH_KEY must be a dedicated Secret containing at least 32 characters.');
   }
 
   const v = collectVarsFromEnv(env);
