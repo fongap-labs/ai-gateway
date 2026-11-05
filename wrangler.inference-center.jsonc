@@ -1,0 +1,13 @@
+{
+  // Deployment-managed private Worker; no workers.dev URL and no public routes.
+  // Upload AIG_INFERENCE_AUTH_KEY and node credential shards as secrets before
+  // private Service Binding traffic is enabled. No production switch in this PR.
+  "name": "ai-inference-center",
+  "main": "src/inference/inference-center-entry.ts",
+  "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["enable_request_signal"],
+  "workers_dev": false,
+  "observability": {
+    "enabled": true
+  }
+}
