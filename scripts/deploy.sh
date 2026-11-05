@@ -7,6 +7,8 @@ umask 077
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
+
 if [[ "${AIG_IS_DEPLOY_ENABLED:-true}" == "false" ]]; then
   echo "AI Gateway deployment is disabled by AIG_IS_DEPLOY_ENABLED=false."
   exit 0
