@@ -5,18 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
+import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
+import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute } from '../src/request/auth.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
-import {
-  authorize,
-  authorizeDeploymentHealth,
-  isDeploymentHealthCountTokensProbe,
-  isDeploymentHealthRoute,
-} from '../src/request/auth.ts';
-import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -113,11 +108,7 @@ for (const runtimeSecret of [
   'AIG_ACCESS_KEY_ULTRA',
   'AIG_ACCESS_KEY_AGENT',
 ]) {
-  assert.equal(
-    deploySecretScope.includes(runtimeSecret),
-    false,
-    `${runtimeSecret} must stay in Cloudflare, not the production deploy environment`
-  );
+  assert.equal(deploySecretScope.includes(runtimeSecret), false, `${runtimeSecret} must stay in Cloudflare, not the production deploy environment`);
 }
 // The old inference-center product manifest was deleted. Keep testing the
 // underlying private center configuration builder, but never re-introduce a
@@ -155,17 +146,16 @@ const deployInputs = {
   CLOUDFLARE_ACCOUNT_ID: 'account-id',
   AIG_PUBLIC_URL: 'https://api.example.test',
   AIG_DEPLOY_HEALTH_KEY: 'deployment-health-key-0123456789abcdef0123456789abcdef',
-  AIG_TIER1_NODES_01: JSON.stringify([{ id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } }]),
+  AIG_TIER1_NODES_01: JSON.stringify([
+    { id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } },
+  ]),
   AIG_AFFINITY_KV_ID: 'affinity-kv-id',
 };
 const deployPrepared = validateDeploymentInputs(deployInputs);
 assert.equal(deployPrepared.config.name, 'ai-gateway');
 assert.equal(Object.hasOwn(deployPrepared.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: '' }), /AIG_DEPLOY_HEALTH_KEY/);
-assert.throws(
-  () => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }),
-  /at least 32 characters/,
-);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }), /at least 32 characters/);
 const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
@@ -217,10 +207,7 @@ const reusedHealthKeyAuth = await authorize(deploymentHealthRequest, {
 });
 assert.equal(reusedHealthKeyAuth.authorized, false);
 assert.equal(canReadDiagnostics({ AIG_DIAGNOSTICS_GROUPS: 'MAX' }, deploymentHealthAuth), true);
-assert.equal(
-  await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }),
-  null,
-);
+assert.equal(await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }), null);
 assert.equal(isDeploymentHealthRoute('health'), true);
 assert.equal(isDeploymentHealthRoute('models'), true);
 assert.equal(isDeploymentHealthRoute('anthropic_count_tokens'), true);
