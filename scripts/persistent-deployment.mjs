@@ -14,7 +14,6 @@ import {
   verifyRemote,
 } from './github-deployment-config.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
 const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
 const GROUP_SECRET = /^AIG_ACCESS_KEY_(AIR|PRO|MAX|ULTRA|AGENT)$/;
