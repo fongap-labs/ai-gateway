@@ -154,7 +154,7 @@ async function main() {
         `  Analytics Engine: ${config.analytics_engine_datasets ? 'configured' : 'disabled'}`,
         '  Runtime secrets: preserved in Cloudflare; not uploaded by this deployment',
         '',
-      ].join('\\n'),
+      ].join('\n'),
     );
     console.log('Deployment configuration prepared; no runtime secret values were read or written.');
     return;
