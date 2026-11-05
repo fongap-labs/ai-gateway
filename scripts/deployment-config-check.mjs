@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
-import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
+import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -90,11 +90,7 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
-assert.deepEqual(deploySecretScope.sort(), [
-  'AIG_DEPLOY_HEALTH_KEY',
-  'CLOUDFLARE_ACCOUNT_ID',
-  'CLOUDFLARE_API_TOKEN',
-]);
+assert.deepEqual(deploySecretScope.sort(), ['AIG_DEPLOY_HEALTH_KEY', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN']);
 const deployRequired = read('.github/deploy.secrets.required')
   .split(/\r?\n/)
   .map((line) => line.trim())
@@ -110,7 +106,11 @@ for (const runtimeSecret of [
   'AIG_ACCESS_KEY_ULTRA',
   'AIG_ACCESS_KEY_AGENT',
 ]) {
-  assert.equal(deploySecretScope.includes(runtimeSecret), false, `${runtimeSecret} must stay in Cloudflare, not the production deploy environment`);
+  assert.equal(
+    deploySecretScope.includes(runtimeSecret),
+    false,
+    `${runtimeSecret} must stay in Cloudflare, not the production deploy environment`
+  );
 }
 // The old inference-center product manifest was deleted. Keep testing the
 // underlying private center configuration builder, but never re-introduce a
@@ -172,10 +172,7 @@ const oauthPrepared = validateDeploymentInputs({
 });
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, oauthPrepared.config), /AIG_TOKEN_ENCRYPTION_KEY/);
 assert.doesNotThrow(() =>
-  validateRemoteSecretInventory(
-    [...remoteSecretNames, { name: 'AIG_TOKEN_ENCRYPTION_KEY', type: 'secret_text' }],
-    oauthPrepared.config,
-  ),
+  validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TOKEN_ENCRYPTION_KEY', type: 'secret_text' }], oauthPrepared.config),
 );
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
