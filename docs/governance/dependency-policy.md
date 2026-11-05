@@ -2,7 +2,7 @@
 
 ai-gateway 将 Worker 运行时的依赖面保持在有意的最小范围内。当依赖变更影响打包、协议语义、网络行为或部署工具时，将其视为行为风险变更。
 
-## Dependabot
+## 依赖机器人
 
 `.github/dependabot.yml` 当前检查：
 
@@ -34,17 +34,17 @@ ai-gateway 将 Worker 运行时的依赖面保持在有意的最小范围内。�
 
 不要仅为了方便而引入通用框架、校验栈、HTTP 封装或工具库。
 
-## Lockfile
+## 锁定文件
 
 - `package-lock.json` 纳入版本控制。
 - CI 使用 `npm ci` 以保证安装的确定性。
 - 不得手动编辑 lockfile。
 
-## GitHub Actions
+## 工作流依赖
 
 必需工作流所使用的 Actions 应固定到不可变的 commit SHA。更新 Action 的固定版本，需要与其他构建/部署依赖同等的评审纪律。
 
-## Wrangler
+## 部署工具
 
 Wrangler 以固定版本的 CLI 形式调用，而不是作为生产依赖安装。规范的部署包装器为 `scripts/cloudflare-wrangler.mjs`，它负责固定 Wrangler 版本，以及本地的部署与迁移行为。
 
