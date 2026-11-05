@@ -197,8 +197,11 @@ export function preflight(env) {
   }
   const groupKeys = Object.keys(env).filter((k) => GROUP_KEY_RE.test(k) && env[k] && String(env[k]).trim() !== '');
   if (!groupKeys.length) errors.push(`At least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
-  if (typeof env.AIG_DEPLOY_HEALTH_KEY !== 'string' || env.AIG_DEPLOY_HEALTH_KEY.trim().length < 32) {
-    errors.push('AIG_DEPLOY_HEALTH_KEY must be a dedicated Secret containing at least 32 characters.');
+  if (
+    typeof env.AIG_DEPLOY_HEALTH_KEY !== 'string' ||
+    !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())
+  ) {
+    errors.push('AIG_DEPLOY_HEALTH_KEY must be a dedicated Secret containing at least 32 URL-safe characters.');
   }
 
   const v = collectVarsFromEnv(env);
