@@ -166,7 +166,7 @@ assert.throws(
   /at least 32 characters/,
 );
 const remoteSecretNames = [
-  { name: 'AIG_ACCESS_KEY_AGENT', type: 'secret_text' },
+  { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
   { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
 ];
@@ -182,7 +182,7 @@ assert.throws(
 assert.throws(
   () =>
     validateRemoteSecretInventory(
-      remoteSecretNames.filter((secret) => secret.name !== 'AIG_ACCESS_KEY_AGENT'),
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_ACCESS_KEY_AIR'),
       deployPrepared.config,
     ),
   /AIG_ACCESS_KEY_<GROUP>/,
