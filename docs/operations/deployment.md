@@ -81,7 +81,7 @@ AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `produc
 
 已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
 
-下一阶段目标是将敏感运维操作放在 `ai-gateway-ops`，正式代码发布继续使用 `production`，运行时业务密钥由 Cloudflare Secrets 长期管理，两个 Job 仅传递非敏感构建证明与校验结果。**这项隔离尚未由中央工作流完全实施**；当前生产部署仍会从中央 Secret 范围注入上游凭据，不能将目标当作已生效配置。
+运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、OAuth 加密密钥、推理/生成中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
 
 ## 生产 Environment
 
@@ -102,18 +102,16 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 对应的 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`；
 - 可选的 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG` 以及其他运行时 Variables。
 
-核心生产 Secrets 包括：
+生产 Environment 的 Secrets 只保留：
 
-- `CLOUDFLARE_API_TOKEN`；
-- 已配置的 `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}`；
-- 按 Tier 划分范围的 `AIG_TIER{1,2,3}_CREDENTIALS_01..10`；
-- 使用加密订阅凭据时所需的 `AIG_TOKEN_ENCRYPTION_KEY`。
+- `CLOUDFLARE_API_TOKEN`：部署 Worker、D1 迁移与绑定所需的发布凭据；
+- `AIG_DEPLOY_HEALTH_KEY`：部署后健康检查凭据，由中央策略从 `AIG_ACCESS_KEY_AGENT` 别名注入，不会写入 Wrangler 配置或上传到 Cloudflare。
 
-`CLOUDFLARE_ACCOUNT_ID` 的值不是 Secret，而是由中央策略别名注入：`policies/deploy-secrets.json` 将 `CLOUDFLARE_ACCOUNT_ID` 映射到主机仓库的 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` Variable。由于 `resolve-secret-scope` 只对 target 在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，该名字必须保持在列表中——列表声明的是可注入的环境变量名，而不是"已存储的 Secret 清单"。
+`CLOUDFLARE_ACCOUNT_ID` 是非敏感账号标识，由中央策略映射到 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`。由于 `resolve-secret-scope` 只对目标在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，三个名称必须与 `.github/deploy.secrets.required` 一致。
 
-当必需的生产输入缺失时，应用预检会失败即关闭。
+Provider、访问分组、Tier 节点凭据、OAuth 加密密钥以及私有推理/生成中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。普通部署通过 `wrangler secret list` 读取名称和类型，验证必需密钥存在；不会读取密钥值、生成密钥载荷或传入 `--secrets-file`。Cloudflare 部署会保留未随本次部署上传的已有 Worker Secrets。缺少必需密钥时部署在代码发布前失败即关闭。
 
-预检还会拒绝 `degraded` 配置：只要已声明的节点因缺少凭据、字段非法或 URL 非法而被排除，部署就会失败，避免容量静默减少。确实需要带着减少后的容量上线时，显式设置 `AIG_ALLOW_DEGRADED=true`，并在部署摘要与 `/health` 中确认 `nodes_usable/nodes_total`、`nodes_excluded` 和 `degraded`。部署后的健康检查同样默认拒绝 `degraded`，并会重试三次后回滚。 健康检查读取 `/health`，所以它会选用 `AIG_DIAGNOSTICS_GROUPS` 允许的分组密钥（默认 MAX 或 ULTRA）；已配置的密钥都不在允许范围内时，预检在部署前就会失败。配置错误（被拒绝的分片、冲突的节点、无效的模型/策略/回退/OAuth 设置）与容量减少不同：运行时会绕开它们继续服务，但预检总是拒绝部署，`AIG_ALLOW_DEGRADED` 不会放行它们。
+部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚。OAuth 节点配置存在时，远端密钥盘点还会要求 `AIG_TOKEN_ENCRYPTION_KEY`；启用推理/生成 Service Binding 时分别要求对应的中心认证密钥。
 
 ## 跨 isolate 调用分析
 
@@ -167,10 +165,11 @@ ORDER BY node, calls DESC
 2. 要求提供完整的、不可变的源码 SHA；
 3. 安装锁定的 Node 依赖；
 4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
-5. 准备 Cloudflare 部署配置与密钥载荷；
-6. 通过固定版本的 Wrangler 包装器进行部署；
-7. 按精确的源码 SHA 验证线上构建；
-8. 若部署后验证失败，则回滚 Worker 部署。
+5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
+6. 查询 Cloudflare Worker Secret 名称并执行 fail-closed 盘点；
+7. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
+8. 按精确源码 SHA 验证线上构建；
+9. 若部署后验证失败，则回滚 Worker 部署。
 
 Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
@@ -181,8 +180,8 @@ Config 与 Secret 分片是相互独立（independent）的分区。运行时绑
 添加或轮换上游 key 的步骤：
 
 1. 将节点保留在相应的 `AIG_TIER*_NODES_XX` Variable 中；
-2. 在该 Tier 的任一 Secret 分片中，以相同的节点 id 添加或更新其凭据；
-3. 由下一次受治理的部署重新构建运行时配置。
+2. 在 Cloudflare Worker `ai-gateway` 的 Secrets 中，通过 Cloudflare Dashboard 或 Action Worker 的 `ai-gateway-ops` 工作流更新对应 Tier 的 `AIG_TIER*_CREDENTIALS_XX`；
+3. 更新后执行密钥盘点与健康检查；代码部署不会覆盖或重新上传这些凭据。
 
 不要将凭据放入节点 JSON 中。
 
