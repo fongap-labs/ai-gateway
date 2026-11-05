@@ -178,6 +178,22 @@ assert.throws(
     ),
   /AIG_ACCESS_KEY_<GROUP>/,
 );
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_TIER1_CREDENTIALS_01'),
+      deployPrepared.config,
+    ),
+  /AIG_TIER\[123\]_CREDENTIALS_XX/,
+);
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      [...remoteSecretNames, { name: 'AIG_ACCESS_KEY_MAX', type: 'plain_text' }],
+      deployPrepared.config,
+    ),
+  /invalid entry/,
+);
 const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
 const oauthPrepared = validateDeploymentInputs({
