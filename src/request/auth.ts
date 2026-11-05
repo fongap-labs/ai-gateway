@@ -3,17 +3,10 @@
 //
 // Gateway access-key authentication.
 //
-// Authorization flow:
-//
-//   Client presents a credential (Authorization: Bearer or x-api-key)
-//     ↓
-//   The credential is matched (constant-time SHA-256) against each
-//   configured AIG_ACCESS_KEY_<GROUP> secret.
-//     ↓
-//   On a hit, the resolved group and its model allowlist are returned.
-//     ↓
-//   The request handler calls authorizeModel() against the configured
-//   logical model set BEFORE entering the scheduler.
+// User credentials are matched (constant-time SHA-256) against configured
+// AIG_ACCESS_KEY_<GROUP> secrets. The separate AIG_DEPLOY_HEALTH_KEY is only
+// resolved by the preflight layer for an explicit, non-generative health-probe
+// route; it never becomes a user access group or model-generation credential.
 //
 // OAuth onboarding routes (/oauth/start) accept the access key through a
 // POST form body (the paste page), which is converted into an x-api-key
