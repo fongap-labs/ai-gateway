@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
+import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,6 +91,34 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
 assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
 assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
 assert.ok(deploySecretScope.includes('AIG_INFERENCE_AUTH_KEY'));
+const inferenceProduct = JSON.parse(read('projects/inference-center/deploy.json'));
+assert.deepEqual(inferenceProduct, {
+  schema_version: '1',
+  adapter: 'source-script',
+  automatic: false,
+  ignore_docs_only: true,
+  runner_profile: 'production-deploy',
+  environment: 'inference-center-ops',
+  entrypoint: 'scripts/deploy-inference-center.sh',
+});
+const inferenceRequired = read('projects/inference-center/deploy.secrets.required').trim().split(/\r?\n/);
+const inferenceAllowed = read('projects/inference-center/deploy.secrets.allowed').trim().split(/\r?\n/);
+assert.deepEqual(inferenceRequired, ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_INFERENCE_AUTH_KEY']);
+assert.ok(inferenceAllowed.includes('AIG_TOKEN_ENCRYPTION_KEY'));
+assert.ok(inferenceAllowed.includes('AIG_TIER1_CREDENTIALS_01'));
+assert.equal(inferenceAllowed.some((name) => /^AIG_ACCESS_KEY_|^AW_/.test(name)), false);
+assert.throws(() => buildInferenceCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
+assert.throws(
+  () => buildInferenceCenterDeployment({
+    CLOUDFLARE_API_TOKEN: 'test-token',
+    CLOUDFLARE_ACCOUNT_ID: 'test-account',
+    AIG_INFERENCE_AUTH_KEY: 'short',
+  }),
+  /at least 32/
+);
+assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
+assert.match(read('scripts/deploy-inference-center.sh'), /inference-center-deployment\.mjs prepare/);
+
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
 assert.equal(centerBindingConfig.vars.AIG_INFERENCE_TARGET, undefined);
