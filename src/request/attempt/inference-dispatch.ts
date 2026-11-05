@@ -10,8 +10,8 @@ import { invokeInferenceNode } from '../../inference/inference-client-request.ts
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
-import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { quotaFromCenter } from '../../reliability/center-quota.ts';
+import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
