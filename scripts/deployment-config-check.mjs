@@ -95,6 +95,16 @@ assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVIC
 assert.equal(centerBindingConfig.vars.AIG_INFERENCE_TARGET, undefined);
 assert.equal(buildWranglerConfig({}).services, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_INFERENCE_TARGET: 'other-center' }));
+assert.ok(deploySecretScope.includes('AIG_GENERATION_AUTH_KEY'));
+const generationBound = buildWranglerConfig({ AIG_GENERATION_TARGET: 'ai-generation-center' });
+assert.deepEqual(generationBound.services, [{ binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' }]);
+assert.equal(generationBound.vars.AIG_GENERATION_ACTIVE, 'true');
+assert.equal(generationBound.vars.AIG_GENERATION_TARGET, undefined);
+assert.equal(buildWranglerConfig({}).vars.AIG_GENERATION_ACTIVE, undefined);
+assert.throws(() => buildWranglerConfig({ AIG_GENERATION_TARGET: 'untrusted-target' }));
+const bothCenters = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center', AIG_GENERATION_TARGET: 'ai-generation-center' });
+assert.equal(bothCenters.services.length, 2);
+
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
 // applies an alias to a name the target declares in .github/deploy.secrets.allowed.
