@@ -252,3 +252,7 @@ curl -X POST 'https://<gateway>/v1/images/generations' \
 ### Workers 免费版 CPU 限制
 
 Workers Free 单请求仅有 10ms CPU、128MB 内存。等待外部 `fetch` 的时间不计 CPU，但 JSON 和 Base64 处理计入 CPU。原生 OpenAI Images 响应按流透传，不解析大图片；Cloudflare/Gemini 响应若需转为统一结构，限定 2MiB 的已编码缓冲响应，超限明确失败，不自动重复生成。**这不是 10ms 的达标证明。** 生产上线前必须通过 Cloudflare CPU/内存实测；若转换阶段达到限制，应把图片格式归一化迁移到 Oracle 后端，而不是增加 Worker CPU 预算或偷偷回退付费方案。
+
+### 图片回归验证
+
+图片入口的最小权限、前端隐藏、请求校验、三种上游适配和禁止重复生成由 Action Worker 中央测试包的 `image-generation-test.mjs` 验证；本仓库通过 `.github/test-pack.json` 固定测试版本，避免由业务 PR 修改可信测试预期。
