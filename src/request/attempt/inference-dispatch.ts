@@ -11,8 +11,8 @@ import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
 import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
-import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { QuotaSignal } from '../../reliability/quota-signal.ts';
+import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
@@ -26,10 +26,7 @@ function stopForCenter(c: AttemptContext, status: number, code: string): Attempt
   rotateWithNeutralEnd(c.state, c.node, KIND.AUTH, c, true);
   return {
     budgetCharged: false,
-    response: gatewayError(
-      c.request, c.env, c.route, status, 'Private inference center is unavailable.', c.requestId,
-      undefined, undefined, code,
-    ),
+    response: gatewayError(c.request, c.env, c.route, status, 'Private inference center is unavailable.', c.requestId, undefined, undefined, code),
   };
 }
 
@@ -61,15 +58,16 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   if (c.fakeStream && c.surface === 'chat_completions') body.stream = true;
   // Avoid a second copy for normal native requests with no alias or stream mutation.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
-  const outboundBody = reuseRaw ? c.rawBody!.text : JSON.stringify(body);
+  const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify(body);
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
   const hasBufferedResponse = !c.conversionContext && !c.clientWantsStream && !c.fakeStream;
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
-  const attemptBudgetMs = c.hedgedAttempt && c.attemptDeadlineMs
-    ? c.attemptDeadlineMs - Date.now()
-    : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts);
+  const attemptBudgetMs =
+    c.hedgedAttempt && c.attemptDeadlineMs
+      ? c.attemptDeadlineMs - Date.now()
+      : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts);
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
     return stopForCenter(c, 504, 'gateway_inference_deadline_expired');
   }
@@ -151,9 +149,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status, diagnostic: errorText });
     if (classified.action === 'stop') {
       return {
-        response: buildClientErrorResponse(
-          request, env, route, c.requestId, requestedModel, upstream.status, errorText, state, c.exposeUpstreamInfo,
-        ),
+        response: buildClientErrorResponse(request, env, route, c.requestId, requestedModel, upstream.status, errorText, state, c.exposeUpstreamInfo),
       };
     }
     return { rotate: true, kind: classified.kind };
