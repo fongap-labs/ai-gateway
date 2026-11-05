@@ -201,10 +201,10 @@ const deploymentHealthRequest = new Request('https://gateway.example.test/health
 const deploymentHealthAuth = await authorizeDeploymentHealth(deploymentHealthRequest, {
   AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
 });
-assert.equal(deploymentHealthAuth?.mode, 'deploy');
-assert.equal(deploymentHealthAuth?.group, null);
-assert.equal(deploymentHealthAuth?.allowAll, false);
-assert.equal(deploymentHealthAuth?.allowlist.size, 0);
+assert.ok(deploymentHealthAuth?.authorized && deploymentHealthAuth.mode === 'deploy');
+assert.equal(deploymentHealthAuth.group, null);
+assert.equal(deploymentHealthAuth.allowAll, false);
+assert.equal(deploymentHealthAuth.allowlist.size, 0);
 assert.equal(canReadDiagnostics({ AIG_DIAGNOSTICS_GROUPS: 'MAX' }, deploymentHealthAuth), true);
 assert.equal(
   await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }),
