@@ -80,6 +80,10 @@ export async function authorize(request: Request, env: GatewayEnv): Promise<Auth
 // Verify explicit credential strings (header values already extracted, or a
 // POST form value from the OAuth paste page). Same constant-time matching
 // as authorize(); credentials are never logged or echoed.
+export function isDeploymentHealthRoute(route: string): boolean {
+  return route === 'health' || route === 'models' || route === 'anthropic_count_tokens';
+}
+
 export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
   const expected = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
   if (!expected) return null;
