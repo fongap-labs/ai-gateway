@@ -65,6 +65,8 @@ const COUNTED_ROUTES = new Set([
   'POST /messages/count_tokens',
   'POST /v1/responses',
   'POST /responses',
+  'POST /v1/images/generations',
+  'POST /images/generations',
   'GET /v1/models',
   'GET /models',
 ]);
