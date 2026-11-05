@@ -187,11 +187,7 @@ assert.throws(
   /AIG_TIER\[123\]_CREDENTIALS_XX/,
 );
 assert.throws(
-  () =>
-    validateRemoteSecretInventory(
-      [...remoteSecretNames, { name: 'AIG_ACCESS_KEY_MAX', type: 'plain_text' }],
-      deployPrepared.config,
-    ),
+  () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_ACCESS_KEY_MAX', type: 'plain_text' }], deployPrepared.config),
   /invalid entry/,
 );
 const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
