@@ -45,7 +45,7 @@ export async function handleImageSuccess(s: SuccessArgs): Promise<AttemptOutcome
       ),
     };
   }
-  if (node.provider === 'openai') {
+  if (node.provider === 'openai-image') {
     // OpenAI Images already returns the public response schema. Forward the
     // response stream without JSON.parse/JSON.stringify or base64 scanning.
     // The client has to decode the provider's own JSON response. The gateway
