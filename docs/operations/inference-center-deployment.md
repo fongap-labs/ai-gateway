@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-本阶段增加可独立编译的 `ai-inference-center` 私有 Worker。它已有**单节点、单次尝试、原生协议**的执行入口，但**尚未接入主网关，未部署生产，也不支持跨协议转换调用**。现有 `main` 网关仍按照原逻辑直接访问上游。先通过中央合同验证，再切换生产调用方。
+本阶段已有可独立编译的 `ai-inference-center` 私有 Worker，具备**单节点、单次尝试、原生协议**的执行入口；主网关也已有可选的私有调用代码，但**尚无经过验证的正式生产切换**，跨协议转换仍部分在主网关。必须先通过中心合同、凭据归属及部署端到端验证后才能放量。
 
 `legacy/v0.1.5` 分支不修改。
 
@@ -20,7 +20,7 @@
 
 新增自有配置遵循三至四段命名规范。已有 `AIG_TIER*` 分片、`AIG_ACCESS_KEY_<GROUP>` 和平台标准绑定不在此 PR 中强行更名；密钥迁移应当先审查引用、生产环境和值的所有权，绝不将变量重命名等同于密钥复制。
 
-**密钥只配置在受控部署环境，不放在 Git、示例 JSON、PR 日志或普通 Variables 中。** `AIG_INFERENCE_AUTH_KEY` 必须由加密安全随机源生成，不能使用示例字面值。
+**运行时业务密钥应长期存放在 Cloudflare Secrets，不放在 Git、示例 JSON、PR 日志或普通 Variables 中；后续运维环境只在经审批的密钥变更流程中短暂使用必要材料。** `AIG_INFERENCE_AUTH_KEY` 必须由加密安全随机源生成，不能使用示例字面值。
 
 ## 私有入口
 
@@ -60,19 +60,23 @@ npm run validate:merge
 
 `check:inference` 是仅生成构建产物的 Wrangler dry-run，**不是部署**。生产环境只能经 Action Worker 受控部署。中央测试包后续增加：内部密钥缺失/伪造、未知节点、未授权模型、过期截止时间、OAuth 异常、上游流式透传、错误头剔除及网络失败分类。
 
-## 独立部署准备
+## 部署清单调整（已实施）
 
-新增 `projects/inference-center/deploy.json` 手动部署产品。部署环境是 Action Worker 独有的 `inference-center-ops`，不复用主网关的 `production` 环境。源产品设置 `automatic: false`，合并源码不会自动部署、创建公网路由或切换主网关流量。
+Action Worker 规定：一个源码仓库只允许一套产品布局。AI Gateway 保留 `.github/deploy.json` 作为唯一部署清单（`production`），已删除冲突的 `projects/inference-center/deploy.json` 及其独立密钥声明，并移除旧的独立部署入口。
 
-维护者必须先在 **Action Worker → Settings → Environments** 建立 `inference-center-ops` 环境，并启用与生产环境一致的分支限制和等待保护。此环境至少需要：
+`projects/model-discovery/task.json` 属于任务项目，不是部署产品声明，可以继续存在。推理中心执行器、`wrangler.inference-center.jsonc` 及 `scripts/inference-center-deployment.mjs` 仍保留，供后续受控的单一部署入口复用。
 
-- Environment secrets：`CLOUDFLARE_API_TOKEN_SECONDARY`、`AIG_INFERENCE_AUTH_KEY`、实际使用的 `AIG_TIER{N}_CREDENTIALS_XX`；若有订阅 OAuth 节点，还需要 `AIG_TOKEN_ENCRYPTION_KEY`。
-- Environment variables：`CLOUDFLARE_ACCOUNT_ID_SECONDARY`；并确保仓库变量 `AIG_USAGE_D1_ID`、`AIG_TIER{N}_NODES_XX`、`AIG_MODELS_CONFIG` 和 `AIG_POLICIES_CONFIG` 能被部署 Job 读取。
-- 内部密钥 `AIG_INFERENCE_AUTH_KEY` 必须与主网关将来启用 Service Binding 所使用的值相同。不可保存为普通变量、提交进 Git 或写入运行日志。
+**当前尚未通过根部署脚本正式部署推理中心**。不要再选择旧的 `product=inference-center` 或 `environment=inference-center-ops`；它们已经不属于有效的发布合同。
 
-完成配置后，在 Action Worker 的手动部署工作流中指定：源仓库 `fongap-labs/ai-gateway`，产品 `inference-center`，目标环境 `inference-center-ops`，来源为已通过中央 CI 的最新 main 提交。不得启用 Main Write Guard 旁路。
+## 目标隔离（尚未实施）
 
-独立部署脚本 `scripts/deploy-inference-center.sh` 会校验节点、模型、内部密钥及私有部署配置，临时 Wrangler 和密钥文件设为 0600 并在结束时删除。Worker 仍无公网路由；其部署成功不等于内部 Service Binding 请求已通过。主网关的 `AIG_INFERENCE_TARGET` 在后续内部端到端验收通过之前不得启用。
+- `ai-gateway-ops`：独立的密钥管理、权限审计与运维审批环境，用于对 Cloudflare Worker Secrets 做有审计的管理。
+- `production`：运行正式发布，只持有部署必需的 Cloudflare 令牌及非敏感构建信息；不持有批量的上游服务商密钥。
+- Cloudflare Secrets：长期保存各 Worker 的客户端鉴权密钥、Provider 凭据与内部中心认证密钥；常规发布不得重新传送。
+- 运维 Job 和部署 Job 只交换不可变 SHA、非敏感构建产物及校验结果，不交换明文密钥；任何密钥变更都作为单独、受审批的版本变更。
+- 后续部署入口应先发布并验证私有中心，再考虑更新主网关 Service Binding，不能因中心缺失自动直接连接 Provider，也不能在不验证凭据归属的情况下切换流量。
+
+这组环境边界仍需 Action Worker 专用运维工作流、中央环境权限及 Cloudflare Secret 完整性检查的代码实现。**删除旧清单不代表运维环境已创建或新中心已发布。**
 
 ## 后续切换
 

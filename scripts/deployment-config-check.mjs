@@ -91,25 +91,9 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
 assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
 assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
 assert.ok(deploySecretScope.includes('AIG_INFERENCE_AUTH_KEY'));
-const inferenceProduct = JSON.parse(read('projects/inference-center/deploy.json'));
-assert.deepEqual(inferenceProduct, {
-  schema_version: '1',
-  adapter: 'source-script',
-  automatic: false,
-  ignore_docs_only: true,
-  runner_profile: 'production-deploy',
-  environment: 'inference-center-ops',
-  entrypoint: 'scripts/deploy-inference-center.sh',
-});
-const inferenceRequired = read('projects/inference-center/deploy.secrets.required').trim().split(/\r?\n/);
-const inferenceAllowed = read('projects/inference-center/deploy.secrets.allowed').trim().split(/\r?\n/);
-assert.deepEqual(inferenceRequired, ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_INFERENCE_AUTH_KEY']);
-assert.ok(inferenceAllowed.includes('AIG_TOKEN_ENCRYPTION_KEY'));
-assert.ok(inferenceAllowed.includes('AIG_TIER1_CREDENTIALS_01'));
-assert.equal(
-  inferenceAllowed.some((name) => /^AIG_ACCESS_KEY_|^AW_/.test(name)),
-  false,
-);
+// The old inference-center product manifest was deleted. Keep testing the
+// underlying private center configuration builder, but never re-introduce a
+// second deploy product beside the root .github/ manifest.
 assert.throws(() => buildInferenceCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
 assert.throws(
   () =>
@@ -121,7 +105,7 @@ assert.throws(
   /at least 32/,
 );
 assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
-assert.match(read('scripts/deploy-inference-center.sh'), /inference-center-deployment\.mjs prepare/);
+assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')), false);
 
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
@@ -177,6 +161,21 @@ const modelDiscoveryScript = read('projects/model-discovery/run.sh');
 assert.match(modelDiscoveryScript, /AW_TASK_STATE_DIR/);
 assert.match(modelDiscoveryScript, /provider-discovery\.mjs live/);
 assert.doesNotMatch(modelDiscoveryScript, /AW_CONTROL_TOKEN|AW_ADMIN_TOKEN|AIG_ACCESS_KEY_AGENT/);
+
+// Action Worker product discovery forbids mixing root deployment manifests with
+// product manifests under projects/. Task-only projects remain supported.
+const rootDeployManifest = JSON.parse(read('.github/deploy.json'));
+assert.equal(rootDeployManifest.environment, 'production');
+for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })) {
+  if (!item.isDirectory()) continue;
+  for (const marker of ['deploy.json', 'follows.json', 'release.manifest.json']) {
+    assert.equal(
+      fs.existsSync(path.join(root, 'projects', item.name, marker)),
+      false,
+      `Mixed root/project manifest is forbidden: projects/${item.name}/${marker}`,
+    );
+  }
+}
 
 const deployScript = read('scripts/deploy.sh');
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
