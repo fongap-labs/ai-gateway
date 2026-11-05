@@ -133,11 +133,14 @@ export function normalizeRuntimeConfig(raw) {
   }
   for (const [name, rawValue] of Object.entries(raw.secrets)) {
     if (!SECRET_NAME.test(name)) {
-      throw new Error(`secrets.${name}: only AIG_ACCESS_KEY_<GROUP> and AIG_TIER[123]_CREDENTIALS_01..10 are supported`);
+      throw new Error(`secrets.${name}: only declared access, node, encryption, and inference Secrets are supported`);
     }
     const value = encodeValue(rawValue, `secrets.${name}`);
     assertSize(name, value);
     secrets[name] = value;
+  }
+  if (vars.AIG_INFERENCE_TARGET && (typeof secrets.AIG_INFERENCE_AUTH_KEY !== 'string' || secrets.AIG_INFERENCE_AUTH_KEY.length < 32)) {
+    throw new Error('AIG_INFERENCE_AUTH_KEY Secret is required for private inference service binding.');
   }
   if (!Object.keys(secrets).some((k) => GROUP_KEY_RE.test(k))) {
     throw new Error(`secrets must contain at least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
@@ -363,7 +366,8 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
   const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
   // A deployment-only selector: never expose this variable to the runtime.
-  const { AIG_INFERENCE_TARGET: _deploymentSelector, ...runtimeVars } = vars;
+  const runtimeVars = { ...vars };
+  delete runtimeVars.AIG_INFERENCE_TARGET;
   const out = {
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
