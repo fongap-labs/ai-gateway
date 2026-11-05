@@ -7,12 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diagnosticsGroups } from '../src/config/access-keys.ts';
-import {
-  buildWranglerConfig,
-  collectVarsFromEnv,
-  normalizeNodeConfigJsonText,
-  verifyRemote,
-} from './github-deployment-config.mjs';
+import { buildWranglerConfig, collectVarsFromEnv, normalizeNodeConfigJsonText, verifyRemote } from './github-deployment-config.mjs';
 
 const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
 const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
@@ -167,7 +162,9 @@ async function main() {
     const configFile = argValue(argv, '--wrangler');
     if (!file || !configFile) throw new Error('usage: persistent-deployment.mjs verify-secrets --file FILE --wrangler FILE');
     const result = validateRemoteSecretInventory(readJson(file, 'Wrangler secret inventory'), readJson(configFile, 'Generated Wrangler config'));
-    console.log(`Cloudflare runtime secret inventory passed: ${result.total} secret name(s), ${result.credentialShards} credential shard(s). Values were not read.`);
+    console.log(
+      `Cloudflare runtime secret inventory passed: ${result.total} secret name(s), ${result.credentialShards} credential shard(s). Values were not read.`,
+    );
     return;
   }
   if (command === 'health-check') {
