@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- 修复: 跨协议回退兼容标准 `stream_options.include_usage`，拒绝非法值而不误杀正常的 Claude 调用。
+- 修复: 认证不可用、上游模型不存在和协议转换不支持返回明确、不可盲目重试的错误代码。
+- 修复: 流式透传在需要改写模型别名时自动使用受控 SSE 路径，避免泄露物理模型名称。
+
 - 新增: 接入 Claude、Codex 和 Google 的订阅适配器，支持 OAuth 授权、刷新及模型诊断。
 - 新增: 统一 Chat、Messages、Responses 三种协议的双向转换与流式错误处理。
 - 新增: 支持 DeepSeek 推理内容与 Claude 扩展思考的跨协议转换。

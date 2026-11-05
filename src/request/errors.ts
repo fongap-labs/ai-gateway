@@ -32,6 +32,8 @@ const GATEWAY_ERROR_CODE = Object.freeze({
   NO_DISPATCHABLE_NODE: 'gateway_no_dispatchable_node',
   ATTEMPT_BUDGET_EXHAUSTED: 'gateway_attempt_budget_exhausted',
   UPSTREAM_EXHAUSTED: 'gateway_upstream_exhausted',
+  UPSTREAM_AUTH_UNAVAILABLE: 'gateway_upstream_auth_unavailable',
+  UPSTREAM_MODEL_UNAVAILABLE: 'gateway_upstream_model_unavailable',
   CLIENT_DEADLINE_EXCEEDED: 'gateway_client_deadline_exceeded',
 });
 
@@ -198,6 +200,20 @@ export function buildExhaustedResponse(
   } else {
     status = terminalStatus(state.failureKinds) ?? (last?.status === 429 ? 429 : 502);
     message = `All attempted nodes failed for model "${requestedModel}".`;
+
+    // Static routing can be feasible even when no subscription credential is
+    // usable at dispatch time. Keep this non-retryable and distinguish it from
+    // a temporary provider failure without exposing node/account identities.
+    const failureKinds = Object.entries(state.failureKinds)
+      .filter(([, count]) => (count ?? 0) > 0)
+      .map(([kind]) => kind);
+    if (state.dispatches === 0 && failureKinds.length === 1 && failureKinds[0] === FAILURE_KIND.AUTH) {
+      gatewayCode = GATEWAY_ERROR_CODE.UPSTREAM_AUTH_UNAVAILABLE;
+      message = `No upstream credential was available before dispatch for model "${requestedModel}". Check subscription authorization and credential status.`;
+    } else if (failureKinds.length === 1 && failureKinds[0] === FAILURE_KIND.MODEL_MISSING) {
+      gatewayCode = GATEWAY_ERROR_CODE.UPSTREAM_MODEL_UNAVAILABLE;
+      message = `Configured upstreams do not recognize the mapped model for "${requestedModel}". Check node model mapping.`;
+    }
 
     if (isRetryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
       const originalStatus = status;

@@ -36,6 +36,7 @@ const CHAT_ALLOWED_FIELDS = [
   'max_completion_tokens',
   'stop',
   'stream',
+  'stream_options',
   'reasoning_effort',
   'parallel_tool_calls',
   'response_format',
@@ -126,6 +127,23 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
   if (!isRecord(body)) throw new ConversionError('conversion_not_supported: request body is not an object');
   assertFields(body, CHAT_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
+
+  // Streaming usage is a transport/reporting hint, not part of the model
+  // prompt. Accept the standard OpenAI shape before protocol translation;
+  // the target protocol owns its own usage reporting and must not receive
+  // OpenAI-only stream_options.
+  if (body.stream_options !== undefined) {
+    if (!isRecord(body.stream_options)) {
+      throw new ConversionError('conversion_not_supported: stream_options must be an object');
+    }
+    assertFields(body.stream_options, ['include_usage'], 'stream_options');
+    if (body.stream_options.include_usage !== undefined && typeof body.stream_options.include_usage !== 'boolean') {
+      throw new ConversionError('conversion_not_supported: stream_options.include_usage must be boolean');
+    }
+    if (body.stream_options.include_usage === true) {
+      diag.add({ feature: 'stream_usage_hint', action: 'dropped' });
+    }
+  }
 
   const structured = chatStructuredSchema(body, diag);
   const effort = parseChatEffort(body);
