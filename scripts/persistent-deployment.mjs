@@ -6,7 +6,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diagnosticsGroups } from '../src/config/access-keys.ts';
 import { buildWranglerConfig, collectVarsFromEnv, normalizeNodeConfigJsonText, verifyRemote } from './github-deployment-config.mjs';
 
 const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
@@ -36,13 +35,11 @@ export function validateDeploymentInputs(env) {
   for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
   }
+  if (typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' && env.AIG_DEPLOY_HEALTH_KEY.trim().length < 32) {
+    errors.push('AIG_DEPLOY_HEALTH_KEY must contain at least 32 characters.');
+  }
   if (env.AIG_PUBLIC_URL && !/^https:\/\//.test(String(env.AIG_PUBLIC_URL).trim())) {
     errors.push('AIG_PUBLIC_URL must be an absolute https URL.');
-  }
-
-  const allowedDiagnostics = diagnosticsGroups(env.AIG_DIAGNOSTICS_GROUPS);
-  if (allowedDiagnostics !== null && !allowedDiagnostics.has('AGENT')) {
-    errors.push('AIG_DIAGNOSTICS_GROUPS must allow AGENT because AIG_DEPLOY_HEALTH_KEY maps to AIG_ACCESS_KEY_AGENT.');
   }
 
   const vars = deploymentVars(env);
@@ -86,7 +83,8 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   }
 
   const missing = [];
-  if (!names.has('AIG_ACCESS_KEY_AGENT')) missing.push('AIG_ACCESS_KEY_AGENT');
+  if (!names.has('AIG_DEPLOY_HEALTH_KEY')) missing.push('AIG_DEPLOY_HEALTH_KEY');
+  if (![...names].some((name) => GROUP_SECRET.test(name))) missing.push('AIG_ACCESS_KEY_<GROUP> (at least one application access key)');
   if (![...names].some((name) => NODE_SECRET.test(name))) missing.push('AIG_TIER[123]_CREDENTIALS_XX (at least one shard)');
 
   const services = Array.isArray(wranglerConfig?.services) ? wranglerConfig.services : [];
@@ -116,6 +114,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     total: names.size,
     accessKeyGroups: [...names].filter((name) => GROUP_SECRET.test(name)).length,
     credentialShards: [...names].filter((name) => NODE_SECRET.test(name)).length,
+    deploymentHealthKey: names.has('AIG_DEPLOY_HEALTH_KEY'),
     oauthEncryptionKey: names.has('AIG_TOKEN_ENCRYPTION_KEY'),
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
@@ -173,10 +172,6 @@ async function main() {
   if (command === 'health-check') {
     const key = String(process.env.AIG_DEPLOY_HEALTH_KEY || '');
     if (!key.trim()) throw new Error('AIG_DEPLOY_HEALTH_KEY is required for the post-deploy health check.');
-    const allowedDiagnostics = diagnosticsGroups(process.env.AIG_DIAGNOSTICS_GROUPS);
-    if (allowedDiagnostics !== null && !allowedDiagnostics.has('AGENT')) {
-      throw new Error('AIG_DIAGNOSTICS_GROUPS must allow AGENT for the deployment health check.');
-    }
     const expectedBuild = argValue(argv, '--expected-build') || undefined;
     await verifyRemote(process.env.AIG_PUBLIC_URL, key, expectedBuild, {
       allowDegraded: String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true',
