@@ -80,6 +80,27 @@ export async function authorize(request: Request, env: GatewayEnv): Promise<Auth
 // Verify explicit credential strings (header values already extracted, or a
 // POST form value from the OAuth paste page). Same constant-time matching
 // as authorize(); credentials are never logged or echoed.
+export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
+  const expected = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
+  if (!expected) return null;
+
+  const presented = presentedCredentials(request);
+  if (presented.length === 0) return null;
+
+  const expectedDigest = await secretDigest(expected);
+  const candidateDigests = await Promise.all(presented.map((credential) => sha256Digest(credential)));
+  const matched = candidateDigests.some((digest) => constantTimeEquals(new Uint8Array(digest), expectedDigest));
+  if (!matched) return null;
+
+  return {
+    authorized: true,
+    mode: 'deploy',
+    group: null,
+    allowAll: false,
+    allowlist: new Set<string>(),
+  };
+}
+
 export async function authorizeCredentials(credentials: readonly string[], env: GatewayEnv): Promise<AuthResult> {
   const presented = credentials.map((c) => String(c ?? '').trim()).filter(Boolean);
   if (presented.length === 0) return { authorized: false, mode: 'none' };
