@@ -8,7 +8,7 @@ import type { ProviderAdapter } from './types.ts';
 // API-key Gemini image endpoint, separate from OAuth Code Assist subscriptions.
 export const googleImageProviderAdapter: ProviderAdapter = Object.freeze({
   id: 'google-image',
-  wire: { protocol: 'openai', surfaces: Object.freeze(['images_generations'] as Surface[]) },
+  wire: { protocol: 'openai' as const, surfaces: Object.freeze(['images_generations'] as Surface[]) },
   streamUsage: false,
   image: googleImageGeneration,
 });
