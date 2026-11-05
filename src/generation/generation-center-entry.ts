@@ -7,9 +7,9 @@
 
 import { loadExecutionConfig } from '../config/nodes.ts';
 import { collectKnownModels } from '../config/registry.ts';
-import { readBodyTextBounded, readBodyTextWithLimit, BodyTooLargeError } from '../protocol/http.ts';
+import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../protocol/http.ts';
 import { validateImageGenerationRequest } from '../protocol/image.ts';
-import type { ImageSize } from '../providers/image-generation.ts';
+import type { ImageSize, PreparedImageRequest } from '../providers/image-generation.ts';
 import { getProviderAdapter } from '../providers/registry.ts';
 import { extractQuotaSignal } from '../reliability/quota-signal.ts';
 import { isSubscriptionNode } from '../subscription/index.ts';
@@ -129,13 +129,14 @@ async function execute(request: Request, env: GatewayEnv, invocation: Invocation
   const adapter = getProviderAdapter(node.provider).image;
   if (!adapter) return problem(503, 'generation_adapter_missing');
   const physicalModel = node.models[invocation.logicalModel] ?? invocation.logicalModel;
-  let prepared;
+  let prepared: PreparedImageRequest;
   try {
-    prepared = adapter.prepare(node.baseUrl, physicalModel, {
+    const candidate = adapter.prepare(node.baseUrl, physicalModel, {
       prompt: body.prompt as string,
       size: (body.size ?? '1024x1024') as ImageSize,
     });
-    if (!prepared) return problem(400, 'generation_provider_unsupported');
+    if (!candidate) return problem(400, 'generation_provider_unsupported');
+    prepared = candidate;
     const target = new URL(prepared.url);
     if ((target.protocol !== 'https:' && env.AIG_CAN_USE_HTTP !== 'true') || target.username || target.password) {
       return problem(502, 'generation_url_invalid');
@@ -146,7 +147,7 @@ async function execute(request: Request, env: GatewayEnv, invocation: Invocation
 
   const safeClientRequest = new Request('https://generation.internal/execute', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
   });
   const headers = buildUpstreamHeadersFor(node.protocol, safeClientRequest, node.credential, invocation.requestId);
   if (prepared.auth === 'google-key') {
