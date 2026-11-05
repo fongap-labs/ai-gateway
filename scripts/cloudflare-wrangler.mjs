@@ -76,9 +76,7 @@ function checkPrivateInferenceConfig(configSource) {
       config.name === 'ai-inference-center' &&
       config.workers_dev === false &&
       config.main === path.join(root, 'src/inference/inference-center-entry.ts') &&
-      !['routes', 'route', 'custom_domains', 'triggers', 'services'].some((key) =>
-        Object.hasOwn(config, key)
-      )
+      !['routes', 'route', 'custom_domains', 'triggers', 'services'].some((key) => Object.hasOwn(config, key))
     );
   } catch {
     return false;

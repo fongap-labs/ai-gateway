@@ -3,12 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  collectSecretsFromEnv,
-  collectVarsFromEnv,
-  normalizeNodeConfigJsonText,
-} from './github-deployment-config.mjs';
 import { loadExecutionConfig } from '../src/config/nodes.ts';
+import { collectSecretsFromEnv, collectVarsFromEnv, normalizeNodeConfigJsonText } from './github-deployment-config.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const nodeVar = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
@@ -90,14 +86,18 @@ export function buildInferenceCenterDeployment(env) {
     main: path.join(root, 'src/inference/inference-center-entry.ts'),
     keep_vars: false,
     vars: { ...vars, AIG_BUILD_SHA: required(env, 'DEPLOY_SOURCE_SHA') },
-    ...(databaseId ? {
-      d1_databases: [{
-        binding: 'TOKEN_STATS_DB',
-        database_name: 'ai-gateway-stats',
-        database_id: databaseId,
-        migrations_dir: path.join(root, 'migrations'),
-      }],
-    } : {}),
+    ...(databaseId
+      ? {
+          d1_databases: [
+            {
+              binding: 'TOKEN_STATS_DB',
+              database_name: 'ai-gateway-stats',
+              database_id: databaseId,
+              migrations_dir: path.join(root, 'migrations'),
+            },
+          ],
+        }
+      : {}),
   };
   return { config, secrets, nodes: validation.nodesUsable };
 }

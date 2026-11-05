@@ -106,15 +106,19 @@ const inferenceAllowed = read('projects/inference-center/deploy.secrets.allowed'
 assert.deepEqual(inferenceRequired, ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_INFERENCE_AUTH_KEY']);
 assert.ok(inferenceAllowed.includes('AIG_TOKEN_ENCRYPTION_KEY'));
 assert.ok(inferenceAllowed.includes('AIG_TIER1_CREDENTIALS_01'));
-assert.equal(inferenceAllowed.some((name) => /^AIG_ACCESS_KEY_|^AW_/.test(name)), false);
+assert.equal(
+  inferenceAllowed.some((name) => /^AIG_ACCESS_KEY_|^AW_/.test(name)),
+  false,
+);
 assert.throws(() => buildInferenceCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
 assert.throws(
-  () => buildInferenceCenterDeployment({
-    CLOUDFLARE_API_TOKEN: 'test-token',
-    CLOUDFLARE_ACCOUNT_ID: 'test-account',
-    AIG_INFERENCE_AUTH_KEY: 'short',
-  }),
-  /at least 32/
+  () =>
+    buildInferenceCenterDeployment({
+      CLOUDFLARE_API_TOKEN: 'test-token',
+      CLOUDFLARE_ACCOUNT_ID: 'test-account',
+      AIG_INFERENCE_AUTH_KEY: 'short',
+    }),
+  /at least 32/,
 );
 assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
 assert.match(read('scripts/deploy-inference-center.sh'), /inference-center-deployment\.mjs prepare/);
