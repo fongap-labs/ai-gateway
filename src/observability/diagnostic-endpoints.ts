@@ -112,9 +112,10 @@ function buildModelsList(
   return { object: 'list', data };
 }
 
-// AIG_DIAGNOSTICS_GROUPS names the key groups that read /health and /metrics (unset: MAX and
-// ULTRA; "*": every valid key). A request with no resolved group is refused.
+// AIG_DIAGNOSTICS_GROUPS names the user key groups that read /health and /metrics (unset: MAX and
+// ULTRA; "*": every valid key). The deployment-only key can read /health but never /metrics.
 export function canReadDiagnostics(env: Record<string, unknown>, authResult: AuthResult): boolean {
+  if (authResult.authorized && authResult.mode === 'deploy') return true;
   const allowed = diagnosticsGroups(env?.AIG_DIAGNOSTICS_GROUPS);
   if (allowed === null) return true;
   const group = authResult.authorized && 'group' in authResult ? authResult.group : null;

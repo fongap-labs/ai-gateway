@@ -30,7 +30,7 @@ import type { PolicyConfig } from '../types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../types/runtime.ts';
 import type { TierMap } from '../types/scheduler.ts';
-import { authorize, presentedCredentials } from './auth.ts';
+import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute, presentedCredentials } from './auth.ts';
 import { gatewayError } from './errors.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from './model-authz.ts';
 import { modelFallbackCandidates } from './model-fallback.ts';
@@ -198,7 +198,11 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     };
   }
 
-  const authResult: AuthResult = await authorize(request, env);
+  let authResult: AuthResult = await authorize(request, env);
+  const deploymentHealthRoute = isDeploymentHealthRoute(route);
+  if (!authResult.authorized && deploymentHealthRoute) {
+    authResult = (await authorizeDeploymentHealth(request, env)) ?? authResult;
+  }
   if (!authResult.authorized) {
     authFingerprint ??= await authAttemptFingerprint(request);
     recordAuthFailure(authFingerprint);
@@ -322,6 +326,13 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return {
       ok: false,
       response: gatewayError(request, env, route, 400, `Invalid JSON request body: ${errorMessage}`, requestId),
+    };
+  }
+
+  if (authResult.authorized && authResult.mode === 'deploy' && route === 'anthropic_count_tokens' && !isDeploymentHealthCountTokensProbe(bodyJson)) {
+    return {
+      ok: false,
+      response: gatewayError(request, env, route, 403, 'The deployment credential is limited to the empty health token-count probe.', requestId),
     };
   }
 
