@@ -5,7 +5,7 @@
 // retry a provider that has already returned a 2xx with malformed output:
 // it may have charged for the image even if we cannot decode its response.
 
-import { readBodyTextBounded } from '../../protocol/http.ts';
+import { corsHeaders, readBodyTextBounded } from '../../protocol/http.ts';
 import { getProviderAdapter } from '../../providers/registry.ts';
 import { classifyClientAbort, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
@@ -15,7 +15,10 @@ import { recordNodeSuccess } from './observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 
-const MAX_IMAGE_REPLY_BYTES = 16 * 1024 * 1024;
+// Buffered native conversion is deliberately small: large image JSON
+// belongs on a more generous backend, not a 10 ms Workers Free isolate.
+const MAX_IMAGE_REPLY_BYTES = 2 * 1024 * 1024;
+const MAX_STREAMED_IMAGE_BYTES = 16 * 1024 * 1024;
 
 export async function handleImageSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
@@ -30,6 +33,32 @@ export async function handleImageSuccess(s: SuccessArgs): Promise<AttemptOutcome
     rotateWithNeutralEnd(state, node, KIND.CLIENT, c);
     return { response: gatewayError(request, env, route, 502, 'Image provider adapter is unavailable.', requestId, undefined, undefined, 'gateway_image_adapter_missing') };
   }
+  if (node.provider === 'openai') {
+    // OpenAI Images already returns the public response schema. Forward the
+    // response stream without JSON.parse/JSON.stringify or base64 scanning.
+    // The client has to decode the provider's own JSON response. The gateway
+    // does not buffer binary content or increase its free CPU allocation.
+    const reported = Number(upstream.headers.get('content-length'));
+    if (Number.isFinite(reported) && reported > MAX_STREAMED_IMAGE_BYTES) {
+      rotateWithNeutralEnd(state, node, KIND.CLIENT, c);
+      return {
+        response: gatewayError(request, env, route, 502, 'Image response exceeds the maximum stream size.', requestId, undefined, undefined, 'gateway_image_reply_too_large'),
+      };
+    }
+    recordNodeSuccess(c, node, latencyMs);
+    return {
+      response: new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'content-type': 'application/json;charset=UTF-8',
+          'cache-control': 'no-store',
+          'x-request-id': requestId,
+          ...corsHeaders(request, env),
+        },
+      }),
+    };
+  }
+
   const result = await readBodyTextBounded(upstream, MAX_IMAGE_REPLY_BYTES, c.attemptDeadlineMs);
   if (result.isTruncated) {
     rotateWithNeutralEnd(state, node, KIND.CLIENT, c);
