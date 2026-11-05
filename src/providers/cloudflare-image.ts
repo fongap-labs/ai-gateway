@@ -8,7 +8,7 @@ import type { ProviderAdapter } from './types.ts';
 // Workers AI REST model. Node base_url points to the account's /ai/run path.
 export const cloudflareImageProviderAdapter: ProviderAdapter = Object.freeze({
   id: 'cloudflare-image',
-  wire: { protocol: 'openai', surfaces: Object.freeze(['images_generations'] as Surface[]) },
+  wire: { protocol: 'openai' as const, surfaces: Object.freeze(['images_generations'] as Surface[]) },
   streamUsage: false,
   image: cloudflareImageGeneration,
 });
