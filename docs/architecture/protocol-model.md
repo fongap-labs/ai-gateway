@@ -180,3 +180,75 @@ Chat 和 Messages 的已分类网关错误还在 `error.details` 中提供 `gate
 | Reliability | 失败状态；绝不负责请求结构转换 |
 
 关于协议资格如何与 attempt、hedge 与 cooldown 相互作用，请参阅[路由模型](routing-model.md)与[可靠性模型](reliability-model.md)。
+
+## 后端文生图
+
+文生图使用独立 `POST /v1/images/generations` 入口。客户端聊天模型继续使用原有文本接口；宿主或后端工具执行器调用 `generate_image` 时才访问图片入口。网关本身不擅自执行聊天模型输出的工具调用。
+
+- 逻辑模型名称仍为 `Image-Creator`，不改为路径名称。
+- 图片仅允许 `AGENT` 访问密钥组调用，`visibility: "internal"` 只控制目录可见性，不能代替鉴权。
+- `/v1/models` 不列出内部模型，普通聊天接口对仅输出图片的模型直接返回 400，不进行上游 dispatch。
+- `modalities.input=["text"]`、`modalities.output=["image"]` 与 `visibility="internal"` 是图片请求的硬性门禁；未配置的旧别名无法自动获得图片权限。
+- `n=1`，仅允许 `b64_json`，尺寸仅接受 `1024x1024`、`1024x1536`、`1536x1024`。未知字段直接拒绝。
+- 图片上游只能用明确声明原生图片 surface 的 Provider：`openai`、`google-image`、`cloudflare-image`。`google`、通用聊天兼容节点、OAuth 订阅节点不能借用图片 API 权限。
+- 图片路由禁用模型家族替换、跨协议 fallback、Hedge 和失败后对同一节点的重试。不确定结果不得重新生成；仅确定无生成的 429/404 可以选择其他节点。
+- 不记录提示词和 Base64 图片，不把图片计入文本 Token 用量。
+
+配置逻辑模型（加入现有 `AIG_MODELS_CONFIG`）：
+
+```json
+{
+  "Image-Creator": {
+    "policy": "default",
+    "visibility": "internal",
+    "ui_visible": false,
+    "group": "image",
+    "modalities": {
+      "input": ["text"],
+      "output": ["image"]
+    }
+  }
+}
+```
+
+绑定上游的例子（加入已有 Tier 节点 JSON；凭据必须放在对应 Tier 的 `AIG_TIER{N}_CREDENTIALS_*` Secret 中）：
+
+```json
+[
+  {
+    "id": "image-openai",
+    "provider": "openai",
+    "base_url": "https://api.openai.com",
+    "models": { "Image-Creator": "gpt-image-1" }
+  },
+  {
+    "id": "image-google",
+    "provider": "google-image",
+    "base_url": "https://generativelanguage.googleapis.com",
+    "models": { "Image-Creator": "gemini-2.5-flash-image" }
+  },
+  {
+    "id": "image-cf",
+    "provider": "cloudflare-image",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/run",
+    "models": { "Image-Creator": "@cf/black-forest-labs/flux-1-schnell" }
+  }
+]
+```
+
+仅后台工具使用 `AIG_ACCESS_KEY_AGENT`，在 `AIG_ACCESS_MODELS_AGENT` 中明确允许 `Image-Creator`。切勿将 AGENT 密钥下发到浏览器。Cloudflare 示例中 `<account_id>` 必须替换为实际账户 ID；图像调用额度独立于网关 CPU 限制。
+
+调用示例：
+
+```bash
+curl -X POST 'https://<gateway>/v1/images/generations' \
+  -H 'Authorization: Bearer <backend-agent-key>' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Image-Creator","prompt":"水墨山水","size":"1024x1024","n":1}'
+```
+
+响应采用 OpenAI Images 的 `data[].b64_json` 结构。
+
+### Workers 免费版 CPU 限制
+
+Workers Free 单请求仅有 10ms CPU、128MB 内存。等待外部 `fetch` 的时间不计 CPU，但 JSON 和 Base64 处理计入 CPU。原生 OpenAI Images 响应按流透传，不解析大图片；Cloudflare/Gemini 响应若需转为统一结构，限定 2MiB 的已编码缓冲响应，超限明确失败，不自动重复生成。**这不是 10ms 的达标证明。** 生产上线前必须通过 Cloudflare CPU/内存实测；若转换阶段达到限制，应把图片格式归一化迁移到 Oracle 后端，而不是增加 Worker CPU 预算或偷偷回退付费方案。
