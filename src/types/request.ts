@@ -16,7 +16,7 @@ import type { RoutableRequest, Tier, TierMap } from './scheduler.ts';
 
 /** The (protocol, surface, route) triple identifying one client-facing route. */
 export type RequestDescriptor = {
-  route: 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'anthropic_count_tokens';
+  route: 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'anthropic_count_tokens' | 'openai_images';
   model: string;
   protocol: Protocol;
   surface: Surface;

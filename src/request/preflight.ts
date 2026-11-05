@@ -20,8 +20,10 @@ import {
   validateAnthropicMessagesRequest,
 } from '../protocol/anthropic.ts';
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
+import { validateImageGenerationRequest } from '../protocol/image.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
+import { getProviderAdapter } from '../providers/registry.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
@@ -39,12 +41,13 @@ import { acceptsHtml, detectRoute, normalizePath } from './router.ts';
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
   openai_responses: { protocol: 'openai', surface: 'responses' },
+  openai_images: { protocol: 'openai', surface: 'images_generations' },
   anthropic_messages: { protocol: 'anthropic', surface: 'messages' },
 } as const);
 
 export function getRouteProtocolSurface(route: keyof typeof ROUTE_PROTOCOL_SURFACE): {
   protocol: 'openai' | 'anthropic';
-  surface: 'chat_completions' | 'responses' | 'messages';
+  surface: 'chat_completions' | 'responses' | 'messages' | 'images_generations';
 } {
   return ROUTE_PROTOCOL_SURFACE[route];
 }
@@ -250,9 +253,16 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     case 'anthropic_messages':
     case 'anthropic_count_tokens':
     case 'openai_responses':
+    case 'openai_images':
       break;
     default:
       return { ok: false, response: gatewayError(request, env, route, 404, 'Route not found.', requestId) };
+  }
+
+  // Private image tooling must run with the dedicated AGENT gateway key.
+  // visibility:"internal" only hides discovery; it is not authentication.
+  if (route === 'openai_images' && (authResult.mode !== 'grouped' || authResult.group !== 'AGENT')) {
+    return { ok: false, response: gatewayError(request, env, route, 403, 'Image generation requires an authorized backend tool.', requestId) };
   }
 
   const limits = getLimits(env);
@@ -337,7 +347,8 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   let validationError: string | null | undefined;
-  if (route === 'openai_responses') validationError = validateOpenAIResponsesRequest(bodyJson);
+  if (route === 'openai_images') validationError = validateImageGenerationRequest(bodyJson);
+  else if (route === 'openai_responses') validationError = validateOpenAIResponsesRequest(bodyJson);
   else if (route === 'anthropic_messages') validationError = validateAnthropicMessagesRequest(bodyJson);
   else validationError = validateOpenAIChatRequest(bodyJson);
   if (validationError) {
@@ -359,6 +370,18 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // casing differences collapse onto the configured spelling. Unknown models
   // keep their raw spelling so the fail-closed 404/403 paths are unchanged.
   const requestedModel = resolveClientModel(String(bodyJson.model || ''), knownModels);
+  const modelConfig = loadModelsConfig(env)[requestedModel];
+  const modalities = modelConfig?.catalog.modalities;
+  if (route === 'openai_images') {
+    // Explicitly opt in to the internal image contract. A chat-only alias or
+    // an unclassified legacy Image-Creator mapping cannot enter image dispatch.
+    if (modelConfig?.policy.visibility !== 'internal' || !modalities?.input.includes('text') || !modalities.output.includes('image')) {
+      return { ok: false, response: gatewayError(request, env, route, 404, 'No authorized image generation model is configured.', requestId) };
+    }
+  } else if (modalities?.output.includes('image') && !modalities.output.includes('text')) {
+    // Do not waste eleven chat dispatches on a model declared as image-only.
+    return { ok: false, response: gatewayError(request, env, route, 400, 'This model requires the image generation tool.', requestId) };
+  }
   const modelAuthz = authorizeModel(requestedModel, knownModels, authResult);
   if (modelAuthz.allowed === false) {
     const denyStatus = modelAuthz.status;
@@ -397,9 +420,16 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     };
   }
 
-  const tiers = config.tiers;
+  const tiers: TierMap<RuntimeNode[]> =
+    route === 'openai_images'
+      ? {
+          1: config.tiers[1].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+          2: config.tiers[2].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+          3: config.tiers[3].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
+        }
+      : config.tiers;
   const requestDescriptor: RequestDescriptor = {
-    route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages',
+    route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'openai_images',
     model: requestedModel,
     ...ROUTE_PROTOCOL_SURFACE[route as keyof typeof ROUTE_PROTOCOL_SURFACE],
     bodyChars,
@@ -414,7 +444,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     env,
   });
   let familyReachable = feasibility.reachable;
-  if (!familyReachable) {
+  if (!familyReachable && route !== 'openai_images') {
     for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels)) {
       if (effectiveModel === requestedModel) continue;
       const effectiveDescriptor = { ...requestDescriptor, model: effectiveModel };
@@ -483,4 +513,23 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     knownModels: callableModels,
     feasibility,
   };
+}
+
+// Eligibility for the image surface is narrower than a provider's general
+// wire capability. It requires explicit model mapping and a real API-key node;
+// a wildcard or a Codex/Code Assist subscription cannot claim image support.
+function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
+  if (node.auth === 'oauth' || !Object.hasOwn(node.models, logical) || !node.surfaces.includes('images_generations')) return false;
+  const adapter = getProviderAdapter(node.provider).image;
+  if (!adapter) return false;
+  try {
+    return (
+      adapter.prepare(node.baseUrl, node.models[logical] as string, {
+        prompt: String(body.prompt),
+        size: (body.size ?? '1024x1024') as '1024x1024' | '1024x1536' | '1536x1024',
+      }) !== null
+    );
+  } catch {
+    return false;
+  }
 }

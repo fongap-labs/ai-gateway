@@ -18,6 +18,7 @@
 
 import type { SubscriptionAdapter } from '../subscription/types.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
+import type { ImageGenerationAdapter } from './image-generation.ts';
 
 /** Structural wire contract: which protocol the provider speaks and which
  *  upstream surfaces are routable. This is provider knowledge, not
@@ -56,6 +57,8 @@ export type ProviderAdapter = Readonly<{
    *  switches (AIG_USAGE_INCLUDE_MODE / AIG_USAGE_EXCLUDE_PROVIDERS) still
    *  apply on top of this declaration. */
   streamUsage: boolean;
+  /** Native image-generation wire contract, absent for chat-only providers. */
+  image?: ImageGenerationAdapter;
   /** Built-in OAuth onboarding defaults; absent for providers without an
    *  OAuth subscription onboarding story. */
   oauth?: OAuthProviderConfig;

@@ -6,6 +6,7 @@ export const TIER_ORDER: readonly [1, 2, 3] = [1, 2, 3];
 export type DetectedRoute =
   | 'openai_chat'
   | 'openai_responses'
+  | 'openai_images'
   | 'anthropic_messages'
   | 'anthropic_count_tokens'
   | 'health'
@@ -47,6 +48,7 @@ export function detectRoute(method: string, pathname: string): DetectedRoute {
   if (pathname === '/v1/messages/count_tokens' || pathname === '/messages/count_tokens') return 'anthropic_count_tokens';
   if (pathname === '/v1/messages' || pathname === '/messages') return 'anthropic_messages';
   if (pathname === '/v1/responses' || pathname === '/responses') return 'openai_responses';
+  if (pathname === '/v1/images/generations' || pathname === '/images/generations') return 'openai_images';
   if (pathname === '/v1/chat/completions' || pathname === '/chat/completions') return 'openai_chat';
   return 'other';
 }

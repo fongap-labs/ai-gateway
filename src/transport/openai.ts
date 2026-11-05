@@ -25,6 +25,7 @@ import type { Surface } from '../types/protocol.ts';
 export const OPENAI_SURFACE_PATH = Object.freeze({
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
+  images_generations: '/v1/images/generations',
 });
 
 const RESPONSES_MEANINGFUL_DELTA_TYPES = new Set([

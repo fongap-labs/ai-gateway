@@ -2,15 +2,21 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { anthropicProviderAdapter } from './anthropic.ts';
+import { cloudflareImageProviderAdapter } from './cloudflare-image.ts';
 import { genericOpenAIProviderAdapter } from './generic-openai.ts';
 import { googleProviderAdapter } from './google.ts';
+import { googleImageProviderAdapter } from './google-image.ts';
 import { openAIProviderAdapter } from './openai.ts';
+import { openAIImageProviderAdapter } from './openai-image.ts';
 import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.freeze({
   openai: openAIProviderAdapter,
+  'openai-image': openAIImageProviderAdapter,
   anthropic: anthropicProviderAdapter,
   google: googleProviderAdapter,
+  'google-image': googleImageProviderAdapter,
+  'cloudflare-image': cloudflareImageProviderAdapter,
 });
 
 /** Unknown providers use the generic OpenAI-compatible adapter. */
