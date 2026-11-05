@@ -7,8 +7,8 @@
 // owned by src/subscription/openai.ts.
 
 import { codexSubscriptionAdapter } from '../subscription/openai.ts';
-import { openAIImageGeneration } from './image-generation.ts';
 import type { Surface } from '../types/protocol.ts';
+import { openAIImageGeneration } from './image-generation.ts';
 import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const OPENAI_NATIVE_WIRE: ProviderWire = Object.freeze({
