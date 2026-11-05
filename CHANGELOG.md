@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- 新增: 后端专用图片生成 API，支持原生 OpenAI、Google Gemini 与 Cloudflare Workers AI 适配，图片请求限定 AGENT 授权与内部模型目录。
+- 新增: 后端图片生成入口，支持 OpenAI、Gemini 与 Cloudflare 原生图片适配器。
 - 修复: 仅输出图片的模型禁止通过聊天协议请求，不再发生无效的文本调度。
-- 优化: 图片调用禁用并行 Hedge/不确定结果重试，原生图片流直接透传，大图转换独立限定缓冲以降低 Workers Free CPU 风险。
+- 优化: 图片生成禁用对冲及不确定重试，采用流式透传与有界转换。
 
 
 - 修复: 跨协议回退兼容标准 `stream_options.include_usage`，拒绝非法值而不误杀正常的 Claude 调用。
