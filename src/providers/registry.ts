@@ -6,8 +6,8 @@ import { cloudflareImageProviderAdapter } from './cloudflare-image.ts';
 import { genericOpenAIProviderAdapter } from './generic-openai.ts';
 import { googleProviderAdapter } from './google.ts';
 import { googleImageProviderAdapter } from './google-image.ts';
-import { openAIImageProviderAdapter } from './openai-image.ts';
 import { openAIProviderAdapter } from './openai.ts';
+import { openAIImageProviderAdapter } from './openai-image.ts';
 import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.freeze({
