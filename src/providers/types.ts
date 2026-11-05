@@ -17,8 +17,8 @@
 // means adding one module in src/providers/ plus its registry line.
 
 import type { SubscriptionAdapter } from '../subscription/types.ts';
-import type { ImageGenerationAdapter } from './image-generation.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
+import type { ImageGenerationAdapter } from './image-generation.ts';
 
 /** Structural wire contract: which protocol the provider speaks and which
  *  upstream surfaces are routable. This is provider knowledge, not
