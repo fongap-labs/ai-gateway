@@ -1,5 +1,7 @@
 # 架构概览
 
+> 本文描述当前主分支一体化实现。后续 Cloudflare 内部轻量网关与能力中心职责调整见[目标架构](edge-capability-boundaries.md)及[分阶段迁移计划](../operations/center-migration-plan.md)，尚未投入生产。
+
 ai-gateway 是面向家庭、个人运营者或小型可信团队的 Cloudflare Workers AI API 网关。它让一组异构的 AI 容量表现为一个可预期的端点，同时不隐藏协议边界，也不承诺运行时并不具备的全局保证。
 
 产品边界由[产品策略](../governance/product-policy.md)约束。本项目刻意不做公共 SaaS 网关、企业级 API 管理平台、计费系统、转售平台或通用多租户控制平面。
