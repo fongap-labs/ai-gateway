@@ -78,7 +78,12 @@ export function isDeploymentHealthRoute(route: string): boolean {
 }
 
 export function isDeploymentHealthCountTokensProbe(body: Record<string, unknown>): boolean {
-  return body.model === 'gateway-health-check' && Array.isArray(body.messages) && body.messages.length === 0;
+  return (
+    body.model === 'gateway-health-check' &&
+    Array.isArray(body.messages) &&
+    body.messages.length === 0 &&
+    Object.keys(body).every((key) => key === 'model' || key === 'messages')
+  );
 }
 
 export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
