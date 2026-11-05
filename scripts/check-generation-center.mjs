@@ -5,8 +5,8 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
-import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
+import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
 
 const internalKey = 'generation-test-auth-key-at-least-32-chars';
