@@ -155,7 +155,10 @@ const deployPrepared = validateDeploymentInputs(deployInputs);
 assert.equal(deployPrepared.config.name, 'ai-gateway');
 assert.equal(Object.hasOwn(deployPrepared.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: '' }), /AIG_DEPLOY_HEALTH_KEY/);
-assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }), /at least 32 characters using only URL-safe characters/);
+assert.throws(
+  () => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }),
+  /at least 32 characters using only URL-safe characters/,
+);
 const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
