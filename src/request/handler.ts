@@ -180,7 +180,11 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   }
 
   const requestPolicy = policy;
-  const modelPlan = buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts);
+  // Images are never silently substituted with text or sibling model aliases.
+  const modelPlan =
+    route === 'openai_images'
+      ? [[{ model: requestedModel, attemptCap: null }]]
+      : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts);
   const familyModels = new Set(modelPlan.flat().map((pass) => pass.model.trim().toLowerCase()));
   const familyFallback = familyModels.size > 1;
 
@@ -423,6 +427,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   const retry = state.sameNodeRetry;
   if (
     retry &&
+    route !== 'openai_images' &&
     !state.hasRetriedSameNode &&
     !state.retryShed &&
     state.logicalAttempts < requestPolicy.maxAttempts &&
