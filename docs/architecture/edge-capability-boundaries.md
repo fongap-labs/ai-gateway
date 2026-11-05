@@ -47,8 +47,9 @@ x-aig-contract-version: 1
 x-aig-request-id: <gateway-generated-id>
 x-aig-node-id: <approved-node-id>
 x-aig-model: <authorized-logical-model>
-x-aig-surface: openai-chat
+x-aig-surface: chat_completions
 x-aig-deadline-ms: <precommit-deadline>
+x-aig-inference-auth: <deployment-secret>
 content-type: application/json
 
 <original-client-body-or-minimally-rewritten-body>
