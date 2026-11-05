@@ -10,6 +10,8 @@ import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-c
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
+import { authorizeDeploymentHealth, isDeploymentHealthRoute } from '../src/request/auth.ts';
+import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -191,6 +193,28 @@ assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, oauthPrepar
 assert.doesNotThrow(() =>
   validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TOKEN_ENCRYPTION_KEY', type: 'secret_text' }], oauthPrepared.config),
 );
+
+const deploymentHealthKey = 'deployment-health-key-0123456789abcdef0123456789abcdef';
+const deploymentHealthRequest = new Request('https://gateway.example.test/health', {
+  headers: { authorization: `Bearer ${deploymentHealthKey}` },
+});
+const deploymentHealthAuth = await authorizeDeploymentHealth(deploymentHealthRequest, {
+  AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
+});
+assert.equal(deploymentHealthAuth?.mode, 'deploy');
+assert.equal(deploymentHealthAuth?.group, null);
+assert.equal(deploymentHealthAuth?.allowAll, false);
+assert.equal(deploymentHealthAuth?.allowlist.size, 0);
+assert.equal(canReadDiagnostics({ AIG_DIAGNOSTICS_GROUPS: 'MAX' }, deploymentHealthAuth), true);
+assert.equal(
+  await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }),
+  null,
+);
+assert.equal(isDeploymentHealthRoute('health'), true);
+assert.equal(isDeploymentHealthRoute('models'), true);
+assert.equal(isDeploymentHealthRoute('anthropic_count_tokens'), true);
+assert.equal(isDeploymentHealthRoute('metrics'), false);
+assert.equal(isDeploymentHealthRoute('openai_chat'), false);
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
