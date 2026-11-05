@@ -58,11 +58,9 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const { request, env, node, state, reqDescriptor, policy, limits, requestedModel, route } = c;
   const effectiveModel = reqDescriptor.model;
   const body: Record<string, unknown> = { ...sourceBody, model: effectiveModel };
-  if (c.fakeStream && (c.surface === 'chat_completions')) body.stream = true;
+  if (c.fakeStream && c.surface === 'chat_completions') body.stream = true;
   // Avoid a second copy for normal native requests with no alias or stream mutation.
-  const reuseRaw =
-    !c.conversionContext && !c.fakeStream && c.rawBody?.text &&
-    c.bodyJson.model === effectiveModel;
+  const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
   const outboundBody = reuseRaw ? c.rawBody!.text : JSON.stringify(body);
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
@@ -152,7 +150,11 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status, diagnostic: errorText });
     if (classified.action === 'stop') {
-      return { response: buildClientErrorResponse(request, env, route, c.requestId, requestedModel, upstream.status, errorText, state, c.exposeUpstreamInfo) };
+      return {
+        response: buildClientErrorResponse(
+          request, env, route, c.requestId, requestedModel, upstream.status, errorText, state, c.exposeUpstreamInfo,
+        ),
+      };
     }
     return { rotate: true, kind: classified.kind };
   }
