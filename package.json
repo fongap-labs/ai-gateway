@@ -16,8 +16,8 @@
     "security:scan": "node scripts/secret-scan.mjs",
     "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:links",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:links",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
@@ -31,7 +31,8 @@
     "config:diff": "node scripts/config-cli.mjs diff",
     "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
     "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json",
-    "check:inference": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-center.jsonc --outdir .wrangler-dry-run/inference"
+    "check:inference": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-center.jsonc --outdir .wrangler-dry-run/inference",
+    "check:stream": "node scripts/check-stream-observation.mjs"
   },
   "keywords": [
     "ai-gateway",
