@@ -11,6 +11,7 @@ import { buildInferenceCenterDeployment } from './inference-center-deployment.mj
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
 import {
+  authorize,
   authorizeDeploymentHealth,
   isDeploymentHealthCountTokensProbe,
   isDeploymentHealthRoute,
@@ -209,6 +210,12 @@ assert.ok(deploymentHealthAuth?.authorized && deploymentHealthAuth.mode === 'dep
 assert.equal(deploymentHealthAuth.group, null);
 assert.equal(deploymentHealthAuth.allowAll, false);
 assert.equal(deploymentHealthAuth.allowlist.size, 0);
+const reusedHealthKeyAuth = await authorize(deploymentHealthRequest, {
+  AIG_ACCESS_KEY_AGENT: deploymentHealthKey,
+  AIG_ACCESS_MODELS_AGENT: '*',
+  AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
+});
+assert.equal(reusedHealthKeyAuth.authorized, false);
 assert.equal(canReadDiagnostics({ AIG_DIAGNOSTICS_GROUPS: 'MAX' }, deploymentHealthAuth), true);
 assert.equal(
   await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }),
