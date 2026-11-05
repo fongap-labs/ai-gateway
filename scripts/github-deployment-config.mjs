@@ -22,13 +22,37 @@ function diagnosticsKeyName(names, diagnosticsGroupsValue) {
   const allowed = diagnosticsGroups(diagnosticsGroupsValue);
   return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
 }
-const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY)$`);
+const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY)#!/usr/bin/env node
+// SPDX-License-Identifier: MIT
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { diagnosticsGroups, KEY_GROUPS } from '../src/config/access-keys.ts';
+import { loadGatewayConfig } from '../src/config/nodes.ts';
+import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
+const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
+const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
+const GROUP_KEY_PATTERN = `AIG_ACCESS_KEY_(?:${KEY_GROUPS.join('|')})`;
+const GROUP_MODELS_PATTERN = `AIG_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
+const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
+const GROUP_LABEL = KEY_GROUPS.join(', ');
+
+// The post-deploy check reads /health, so it needs a key from a group AIG_DIAGNOSTICS_GROUPS allows.
+function diagnosticsKeyName(names, diagnosticsGroupsValue) {
+  const allowed = diagnosticsGroups(diagnosticsGroupsValue);
+  return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
+}
+const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|);
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
   `^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
 );
-const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET']);
-const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', 'AIG_INFERENCE_AUTH_KEY', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
+const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_GENERATION_TARGET']);
+const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', 'AIG_INFERENCE_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
 
 // A JSON.parse error quotes the text around the failure; for secrets that would
 // copy part of a credential into the deploy log, so only the label is reported.
@@ -117,6 +141,9 @@ export function normalizeRuntimeConfig(raw) {
   }
   if (vars.AIG_INFERENCE_TARGET && (typeof secrets.AIG_INFERENCE_AUTH_KEY !== 'string' || secrets.AIG_INFERENCE_AUTH_KEY.length < 32)) {
     throw new Error('AIG_INFERENCE_AUTH_KEY Secret is required for private inference service binding.');
+  }
+  if (vars.AIG_GENERATION_TARGET && (typeof secrets.AIG_GENERATION_AUTH_KEY !== 'string' || secrets.AIG_GENERATION_AUTH_KEY.length < 32)) {
+    throw new Error('AIG_GENERATION_AUTH_KEY Secret is required for private generation service binding.');
   }
   if (!Object.keys(secrets).some((k) => GROUP_KEY_RE.test(k))) {
     throw new Error(`secrets must contain at least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
@@ -235,6 +262,11 @@ export function preflight(env) {
   if (inferenceTarget && (typeof env.AIG_INFERENCE_AUTH_KEY !== 'string' || String(env.AIG_INFERENCE_AUTH_KEY).length < 32)) {
     errors.push('AIG_INFERENCE_AUTH_KEY Secret is required when AIG_INFERENCE_TARGET is configured.');
   }
+  const generationTarget = String(env.AIG_GENERATION_TARGET || '').trim();
+  if (generationTarget && generationTarget !== 'ai-generation-center') errors.push('AIG_GENERATION_TARGET must be ai-generation-center.');
+  if (generationTarget && (typeof env.AIG_GENERATION_AUTH_KEY !== 'string' || String(env.AIG_GENERATION_AUTH_KEY).length < 32)) {
+    errors.push('AIG_GENERATION_AUTH_KEY Secret is required when AIG_GENERATION_TARGET is configured.');
+  }
   const analyticsDataset = String(env.AIG_ANALYTICS_DATASET || '').trim();
   if (analyticsDataset && !ANALYTICS_DATASET_NAME.test(analyticsDataset)) {
     errors.push('AIG_ANALYTICS_DATASET must be 1-64 letters, digits or underscores.');
@@ -341,9 +373,14 @@ export const DEFAULT_OPTIMAL_VARS = {
 export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {
   const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
+  const generationTarget = String(vars.AIG_GENERATION_TARGET ?? '').trim();
+  if (generationTarget && generationTarget !== 'ai-generation-center') throw new Error('Invalid AIG_GENERATION_TARGET.');
   // Deployment-only selector: never expose this string as a Worker variable.
   const runtimeVars = { ...vars };
   delete runtimeVars.AIG_INFERENCE_TARGET;
+  delete runtimeVars.AIG_GENERATION_TARGET;
+  delete runtimeVars.AIG_GENERATION_ACTIVE;
+  if (generationTarget) runtimeVars.AIG_GENERATION_ACTIVE = 'true';
   const out = {
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
@@ -353,7 +390,12 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     observability: { enabled: true },
     triggers: { crons: ['0 3 * * *'] },
     vars: { ...DEFAULT_OPTIMAL_VARS, ...runtimeVars },
-    ...(inferenceTarget ? { services: [{ binding: 'AIG_INFERENCE_SERVICE', service: inferenceTarget }] } : {}),
+    ...((inferenceTarget || generationTarget)
+      ? { services: [
+        ...(inferenceTarget ? [{ binding: 'AIG_INFERENCE_SERVICE', service: inferenceTarget }] : []),
+        ...(generationTarget ? [{ binding: 'AIG_GENERATION_SERVICE', service: generationTarget }] : []),
+      ] }
+      : {}),
   };
   if (String(d1DatabaseId || '').trim()) {
     out.d1_databases = [
