@@ -65,12 +65,23 @@ export type GatewayConfig = {
 
 let cachedEnv: Record<string, unknown> | undefined;
 let cachedResult: GatewayConfig | undefined;
+let cachedExecutionEnv: Record<string, unknown> | undefined;
+let cachedExecutionResult: GatewayConfig | undefined;
 
 export function loadGatewayConfig(env: Record<string, unknown>): GatewayConfig {
   if (cachedEnv === env && cachedResult) return cachedResult;
   cachedEnv = env;
-  cachedResult = buildConfig(env);
+  cachedResult = buildConfig(env, true);
   return cachedResult;
+}
+
+// Private execution workers have no client access keys. They still run the
+// exact same node, credential and model validation as the public gateway.
+export function loadExecutionConfig(env: Record<string, unknown>): GatewayConfig {
+  if (cachedExecutionEnv === env && cachedExecutionResult) return cachedExecutionResult;
+  cachedExecutionEnv = env;
+  cachedExecutionResult = buildConfig(env, false);
+  return cachedExecutionResult;
 }
 
 function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
@@ -114,7 +125,7 @@ function collectNodeModelDiagnostics(nodes: ReadonlyArray<RuntimeNode>, env: Rec
   return diags;
 }
 
-function buildConfig(env: Record<string, unknown>): GatewayConfig {
+function buildConfig(env: Record<string, unknown>, requireClientKey: boolean): GatewayConfig {
   const diagnostics: string[] = [];
   const auxDiagnostics = collectAuxConfigDiagnostics(env);
   auxDiagnostics.push(...getProtocolFallbacksDiagnostics(env));
@@ -126,7 +137,7 @@ function buildConfig(env: Record<string, unknown>): GatewayConfig {
   let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
-  if (!accessKeyBound || tierShards.length === 0) {
+  if ((requireClientKey && !accessKeyBound) || tierShards.length === 0) {
     return {
       status,
       ready: false,
