@@ -30,7 +30,8 @@
     "config:show": "node scripts/config-cli.mjs show",
     "config:diff": "node scripts/config-cli.mjs diff",
     "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
-    "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json"
+    "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json",
+    "check:inference": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-center.jsonc --outdir .wrangler-inference-check"
   },
   "keywords": [
     "ai-gateway",
