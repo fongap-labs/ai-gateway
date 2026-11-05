@@ -105,7 +105,7 @@ assert.throws(
   /at least 32/,
 );
 assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
-assert.match(read('scripts/deploy-inference-center.sh'), /inference-center-deployment\.mjs prepare/);
+assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')), false);
 
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
