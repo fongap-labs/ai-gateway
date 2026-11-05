@@ -36,11 +36,11 @@ import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { LARGE_BODY_CHARS } from './body-release.ts';
+import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { stopOnOversizedReply } from './oversize.ts';
 import { handleSuccess } from './success.ts';
-import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 
 const DIAGNOSTIC_BYTES = 4096;
 
