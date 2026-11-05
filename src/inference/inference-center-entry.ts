@@ -11,6 +11,7 @@ import { getOAuthProvider } from '../oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../oauth/resolve.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../protocol/http.ts';
 import { withUsageStreamOptions } from '../protocol/openai.ts';
+import { extractQuotaSignal } from '../reliability/quota-signal.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../providers/registry.ts';
 import { isSubscriptionNode } from '../subscription/index.ts';
 import type { SubscriptionWire } from '../subscription/types.ts';
@@ -189,11 +190,12 @@ async function executeNative(request: Request, env: GatewayEnv, invocation: Invo
   try {
     upstream = await fetch(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' });
   } catch {
-    return problem(
-      request.signal.aborted ? 499 : 502,
-      request.signal.aborted ? 'center_client_aborted' : 'center_upstream_network',
-      !request.signal.aborted,
-    );
+    if (request.signal.aborted) return problem(499, 'center_client_aborted');
+    // A provider fetch was attempted, but no response headers were received.
+    // The gateway may apply its existing bounded network-failure rotation.
+    const response = problem(502, 'center_upstream_network', true);
+    response.headers.set('x-aig-result', 'attempted');
+    return response;
   } finally {
     clearTimeout(timeoutId);
     request.signal.removeEventListener('abort', onAbort);
@@ -209,6 +211,18 @@ async function executeNative(request: Request, env: GatewayEnv, invocation: Invo
   if (retryAfter && retryAfter.length <= 128) outgoing.set('retry-after', retryAfter);
   const content = upstream.headers.get('content-type');
   if (content) outgoing.set('content-type', content.slice(0, 256));
+  // Provider quota markers are normalized here, not forwarded raw. Unknown
+  // values remain unknown; this hint is never a globally consistent counter.
+  const quota = extractQuotaSignal(node.protocol, upstream.headers);
+  if (quota) {
+    outgoing.set('x-aig-quota-signal', JSON.stringify({
+      remainingRequests: quota.remainingRequests,
+      remainingTokens: quota.remainingTokens,
+      limitRequests: quota.limitRequests,
+      limitTokens: quota.limitTokens,
+      resetAtMs: quota.resetAtMs,
+    }));
+  }
 
   if (wire && upstream.ok) {
     if (content?.toLowerCase().includes('text/event-stream')) {
