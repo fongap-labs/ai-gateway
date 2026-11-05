@@ -21,6 +21,7 @@ import {
 } from '../protocol/anthropic.ts';
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
 import { validateOpenAIChatRequest } from '../protocol/openai.ts';
+import { validateImageGenerationRequest } from '../protocol/image.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -39,12 +40,13 @@ import { acceptsHtml, detectRoute, normalizePath } from './router.ts';
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
   openai_responses: { protocol: 'openai', surface: 'responses' },
+  openai_images: { protocol: 'openai', surface: 'images_generations' },
   anthropic_messages: { protocol: 'anthropic', surface: 'messages' },
 } as const);
 
 export function getRouteProtocolSurface(route: keyof typeof ROUTE_PROTOCOL_SURFACE): {
   protocol: 'openai' | 'anthropic';
-  surface: 'chat_completions' | 'responses' | 'messages';
+  surface: 'chat_completions' | 'responses' | 'messages' | 'images_generations';
 } {
   return ROUTE_PROTOCOL_SURFACE[route];
 }
@@ -250,9 +252,16 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     case 'anthropic_messages':
     case 'anthropic_count_tokens':
     case 'openai_responses':
+    case 'openai_images':
       break;
     default:
       return { ok: false, response: gatewayError(request, env, route, 404, 'Route not found.', requestId) };
+  }
+
+  // Private image tooling must run with the dedicated AGENT gateway key.
+  // visibility:"internal" only hides discovery; it is not authentication.
+  if (route === 'openai_images' && (authResult.mode !== 'grouped' || authResult.group !== 'AGENT')) {
+    return { ok: false, response: gatewayError(request, env, route, 403, 'Image generation requires an authorized backend tool.', requestId) };
   }
 
   const limits = getLimits(env);
@@ -337,7 +346,8 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   }
 
   let validationError: string | null | undefined;
-  if (route === 'openai_responses') validationError = validateOpenAIResponsesRequest(bodyJson);
+  if (route === 'openai_images') validationError = validateImageGenerationRequest(bodyJson);
+  else if (route === 'openai_responses') validationError = validateOpenAIResponsesRequest(bodyJson);
   else if (route === 'anthropic_messages') validationError = validateAnthropicMessagesRequest(bodyJson);
   else validationError = validateOpenAIChatRequest(bodyJson);
   if (validationError) {
@@ -359,6 +369,18 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // casing differences collapse onto the configured spelling. Unknown models
   // keep their raw spelling so the fail-closed 404/403 paths are unchanged.
   const requestedModel = resolveClientModel(String(bodyJson.model || ''), knownModels);
+  const modelConfig = loadModelsConfig(env)[requestedModel];
+  const modalities = modelConfig?.catalog.modalities;
+  if (route === 'openai_images') {
+    // Explicitly opt in to the internal image contract. A chat-only alias or
+    // an unclassified legacy Image-Creator mapping cannot enter image dispatch.
+    if (modelConfig?.policy.visibility !== 'internal' || !modalities?.input.includes('text') || !modalities.output.includes('image')) {
+      return { ok: false, response: gatewayError(request, env, route, 404, 'No authorized image generation model is configured.', requestId) };
+    }
+  } else if (modalities?.output.includes('image') && !modalities.output.includes('text')) {
+    // Do not waste eleven chat dispatches on a model declared as image-only.
+    return { ok: false, response: gatewayError(request, env, route, 400, 'This model requires the image generation tool.', requestId) };
+  }
   const modelAuthz = authorizeModel(requestedModel, knownModels, authResult);
   if (modelAuthz.allowed === false) {
     const denyStatus = modelAuthz.status;
@@ -399,7 +421,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
   const tiers = config.tiers;
   const requestDescriptor: RequestDescriptor = {
-    route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages',
+    route: route as 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'openai_images',
     model: requestedModel,
     ...ROUTE_PROTOCOL_SURFACE[route as keyof typeof ROUTE_PROTOCOL_SURFACE],
     bodyChars,
