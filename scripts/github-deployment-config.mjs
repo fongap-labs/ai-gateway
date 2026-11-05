@@ -18,27 +18,7 @@ const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
 const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)#!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { KEY_GROUPS } from '../src/config/access-keys.ts';
-import { loadGatewayConfig } from '../src/config/nodes.ts';
-import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
-const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
-const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
-const GROUP_KEY_PATTERN = `AIG_ACCESS_KEY_(?:${KEY_GROUPS.join('|')})`;
-const GROUP_MODELS_PATTERN = `AIG_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
-const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
-const GROUP_LABEL = KEY_GROUPS.join(', ');
-
-const SECRET_NAME = new RegExp(
-,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
