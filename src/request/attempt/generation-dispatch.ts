@@ -17,16 +17,16 @@ import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
 
-function terminate(c: AttemptContext, status: number, code: string, message: string, didAttempt = false): AttemptOutcome {
+function terminate(c: AttemptContext, status: number, code: string, message: string, hasAttemptedProvider = false): AttemptOutcome {
   const { request, env, route, node, state, requestId } = c;
-  if (didAttempt) {
+  if (hasAttemptedProvider) {
     recordUndeliveredUpstreamAttempt(c, node);
     rotateWithNeutralEnd(state, node, KIND.NETWORK, c);
   } else {
     rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
   }
   return {
-    budgetCharged: didAttempt,
+    budgetCharged: hasAttemptedProvider,
     response: gatewayError(request, env, route, status, message, requestId, undefined, undefined, code),
   };
 }
