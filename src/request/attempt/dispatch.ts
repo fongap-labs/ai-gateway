@@ -36,6 +36,7 @@ import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { LARGE_BODY_CHARS } from './body-release.ts';
+import { dispatchGenerationAttempt } from './generation-dispatch.ts';
 import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
@@ -151,6 +152,12 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   const surface = conversionContext ? conversionContext.fallbackSurface : reqDescriptor.surface;
   c.surface = surface;
   const sourceBody = conversionContext ? conversionContext.convertedBody : bodyJson;
+
+  // The explicit deployment activation flag survives a missing Service
+  // Binding. This prevents silent direct-provider fallback after cutover.
+  if (route === 'openai_images' && (env.AIG_GENERATION_ACTIVE === 'true' || 'AIG_GENERATION_SERVICE' in env)) {
+    return dispatchGenerationAttempt(c);
+  }
 
   // Private binding is an explicit deployment cutover, not a best-effort
   // accelerator. Never route through the old provider transport on center

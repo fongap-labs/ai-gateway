@@ -16,14 +16,14 @@
     "security:scan": "node scripts/secret-scan.mjs",
     "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
     "cf:login": "node scripts/cloudflare-wrangler.mjs login",
     "cf:whoami": "node scripts/cloudflare-wrangler.mjs whoami",
-    "check:deploy": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --keep-vars --outdir .wrangler-dry-run && npm run check:inference",
+    "check:deploy": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --keep-vars --outdir .wrangler-dry-run && npm run check:inference && npm run check:generation",
     "check:deployment-config": "node scripts/deployment-config-check.mjs",
     "migrations:check": "node scripts/migrations-check.mjs",
     "config:check": "node scripts/config-cli.mjs check",
@@ -32,7 +32,9 @@
     "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
     "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json",
     "check:inference": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-center.jsonc --outdir .wrangler-dry-run/inference",
-    "check:stream": "node scripts/check-stream-observation.mjs"
+    "check:stream": "node scripts/check-stream-observation.mjs",
+    "check:generation": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.generation-center.jsonc --outdir .wrangler-dry-run/generation",
+    "check:generation-contract": "node scripts/check-generation-center.mjs"
   },
   "keywords": [
     "ai-gateway",
