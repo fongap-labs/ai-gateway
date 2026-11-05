@@ -75,6 +75,14 @@ source_sha        = <精确的 40 位当前 main SHA>
 
 手动执行并非绕过校验的途径。同样的源码、CI Evidence、Main Write Guard、部署清单、runner、Environment 与密钥范围检查全部适用。
 
+## 单一部署布局
+
+AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `production`。不能再同时存在 `projects/*/deploy.json`、`projects/*/release.manifest.json` 或 `projects/*/follows.json` 等产品清单；`projects/model-discovery/task.json` 不属于产品清单，仍用于中央任务能力。
+
+已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
+
+下一阶段目标是将敏感运维操作放在 `ai-gateway-ops`，正式代码发布继续使用 `production`，运行时业务密钥由 Cloudflare Secrets 长期管理，两个 Job 仅传递非敏感构建证明与校验结果。**这项隔离尚未由中央工作流完全实施**；当前生产部署仍会从中央 Secret 范围注入上游凭据，不能将目标当作已生效配置。
+
 ## 生产 Environment
 
 部署清单将执行作业绑定到名为 `production` 的 GitHub Environment。非敏感的运行时配置应放在 Variables 中；凭据应放在 Secrets 中。
