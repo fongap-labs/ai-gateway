@@ -190,7 +190,7 @@ Chat 和 Messages 的已分类网关错误还在 `error.details` 中提供 `gate
 - `/v1/models` 不列出内部模型，普通聊天接口对仅输出图片的模型直接返回 400，不进行上游 dispatch。
 - `modalities.input=["text"]`、`modalities.output=["image"]` 与 `visibility="internal"` 是图片请求的硬性门禁；未配置的旧别名无法自动获得图片权限。
 - `n=1`，仅允许 `b64_json`，尺寸仅接受 `1024x1024`、`1024x1536`、`1536x1024`。未知字段直接拒绝。
-- 图片上游只能用明确声明原生图片 surface 的 Provider：`openai`、`google-image`、`cloudflare-image`。`google`、通用聊天兼容节点、OAuth 订阅节点不能借用图片 API 权限。
+- 图片上游只能用明确声明原生图片 surface 的 Provider：`openai-image`、`google-image`、`cloudflare-image`。`google`、通用聊天兼容节点、OAuth 订阅节点不能借用图片 API 权限。
 - 图片路由禁用模型家族替换、跨协议 fallback、Hedge 和失败后对同一节点的重试。不确定结果不得重新生成；仅确定无生成的 429/404 可以选择其他节点。
 - 不记录提示词和 Base64 图片，不把图片计入文本 Token 用量。
 
@@ -217,7 +217,7 @@ Chat 和 Messages 的已分类网关错误还在 `error.details` 中提供 `gate
 [
   {
     "id": "image-openai",
-    "provider": "openai",
+    "provider": "openai-image",
     "base_url": "https://api.openai.com",
     "models": { "Image-Creator": "gpt-image-1" }
   },
