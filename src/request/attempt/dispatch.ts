@@ -36,6 +36,7 @@ import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { LARGE_BODY_CHARS } from './body-release.ts';
+import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { stopOnOversizedReply } from './oversize.ts';
@@ -150,6 +151,13 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   const surface = conversionContext ? conversionContext.fallbackSurface : reqDescriptor.surface;
   c.surface = surface;
   const sourceBody = conversionContext ? conversionContext.convertedBody : bodyJson;
+
+  // Private binding is an explicit deployment cutover, not a best-effort
+  // accelerator. Never route through the old provider transport on center
+  // errors or missing center credentials. Images remain on their own path.
+  if (route !== 'openai_images' && 'AIG_INFERENCE_SERVICE' in env) {
+    return dispatchInferenceAttempt(c, sourceBody);
+  }
 
   // `requestedModel` is the client-facing identity and remains stable across
   // transparent model-family fallback. `reqDescriptor.model` is the effective

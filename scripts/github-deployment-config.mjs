@@ -22,13 +22,13 @@ function diagnosticsKeyName(names, diagnosticsGroupsValue) {
   const allowed = diagnosticsGroups(diagnosticsGroupsValue);
   return names.find((name) => GROUP_KEY_RE.test(name) && (allowed === null || allowed.has(name.slice('AIG_ACCESS_KEY_'.length))));
 }
-const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY)$`);
+const SECRET_NAME = new RegExp(`^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY)$`);
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
   `^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
 );
-const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL']);
-const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
+const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET']);
+const CREDENTIAL_NAMES = new Set(['CLOUDFLARE_API_TOKEN', 'AIG_INFERENCE_AUTH_KEY', ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`)]);
 
 // A JSON.parse error quotes the text around the failure; for secrets that would
 // copy part of a credential into the deploy log, so only the label is reported.
@@ -109,11 +109,14 @@ export function normalizeRuntimeConfig(raw) {
   }
   for (const [name, rawValue] of Object.entries(raw.secrets)) {
     if (!SECRET_NAME.test(name)) {
-      throw new Error(`secrets.${name}: only AIG_ACCESS_KEY_<GROUP> and AIG_TIER[123]_CREDENTIALS_01..10 are supported`);
+      throw new Error(`secrets.${name}: only declared access, node, encryption, and inference Secrets are supported`);
     }
     const value = encodeValue(rawValue, `secrets.${name}`);
     assertSize(name, value);
     secrets[name] = value;
+  }
+  if (vars.AIG_INFERENCE_TARGET && (typeof secrets.AIG_INFERENCE_AUTH_KEY !== 'string' || secrets.AIG_INFERENCE_AUTH_KEY.length < 32)) {
+    throw new Error('AIG_INFERENCE_AUTH_KEY Secret is required for private inference service binding.');
   }
   if (!Object.keys(secrets).some((k) => GROUP_KEY_RE.test(k))) {
     throw new Error(`secrets must contain at least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
@@ -227,6 +230,11 @@ export function preflight(env) {
   if (!v.vars.AIG_MODELS_CONFIG) warnings.push('AIG_MODELS_CONFIG is not set (optional; the registry applies conservative defaults).');
   if (!v.vars.AIG_POLICIES_CONFIG) warnings.push('AIG_POLICIES_CONFIG is not set (optional; default attempt budgets apply).');
   if (!env.AIG_USAGE_D1_ID || String(env.AIG_USAGE_D1_ID).trim() === '') warnings.push('D1 persistence disabled: AIG_USAGE_D1_ID is not configured.');
+  const inferenceTarget = String(env.AIG_INFERENCE_TARGET || '').trim();
+  if (inferenceTarget && inferenceTarget !== 'ai-inference-center') errors.push('AIG_INFERENCE_TARGET must be ai-inference-center.');
+  if (inferenceTarget && (typeof env.AIG_INFERENCE_AUTH_KEY !== 'string' || String(env.AIG_INFERENCE_AUTH_KEY).length < 32)) {
+    errors.push('AIG_INFERENCE_AUTH_KEY Secret is required when AIG_INFERENCE_TARGET is configured.');
+  }
   const analyticsDataset = String(env.AIG_ANALYTICS_DATASET || '').trim();
   if (analyticsDataset && !ANALYTICS_DATASET_NAME.test(analyticsDataset)) {
     errors.push('AIG_ANALYTICS_DATASET must be 1-64 letters, digits or underscores.');
@@ -331,6 +339,11 @@ export const DEFAULT_OPTIMAL_VARS = {
 };
 
 export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {
+  const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
+  if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
+  // Deployment-only selector: never expose this string as a Worker variable.
+  const runtimeVars = { ...vars };
+  delete runtimeVars.AIG_INFERENCE_TARGET;
   const out = {
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
@@ -339,7 +352,8 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     keep_vars: false,
     observability: { enabled: true },
     triggers: { crons: ['0 3 * * *'] },
-    vars: { ...DEFAULT_OPTIMAL_VARS, ...vars },
+    vars: { ...DEFAULT_OPTIMAL_VARS, ...runtimeVars },
+    ...(inferenceTarget ? { services: [{ binding: 'AIG_INFERENCE_SERVICE', service: inferenceTarget }] } : {}),
   };
   if (String(d1DatabaseId || '').trim()) {
     out.d1_databases = [
