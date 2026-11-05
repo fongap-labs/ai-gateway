@@ -35,10 +35,7 @@ export function validateDeploymentInputs(env) {
   for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
   }
-  if (
-    typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' &&
-    !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())
-  ) {
+  if (typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' && !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())) {
     errors.push('AIG_DEPLOY_HEALTH_KEY must contain at least 32 URL-safe characters.');
   }
   if (env.AIG_PUBLIC_URL && !/^https:\/\//.test(String(env.AIG_PUBLIC_URL).trim())) {
@@ -110,7 +107,9 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   if (usesOAuth && !names.has('AIG_TOKEN_ENCRYPTION_KEY')) missing.push('AIG_TOKEN_ENCRYPTION_KEY');
 
   if (missing.length) {
-    throw new Error(`Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}. Add the missing secrets through the ai-gateway-ops workflow; normal code deployment will not upload runtime secrets.`);
+    throw new Error(
+      `Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}. Add the missing secrets through the ai-gateway-ops workflow; normal code deployment will not upload runtime secrets.`,
+    );
   }
 
   return {
@@ -143,7 +142,11 @@ async function main() {
     const { vars, config } = validateDeploymentInputs(process.env);
     fs.writeFileSync(wrangler, JSON.stringify(config, null, 2), { mode: 0o600 });
     const models = (() => {
-      try { return Object.keys(JSON.parse(vars.AIG_MODELS_CONFIG || '{}')).length; } catch { return 0; }
+      try {
+        return Object.keys(JSON.parse(vars.AIG_MODELS_CONFIG || '{}')).length;
+      } catch {
+        return 0;
+      }
     })();
     fs.writeFileSync(
       summary,
