@@ -143,17 +143,20 @@ async function main() {
     const models = (() => {
       try { return Object.keys(JSON.parse(vars.AIG_MODELS_CONFIG || '{}')).length; } catch { return 0; }
     })();
-    fs.writeFileSync(summary, [
-      'Deployment configuration prepared',
-      '',
-      `  Worker variables: ${Object.keys(config.vars || {}).length}`,
-      `  Model aliases: ${models}`,
-      `  D1: ${config.d1_databases ? 'configured' : 'disabled'}`,
-      `  Tier 1 affinity KV: ${config.kv_namespaces ? 'configured' : 'disabled'}`,
-      `  Analytics Engine: ${config.analytics_engine_datasets ? 'configured' : 'disabled'}`,
-      '  Runtime secrets: preserved in Cloudflare; not uploaded by this deployment',
-      '',
-    ].join('\n'));
+    fs.writeFileSync(
+      summary,
+      [
+        'Deployment configuration prepared',
+        '',
+        \`  Worker variables: \${Object.keys(config.vars || {}).length}\`,
+        \`  Model aliases: \${models}\`,
+        \`  D1: \${config.d1_databases ? 'configured' : 'disabled'}\`,
+        \`  Tier 1 affinity KV: \${config.kv_namespaces ? 'configured' : 'disabled'}\`,
+        \`  Analytics Engine: \${config.analytics_engine_datasets ? 'configured' : 'disabled'}\`,
+        '  Runtime secrets: preserved in Cloudflare; not uploaded by this deployment',
+        '',
+      ].join('\\n'),
+    );
     console.log('Deployment configuration prepared; no runtime secret values were read or written.');
     return;
   }
