@@ -68,6 +68,21 @@ function databaseNameForBinding(configSource, binding) {
   }
 }
 
+function checkPrivateInferenceConfig(configSource) {
+  if (!configSource) return false;
+  try {
+    const config = JSON.parse(configSource);
+    return (
+      config.name === 'ai-inference-center' &&
+      config.workers_dev === false &&
+      config.main === path.join(root, 'src/inference/inference-center-entry.ts') &&
+      !['routes', 'route', 'custom_domains', 'triggers', 'services'].some((key) => Object.hasOwn(config, key))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function checkAffinityKvBinding(configSource) {
   if (!configSource) return false;
   try {
@@ -87,8 +102,8 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   const configPath = selectedConfigPath();
   const resolvedConfig = configPath && path.resolve(root, configPath);
   const configSource = resolvedConfig && fs.existsSync(resolvedConfig) ? fs.readFileSync(resolvedConfig, 'utf8') : '';
-  if (!checkAffinityKvBinding(configSource)) {
-    console.error('Refusing deploy: configure the required TIER1_AFFINITY KV binding in wrangler.user.jsonc.');
+  if (!checkAffinityKvBinding(configSource) && !checkPrivateInferenceConfig(configSource)) {
+    console.error('Refusing deploy: expected the gateway affinity KV or a verified private inference Worker config.');
     process.exitCode = 1;
     process.exit();
   }

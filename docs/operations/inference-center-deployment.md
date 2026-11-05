@@ -60,6 +60,20 @@ npm run validate:merge
 
 `check:inference` 是仅生成构建产物的 Wrangler dry-run，**不是部署**。生产环境只能经 Action Worker 受控部署。中央测试包后续增加：内部密钥缺失/伪造、未知节点、未授权模型、过期截止时间、OAuth 异常、上游流式透传、错误头剔除及网络失败分类。
 
+## 独立部署准备
+
+新增 `projects/inference-center/deploy.json` 手动部署产品。部署环境是 Action Worker 独有的 `inference-center-ops`，不复用主网关的 `production` 环境。源产品设置 `automatic: false`，合并源码不会自动部署、创建公网路由或切换主网关流量。
+
+维护者必须先在 **Action Worker → Settings → Environments** 建立 `inference-center-ops` 环境，并启用与生产环境一致的分支限制和等待保护。此环境至少需要：
+
+- Environment secrets：`CLOUDFLARE_API_TOKEN_SECONDARY`、`AIG_INFERENCE_AUTH_KEY`、实际使用的 `AIG_TIER{N}_CREDENTIALS_XX`；若有订阅 OAuth 节点，还需要 `AIG_TOKEN_ENCRYPTION_KEY`。
+- Environment variables：`CLOUDFLARE_ACCOUNT_ID_SECONDARY`；并确保仓库变量 `AIG_USAGE_D1_ID`、`AIG_TIER{N}_NODES_XX`、`AIG_MODELS_CONFIG` 和 `AIG_POLICIES_CONFIG` 能被部署 Job 读取。
+- 内部密钥 `AIG_INFERENCE_AUTH_KEY` 必须与主网关将来启用 Service Binding 所使用的值相同。不可保存为普通变量、提交进 Git 或写入运行日志。
+
+完成配置后，在 Action Worker 的手动部署工作流中指定：源仓库 `fongap-labs/ai-gateway`，产品 `inference-center`，目标环境 `inference-center-ops`，来源为已通过中央 CI 的最新 main 提交。不得启用 Main Write Guard 旁路。
+
+独立部署脚本 `scripts/deploy-inference-center.sh` 会校验节点、模型、内部密钥及私有部署配置，临时 Wrangler 和密钥文件设为 0600 并在结束时删除。Worker 仍无公网路由；其部署成功不等于内部 Service Binding 请求已通过。主网关的 `AIG_INFERENCE_TARGET` 在后续内部端到端验收通过之前不得启用。
+
 ## 后续切换
 
 ```text
