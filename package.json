@@ -23,14 +23,15 @@
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
     "cf:login": "node scripts/cloudflare-wrangler.mjs login",
     "cf:whoami": "node scripts/cloudflare-wrangler.mjs whoami",
-    "check:deploy": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --keep-vars --outdir .wrangler-dry-run",
+    "check:deploy": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --keep-vars --outdir .wrangler-dry-run && npm run check:inference",
     "check:deployment-config": "node scripts/deployment-config-check.mjs",
     "migrations:check": "node scripts/migrations-check.mjs",
     "config:check": "node scripts/config-cli.mjs check",
     "config:show": "node scripts/config-cli.mjs show",
     "config:diff": "node scripts/config-cli.mjs diff",
     "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
-    "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json"
+    "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json",
+    "check:inference": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-center.jsonc --outdir .wrangler-dry-run/inference"
   },
   "keywords": [
     "ai-gateway",
