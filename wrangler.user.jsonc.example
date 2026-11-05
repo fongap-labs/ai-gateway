@@ -13,6 +13,8 @@
   // After the private inference center and its contract tests are deployed,
   // the gateway can bind it internally. Do not enable this during PR #209.
   // "services": [{ "binding": "AIG_INFERENCE_SERVICE", "service": "ai-inference-center" }],
+  // "services": [{ "binding": "AIG_GENERATION_SERVICE", "service": "ai-generation-center" }],
+  // "vars": { "AIG_GENERATION_ACTIVE": "true" },
 
   // Production-specific vars that differ from wrangler.jsonc defaults
   // "vars": {

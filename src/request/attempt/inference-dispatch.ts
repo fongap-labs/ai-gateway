@@ -10,8 +10,8 @@ import { invokeInferenceNode } from '../../inference/inference-client-request.ts
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
+import { quotaFromCenter } from '../../reliability/center-quota.ts';
 import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
-import type { QuotaSignal } from '../../reliability/quota-signal.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../errors.ts';
@@ -20,7 +20,6 @@ import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcom
 import { handleSuccess } from './success.ts';
 
 const INTERNAL_TARGET = 'https://inference.internal/internal/execute';
-const CENTER_HEADER_LIMIT = 512;
 
 function stopForCenter(c: AttemptContext, status: number, code: string): AttemptOutcome {
   rotateWithNeutralEnd(c.state, c.node, KIND.AUTH, c, true);
@@ -28,27 +27,6 @@ function stopForCenter(c: AttemptContext, status: number, code: string): Attempt
     budgetCharged: false,
     response: gatewayError(c.request, c.env, c.route, status, 'Private inference center is unavailable.', c.requestId, undefined, undefined, code),
   };
-}
-
-function quotaFromCenter(headers: Headers): QuotaSignal | null {
-  const encoded = headers.get('x-aig-quota-signal');
-  if (!encoded || encoded.length > CENTER_HEADER_LIMIT) return null;
-  try {
-    const parsed: unknown = JSON.parse(encoded);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const record = parsed as Record<string, unknown>;
-    const fields = ['remainingRequests', 'remainingTokens', 'limitRequests', 'limitTokens', 'resetAtMs'];
-    const signal: QuotaSignal = { source: 'inference-center' };
-    for (const field of fields) {
-      const value = record[field];
-      if (value === undefined) continue;
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return null;
-      Object.assign(signal, { [field]: value });
-    }
-    return signal.remainingRequests === undefined && signal.remainingTokens === undefined ? null : signal;
-  } catch {
-    return null;
-  }
 }
 
 export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Record<string, unknown>): Promise<AttemptOutcome> {

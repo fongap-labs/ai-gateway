@@ -28,6 +28,29 @@ export async function handleImageSuccess(s: SuccessArgs): Promise<AttemptOutcome
     recordOutcome(state, node, classifyClientAbort(), c, { latencyMs, status: upstream.status });
     return { response: gatewayError(request, env, route, 499, 'Client closed image generation request.', requestId) };
   }
+  // The private center already converted provider-specific image JSON into
+  // the public schema. The edge never parses the base64 payload again.
+  if (upstream.headers.get('x-aig-generation-normalized') === 'true') {
+    const reported = Number(upstream.headers.get('content-length'));
+    if (Number.isFinite(reported) && reported > MAX_STREAMED_IMAGE_BYTES) {
+      rotateWithNeutralEnd(state, node, KIND.CLIENT, c);
+      return {
+        response: gatewayError(request, env, route, 502, 'Image response exceeds the maximum stream size.', requestId),
+      };
+    }
+    recordNodeSuccess(c, node, latencyMs);
+    return {
+      response: new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'content-type': 'application/json;charset=UTF-8',
+          'cache-control': 'no-store',
+          'x-request-id': requestId,
+          ...corsHeaders(request, env),
+        },
+      }),
+    };
+  }
   const adapter = getProviderAdapter(node.provider).image;
   if (!adapter) {
     rotateWithNeutralEnd(state, node, KIND.CLIENT, c);
