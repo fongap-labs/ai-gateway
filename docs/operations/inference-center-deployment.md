@@ -76,7 +76,7 @@ npm run validate:merge
 
 ## 主网关接线（#210）
 
-中央部署器仅当环境变量 `AIG_INFERENCE_TARGET=ai-inference-center` 时生成 `AIG_INFERENCE_SERVICE` 私有绑定。该变量是部署选择器，不转存为运行时 Worker Var。启用时必须在同一部署环境配置 `AIG_INFERENCE_AUTH_KEY`（至少 32 字符的高熵 Secret）；缺失时部署预检直接失败。
+中央部署器仅当环境变量 `AIG_INFERENCE_TARGET=ai-inference-center` 时生成 `AIG_INFERENCE_SERVICE` 私有绑定。Action Worker 的 `policies/deploy-secrets.json` 仅在 `fongap-labs/ai-gateway` 的 `production` 范围允许 `AIG_INFERENCE_AUTH_KEY`；这一授权不代表该密钥已经配置，也不自动启用私有中心。该变量是部署选择器，不转存为运行时 Worker Var。启用时必须在同一部署环境配置 `AIG_INFERENCE_AUTH_KEY`（至少 32 字符的高熵 Secret）；缺失时部署预检直接失败。
 
 ```text
 AIG_INFERENCE_TARGET = ai-inference-center  # 部署变量，启用后不再回落直连
