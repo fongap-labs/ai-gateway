@@ -147,7 +147,7 @@ const deployInputs = {
   CLOUDFLARE_API_TOKEN: 'deploy-token',
   CLOUDFLARE_ACCOUNT_ID: 'account-id',
   AIG_PUBLIC_URL: 'https://api.example.test',
-  AIG_DEPLOY_HEALTH_KEY: 'health-key',
+  AIG_DEPLOY_HEALTH_KEY: 'deployment-health-key-0123456789abcdef0123456789abcdef',
   AIG_TIER1_NODES_01: JSON.stringify([{ id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } }]),
   AIG_AFFINITY_KV_ID: 'affinity-kv-id',
 };
@@ -155,14 +155,31 @@ const deployPrepared = validateDeploymentInputs(deployInputs);
 assert.equal(deployPrepared.config.name, 'ai-gateway');
 assert.equal(Object.hasOwn(deployPrepared.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: '' }), /AIG_DEPLOY_HEALTH_KEY/);
+assert.throws(
+  () => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }),
+  /at least 32 characters/,
+);
 const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AGENT', type: 'secret_text' },
+  { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
   { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
 ];
 assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 1);
 assert.throws(
-  () => validateRemoteSecretInventory([{ name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
-  /AIG_ACCESS_KEY_AGENT/,
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_DEPLOY_HEALTH_KEY'),
+      deployPrepared.config,
+    ),
+  /AIG_DEPLOY_HEALTH_KEY/,
+);
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_ACCESS_KEY_AGENT'),
+      deployPrepared.config,
+    ),
+  /AIG_ACCESS_KEY_<GROUP>/,
 );
 const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
