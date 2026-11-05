@@ -107,6 +107,20 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.deliveries.length, 0);
 }
 
+// An explicit SSE error must never count as delivered usage or success.
+{
+  const callbacks = counters();
+  const wire = 'event: error\\ndata: {"type":"error","error":{"message":"upstream failed"}}\\n\\n';
+  const result = relayStreamResponse(chunkedResponse(wire, 2), {
+    protocol: 'anthropic', idleTimeoutMs: 1000, ...callbacks,
+  });
+  assert.equal(await result.text(), wire);
+  assert.equal(callbacks.record.failure, 1);
+  assert.equal(callbacks.record.success, 0);
+  assert.equal(callbacks.record.attempts[0].outcome, 'failure');
+  assert.equal(callbacks.record.deliveries.length, 0);
+}
+
 // Only a Responses interruption needs the sequence number of the next event.
 {
   let dispatched = false;
