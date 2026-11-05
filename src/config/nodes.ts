@@ -125,7 +125,7 @@ function collectNodeModelDiagnostics(nodes: ReadonlyArray<RuntimeNode>, env: Rec
   return diags;
 }
 
-function buildConfig(env: Record<string, unknown>, requireClientKey: boolean): GatewayConfig {
+function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boolean): GatewayConfig {
   const diagnostics: string[] = [];
   const auxDiagnostics = collectAuxConfigDiagnostics(env);
   auxDiagnostics.push(...getProtocolFallbacksDiagnostics(env));
@@ -137,7 +137,7 @@ function buildConfig(env: Record<string, unknown>, requireClientKey: boolean): G
   let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
-  if ((requireClientKey && !accessKeyBound) || tierShards.length === 0) {
+  if ((shouldRequireClientKey && !accessKeyBound) || tierShards.length === 0) {
     return {
       status,
       ready: false,
