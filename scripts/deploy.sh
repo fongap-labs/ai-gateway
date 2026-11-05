@@ -48,7 +48,7 @@ node scripts/persistent-deployment.mjs verify-secrets \
   --file "$RUNNER_TEMP/worker-secrets.json" \
   --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
-# No --secrets-file: Cloudflare preserves existing Worker Secrets across code deployments.
+# Cloudflare preserves existing Worker Secrets across code-only deployments.
 node scripts/cloudflare-wrangler.mjs deploy \
   --config "$RUNNER_TEMP/wrangler.github.json"
 
