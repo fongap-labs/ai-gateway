@@ -20,10 +20,10 @@ import {
   validateAnthropicMessagesRequest,
 } from '../protocol/anthropic.ts';
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../protocol/http.ts';
-import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateImageGenerationRequest } from '../protocol/image.ts';
-import { getProviderAdapter } from '../providers/registry.ts';
+import { validateOpenAIChatRequest } from '../protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../protocol/responses/index.ts';
+import { getProviderAdapter } from '../providers/registry.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../ratelimit/key-rpm.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { PolicyConfig } from '../types/policy.ts';
@@ -523,10 +523,12 @@ function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<s
   const adapter = getProviderAdapter(node.provider).image;
   if (!adapter) return false;
   try {
-    return adapter.prepare(node.baseUrl, node.models[logical] as string, {
-      prompt: String(body.prompt),
-      size: (body.size ?? '1024x1024') as '1024x1024' | '1024x1536' | '1536x1024',
-    }) !== null;
+    return (
+      adapter.prepare(node.baseUrl, node.models[logical] as string, {
+        prompt: String(body.prompt),
+        size: (body.size ?? '1024x1024') as '1024x1024' | '1024x1536' | '1536x1024',
+      }) !== null
+    );
   } catch {
     return false;
   }
