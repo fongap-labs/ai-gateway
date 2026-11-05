@@ -7,12 +7,13 @@
 // owned by src/subscription/openai.ts.
 
 import { codexSubscriptionAdapter } from '../subscription/openai.ts';
+import { openAIImageGeneration } from './image-generation.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
 
 const OPENAI_NATIVE_WIRE: ProviderWire = Object.freeze({
   protocol: 'openai',
-  surfaces: Object.freeze(['chat_completions', 'responses'] as Surface[]),
+  surfaces: Object.freeze(['chat_completions', 'responses', 'images_generations'] as Surface[]),
 });
 
 const OPENAI_OAUTH_DEFAULTS: OAuthProviderConfig = Object.freeze({
@@ -27,6 +28,7 @@ export const openAIProviderAdapter: ProviderAdapter = Object.freeze({
   id: 'openai',
   wire: OPENAI_NATIVE_WIRE,
   streamUsage: true,
+  image: openAIImageGeneration,
   oauth: OPENAI_OAUTH_DEFAULTS,
   subscriptionEndpoint: 'https://api.openai.com',
   subscription: codexSubscriptionAdapter,
