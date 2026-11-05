@@ -88,7 +88,10 @@ export function isDeploymentHealthCountTokensProbe(body: Record<string, unknown>
 
 export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
   const expected = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
-  if (!expected) return null;
+  // A deployment probe must use its own high-entropy identity, not a legacy
+  // access-group key or a short/malformed configuration value. Fail closed.
+  if (!/^[A-Za-z0-9_-]{32,}$/.test(expected)) return null;
+  if (loadAccessKeysConfig(env).keys.some((entry) => entry.secret === expected)) return null;
 
   const presented = presentedCredentials(request);
   if (presented.length === 0) return null;
