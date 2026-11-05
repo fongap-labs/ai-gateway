@@ -2,7 +2,7 @@
 
 质量门禁在部署之前保护运行时行为。仓库将合并门禁（merge gate）与完整的生产门禁（production gate）区分开来。
 
-## CI 模型
+## 持续集成模型
 
 本仓库的 `.github/workflows/ci.yml` 仅在 `main` 分支推送与 `workflow_dispatch` 时运行，它只负责将运行请求分发给 Action Worker（`fongap-labs/action-worker`）。实际的中央执行契约位于 `.github/scripts/central-ci.sh`，由 Action Worker 调用。测试套件由 Action Worker（`tests/packs/ai-gateway`）拥有，并针对本仓库的检出结果运行。
 

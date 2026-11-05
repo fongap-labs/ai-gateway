@@ -1,85 +1,122 @@
 # 贡献指南
 
-ai-gateway 倾向于聚焦、有证据支撑的小步变更，而非大范围重写。运行时行为、协议兼容性、路由、可靠性与部署语义，都被视为明确的契约。
+## 1. 变更类型
 
-## Issue 与 Discussions
+提交和合并请求标题仅允许三类。
 
-Issue 仅用于已确认、可复现、并且能够被跟踪直至解决的网关缺陷。公开的 Issue 请使用「缺陷报告（Bug report）」表单。
+### ❌ 错误做法 / 反面教材
 
-部署、配置、provider 接入、使用方式与故障排查类问题，请在 Discussions / Q&A 中提出。功能、协议、路由、可靠性与产品改进类提案，请在 Discussions / Ideas 中提出。提案被确定要实施之后，可以转为 Issue 以跟踪执行。
+使用其他类型或图标前缀。
 
-切勿公开披露安全漏洞。请使用 [SECURITY.md](SECURITY.md) 中描述的私密报告流程。
+```text
+docs: update config guide
+perf: optimize routing
+:sparkles: add endpoint
+```
 
-## 开发环境
+### ✅ 正确做法 / 规范范例
+
+标题用英文，类型固定。
+
+```text
+feat: add gateway endpoint
+fix: correct retry behavior
+chore: update configuration docs
+```
+
+破坏性变更使用 `!` 或标准脚注，不增加新类型。权威规则见 [Action Worker 变更规范](https://github.com/fongap-labs/action-worker/blob/main/docs/04_CHANGELOG_CONVENTIONS.md)。
+
+## 2. 中文变更记录
+
+每条记录只描述一项实际变化。
+
+### ❌ 错误做法 / 反面教材
+
+使用英文条目或片段目录。
+
+```text
+changelog.d/fix-retry.md
+- fix: Improve reliability
+```
+
+### ✅ 正确做法 / 规范范例
+
+直接更新中文日志，摘要不超过八十字。
+
+```markdown
+## [Unreleased]
+
+- 修复: 修复网关重试期间的连接中断。
+```
+
+`feat`、`fix` 必须记录，`chore` 可省略。类别仅允许新增、修复、维护。
+
+## 3. 开发验证
+
+变更必须通过中央测试和部署检查。
+
+### ❌ 错误做法 / 反面教材
+
+跳过回归与部署校验。
+
+```text
+修改路由器 → 直接合并
+```
+
+### ✅ 正确做法 / 规范范例
+
+安装依赖后执行规定检查。
 
 ```bash
-git clone https://github.com/fongap-labs/ai-gateway.git
-cd ai-gateway
 npm ci
 npm run validate:merge
 npm run check:deploy
 ```
 
-请使用 Node.js **>=22.18.0**。
+项目测试由 `fongap-labs/action-worker/tests/packs/ai-gateway/` 维护；不得把测试套件搬回 `scripts/`。发布版本由维护者决定，不由配置文件或变更日志自动赋值。
 
-## 提交信息（Conventional Commits）
+## 4. 合并方式
 
-- 提交（即 Squash merge 后的 PR 标题）使用 `type(scope): summary` 格式，类型限定 11 种：`build`、`chore`、`ci`、`docs`、`feat`、`fix`、`perf`、`refactor`、`revert`、`style`、`test`。
-- 破坏性变更用 `!`（如 `feat(oauth)!: rotate the state cookie signing key`）或正文中的 `BREAKING CHANGE` 脚注声明；安全、迁移等以属性标注（`feat [security]:`）。
-- 摘要使用英文工程文本；非 ASCII、`Merge`/`Revert` 以外的裸消息会被拒绝。
-- 权威定义见 `fongap-labs/action-worker` 的 `docs/04_CHANGELOG_CONVENTIONS.md`；中央 PR 门禁执行同一套规则，本地的 `.githooks/commit-msg` 只是提前反馈。
+每个合并请求只处理一个目标。
 
-整段历史检查（可选，npx 只在运行时下载）：
+### ❌ 错误做法 / 反面教材
 
-```bash
-npx --yes --package=@commitlint/cli@19 commitlint --from origin/main --to HEAD
+一个请求混合无关任务。
+
+```text
+新路由协议 + 更新页面 + 清理全部配置
 ```
 
-本仓库的布局合同禁止本地 git hooks 目录（`.githooks/`），提交格式的执行方是中央 PR 门禁。
+### ✅ 正确做法 / 规范范例
 
-## Pull Request
+按三类创建聚焦分支，经中央门禁合并。
 
-1. 使用 `feat/`、`fix/`、`refactor/`、`docs/`、`test/`、`ci/` 或 `chore/` 前缀创建聚焦的分支。
-2. 每个 PR 只有一个主要目标。
-3. 对行为变更，新增或更新回归覆盖。
-4. 当行为、配置、部署、协议或运营语义发生变化时，在同一 PR 中更新对应的规范文档。
-5. 运行 `npm run validate:merge` 与 `npm run check:deploy`。
-6. 必需的检查通过后，使用 squash merge 合并。
+```text
+feat/routing-update
+fix/retry-timeout
+chore/docs-cleanup
+```
 
-PR 描述应说明问题、行为变更、验证方式、兼容性影响、资源影响、安全影响，以及任何经过测量的热路径影响。重构类 PR 必须说明外部行为是否发生变化；保持行为不变的重构，不得悄悄改变调度器、协议、超时、冷却、回退或配置的语义。
+运行时、协议、配置、部署变化必须同步修改项目权威文档；禁止无意改变路由、降级和安全边界。
 
-## 仓库归属
+## 5. 安全边界
 
-- `src/` —— Cloudflare Worker 运行时。
-- 测试不存放在本仓库中：它们位于 `fongap-labs/action-worker` 的 `tests/packs/ai-gateway/` 下，并通过 `npm test` 运行。
-- `scripts/` —— 仓库、CI、配置、安装、部署与发现工具。
-- `migrations/` —— 有序的 D1 schema 变更。
-- `docs/` —— 长期有效的架构、运营与治理文档。
+禁止公开敏感信息。
 
-不要将测试文件放回 `scripts/` 下；测试可以调用脚本，但工具与校验分属不同的所有者。当受支持的入口点已经存在时，不要再添加重复的部署/更新包装器，参见 [scripts/README.md](scripts/README.md)。
+### ❌ 错误做法 / 反面教材
 
-## 文档职责
+在日志或合并请求公开凭据。
 
-`README.md` 是项目的规范首页。文档体系如下：
+```text
+Authorization: Bearer actual-secret
+```
 
-- [架构](docs/architecture/overview.md) —— 持久的设计边界与不变式。
-- [运营](docs/operations/configuration.md) —— 配置与部署流程。
-- [治理](docs/governance/README.md) —— 开发、质量、依赖、产品与文档策略。
+### ✅ 正确做法 / 规范范例
 
-历史证据保存在 Git 历史、Pull Request、commit、已有的 tag 以及已有的 GitHub Release 之中。仓库不维护自动化的项目发布编号。仓库中的 `CHANGELOG.md` 是中文工程记录，并遵循 Action Worker 的变更日志约定；它不构成第二套历史系统。
+脱敏后提交证据，漏洞私下报告。
 
-如果需要命名的发布，由维护者选定目标 commit，并手动创建 Git tag 或 GitHub Release。CI 与部署自动化绝不可推断、递增、校验或发布项目发布编号。
+```text
+Authorization: Bearer [REDACTED]
+```
 
-不要为长期文档创建临时性的 `latest`、`final`、`new` 或带版本后缀的副本。应直接更新负责该内容的文档。
-
-## 核心治理文档
-
-- [开发策略](docs/governance/development-policy.md)
-- [质量策略](docs/governance/quality-policy.md)
-- [依赖策略](docs/governance/dependency-policy.md)
-- [产品策略](docs/governance/product-policy.md)
-- [文档策略](docs/governance/documentation-policy.md)
-
-## 安全
-
-切勿提交或粘贴真实的 API 密钥、bearer token、authorization 头、私有上游 URL、请求体或用户数据。请通过 [SECURITY.md](SECURITY.md) 中描述的私密流程报告漏洞。
+披露流程见 [安全策略](SECURITY.md)；产品规范见 [治理索引](docs/governance/README.md)。
