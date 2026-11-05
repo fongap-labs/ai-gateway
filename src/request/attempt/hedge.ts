@@ -57,6 +57,9 @@ const HEDGE_MAX_BODY_CHARS = 1024 * 1024;
 // at Scale (Dean & Barroso, 2013) for the underlying technique and its
 // overload caveat.
 export async function dispatchWithHedge(args: AttemptContext, tierNodes: ReadonlyArray<RuntimeNode>): Promise<AttemptOutcome> {
+  // Images may have already incurred a provider charge before any bytes
+  // arrive. Never duplicate a generation with a speculative hedge.
+  if (args.route === 'openai_images') return attemptNode(args);
   // Resolve effective hedge config: policy.hedge (per-model) overrides
   // global env defaults. The presence of a hedge object enables it unless the
   // operator explicitly sets enabled=false.
