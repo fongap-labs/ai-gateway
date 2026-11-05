@@ -35,8 +35,11 @@ export function validateDeploymentInputs(env) {
   for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
   }
-  if (typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' && env.AIG_DEPLOY_HEALTH_KEY.trim().length < 32) {
-    errors.push('AIG_DEPLOY_HEALTH_KEY must contain at least 32 characters.');
+  if (
+    typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' &&
+    !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())
+  ) {
+    errors.push('AIG_DEPLOY_HEALTH_KEY must contain at least 32 URL-safe characters.');
   }
   if (env.AIG_PUBLIC_URL && !/^https:\/\//.test(String(env.AIG_PUBLIC_URL).trim())) {
     errors.push('AIG_PUBLIC_URL must be an absolute https URL.');
