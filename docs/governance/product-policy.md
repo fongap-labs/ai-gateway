@@ -10,9 +10,9 @@ ai-gateway 是一个面向家庭、个人运营者或小型可信团队的私有
 
 本产品应当保持易于部署、易于理解、易于运维。优先采用少量明确的概念，而不是泛化的框架、扩展层、兼容垫片或面向未来的抽象。
 
-## Tier 角色
+## 三级容量
 
-### Tier 1 — free-token capacity（免费 token 容量）
+### 免费容量
 
 Tier 1 是长期的主要运行层，承载来自多个 provider/账号的免费或实际上免费的 token 容量。
 
@@ -30,13 +30,13 @@ Tier 1 的工程重点应放在：
 
 在没有生产证据表明更简单的本地设计已不足够之前，不要增加推测性的全局协调、猜测的 provider 限额，或复杂的优化机制。
 
-### Tier 2 — membership/subscription entitlement capacity（订阅权益容量）
+### 订阅容量
 
 Tier 2 面向那些通过运营者自有的会员或订阅权益获得的 AI 容量（Claude Pro/Max、ChatGPT/Codex、Google One AI Premium）。三个主流 provider 均提供内置的订阅适配器，并带有第一方的 OAuth 接入默认值。
 
 不要把 Tier 2 变成另一个通用的 API Key 池。除非有实测的生产证据表明需要，它不应引入 Tier 1 的自适应机制。
 
-### Tier 3 — paid API capacity（付费 API 容量）
+### 付费容量
 
 Tier 3 保留给付费 API 容量，作为最终的受保护兜底层。
 
