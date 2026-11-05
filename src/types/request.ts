@@ -39,6 +39,7 @@ export type RawBody = { text: string };
 export type AuthResult =
   | { authorized: false; mode: 'none' | 'grouped' }
   | { authorized: true; mode: 'grouped'; group: string; allowAll: boolean; allowlist: Set<string> | undefined }
+  | { authorized: true; mode: 'deploy'; group: null; allowAll: false; allowlist: Set<string> }
   | { authorized: true; mode: 'skip'; group: null };
 
 /**
