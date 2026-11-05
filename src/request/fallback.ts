@@ -250,13 +250,23 @@ export async function runFallbackChain({
         'gateway_unsupported_request_field',
       );
     }
-    return gatewayError(request, env, route, 502, 'Configured protocol fallback cannot represent this request.', requestId, {
-      requested_model: requestedModel,
-      attempts: state.logicalAttempts,
-      dispatches: state.dispatches,
-      hedges: state.hedges,
-      failure_kind: 'conversion_not_supported',
-    }, undefined, 'gateway_conversion_not_supported');
+    return gatewayError(
+      request,
+      env,
+      route,
+      502,
+      'Configured protocol fallback cannot represent this request.',
+      requestId,
+      {
+        requested_model: requestedModel,
+        attempts: state.logicalAttempts,
+        dispatches: state.dispatches,
+        hedges: state.hedges,
+        failure_kind: 'conversion_not_supported',
+      },
+      undefined,
+      'gateway_conversion_not_supported',
+    );
   }
 
   return null;
