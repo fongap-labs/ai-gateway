@@ -89,6 +89,12 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .filter(Boolean);
 assert.ok(deploySecretScope.includes('CLOUDFLARE_API_TOKEN'));
 assert.ok(deploySecretScope.includes('AIG_ACCESS_KEY_AGENT'));
+assert.ok(deploySecretScope.includes('AIG_INFERENCE_AUTH_KEY'));
+const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
+assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
+assert.equal(centerBindingConfig.vars.AIG_INFERENCE_TARGET, undefined);
+assert.equal(buildWranglerConfig({}).services, undefined);
+assert.throws(() => buildWranglerConfig({ AIG_INFERENCE_TARGET: 'other-center' }));
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
 // applies an alias to a name the target declares in .github/deploy.secrets.allowed.
