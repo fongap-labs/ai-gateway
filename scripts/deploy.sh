@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# Files this script writes (the Wrangler secret bundle) must not be readable by other users.
+# Runtime provider/application secrets are persistent Cloudflare Worker Secrets.
+# This code-deploy path only reads their names and never uploads or deletes values.
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +18,10 @@ fi
 }
 
 cleanup() {
-  rm -f     "${RUNNER_TEMP:-/tmp}/wrangler.github.json"     "${RUNNER_TEMP:-/tmp}/gateway-secrets.json"     "${RUNNER_TEMP:-/tmp}/deployment-summary.txt" 2>/dev/null || true
+  rm -f \
+    "${RUNNER_TEMP:-/tmp}/wrangler.github.json" \
+    "${RUNNER_TEMP:-/tmp}/worker-secrets.json" \
+    "${RUNNER_TEMP:-/tmp}/deployment-summary.txt" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -27,14 +31,28 @@ export AIG_BUILD_SHA="$DEPLOY_SOURCE_SHA"
 npm ci
 npm run validate:deploy
 npm run check:deploy
-node scripts/github-deployment-config.mjs preflight
-node scripts/github-deployment-config.mjs prepare --from-env   --wrangler "$RUNNER_TEMP/wrangler.github.json"   --secrets "$RUNNER_TEMP/gateway-secrets.json"   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
-node scripts/cloudflare-wrangler.mjs deploy   --secrets-file "$RUNNER_TEMP/gateway-secrets.json"   -c "$RUNNER_TEMP/wrangler.github.json"
+node scripts/persistent-deployment.mjs preflight
+node scripts/persistent-deployment.mjs prepare \
+  --wrangler "$RUNNER_TEMP/wrangler.github.json" \
+  --summary "$RUNNER_TEMP/deployment-summary.txt"
+
+# Wrangler returns names and types only; no secret values are downloaded.
+node scripts/cloudflare-wrangler.mjs secret list \
+  --format json \
+  --config "$RUNNER_TEMP/wrangler.github.json" \
+  > "$RUNNER_TEMP/worker-secrets.json"
+node scripts/persistent-deployment.mjs verify-secrets \
+  --file "$RUNNER_TEMP/worker-secrets.json" \
+  --wrangler "$RUNNER_TEMP/wrangler.github.json"
+
+# No --secrets-file: Cloudflare preserves existing Worker Secrets across code deployments.
+node scripts/cloudflare-wrangler.mjs deploy \
+  --config "$RUNNER_TEMP/wrangler.github.json"
 
 health_ok=false
 for attempt in 1 2 3; do
-  if node scripts/github-deployment-config.mjs health-check       --from-env       --expected-build "$DEPLOYED_SHA"; then
+  if node scripts/persistent-deployment.mjs health-check --expected-build "$DEPLOYED_SHA"; then
     health_ok=true
     break
   fi
@@ -46,8 +64,8 @@ done
 
 if [[ "$health_ok" != "true" ]]; then
   echo "Post-deploy health check failed; rolling back previous Worker version." >&2
-  node scripts/cloudflare-wrangler.mjs rollback -c "$RUNNER_TEMP/wrangler.github.json"
-  node scripts/github-deployment-config.mjs health-check --from-env || true
+  node scripts/cloudflare-wrangler.mjs rollback --config "$RUNNER_TEMP/wrangler.github.json"
+  node scripts/persistent-deployment.mjs health-check || true
   exit 1
 fi
 
