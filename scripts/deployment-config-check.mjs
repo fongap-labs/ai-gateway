@@ -215,6 +215,24 @@ assert.ok(deploymentHealthAuth?.authorized && deploymentHealthAuth.mode === 'dep
 assert.equal(deploymentHealthAuth.group, null);
 assert.equal(deploymentHealthAuth.allowAll, false);
 assert.equal(deploymentHealthAuth.allowlist.size, 0);
+assert.equal(
+  await authorizeDeploymentHealth(deploymentHealthRequest, {
+    AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
+    AIG_ACCESS_KEY_AGENT: deploymentHealthKey,
+    AIG_ACCESS_MODELS_AGENT: '*',
+  }),
+  null,
+  'a deployment health credential reused as an application access key must be rejected',
+);
+const weakHealthRequest = new Request('https://gateway.example.test/health', {
+  headers: { authorization: 'Bearer too-short' },
+});
+assert.equal(await authorizeDeploymentHealth(weakHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'too-short' }), null);
+assert.equal(
+  await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: `${deploymentHealthKey}/` }),
+  null,
+  'invalid URL-unsafe deployment credentials must be rejected',
+);
 const reusedHealthKeyAuth = await authorize(deploymentHealthRequest, {
   AIG_ACCESS_KEY_AGENT: deploymentHealthKey,
   AIG_ACCESS_MODELS_AGENT: '*',
