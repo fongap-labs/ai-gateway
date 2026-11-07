@@ -42,6 +42,12 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 `packages/contracts/image-capabilities.ts` 仅包含纯能力声明及无凭据的初步资格判断，不导入具体 Provider Adapter。Gateway 预检只用轻量描述符筛选路由候选；Generation Center 独立重新验证真实 Provider Adapter、节点、模型映射和上游 URL。`scripts/check-image-capabilities.mjs` 用三种实际图片适配器交叉核对支持尺寸、映射和非法组合，防止声明漂移。这并不表示 Gateway 其他配置模块中的 Provider 导入已经全部清除。
 
+## 旧 Provider 执行路径隔离（待删除）
+
+`src/request/attempt/dispatch.ts` 已收敛为单次尝试记账和能力中心选择；原本混杂在该文件中的 URL、OAuth、Provider 私钥、物理 fetch、错误响应及订阅线协议处理迁入专用的 `src/request/attempt/legacy-provider-dispatch.ts`。`attempt-mode.ts` 保持缓冲判定单一实现。新边界检查阻止调度层重新导入 Provider/OAuth。
+
+**注意：这仍是源码层面隔离，不是删除旧执行路径。** 未绑定私有中心的环境仍使用兼容分支；下一阶段必须先完成中心合同等价测试，然后彻底删除它及其执行密钥依赖。当前不修改生产部署配置。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
