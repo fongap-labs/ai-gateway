@@ -46,4 +46,34 @@ for (const [name, value] of [
   assert.equal(parseExecutionInvocation(makeRequest(modified), allowed, now), null, name);
 }
 assert.equal(parseExecutionInvocation(request, new Set(['images_generations']), now), null);
+
+const translated = { ...invocation, inputSurface: 'messages', preferNonstream: true };
+const translatedHeaders = buildExecutionHeaders(translated, 'x-aig-inference-auth', key);
+const translatedRequest = makeRequest(translatedHeaders);
+assert.deepEqual(parseExecutionInvocation(translatedRequest, allowed, now), translated);
+assert.equal(translatedHeaders.get('x-aig-input-surface'), 'messages');
+assert.equal(translatedHeaders.get('x-aig-contract-version'), '2');
+assert.equal(translatedHeaders.get('x-aig-conversion-prefer-nonstream'), 'true');
+assert.equal(headers.has('x-aig-input-surface'), false);
+for (const [name, value] of [
+  ['x-aig-input-surface', 'images_generations'],
+  ['x-aig-input-surface', 'chat_completions'],
+  ['x-aig-input-surface', ''],
+  ['x-aig-input-surface', 'forged'],
+  ['x-aig-conversion-prefer-nonstream', 'false'],
+  ['x-aig-conversion-prefer-nonstream', 'TRUE'],
+]) {
+  const modified = new Headers(translatedHeaders);
+  modified.set(name, value);
+  assert.equal(parseExecutionInvocation(makeRequest(modified), allowed, now), null, `${name}=${value}`);
+}
+const standalonePreference = new Headers(headers);
+standalonePreference.set('x-aig-conversion-prefer-nonstream', 'true');
+assert.equal(parseExecutionInvocation(makeRequest(standalonePreference), allowed, now), null);
+const downgraded = new Headers(translatedHeaders);
+downgraded.set('x-aig-contract-version', EXECUTION_CONTRACT_VERSION);
+assert.equal(parseExecutionInvocation(makeRequest(downgraded), allowed, now), null);
+const v2WithoutConversion = new Headers(headers);
+v2WithoutConversion.set('x-aig-contract-version', '2');
+assert.equal(parseExecutionInvocation(makeRequest(v2WithoutConversion), allowed, now), null);
 console.log('Execution contract v1: construction, validation, authorization and negative cases passed.');

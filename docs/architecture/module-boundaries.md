@@ -94,6 +94,14 @@ Responses 对象转换和 SSE 编解码实现由 `apps/inference/conversion/resp
 
 Gateway 继续持有原有首事件预提交、跨节点 Failover、路由授权和用量结算。**注意：真实 Worker 内网执行仍需迁移**，不能将此 PR 视为网关请求热路径已不运行转换实现。
 
+## v2 推理中心实际请求转换（迁移阶段）
+
+跨协议推理使用内网执行契约 **v2**：新增源协议 `x-aig-input-surface` 与可选的 `x-aig-conversion-prefer-nonstream`。原生推理和生成调用继续使用 v1。中心严格校验合约版本、源/目标协议、节点/模型、过期时间和中心密钥：旧 v1 中心拒绝 v2 请求，避免将原始客户端正文误发到上游。因此后续如需部署，**必须先发布支持 v2 的中心，再发布使用 v2 的 Gateway**；本次仅修改源码。
+
+Gateway 的 `runFallbackChain` 继续进行独立转换可行性和高风险语义损失预检，维持“转换失败不占用物理尝试”与 Tier/Failover 不变；实际传输给 Inference Center 的是原始客户端协议正文，中心验证请求后以唯一的 `convertMatrixRequest` 完成转换，再做物理模型映射和 Provider 请求。两者共用 `packages/conversion-core/fidelity-policy.ts` 保守降级边界。
+
+中心仍返回目标 Provider 的原生响应，Gateway 现有 `success-matrix` 负责反向响应转换、首事件提交和用量结算；**这些职责尚未完成下沉**。后续还要移除 Gateway 转换预检的执行依赖，提供不泄露正文的能力声明与预检契约，再删除旧直连 Provider 路径。当前未改动任何部署绑定或生产 Secrets。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

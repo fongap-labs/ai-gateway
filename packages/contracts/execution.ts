@@ -5,11 +5,13 @@
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
 
 export const EXECUTION_CONTRACT_VERSION = '1' as const;
+export const EXECUTION_TRANSLATION_CONTRACT_VERSION = '2' as const;
 export const EXECUTION_PATH = '/internal/execute' as const;
 export const MAX_EXECUTION_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
 
 export type ExecutionCenter = 'inference' | 'perception' | 'generation';
 export type ExecutionSurface = 'chat_completions' | 'responses' | 'messages' | 'images_generations';
+export type ExecutionInputSurface = Exclude<ExecutionSurface, 'images_generations'>;
 export type ExecutionDisposition = 'not-dispatched' | 'attempted' | 'dispatched';
 
 export type ExecutionInvocation = {
@@ -18,6 +20,10 @@ export type ExecutionInvocation = {
   logicalModel: string;
   surface: ExecutionSurface;
   deadlineMs: number;
+  /** The original client shape when Inference performs cross-protocol conversion. */
+  inputSurface?: ExecutionInputSurface;
+  /** Absent unless the Gateway explicitly prefers a non-streaming upstream. */
+  preferNonstream?: true;
 };
 
 export type ExecutionError = {
@@ -40,9 +46,9 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 
 /** Only gateway-generated metadata is included; no client credentials are forwarded. */
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
-  return new Headers({
+  const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version': EXECUTION_CONTRACT_VERSION,
+    'x-aig-contract-version': invocation.inputSurface ? EXECUTION_TRANSLATION_CONTRACT_VERSION : EXECUTION_CONTRACT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-node-id': invocation.nodeId,
     'x-aig-model': invocation.logicalModel,
@@ -50,6 +56,9 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
     'x-aig-deadline-ms': String(invocation.deadlineMs),
     [authHeader]: authKey,
   });
+  if (invocation.inputSurface) headers.set('x-aig-input-surface', invocation.inputSurface);
+  if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
+  return headers;
 }
 
 /** This checks syntax and lifetime only. Centers MUST also verify node/model authorization. */
@@ -58,7 +67,8 @@ export function parseExecutionInvocation(
   allowedSurfaces: ReadonlySet<ExecutionSurface>,
   nowMs = Date.now(),
 ): ExecutionInvocation | null {
-  if (request.headers.get('x-aig-contract-version') !== EXECUTION_CONTRACT_VERSION) return null;
+  const version = request.headers.get('x-aig-contract-version');
+  if (version !== EXECUTION_CONTRACT_VERSION && version !== EXECUTION_TRANSLATION_CONTRACT_VERSION) return null;
   const requestId = request.headers.get('x-aig-request-id') ?? '';
   const nodeId = request.headers.get('x-aig-node-id') ?? '';
   const logicalModel = request.headers.get('x-aig-model') ?? '';
@@ -71,7 +81,28 @@ export function parseExecutionInvocation(
   if (!/^\d{13}$/.test(rawDeadline)) return null;
   const deadlineMs = Number(rawDeadline);
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs <= nowMs || deadlineMs > nowMs + MAX_EXECUTION_DEADLINE_AHEAD_MS) return null;
-  return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
+  const rawInputSurface = request.headers.get('x-aig-input-surface');
+  const preferNonstream = request.headers.get('x-aig-conversion-prefer-nonstream');
+  if (rawInputSurface === null) {
+    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null) return null;
+    return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
+  }
+  if (
+    version !== EXECUTION_TRANSLATION_CONTRACT_VERSION ||
+    rawSurface === 'images_generations' ||
+    !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
+    rawInputSurface === rawSurface
+  ) return null;
+  if (preferNonstream !== null && preferNonstream !== 'true') return null;
+  return {
+    requestId,
+    nodeId,
+    logicalModel,
+    surface: rawSurface as ExecutionSurface,
+    deadlineMs,
+    inputSurface: rawInputSurface as ExecutionInputSurface,
+    ...(preferNonstream === 'true' ? { preferNonstream: true as const } : {}),
+  };
 }
 
 function constantTimeMatch(received: string, expected: string): boolean {

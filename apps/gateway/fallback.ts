@@ -47,6 +47,7 @@
 //     no native node: no node of this gateway can ever serve those fields, so the
 //     answer is a 400 that names them, and the client can resend without them.
 
+import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
 import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/pipeline.ts';
@@ -57,13 +58,6 @@ import { buildBudgetExhaustedResponse, gatewayError } from '../../src/request/er
 import { computeTierCaps } from '../../src/request/tier-loop.ts';
 import type { ConversionContext, LoopContext } from '../../src/types/request.ts';
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
-
-// Dropped features that change what the upstream is asked to do, so the target
-// is refused rather than served degraded. Tool-result error flags and context
-// management hints are NOT here: the failure text stays in the tool result
-// content, and context management only steers the client's own pruning. Both
-// still surface as `dropped` diagnostics (fidelity `degraded`).
-const HIGH_RISK_DROPPED_FEATURES = new Set(['provider_native_tool', 'provider_native_tool_history']);
 
 /** client route -> canonical IR protocol. */
 function routeToIrProtocol(route: string): IrProtocol | null {
@@ -93,10 +87,6 @@ type TierLoopRunner = (
   conversionContext: ConversionContext | null,
   overrideTierCaps: TierMap<number> | null,
 ) => Promise<Response | null>;
-
-function highRiskSemanticLoss(result: ConversionResult): string[] {
-  return result.diagnostics.filter((d) => d.action === 'dropped' && HIGH_RISK_DROPPED_FEATURES.has(d.feature)).map((d) => d.feature);
-}
 
 /**
  * Run the cross-protocol fallback chain.
@@ -134,6 +124,7 @@ export async function runFallbackChain({
     // fallback pass; a translated request is as large as the client's.
     const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface, bodyChars: loopCtx.bodyChars };
     let conversionResult: ConversionResult;
+    const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
     try {
       const from = routeToIrProtocol(route);
       const to = fallbackToIrProtocol(fb);
@@ -145,7 +136,6 @@ export async function runFallbackChain({
       // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
       // stream flag so the provider may answer with one JSON body (streaming
       // clients still get the forced upstream stream).
-      const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
       conversionResult = convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
     } catch (e) {
       if (e instanceof ConversionError) {
@@ -223,6 +213,7 @@ export async function runFallbackChain({
       fallbackProtocol: fb.protocol,
       fallbackSurface: fb.surface,
       clientRoute: route,
+      isNonstreamPreferred,
     };
     const fbResult = await runTierLoop(loopCtx, fbReqDescriptor, conversionContext, fbTierCaps);
     if (fbResult) return fbResult;
