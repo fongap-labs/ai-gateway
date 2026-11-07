@@ -85,6 +85,10 @@ for (const center of ['inference', 'generation']) {
   assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
   assert.doesNotMatch(executor, /runTierLoop|dispatchWithHedge/, `${center} must not implement gateway scheduling`);
 }
+const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
+assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
+assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
+
 const imagePreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
 const imageExecutor = readFileSync(join(root, 'apps/generation/execution.ts'), 'utf8');
 assert.doesNotMatch(imagePreflight, /getProviderAdapter/, 'Gateway preflight must not execute Provider image adapters');
