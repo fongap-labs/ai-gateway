@@ -171,7 +171,7 @@ for (const file of [
 const matrixRequestOwner = readFileSync(join(root, 'apps/inference/conversion/request.ts'), 'utf8');
 const matrixPipelineCompat = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.ok(
-  matrixPipelineCompat.includes("export { convertMatrixRequest, isMatrixPair } from '../../../apps/inference/conversion/request.ts';"),
+  matrixPipelineCompat.includes("export * from '../../../apps/inference/conversion/request.ts';"),
   'Old matrix request pipeline must export the same inference-owned request converter',
 );
 assert.doesNotMatch(matrixPipelineCompat, /export function convertMatrixRequest\(/, 'Do not duplicate conversion in Gateway');
@@ -185,6 +185,10 @@ assert.match(matrixReplyOwner, /export function replyFromNativeObject\(/, 'Infer
 assert.match(matrixReplyOwner, /export function replyToObject\(/, 'Inference must render reply objects');
 assert.doesNotMatch(matrixReplyLegacy, /export function replyToObject\(/, 'Gateway must not own duplicate object rendering');
 assert.doesNotMatch(matrixReplyLegacy, /export function replyFromNativeObject\(/, 'Gateway must not own duplicate object decoding');
+assert.ok(
+  matrixReplyLegacy.includes("export * from '../../../apps/inference/conversion/response.ts';"),
+  'Old Matrix replies must use one inference-owned implementation',
+);
 assert.doesNotMatch(matrixReplyOwner, /from ['"][^'"]*\/src\//, 'Inference object conversion must not import legacy src');
 
 // SSE parsing, deadline reads and conversion relay must use one shared owner.
@@ -202,6 +206,27 @@ assert.doesNotMatch(streamGuard, /function drainLines\(/, 'Gateway must not dupl
 for (const file of ['packages/transport/sse.ts', 'packages/transport/convert-sse.ts', 'packages/transport/client-lifecycle.ts']) {
   assert.doesNotMatch(readFileSync(join(root, file), 'utf8'), /from ['"][^'"]*\/src\//, `Transport must not import legacy src: ${file}`);
 }
+
+// No Gateway-side duplicate Matrix SSE lifecycle or reverse Inference -> src imports.
+const matrixLegacyPipeline = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
+const inferenceStreamOwner = readFileSync(join(root, 'apps/inference/conversion/stream.ts'), 'utf8');
+assert.ok(
+  matrixLegacyPipeline.includes("export * from '../../../apps/inference/conversion/stream.ts';"),
+  'Old Matrix SSE pipeline must only re-export the Inference implementation',
+);
+assert.doesNotMatch(matrixLegacyPipeline, /export (?:async )?function /, 'Gateway Matrix pipeline must have no executor logic');
+for (const functionName of ['openMatrixStream', 'collectMatrixObject', 'synthesizeMatrixStreamFromObject']) {
+  assert.ok(
+    inferenceStreamOwner.includes(`export ${functionName === 'collectMatrixObject' ? 'async ' : ''}function ${functionName}(`),
+    `Inference must own Matrix SSE ${functionName}`,
+  );
+}
+assert.doesNotMatch(inferenceStreamOwner, /from ['"][^'"]*\/src\//, 'Inference Matrix stream may use only neutral packages and local codecs');
+assert.doesNotMatch(
+  inferenceStreamOwner,
+  /ensureFirstSseEvent|dispatchWithHedge|runTierLoop/,
+  'Inference stream codec must not own Gateway commit/failover',
+);
 
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');

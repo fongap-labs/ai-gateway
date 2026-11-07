@@ -88,6 +88,12 @@ Responses 对象转换和 SSE 编解码实现由 `apps/inference/conversion/resp
 
 流扫描、流转发、读取截止时间与合成流内部标记现由 `packages/transport` 唯一持有。旧 `src/stream/guard.ts` 仍持有首事件提交、回放与失败恢复边界，仅从中立模块导入 SSE 扫描器。旧 `src/conversion/sse.ts` 仅保留兼容导出。这样后续推理中心可以接管 Matrix SSE 流管道而不反向导入 Gateway 的流守卫。
 
+## Matrix SSE 流转换归属
+
+`apps/inference/conversion/stream.ts` 唯一持有 Matrix SSE 解码/编码、非流式对象收集、转换预算终止以及合成 SSE 响应；只依赖中立 `packages/transport`、`packages/conversion-core` 和本中心 Codec。旧 `src/conversion/matrix/pipeline.ts` 仅保留 Request、Response 和 Stream 的同一实现兼容导出。中央合同及本地身份/终态/合成事件测试覆盖原调用路径。
+
+Gateway 继续持有原有首事件预提交、跨节点 Failover、路由授权和用量结算。**注意：真实 Worker 内网执行仍需迁移**，不能将此 PR 视为网关请求热路径已不运行转换实现。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
