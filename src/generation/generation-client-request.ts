@@ -4,8 +4,8 @@
 // Private image executor request. No implicit provider fallback on binding
 // or authentication errors: these operations may have already been billed.
 
-import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
 import type { ExecutionTransport } from '../../packages/contracts/execution.ts';
+import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 
@@ -40,7 +40,13 @@ function serviceOf(env: GatewayEnv): GenerationService {
 export function buildGenerationRequest(env: GatewayEnv, invocation: GenerationInvocation): Request {
   serviceOf(env);
   const headers = buildExecutionHeaders(
-    { requestId: invocation.requestId, nodeId: invocation.node.id, logicalModel: invocation.logicalModel, surface: 'images_generations', deadlineMs: invocation.deadlineMs },
+    {
+      requestId: invocation.requestId,
+      nodeId: invocation.node.id,
+      logicalModel: invocation.logicalModel,
+      surface: 'images_generations',
+      deadlineMs: invocation.deadlineMs,
+    },
     'x-aig-generation-auth',
     env.AIG_GENERATION_AUTH_KEY as string,
   );

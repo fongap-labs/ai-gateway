@@ -23,11 +23,11 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
     if (!specifier?.startsWith('.')) continue;
     const target = relative(root, resolve(file, '..', specifier)).replaceAll('\\', '/');
     if (local.startsWith('packages/')) {
-      assert.ok(!target.startsWith('src/') && !target.startsWith('apps/'), local + ' imports implementation: ' + target);
+      assert.ok(!target.startsWith('src/') && !target.startsWith('apps/'), `${local} imports implementation: ${target}`);
     }
     if (local.startsWith('apps/')) {
       const ownApp = local.split('/')[1];
-      assert.ok(!target.startsWith('apps/') || target.startsWith('apps/' + ownApp + '/'), local + ' imports another app: ' + target);
+      assert.ok(!target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`), `${local} imports another app: ${target}`);
     }
   }
   checked++;
@@ -38,8 +38,8 @@ for (const [app, shim] of [
   ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],
   ['apps/generation/index.ts', 'src/generation/generation-center-entry.ts'],
 ]) {
-  assert.ok(existsSync(join(root, app)), 'Missing running app: ' + app);
-  assert.match(readFileSync(join(root, shim), 'utf8'), /apps\//, 'Compatibility entrypoint not delegated: ' + shim);
+  assert.ok(existsSync(join(root, app)), `Missing running app: ${app}`);
+  assert.match(readFileSync(join(root, shim), 'utf8'), /apps\//, `Compatibility entrypoint not delegated: ${shim}`);
 }
 for (const path of [
   'apps/inference/index.ts',
@@ -48,6 +48,6 @@ for (const path of [
   'src/generation/generation-client-request.ts',
 ]) {
   const content = readFileSync(join(root, path), 'utf8');
-  assert.match(content, /packages\/contracts\/execution\.ts/, path + ' does not use the contract');
+  assert.match(content, /packages\/contracts\/execution\.ts/, `${path} does not use the contract`);
 }
-console.log('Architecture boundary check passed (' + checked + ' package/app files).');
+console.log(`Architecture boundary check passed (${checked} package/app files).`);

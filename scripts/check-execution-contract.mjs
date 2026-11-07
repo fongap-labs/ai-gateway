@@ -3,9 +3,9 @@
 // No network, secrets, Worker bindings or production deployment.
 import assert from 'node:assert/strict';
 import {
-  EXECUTION_CONTRACT_VERSION,
   authorizeExecutionRequest,
   buildExecutionHeaders,
+  EXECUTION_CONTRACT_VERSION,
   parseExecutionInvocation,
 } from '../packages/contracts/execution.ts';
 
@@ -25,7 +25,7 @@ const request = makeRequest(headers);
 assert.equal(headers.get('x-aig-contract-version'), EXECUTION_CONTRACT_VERSION);
 assert.deepEqual(parseExecutionInvocation(request, allowed, now), invocation);
 assert.equal(authorizeExecutionRequest(request, key, 'x-aig-inference-auth'), true);
-assert.equal(authorizeExecutionRequest(request, key + 'wrong', 'x-aig-inference-auth'), false);
+assert.equal(authorizeExecutionRequest(request, `${key}wrong`, 'x-aig-inference-auth'), false);
 assert.equal(authorizeExecutionRequest(request, 'short', 'x-aig-inference-auth'), false);
 assert.equal(authorizeExecutionRequest(request, key, 'authorization'), false);
 assert.equal(headers.has('authorization'), false);

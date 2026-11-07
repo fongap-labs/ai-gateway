@@ -4,8 +4,8 @@
 // Private transport adapter for the inference executor. Keep the contract
 // independent of Cloudflare RPC so an HTTPS backend can implement it later.
 
-import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
 import type { ExecutionTransport } from '../../packages/contracts/execution.ts';
+import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
@@ -44,7 +44,13 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
   configuredService(env);
   const key = env.AIG_INFERENCE_AUTH_KEY as string;
   const headers = buildExecutionHeaders(
-    { requestId: invocation.requestId, nodeId: invocation.node.id, logicalModel: invocation.logicalModel, surface: invocation.surface, deadlineMs: invocation.deadlineMs },
+    {
+      requestId: invocation.requestId,
+      nodeId: invocation.node.id,
+      logicalModel: invocation.logicalModel,
+      surface: invocation.surface,
+      deadlineMs: invocation.deadlineMs,
+    },
     'x-aig-inference-auth',
     key,
   );
