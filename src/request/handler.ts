@@ -458,4 +458,3 @@ function deliver(response: Response, loopCtx: LoopContext): Response {
   storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream, plan.route, loopCtx.request.signal);
   return injectMissHeader(response, loopCtx.request, loopCtx.env);
 }
-
