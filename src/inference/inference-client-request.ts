@@ -18,6 +18,7 @@ export type InferenceInvocation = {
   surface: Surface;
   inputSurface?: ExecutionInputSurface;
   preferNonstream?: true;
+  returnObject?: true;
   deadlineMs: number;
   body: string;
   signal?: AbortSignal;
@@ -54,6 +55,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
       deadlineMs: invocation.deadlineMs,
       inputSurface: invocation.inputSurface,
       preferNonstream: invocation.preferNonstream,
+      returnObject: invocation.returnObject,
     },
     'x-aig-inference-auth',
     key,

@@ -102,6 +102,14 @@ Gateway 的 `runFallbackChain` 继续进行独立转换可行性和高风险语�
 
 中心仍返回目标 Provider 的原生响应，Gateway 现有 `success-matrix` 负责反向响应转换、首事件提交和用量结算；**这些职责尚未完成下沉**。后续还要移除 Gateway 转换预检的执行依赖，提供不泄露正文的能力声明与预检契约，再删除旧直连 Provider 路径。当前未改动任何部署绑定或生产 Secrets。
 
+## v3 非流式响应对象转换下沉
+
+新增内网执行契约 **v3**：仅对跨协议的 `inputSurface` 且 `preferNonstream=true`、客户端不请求流/伪流的情况，请求票据增加 `x-aig-return-object: true`。v1 原生、v2 请求转换和 SSE 流转发保持原有行为；旧中心收到 v3 将拒绝，禁止默默把新报文当成 v2。
+
+当上游成功返回有实际文本/工具调用的 JSON 对象，Inference Center 使用 `replyFromNativeObject` 与 `replyToObject` 在**中心内部**转换目标协议 → 客户端协议，返回带 `x-aig-response-format: translated-object-v1` 标记的私有封装 `{kind, response, upstreamUsage}`。Gateway 收到可信中心封装后直接输出 client response、按 `upstreamUsage` 进行物理账本结算，不再二次解码/重编码对象。空回复、非法格式仍沿旧成功层分类；真实 SSE 继续透传到 Gateway 的首事件守卫与 Matrix 流处理。
+
+注意：此批次下沉的是**成功的非流式对象响应**，并非所有 SSE。中心仍不负责 Gateway 的逻辑请求调度、首事件提交、故障回退、限流与结算事务。后续要独立迁移流式响应转换及协议兼容预检，并在完成等价测试后删除旧 Provider 直连执行。部署必须**先升级支持 v3 的 Inference Center，再升级 Gateway**；本 PR 不触发部署或密钥更新。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

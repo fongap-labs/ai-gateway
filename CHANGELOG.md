@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 非流式跨协议响应对象由 Inference v3 契约转换；Gateway 保留物理用量记账。
+
 - 新增: Inference v2 契约执行跨协议请求转换，原生调用仍兼容 v1。
 
 - 新增: Matrix SSE 编解码与收集执行归推理中心，旧 Pipeline 仅兼容导出。

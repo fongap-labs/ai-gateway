@@ -4,7 +4,7 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
-import type { ExecutionInputSurface, ExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { INFERENCE_TRANSLATED_OBJECT_FORMAT, type ExecutionInputSurface, type ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
@@ -22,6 +22,7 @@ import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transpor
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
+import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -37,6 +38,38 @@ function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface
       return 'anthropic';
     default:
       return null;
+  }
+}
+
+// v3 is an opt-in for buffered objects only. An absent marker always means
+// Gateway must run its existing conversion path, preserving stream ownership.
+function translatedObject(
+  native: Record<string, unknown>,
+  invocation: Invocation,
+  headers: Headers,
+  status: number,
+): Response | null {
+  if (!invocation.returnObject || !invocation.inputSurface) return null;
+  const upstreamProtocol = protocolForSurface(invocation.surface);
+  const clientProtocol = protocolForSurface(invocation.inputSurface);
+  if (!upstreamProtocol || !clientProtocol) return null;
+  try {
+    const { reply } = replyFromNativeObject(upstreamProtocol, native);
+    if (!reply.parts.some((part) => part.type === 'text' && part.text) && !reply.parts.some((part) => part.type === 'tool_call')) {
+      return null;
+    }
+    const converted = replyToObject(reply, clientProtocol) as Record<string, unknown>;
+    const outgoing = new Headers(headers);
+    outgoing.set('content-type', 'application/json');
+    outgoing.set('x-aig-response-format', INFERENCE_TRANSLATED_OBJECT_FORMAT);
+    return new Response(
+      JSON.stringify({ kind: INFERENCE_TRANSLATED_OBJECT_FORMAT, response: converted, upstreamUsage: reply.rawUsage ?? null }),
+      { status, headers: outgoing },
+    );
+  } catch {
+    // A malformed/unsupported native object follows the same Gateway error
+    // classification path as v2; never mislabel a raw object as translated.
+    return null;
   }
 }
 
@@ -225,7 +258,33 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     }
     if (!native) return problem(502, 'center_subscription_reply_invalid');
     outgoing.set('content-type', 'application/json');
+    const translated = translatedObject(native, invocation, outgoing, upstream.status);
+    if (translated) return translated;
     return new Response(JSON.stringify(native), { status: upstream.status, headers: outgoing });
+  }
+  if (invocation.returnObject && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
+    // Only explicit v3 buffered-object calls are inspected in the center.
+    // Raw SSE, native v1 and translated v2 keep their original passthrough.
+    let raw: string;
+    try {
+      raw = await readBufferedReplyText(upstream, invocation.deadlineMs);
+    } catch {
+      const response = problem(502, 'center_buffered_reply_invalid');
+      response.headers.set('x-aig-result', 'dispatched');
+      response.headers.set('x-aig-upstream-status', String(upstream.status));
+      return response;
+    }
+    try {
+      const native: unknown = JSON.parse(raw);
+      if (native && typeof native === 'object' && !Array.isArray(native)) {
+        const translated = translatedObject(native as Record<string, unknown>, invocation, outgoing, upstream.status);
+        if (translated) return translated;
+      }
+    } catch {
+      // Retain the raw response and let Gateway apply legacy post-header
+      // failure classification rather than claiming a successful translation.
+    }
+    return new Response(raw, { status: upstream.status, headers: outgoing });
   }
   // Raw body stream ownership transfers to the caller. No buffering, no
   // JSON inspection of model output, and no further provider retry here.

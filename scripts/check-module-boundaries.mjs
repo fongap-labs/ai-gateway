@@ -233,6 +233,14 @@ const centerDispatch = readFileSync(join(root, 'src/request/attempt/inference-di
 assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'Inference must execute the physical protocol request conversion');
 assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
+const responseCenter = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const responseGateway = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+const responseContract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
+assert.match(responseCenter, /replyFromNativeObject\(upstreamProtocol, native\)/, 'Inference must decode native reply objects before forwarding');
+assert.match(responseCenter, /replyToObject\(reply, clientProtocol\)/, 'Inference must render the client protocol for v3 objects');
+assert.match(responseGateway, /isTranslatedObjectEnvelope\(native\)/, 'Gateway must strictly validate pretranslated objects');
+assert.match(responseGateway, /recordTokens\(c, node, native.upstreamUsage\)/, 'Gateway must settle the physical upstream usage once');
+assert.match(responseContract, /EXECUTION_OBJECT_CONTRACT_VERSION = '3'/, 'v3 object conversion must use its own contract version');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

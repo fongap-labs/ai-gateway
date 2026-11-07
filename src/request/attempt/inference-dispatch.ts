@@ -103,6 +103,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       surface: c.surface ?? reqDescriptor.surface,
       inputSurface: inputSurface ?? undefined,
       preferNonstream: c.conversionContext?.isNonstreamPreferred ? true : undefined,
+      returnObject: c.conversionContext?.isNonstreamPreferred && !c.clientWantsStream && !c.fakeStream ? true : undefined,
       deadlineMs: c.attemptDeadlineMs,
       body: outboundBody,
       signal: controller.signal,
