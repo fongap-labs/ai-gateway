@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 // Native Node contract test: conversion codec ownership and legacy identity.
 import assert from 'node:assert/strict';
-import { ChatStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/chat-stream.ts';
 import { parseChatRequest as ownedParse } from '../apps/inference/conversion/chat.ts';
-import { ChatStreamDecoder as LegacyDecoder } from '../src/conversion/matrix/chat-stream.ts';
+import { ChatStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/chat-stream.ts';
 import { parseChatRequest as legacyParse } from '../src/conversion/matrix/chat.ts';
+import { ChatStreamDecoder as LegacyDecoder } from '../src/conversion/matrix/chat-stream.ts';
 
 assert.strictEqual(LegacyDecoder, OwnedDecoder, 'legacy export must preserve class identity');
 assert.strictEqual(legacyParse, ownedParse, 'legacy export must preserve parser identity');
