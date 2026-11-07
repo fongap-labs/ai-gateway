@@ -97,11 +97,7 @@ export function parseExecutionInvocation(
   nowMs = Date.now(),
 ): ExecutionInvocation | null {
   const version = request.headers.get('x-aig-contract-version');
-  if (
-    version !== EXECUTION_CONTRACT_VERSION &&
-    version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
-    version !== EXECUTION_OBJECT_CONTRACT_VERSION
-  )
+  if (version !== EXECUTION_CONTRACT_VERSION && version !== EXECUTION_TRANSLATION_CONTRACT_VERSION && version !== EXECUTION_OBJECT_CONTRACT_VERSION)
     return null;
   const requestId = request.headers.get('x-aig-request-id') ?? '';
   const nodeId = request.headers.get('x-aig-node-id') ?? '';

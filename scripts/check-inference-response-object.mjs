@@ -17,7 +17,11 @@ const env = {
   AIG_INFERENCE_AUTH_KEY: key,
   AIG_TIER3_NODES_01: JSON.stringify([node]),
   AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-only-provider-credential' }),
-  AIG_INFERENCE_SERVICE: { fetch: async () => { throw new Error('not called'); } },
+  AIG_INFERENCE_SERVICE: {
+    fetch: async () => {
+      throw new Error('not called');
+    },
+  },
 };
 const body = { model: 'chat-test', max_tokens: 128, messages: [{ role: 'user', content: 'Hello' }] };
 const client = new Request('https://gateway.invalid/v1/messages', {

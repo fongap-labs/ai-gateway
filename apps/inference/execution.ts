@@ -4,7 +4,7 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
-import { INFERENCE_TRANSLATED_OBJECT_FORMAT, type ExecutionInputSurface, type ExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
@@ -43,12 +43,7 @@ function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface
 
 // v3 is an opt-in for buffered objects only. An absent marker always means
 // Gateway must run its existing conversion path, preserving stream ownership.
-function translatedObject(
-  native: Record<string, unknown>,
-  invocation: Invocation,
-  headers: Headers,
-  status: number,
-): Response | null {
+function translatedObject(native: Record<string, unknown>, invocation: Invocation, headers: Headers, status: number): Response | null {
   if (!invocation.returnObject || !invocation.inputSurface) return null;
   const upstreamProtocol = protocolForSurface(invocation.surface);
   const clientProtocol = protocolForSurface(invocation.inputSurface);
@@ -62,10 +57,10 @@ function translatedObject(
     const outgoing = new Headers(headers);
     outgoing.set('content-type', 'application/json');
     outgoing.set('x-aig-response-format', INFERENCE_TRANSLATED_OBJECT_FORMAT);
-    return new Response(
-      JSON.stringify({ kind: INFERENCE_TRANSLATED_OBJECT_FORMAT, response: converted, upstreamUsage: reply.rawUsage ?? null }),
-      { status, headers: outgoing },
-    );
+    return new Response(JSON.stringify({ kind: INFERENCE_TRANSLATED_OBJECT_FORMAT, response: converted, upstreamUsage: reply.rawUsage ?? null }), {
+      status,
+      headers: outgoing,
+    });
   } catch {
     // A malformed/unsupported native object follows the same Gateway error
     // classification path as v2; never mislabel a raw object as translated.
