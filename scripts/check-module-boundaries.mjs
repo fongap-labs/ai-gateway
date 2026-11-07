@@ -40,6 +40,19 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');
+const fallbackOwner = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
+const gatewayHandler = readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8');
+assert.ok(fallbackShim.includes("from '../../apps/gateway/fallback.ts'"), 'Legacy fallback must only re-export Gateway-owned implementation');
+assert.ok(
+  !fallbackShim.includes('convertMatrixRequest') && !fallbackShim.includes('for (const fb of fallbacks)'),
+  'Old fallback must not duplicate orchestration',
+);
+assert.ok(gatewayHandler.includes("from './fallback.ts'"), 'Gateway orchestrator must import its owned fallback');
+assert.ok(!gatewayHandler.includes('src/request/fallback.ts'), 'Gateway must not call legacy fallback');
+assert.ok(fallbackOwner.includes('export async function runFallbackChain('), 'Gateway must own fallback policy');
+assert.ok(fallbackOwner.includes('computeTierCaps'), 'Fallback must reuse Gateway request-wide Tier attempt budget');
+
 assert.match(handlerSource, /apps\/gateway\/request-handler\.ts/, 'Legacy handler must forward to Gateway-owned module');
 assert.match(
   readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8'),

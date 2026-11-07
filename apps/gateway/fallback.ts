@@ -1,0 +1,273 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+//
+// Protocol Fallback Orchestration.
+//
+// Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
+// for the single source of truth): every directed pair among OpenAI Chat
+// Completions, Anthropic Messages and OpenAI Responses travels through the
+// canonical IR matrix (conversion/matrix/) — streaming, tool calls and
+// reasoning survive translation. The former legacy pairwise Chat <-> Messages
+// converters were absorbed into that matrix. There is no Gemini conversion.
+// Fallback follows the resolved PROTOCOL_FALLBACKS policy, including the
+// built-in matrix-wide default when the variable is unset. There is no Gemini
+// conversion.
+//
+// Contract:
+//   * Native-first: the native tier loop runs first and only when it
+//     returns null (all tiers exhausted without a response) does the
+//     fallback chain get a chance.
+//   * Shared state: the fallback loop reuses the SAME state, the
+//     SAME failover budget, the SAME requestStartMs, the SAME
+//     logicalAttempts counter, the SAME dispatches counter, and the
+//     SAME hedges counter. There is no fresh budget and no reset.
+//   * Hedge never crosses protocol/surface: the scheduler's
+//     (protocol, surface) filter excludes foreign nodes, so a hedge
+//     twin is always same-protocol and same-surface as its primary.
+//     Whether hedge is allowed inside a fallback pass is determined
+//     by the normal policy and tier hedge rules — the fallback chain
+//     does not suppress it, nor does it launch cross-protocol twins.
+//   * Each fallback step that has a supported candidate re-runs the
+//     tier loop. The first step that returns a Response wins. The set of
+//     reachable fallback steps is precomputed by route-feasibility.ts at
+//     preflight time and carried through loopCtx.feasibility; runFallbackChain
+//     iterates that set rather than re-implementing the feasibility check.
+//   * If conversion throws ConversionError, or would drop high-risk semantic
+//     state, that fallback target is skipped before any upstream dispatch.
+//     The client request is still legal; the target protocol is incompatible.
+//     No logical attempt, dispatch, hedge, active-request, cooldown or circuit
+//     state is charged for a skipped conversion.
+//   * Successful conversion emits a debug-only fidelity record. Diagnostics
+//     contain only fixed feature/action labels; request content, schemas, tool
+//     names and credentials are never logged.
+//   * If every recognized fallback target is rejected before any upstream
+//     dispatch, return a dedicated 502 instead of misreporting the condition as
+//     node cooldown/circuit exhaustion. The exception is a request whose only
+//     problem is top-level fields no target protocol can carry, for a model with
+//     no native node: no node of this gateway can ever serve those fields, so the
+//     answer is a 400 that names them, and the client can resend without them.
+
+import { getLimits } from '../../src/config/timeouts.ts';
+import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
+import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/pipeline.ts';
+import type { ConversionResult } from '../../src/conversion/result.ts';
+import { ConversionError } from '../../src/conversion/validation.ts';
+import { getLogger } from '../../src/observability/logger.ts';
+import { buildBudgetExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
+import { computeTierCaps } from '../../src/request/tier-loop.ts';
+import type { ConversionContext, LoopContext } from '../../src/types/request.ts';
+import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
+
+// Dropped features that change what the upstream is asked to do, so the target
+// is refused rather than served degraded. Tool-result error flags and context
+// management hints are NOT here: the failure text stays in the tool result
+// content, and context management only steers the client's own pruning. Both
+// still surface as `dropped` diagnostics (fidelity `degraded`).
+const HIGH_RISK_DROPPED_FEATURES = new Set(['provider_native_tool', 'provider_native_tool_history']);
+
+/** client route -> canonical IR protocol. */
+function routeToIrProtocol(route: string): IrProtocol | null {
+  switch (route) {
+    case 'openai_chat':
+      return 'openai_chat';
+    case 'openai_responses':
+      return 'openai_responses';
+    case 'anthropic_messages':
+      return 'anthropic';
+    default:
+      return null;
+  }
+}
+
+/** fallback (protocol, surface) -> canonical IR protocol. */
+function fallbackToIrProtocol(fb: { protocol: string; surface: string }): IrProtocol | null {
+  if (fb.protocol === 'openai' && fb.surface === 'chat_completions') return 'openai_chat';
+  if (fb.protocol === 'openai' && fb.surface === 'responses') return 'openai_responses';
+  if (fb.protocol === 'anthropic' && fb.surface === 'messages') return 'anthropic';
+  return null;
+}
+
+type TierLoopRunner = (
+  loopCtx: LoopContext,
+  reqDescriptor: RoutableRequest,
+  conversionContext: ConversionContext | null,
+  overrideTierCaps: TierMap<number> | null,
+) => Promise<Response | null>;
+
+function highRiskSemanticLoss(result: ConversionResult): string[] {
+  return result.diagnostics.filter((d) => d.action === 'dropped' && HIGH_RISK_DROPPED_FEATURES.has(d.feature)).map((d) => d.feature);
+}
+
+/**
+ * Run the cross-protocol fallback chain.
+ */
+export async function runFallbackChain({
+  loopCtx,
+  route,
+  requestedModel,
+  runTierLoop,
+}: {
+  loopCtx: LoopContext;
+  route: string;
+  requestedModel: string;
+  runTierLoop: TierLoopRunner;
+}): Promise<Response | null> {
+  const { env, requestId, exposeUpstreamInfo, request, state, policy, failoverBudgetMs, requestStartMs, tiers, bodyJson, knownModels, feasibility } =
+    loopCtx;
+  const fallbacks = feasibility?.fallbacks ?? [];
+  const logger = getLogger(env);
+  let conversionRejectedCount = 0;
+  let convertedTargetCount = 0;
+  const unsupportedRequestFields = new Set<string>();
+  let hasOtherRejection = false;
+
+  for (const fb of fallbacks) {
+    if (state.logicalAttempts >= policy.maxAttempts || state.retryShed) break;
+    const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
+    if (remainingBudgetMs <= 0) {
+      // The rejected conversions are part of the answer the client gets, even
+      // when the request runs out of wall-clock budget.
+      state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
+      return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
+    }
+    // bodyChars keeps the size-aware timeouts and oversize memory working on the
+    // fallback pass; a translated request is as large as the client's.
+    const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface, bodyChars: loopCtx.bodyChars };
+    let conversionResult: ConversionResult;
+    try {
+      const from = routeToIrProtocol(route);
+      const to = fallbackToIrProtocol(fb);
+      if (!from || !to || !isMatrixPair(from, to)) continue;
+      // Structured output on chat/messages targets keeps the conservative
+      // prompt strategy: the matrix adapters embed the JSON instruction
+      // themselves and native/tool modes require positive capability
+      // evidence that cross-protocol fallback cannot assume here.
+      // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
+      // stream flag so the provider may answer with one JSON body (streaming
+      // clients still get the forced upstream stream).
+      const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
+      conversionResult = convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
+    } catch (e) {
+      if (e instanceof ConversionError) {
+        conversionRejectedCount++;
+        if (e.requestField) unsupportedRequestFields.add(e.requestField);
+        else hasOtherRejection = true;
+        const reason = String(e.message || e.code || 'conversion_not_supported').slice(0, 300);
+        logger.error(
+          JSON.stringify({
+            event: 'fallback_conversion_skipped',
+            request_id: requestId,
+            route,
+            fallback_protocol: fb.protocol,
+            fallback_surface: fb.surface,
+            reason,
+          }),
+        );
+        continue;
+      }
+      throw e;
+    }
+
+    // Debug-only: provides an exact denominator for fidelity analysis when an
+    // operator enables debug logging, without adding default per-request noise.
+    logger.debug(
+      JSON.stringify({
+        event: 'fallback_conversion',
+        request_id: requestId,
+        route,
+        fallback_protocol: fb.protocol,
+        fallback_surface: fb.surface,
+        fidelity: conversionResult.fidelity,
+        diagnostic_count: conversionResult.diagnostics.length,
+        diagnostics: conversionResult.diagnostics,
+        ...(conversionResult.structuredOutput ? { structured_output_strategy: conversionResult.structuredOutput.strategy } : {}),
+      }),
+    );
+
+    const highRiskLoss = highRiskSemanticLoss(conversionResult);
+    if (highRiskLoss.length > 0) {
+      conversionRejectedCount++;
+      hasOtherRejection = true;
+      logger.error(
+        JSON.stringify({
+          event: 'fallback_conversion_skipped',
+          request_id: requestId,
+          route,
+          fallback_protocol: fb.protocol,
+          fallback_surface: fb.surface,
+          reason: 'high_risk_semantic_loss',
+          features: highRiskLoss,
+        }),
+      );
+      continue;
+    }
+
+    convertedTargetCount++;
+    // Protocol fallback must preserve the same explicit Tier 1 admission
+    // contract as the native pass. Omitting maxInFlight here overstates live
+    // capacity and can distort tier caps / fair-share timeout slicing before
+    // the downstream picker eventually rejects the saturated account.
+    // The tier-attempt budget is request-wide: the native pass already spent
+    // part of it, so only the remainder is available to this fallback target.
+    const fbTierCaps = computeTierCaps(
+      tiers,
+      fbReqDescriptor,
+      state.attempted,
+      policy,
+      knownModels,
+      policy.maxInFlight ?? null,
+      state.tierAttemptsUsed,
+    );
+    const conversionContext: ConversionContext = {
+      convertedBody: conversionResult.body,
+      fallbackProtocol: fb.protocol,
+      fallbackSurface: fb.surface,
+      clientRoute: route,
+    };
+    const fbResult = await runTierLoop(loopCtx, fbReqDescriptor, conversionContext, fbTierCaps);
+    if (fbResult) return fbResult;
+  }
+
+  state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
+  if (conversionRejectedCount > 0 && convertedTargetCount === 0 && state.dispatches === 0) {
+    if (!feasibility?.nativeSupported && !hasOtherRejection && unsupportedRequestFields.size > 0) {
+      // Field names come from the client's own body; bound them before echoing one back.
+      const fields = [...unsupportedRequestFields].map((field) => field.slice(0, 64));
+      const names = fields.map((field) => `"${field}"`).join(', ');
+      return gatewayError(
+        request,
+        env,
+        route,
+        400,
+        `Request field ${names} is not supported: no upstream configured for this model can carry it. Remove it and retry.`,
+        requestId,
+        {
+          requested_model: requestedModel,
+          unsupported_fields: fields,
+          failure_kind: 'unsupported_request_field',
+        },
+        undefined,
+        'gateway_unsupported_request_field',
+      );
+    }
+    return gatewayError(
+      request,
+      env,
+      route,
+      502,
+      'Configured protocol fallback cannot represent this request.',
+      requestId,
+      {
+        requested_model: requestedModel,
+        attempts: state.logicalAttempts,
+        dispatches: state.dispatches,
+        hedges: state.hedges,
+        failure_kind: 'conversion_not_supported',
+      },
+      undefined,
+      'gateway_conversion_not_supported',
+    );
+  }
+
+  return null;
+}

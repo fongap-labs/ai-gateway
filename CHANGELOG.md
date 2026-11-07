@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 调整: Gateway 直接拥有跨协议回退编排及统一尝试预算，旧 `src/request/fallback.ts` 只保留兼容导出，暂不改变 IR 正文转换语义。
+
+
 - 维护: 将 apps、packages 和 operations 全部纳入 Biome 统一代码风格与静态门禁，避免迁出 src 后失去自动检查。
 
 - 新增: 推理与生成中心分离私有 HTTP 校验入口、单次物理上游执行及错误信封，禁止能力中心自行承担 Tier 调度。
