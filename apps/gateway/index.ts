@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Worker entrypoint: request accounting, top-level error handling, and scheduled usage maintenance.
+// Public API request entrypoint. Scheduled maintenance belongs to operations.
 
 import { sanitizedInternalErrorForRoute } from '../../src/observability/diagnostic-endpoints.ts';
 import { gatewayStats, isCountedRoute, trackClientResponse } from '../../src/observability/gateway-stats.ts';
-import { maintainUsageStats } from '../../src/observability/token-usage-store.ts';
 import { handleRequest } from '../../src/request/handler.ts';
 import { detectRoute, normalizePath } from '../../src/request/router.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
@@ -33,8 +32,4 @@ export default {
     }
   },
 
-  // Periodic token-usage aggregation and retention maintenance.
-  async scheduled(_controller: unknown, env: GatewayEnv, _ctx: ExecutionContextLike): Promise<void> {
-    await maintainUsageStats(env);
-  },
 };

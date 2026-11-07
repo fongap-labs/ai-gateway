@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: 将请求入口与定期用量维护拆成 Gateway 与 Operations 两个独立模块，保留 Cloudflare 原定时入口。
+- 新增: 用标准 HTTP Mock 检验推理与生成中心的单次调用、内部凭据隔离及缺失绑定时安全失败。
+
 - 新增: 统一推理与生成中心执行契约、内部鉴权、执行票据校验及依赖边界自动门禁。
 - 新增: 将 Gateway、Inference、Generation 的真实运行入口拆分至 apps 目录，保留原路径兼容入口与当前部署配置。
 
