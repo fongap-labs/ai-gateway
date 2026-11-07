@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Cross-protocol physical requests run inside the private Inference Center.
 import assert from 'node:assert/strict';
-import { buildInferenceRequest } from '../src/inference/inference-client-request.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
+import { buildInferenceRequest } from '../src/inference/inference-client-request.ts';
 
 const key = 'local-inference-cross-protocol-contract-key-32';
 const node = {

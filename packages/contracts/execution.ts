@@ -92,7 +92,8 @@ export function parseExecutionInvocation(
     rawSurface === 'images_generations' ||
     !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
     rawInputSurface === rawSurface
-  ) return null;
+  )
+    return null;
   if (preferNonstream !== null && preferNonstream !== 'true') return null;
   return {
     requestId,
