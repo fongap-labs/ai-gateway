@@ -14,86 +14,21 @@
 import { ResponsesEventBuilder } from '../../protocol/responses/events.ts';
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
 import { createSseScanner, readWithDeadline } from '../../stream/guard.ts';
-import type { ConversionDiagnostic, ConversionResult, StructuredOutputStrategy } from '../result.ts';
+import type { ConversionDiagnostic } from '../result.ts';
 import { convertSseStream } from '../sse.ts';
 import { ConversionError } from '../validation.ts';
-import { anthropicObjectToIr, anthropicStopFromIr, buildAnthropicRequest, parseAnthropicRequest } from './anthropic.ts';
+import { anthropicObjectToIr, anthropicStopFromIr } from './anthropic.ts';
 import { AnthropicStreamDecoder, AnthropicStreamEncoder } from './anthropic-stream.ts';
 import { type BudgetStopReason, ConversionBudgetStop, createMatrixBudget, type MatrixConversionBudget, outputUnitsOf } from './budget.ts';
-import { buildChatRequest, chatObjectToIr, chatStopFromIr, chatToolId, parseChatRequest } from './chat.ts';
+import { chatObjectToIr, chatStopFromIr, chatToolId } from './chat.ts';
 import { ChatStreamDecoder, ChatStreamEncoder, chatUsageFromRaw } from './chat-stream.ts';
 import { MatrixDiag } from './diag.ts';
-import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, type IrRequest, isRecord } from './ir.ts';
-import { buildResponsesRequest, parseResponsesRequest, responsesObjectToIr } from './responses.ts';
+import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, isRecord } from './ir.ts';
+import { responsesObjectToIr } from './responses.ts';
 import { ResponsesStreamDecoder, ResponsesStreamEncoder } from './responses-stream.ts';
 
 export { ConversionError };
-
-const MATRIX_PROTOCOLS: readonly IrProtocol[] = ['openai_chat', 'openai_responses', 'anthropic'];
-
-/** True for every directed pair the matrix owns (all distinct protocol pairs). */
-export function isMatrixPair(from: IrProtocol, to: IrProtocol): boolean {
-  if (from === to) return false;
-  if (!MATRIX_PROTOCOLS.includes(from) || !MATRIX_PROTOCOLS.includes(to)) return false;
-  return true;
-}
-
-// ---- Request translation ----------------------------------------------------
-
-export function convertMatrixRequest(
-  from: IrProtocol,
-  to: IrProtocol,
-  body: Record<string, unknown>,
-  options: { isNonstreamPreferred?: boolean } = {},
-): ConversionResult {
-  if (!isMatrixPair(from, to)) throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)} is not matrix-owned`);
-  let ir: IrRequest;
-  let diag: MatrixDiag;
-  switch (from) {
-    case 'openai_chat':
-      ({ request: ir, diag } = parseChatRequest(body));
-      break;
-    case 'anthropic':
-      ({ request: ir, diag } = parseAnthropicRequest(body));
-      break;
-    case 'openai_responses':
-      ({ request: ir, diag } = parseResponsesRequest(body));
-      break;
-    default:
-      throw new ConversionError(`conversion_not_supported: pair ${String(from)}->${String(to)}`);
-  }
-  return buildTarget(to, ir, diag, options.isNonstreamPreferred === true);
-}
-
-function buildTarget(to: IrProtocol, ir: IrRequest, diag: MatrixDiag, isNonstreamPreferred = false): ConversionResult {
-  switch (to) {
-    case 'anthropic':
-      return finalizeMatrix(diag, buildAnthropicRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, isNonstreamPreferred);
-    case 'openai_chat':
-      return finalizeMatrix(diag, buildChatRequest(ir, diag), ir.structuredOutputSchema ? 'prompt' : undefined, isNonstreamPreferred);
-    case 'openai_responses':
-      return finalizeMatrix(diag, buildResponsesRequest(ir, diag), ir.structuredOutputSchema ? 'native' : undefined, isNonstreamPreferred);
-    default:
-      throw new ConversionError(`conversion_not_supported: matrix target "${String(to)}"`);
-  }
-}
-
-function finalizeMatrix(
-  diag: MatrixDiag,
-  body: Record<string, unknown>,
-  structuredOutput: StructuredOutputStrategy | undefined,
-  isNonstreamPreferred = false,
-): ConversionResult {
-  // Translation matrix paths default to driving the upstream in streaming mode
-  // (AIG_CONVERSION_PREFER_NONSTREAM off): non-streaming clients are served
-  // from the collected reply through the single decode path. With the flag on,
-  // a non-streaming CLIENT keeps its own stream flag so the provider may
-  // answer with one JSON body — the success layer already translates and
-  // bounds that shape (readBufferedReplyText / replyFromNativeObject), and
-  // SSE parsing disappears from the request. Streaming clients upstream-stream.
-  if (!isNonstreamPreferred || body.stream === true) body.stream = true;
-  return diag.finalize(body, structuredOutput ? { strategy: structuredOutput } : undefined);
-}
+export { convertMatrixRequest, isMatrixPair } from '../../../apps/inference/conversion/request.ts';
 
 // ---- Stream translation ------------------------------------------------------
 
