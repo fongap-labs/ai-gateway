@@ -242,9 +242,9 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   // AIG_HOT_PATH_GUARDS: the diagnostics bundle (dashboard / metrics views) is
   // loaded only by the routes that render it; legacy mode keeps the historical
   // unconditional import, which evaluates the module on every request path.
-  if (!hotPathGuards) await import('../observability/diagnostic-endpoints.ts');
+  if (!hotPathGuards) await import('../../src/observability/diagnostic-endpoints.ts');
   if (route === 'health' || route === 'metrics' || route === 'models') {
-    const diag = await import('../observability/diagnostic-endpoints.ts');
+    const diag = await import('../../src/observability/diagnostic-endpoints.ts');
     if ((route === 'health' || route === 'metrics') && !diag.canReadDiagnostics(env, authResult)) {
       return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
     }
