@@ -58,7 +58,11 @@ assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCrede
 for (const center of ['inference', 'generation']) {
   const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
   const executor = readFileSync(join(root, 'apps', center, 'execution.ts'), 'utf8');
-  assert.doesNotMatch(entry, /getProviderAdapter|resolveSubscriptionCredential|await fetch\(/, `${center} HTTP entrypoint must not own physical Provider execution`);
+  assert.doesNotMatch(
+    entry,
+    /getProviderAdapter|resolveSubscriptionCredential|await fetch\(/,
+    `${center} HTTP entrypoint must not own physical Provider execution`,
+  );
   assert.ok(entry.includes("from './execution.ts'"), `${center} entrypoint must call its own executor`);
   assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
   assert.doesNotMatch(executor, /runTierLoop|dispatchWithHedge/, `${center} must not implement gateway scheduling`);
