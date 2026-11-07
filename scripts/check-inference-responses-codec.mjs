@@ -27,7 +27,9 @@ assert.match(frame, /sequence_number/);
 
 const decoder = new OwnedDecoder();
 assert.ok(
-  decoder.push(JSON.stringify({ type: 'response.created', response: { id: 'resp-test', model: 'test-model' } })).events.some((e) => e.type === 'start'),
+  decoder
+    .push(JSON.stringify({ type: 'response.created', response: { id: 'resp-test', model: 'test-model' } }))
+    .events.some((e) => e.type === 'start'),
 );
 assert.equal(decoder.push('[DONE]').terminal, true);
 console.log('Responses codec, SSE events, schema strictness and compatibility identities passed.');
