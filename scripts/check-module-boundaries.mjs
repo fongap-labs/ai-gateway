@@ -35,6 +35,23 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+assert.match(handlerSource, /apps\/gateway\/request-handler\.ts/, 'Legacy handler must forward to Gateway-owned module');
+assert.match(
+  readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8'),
+  /async function runAdmittedRequest\(/,
+  'Gateway must own request orchestrator',
+);
+assert.match(
+  readFileSync(join(root, 'src/request/preflight.ts'), 'utf8'),
+  /apps\/gateway\/preflight\.ts/,
+  'Legacy preflight must forward to Gateway-owned module',
+);
+assert.match(readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8'), /export async function preflight\(/, 'Gateway must own preflight');
+assert.doesNotMatch(
+  readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8'),
+  /\.\.\/\.\.\/src\/request\/handler/,
+  'Gateway entry must use owned orchestrator',
+);
 assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
 assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
 assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
