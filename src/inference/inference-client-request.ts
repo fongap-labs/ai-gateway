@@ -4,6 +4,8 @@
 // Private transport adapter for the inference executor. Keep the contract
 // independent of Cloudflare RPC so an HTTPS backend can implement it later.
 
+import type { ExecutionTransport } from '../../packages/contracts/execution.ts';
+import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
@@ -26,7 +28,7 @@ export class InferenceCenterUnavailable extends Error {
   }
 }
 
-type InferenceService = { fetch: (request: Request) => Promise<Response> };
+type InferenceService = ExecutionTransport;
 
 function configuredService(env: GatewayEnv): InferenceService {
   const service = env.AIG_INFERENCE_SERVICE as InferenceService | undefined;
@@ -41,16 +43,17 @@ function configuredService(env: GatewayEnv): InferenceService {
 export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
   configuredService(env);
   const key = env.AIG_INFERENCE_AUTH_KEY as string;
-  const headers = new Headers({
-    'content-type': 'application/json',
-    'x-aig-contract-version': '1',
-    'x-aig-request-id': invocation.requestId,
-    'x-aig-node-id': invocation.node.id,
-    'x-aig-model': invocation.logicalModel,
-    'x-aig-surface': invocation.surface,
-    'x-aig-deadline-ms': String(invocation.deadlineMs),
-    'x-aig-inference-auth': key,
-  });
+  const headers = buildExecutionHeaders(
+    {
+      requestId: invocation.requestId,
+      nodeId: invocation.node.id,
+      logicalModel: invocation.logicalModel,
+      surface: invocation.surface,
+      deadlineMs: invocation.deadlineMs,
+    },
+    'x-aig-inference-auth',
+    key,
+  );
   for (const name of ['accept', 'anthropic-version', 'anthropic-beta', 'idempotency-key']) {
     const value = invocation.request.headers.get(name);
     if (value) headers.set(name, value);

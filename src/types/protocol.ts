@@ -12,4 +12,4 @@ export type Protocol = 'openai' | 'anthropic';
  *   responses         -> openai /v1/responses
  *   messages          -> anthropic /v1/messages
  */
-export type Surface = 'chat_completions' | 'responses' | 'messages' | 'images_generations';
+export type Surface = import('../../packages/contracts/execution.ts').ExecutionSurface;
