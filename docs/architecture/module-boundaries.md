@@ -48,6 +48,12 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 **注意：这仍是源码层面隔离，不是删除旧执行路径。** 未绑定私有中心的环境仍使用兼容分支；下一阶段必须先完成中心合同等价测试，然后彻底删除它及其执行密钥依赖。当前不修改生产部署配置。
 
+## 纯协议转换核心已抽离
+
+`packages/conversion-core` 独立维护 canonical IR、转换预算、诊断结果、输入校验和诊断收集器。它不依赖 Gateway、Provider Adapter、Cloudflare 或 `src/` 中的运行时实现。旧 `src/conversion/` 入口仅保留兼容性导出，确保转换器类身份及旧调用路径不变。独立合同测试会验证所有导出保持同一引用，避免出现两套预算与转换错误类型。
+
+**阶段限制**：这一步只是抽离纯转换核心，并未把请求正文和流式矩阵的实际执行从 Gateway 迁出。后续必须将协议转换、流处理放入 Inference Center，删除旧直连兼容路径。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

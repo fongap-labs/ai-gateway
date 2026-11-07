@@ -106,6 +106,20 @@ assert.match(dispatchSource, /dispatchLegacyProvider\(c, sourceBody\)/, 'Old dir
 assert.match(legacySource, /export async function dispatchLegacyProvider\(/, 'Legacy transport must be isolated for later deletion');
 assert.match(legacySource, /await fetch\(/, 'Legacy outbound request must stay behind its seam');
 assert.doesNotMatch(legacySource, /runTierLoop|dispatchWithHedge/, 'Legacy transport must not own request-level scheduling');
+for (const [shim, target] of [
+  ['src/conversion/matrix/ir.ts', '../../../packages/conversion-core/ir.ts'],
+  ['src/conversion/matrix/budget.ts', '../../../packages/conversion-core/budget.ts'],
+  ['src/conversion/matrix/diag.ts', '../../../packages/conversion-core/diag.ts'],
+  ['src/conversion/result.ts', '../../packages/conversion-core/result.ts'],
+  ['src/conversion/validation.ts', '../../packages/conversion-core/validation.ts'],
+]) {
+  const compat = readFileSync(join(root, shim), 'utf8');
+  assert.ok(
+    compat.includes(`export * from '${target}';`),
+    `Conversion implementation must live in its independent package, with only a compatibility export at ${shim}`,
+  );
+}
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
