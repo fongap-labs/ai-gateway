@@ -22,6 +22,10 @@
 
 运行入口分别落在 `apps/gateway/index.ts`、`apps/inference/index.ts`、`apps/generation/index.ts`；原有 `src/index.ts` 等路径仅保留兼容性转发，现有 Wrangler 配置不改变，避免本批次触发生产部署行为变化。
 
+## 运维入口拆分
+
+`apps/gateway/index.ts` 只负责用户请求；`operations/maintenance/usage.ts` 负责定时统计维护。`src/index.ts` 为当前 Cloudflare 入口组合二者，保留既有 cron 行为，后续才将维护任务拆成独立部署单元。新增标准 HTTP Mock 调用测试，不需要实际 Cloudflare Service Binding。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
