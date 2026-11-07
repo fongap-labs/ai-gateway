@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 声明统一的本地 Pre-flight 检查，复用 Action Worker 中央契约工具，不引入独立门禁。
+
 - 修复 [security]: 运行时拒绝弱部署健康密钥或与用户访问分组共用的密钥，防止误配置破坏权限隔离；同步移除过期的 AGENT 别名说明。
 
 - 新增: 普通代码部署不再上传运行时密钥，改为盘点 Cloudflare Worker Secrets 名称并保留远端密钥值。
