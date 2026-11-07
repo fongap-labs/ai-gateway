@@ -38,6 +38,14 @@ const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'ut
 assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
 assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
 assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
+for (const center of ['inference', 'generation']) {
+  const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
+  const executor = readFileSync(join(root, 'apps', center, 'execution.ts'), 'utf8');
+  assert.doesNotMatch(entry, /getProviderAdapter|resolveSubscriptionCredential|await fetch\(/, `${center} HTTP entrypoint must not own physical Provider execution`);
+  assert.ok(entry.includes("from './execution.ts'"), `${center} entrypoint must call its own executor`);
+  assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
+  assert.doesNotMatch(executor, /runTierLoop|dispatchWithHedge/, `${center} must not implement gateway scheduling`);
+}
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
