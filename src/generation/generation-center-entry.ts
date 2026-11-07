@@ -5,6 +5,8 @@
 // the gateway alone owns authorization, routing and retry decisions.
 // No public routes, provider secrets or image payloads in diagnostic logs.
 
+import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
+import type { ExecutionInvocation, ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { loadExecutionConfig } from '../config/nodes.ts';
 import { collectKnownModels } from '../config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../protocol/http.ts';
@@ -20,15 +22,10 @@ import type { GatewayEnv } from '../types/runtime.ts';
 const MAX_REQUEST_BYTES = 16 * 1024;
 const MAX_NATIVE_REPLY_BYTES = 16 * 1024 * 1024;
 const MAX_CONVERTED_REPLY_BYTES = 2 * 1024 * 1024;
-const MAX_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
 const IMAGE_PROVIDERS = new Set(['openai-image', 'google-image', 'cloudflare-image']);
 
-type Invocation = {
-  requestId: string;
-  nodeId: string;
-  logicalModel: string;
-  deadlineMs: number;
-};
+type Invocation = ExecutionInvocation;
+const GENERATION_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['images_generations']);
 
 function problem(status: number, code: string, result = 'not-dispatched'): Response {
   return new Response(JSON.stringify({ error: { code } }), {
@@ -40,35 +37,6 @@ function problem(status: number, code: string, result = 'not-dispatched'): Respo
       'x-aig-result': result,
     },
   });
-}
-
-function constantTimeMatch(a: string, b: string): boolean {
-  const left = new TextEncoder().encode(a);
-  const right = new TextEncoder().encode(b);
-  let diff = left.length ^ right.length;
-  for (let i = 0; i < Math.max(left.length, right.length); i++) diff |= (left[i] ?? 0) ^ (right[i] ?? 0);
-  return diff === 0;
-}
-
-function authorized(request: Request, env: GatewayEnv): boolean {
-  const key = env.AIG_GENERATION_AUTH_KEY;
-  const supplied = request.headers.get('x-aig-generation-auth') ?? '';
-  return typeof key === 'string' && key.length >= 32 && supplied.length >= 32 && supplied.length <= 1024 && constantTimeMatch(supplied, key);
-}
-
-function invocationOf(request: Request): Invocation | null {
-  if (request.headers.get('x-aig-contract-version') !== '1') return null;
-  if (request.headers.get('x-aig-surface') !== 'images_generations') return null;
-  const requestId = request.headers.get('x-aig-request-id') ?? '';
-  const nodeId = request.headers.get('x-aig-node-id') ?? '';
-  const logicalModel = request.headers.get('x-aig-model') ?? '';
-  const rawDeadline = request.headers.get('x-aig-deadline-ms') ?? '';
-  const deadlineMs = Number(rawDeadline);
-  if (!/^[a-f0-9-]{36}$/i.test(requestId) || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(nodeId)) return null;
-  if (!logicalModel || logicalModel.length > 128 || /[\r\n]/.test(logicalModel)) return null;
-  if (!/^\d{13}$/.test(rawDeadline) || !Number.isSafeInteger(deadlineMs)) return null;
-  if (deadlineMs <= Date.now() || deadlineMs > Date.now() + MAX_DEADLINE_AHEAD_MS) return null;
-  return { requestId, nodeId, logicalModel, deadlineMs };
 }
 
 function generationNode(nodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
@@ -212,7 +180,7 @@ async function execute(request: Request, env: GatewayEnv, invocation: Invocation
 }
 
 export async function handleGenerationCenterRequest(request: Request, env: GatewayEnv): Promise<Response> {
-  if (!authorized(request, env)) return problem(403, 'generation_unauthorized');
+  if (!authorizeExecutionRequest(request, env.AIG_GENERATION_AUTH_KEY, 'x-aig-generation-auth')) return problem(403, 'generation_unauthorized');
   const path = new URL(request.url).pathname;
   if (path === '/internal/health' && request.method === 'GET') {
     return new Response(JSON.stringify({ status: 'ok', center: 'generation' }), {
@@ -220,7 +188,7 @@ export async function handleGenerationCenterRequest(request: Request, env: Gatew
     });
   }
   if (path !== '/internal/execute' || request.method !== 'POST') return problem(404, 'generation_route_invalid');
-  const invocation = invocationOf(request);
+  const invocation = parseExecutionInvocation(request, GENERATION_SURFACES);
   if (!invocation) return problem(400, 'generation_contract_invalid');
   return execute(request, env, invocation);
 }

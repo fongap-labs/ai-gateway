@@ -5,6 +5,8 @@
 // provider attempt; retry, model selection and admission belong to AI Gateway.
 // No public route is configured for this worker.
 
+import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
+import type { ExecutionInvocation, ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { loadExecutionConfig } from '../config/nodes.ts';
 import { collectKnownModels } from '../config/registry.ts';
 import { getOAuthProvider } from '../oauth/provider-configs.ts';
@@ -17,12 +19,10 @@ import { isSubscriptionNode } from '../subscription/index.ts';
 import type { SubscriptionWire } from '../subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/index.ts';
 import type { RuntimeNode } from '../types/node.ts';
-import type { Surface } from '../types/protocol.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
-const MAX_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
-const ALLOWED_SURFACES: ReadonlySet<string> = new Set(['chat_completions', 'responses', 'messages']);
+const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
 
 function problem(status: number, code: string, isRetryable = false): Response {
   return new Response(JSON.stringify({ error: { code, retryable: isRetryable } }), {
@@ -36,47 +36,7 @@ function problem(status: number, code: string, isRetryable = false): Response {
   });
 }
 
-function equalsConstantTime(received: string, expected: string): boolean {
-  const a = new TextEncoder().encode(received);
-  const b = new TextEncoder().encode(expected);
-  let diff = a.length ^ b.length;
-  const count = Math.max(a.length, b.length);
-  for (let i = 0; i < count; i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
-  return diff === 0;
-}
-
-function authorized(request: Request, env: GatewayEnv): boolean {
-  const key = env.AIG_INFERENCE_AUTH_KEY;
-  if (typeof key !== 'string' || key.length < 32) return false;
-  const provided = request.headers.get('x-aig-inference-auth') ?? '';
-  if (provided.length < 32 || provided.length > 1024) return false;
-  return equalsConstantTime(provided, key);
-}
-
-type Invocation = {
-  requestId: string;
-  nodeId: string;
-  logicalModel: string;
-  surface: Surface;
-  deadlineMs: number;
-};
-
-function parseInvocation(request: Request): Invocation | null {
-  if (request.headers.get('x-aig-contract-version') !== '1') return null;
-  const requestId = request.headers.get('x-aig-request-id') ?? '';
-  const nodeId = request.headers.get('x-aig-node-id') ?? '';
-  const logicalModel = request.headers.get('x-aig-model') ?? '';
-  const surface = request.headers.get('x-aig-surface') ?? '';
-  const rawDeadline = request.headers.get('x-aig-deadline-ms') ?? '';
-  const deadlineMs = Number(rawDeadline);
-  if (!/^[a-f0-9-]{36}$/i.test(requestId)) return null;
-  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(nodeId)) return null;
-  if (!logicalModel || logicalModel.length > 128 || /[\r\n]/.test(logicalModel)) return null;
-  if (!ALLOWED_SURFACES.has(surface)) return null;
-  if (!/^\d{13}$/.test(rawDeadline) || !Number.isSafeInteger(deadlineMs)) return null;
-  if (deadlineMs <= Date.now() || deadlineMs > Date.now() + MAX_DEADLINE_AHEAD_MS) return null;
-  return { requestId, nodeId, logicalModel, surface: surface as Surface, deadlineMs };
-}
+type Invocation = ExecutionInvocation;
 
 function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
   const node = configuredNodes.find((entry) => entry.id === invocation.nodeId);
@@ -252,14 +212,14 @@ async function executeNative(request: Request, env: GatewayEnv, invocation: Invo
 
 export async function handleInferenceCenterRequest(request: Request, env: GatewayEnv): Promise<Response> {
   const path = new URL(request.url).pathname;
-  if (!authorized(request, env)) return problem(403, 'center_unauthorized');
+  if (!authorizeExecutionRequest(request, env.AIG_INFERENCE_AUTH_KEY, 'x-aig-inference-auth')) return problem(403, 'center_unauthorized');
   if (path === '/internal/health' && request.method === 'GET') {
     return new Response(JSON.stringify({ status: 'ok', center: 'inference' }), {
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     });
   }
   if (path !== '/internal/execute' || request.method !== 'POST') return problem(404, 'center_route_not_found');
-  const invocation = parseInvocation(request);
+  const invocation = parseExecutionInvocation(request, ALLOWED_SURFACES);
   if (!invocation) return problem(400, 'center_contract_invalid');
   return executeNative(request, env, invocation);
 }

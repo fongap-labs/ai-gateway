@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+//
+// Internal execution contract v1. This module is intentionally runtime-neutral:
+// no Provider, Gateway, Cloudflare, Node.js or database imports.
+
+export const EXECUTION_CONTRACT_VERSION = '1' as const;
+export const EXECUTION_PATH = '/internal/execute' as const;
+export const MAX_EXECUTION_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
+
+export type ExecutionCenter = 'inference' | 'perception' | 'generation';
+export type ExecutionSurface = 'chat_completions' | 'responses' | 'messages' | 'images_generations';
+export type ExecutionDisposition = 'not-dispatched' | 'attempted' | 'dispatched';
+
+export type ExecutionInvocation = {
+  requestId: string;
+  nodeId: string;
+  logicalModel: string;
+  surface: ExecutionSurface;
+  deadlineMs: number;
+};
+
+export type ExecutionError = {
+  error: { code: string; retryable?: boolean };
+};
+
+export type UsageEvent = {
+  requestId: string;
+  nodeId: string;
+  center: ExecutionCenter;
+  disposition: ExecutionDisposition;
+  inputTokens?: number;
+  outputTokens?: number;
+  upstreamStatus?: number;
+  elapsedMs?: number;
+};
+
+/** A Request/Response transport: a Service Binding or standard private HTTP. */
+export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
+
+/** Only gateway-generated metadata is included; no client credentials are forwarded. */
+export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
+  return new Headers({
+    'content-type': 'application/json',
+    'x-aig-contract-version': EXECUTION_CONTRACT_VERSION,
+    'x-aig-request-id': invocation.requestId,
+    'x-aig-node-id': invocation.nodeId,
+    'x-aig-model': invocation.logicalModel,
+    'x-aig-surface': invocation.surface,
+    'x-aig-deadline-ms': String(invocation.deadlineMs),
+    [authHeader]: authKey,
+  });
+}
+
+/** This checks syntax and lifetime only. Centers MUST also verify node/model authorization. */
+export function parseExecutionInvocation(
+  request: Request,
+  allowedSurfaces: ReadonlySet<ExecutionSurface>,
+  nowMs = Date.now(),
+): ExecutionInvocation | null {
+  if (request.headers.get('x-aig-contract-version') !== EXECUTION_CONTRACT_VERSION) return null;
+  const requestId = request.headers.get('x-aig-request-id') ?? '';
+  const nodeId = request.headers.get('x-aig-node-id') ?? '';
+  const logicalModel = request.headers.get('x-aig-model') ?? '';
+  const rawSurface = request.headers.get('x-aig-surface') ?? '';
+  const rawDeadline = request.headers.get('x-aig-deadline-ms') ?? '';
+  if (!/^[a-f0-9-]{36}$/i.test(requestId)) return null;
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(nodeId)) return null;
+  if (!logicalModel || logicalModel.length > 128 || /[\r\n]/.test(logicalModel)) return null;
+  if (!allowedSurfaces.has(rawSurface as ExecutionSurface)) return null;
+  if (!/^\d{13}$/.test(rawDeadline)) return null;
+  const deadlineMs = Number(rawDeadline);
+  if (!Number.isSafeInteger(deadlineMs) || deadlineMs <= nowMs || deadlineMs > nowMs + MAX_EXECUTION_DEADLINE_AHEAD_MS) return null;
+  return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
+}
+
+function constantTimeMatch(received: string, expected: string): boolean {
+  const a = new TextEncoder().encode(received);
+  const b = new TextEncoder().encode(expected);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
+  return diff === 0;
+}
+
+/** Center-specific high-entropy credential; does not authenticate end-user access keys. */
+export function authorizeExecutionRequest(request: Request, expectedKey: unknown, headerName: string): boolean {
+  if (typeof expectedKey !== 'string' || expectedKey.length < 32) return false;
+  const supplied = request.headers.get(headerName) ?? '';
+  if (supplied.length < 32 || supplied.length > 1024) return false;
+  return constantTimeMatch(supplied, expectedKey);
+}
