@@ -16,8 +16,8 @@
     "security:scan": "node scripts/secret-scan.mjs",
     "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec && npm run check:inference-anthropic-codec && npm run check:inference-responses-codec && npm run check:inference-matrix-request && npm run check:inference-matrix-replies",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec && npm run check:inference-anthropic-codec && npm run check:inference-responses-codec && npm run check:inference-matrix-request && npm run check:inference-matrix-replies",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec && npm run check:inference-anthropic-codec && npm run check:inference-responses-codec && npm run check:inference-matrix-request && npm run check:inference-matrix-replies && npm run check:shared-sse-transport",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec && npm run check:inference-anthropic-codec && npm run check:inference-responses-codec && npm run check:inference-matrix-request && npm run check:inference-matrix-replies && npm run check:shared-sse-transport",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
@@ -46,7 +46,8 @@
     "check:inference-anthropic-codec": "node scripts/check-inference-anthropic-codec.mjs",
     "check:inference-responses-codec": "node scripts/check-inference-responses-codec.mjs",
     "check:inference-matrix-request": "node scripts/check-inference-matrix-request.mjs",
-    "check:inference-matrix-replies": "node scripts/check-inference-matrix-replies.mjs"
+    "check:inference-matrix-replies": "node scripts/check-inference-matrix-replies.mjs",
+    "check:shared-sse-transport": "node scripts/check-shared-sse-transport.mjs"
   },
   "keywords": [
     "ai-gateway",

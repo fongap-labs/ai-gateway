@@ -187,6 +187,22 @@ assert.doesNotMatch(matrixReplyLegacy, /export function replyToObject\(/, 'Gatew
 assert.doesNotMatch(matrixReplyLegacy, /export function replyFromNativeObject\(/, 'Gateway must not own duplicate object decoding');
 assert.doesNotMatch(matrixReplyOwner, /from ['"][^'"]*\/src\//, 'Inference object conversion must not import legacy src');
 
+// SSE parsing, deadline reads and conversion relay must use one shared owner.
+for (const [shim, owner] of [
+  ['src/conversion/sse.ts', '../../packages/transport/convert-sse.ts'],
+  ['src/stream/client-lifecycle.ts', '../../packages/transport/client-lifecycle.ts'],
+]) {
+  const compatibility = readFileSync(join(root, shim), 'utf8');
+  assert.ok(compatibility.includes(owner), `SSE compatibility export missing: ${shim}`);
+  assert.doesNotMatch(compatibility, /export function /, `Duplicate SSE implementation: ${shim}`);
+}
+const streamGuard = readFileSync(join(root, 'src/stream/guard.ts'), 'utf8');
+assert.ok(streamGuard.includes("from '../../packages/transport/sse.ts'"), 'Gateway guard must use shared SSE parser');
+assert.doesNotMatch(streamGuard, /function drainLines\(/, 'Gateway must not duplicate SSE scanner implementation');
+for (const file of ['packages/transport/sse.ts', 'packages/transport/convert-sse.ts', 'packages/transport/client-lifecycle.ts']) {
+  assert.doesNotMatch(readFileSync(join(root, file), 'utf8'), /from ['"][^'"]*\/src\//, `Transport must not import legacy src: ${file}`);
+}
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
