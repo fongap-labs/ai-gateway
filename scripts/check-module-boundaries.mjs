@@ -135,6 +135,19 @@ for (const file of ['apps/inference/conversion/chat.ts', 'apps/inference/convers
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
 }
 
+for (const [shim, owner] of [
+  ['src/conversion/matrix/anthropic.ts', '../../../apps/inference/conversion/anthropic.ts'],
+  ['src/conversion/matrix/anthropic-stream.ts', '../../../apps/inference/conversion/anthropic-stream.ts'],
+]) {
+  const compatibility = readFileSync(join(root, shim), 'utf8');
+  assert.ok(compatibility.includes(`export * from '${owner}';`), `Anthropic conversion compatibility export missing: ${shim}`);
+  assert.doesNotMatch(compatibility, /export (?:function|class) /, `Anthropic conversion implementation duplicated: ${shim}`);
+}
+for (const file of ['apps/inference/conversion/anthropic.ts', 'apps/inference/conversion/anthropic-stream.ts']) {
+  const owner = readFileSync(join(root, file), 'utf8');
+  assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
+}
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

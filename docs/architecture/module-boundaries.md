@@ -60,6 +60,12 @@ Chat 对象转换器与 Chat SSE 编解码器现由 `apps/inference/conversion/c
 
 **当前仍是源码所有权迁移**：Gateway 的 fallback 和响应转换仍经兼容导出调用这些编解码器，下一阶段需将 Anthropic/Responses 编解码器和完整的正文、SSE 转换执行迁入 Inference Center，然后消除 Gateway 对转换实现的运行时依赖。
 
+## 推理中心转换器迁移：Anthropic
+
+Anthropic Messages 对象解析器与 SSE 编解码器已移入 `apps/inference/conversion/anthropic*.ts`，直接依赖 `packages/conversion-core` 与本中心 Chat 转换器。旧 `src/conversion/matrix/anthropic*.ts` 只提供原函数与类的兼容导出。中央合同之外，新增独立的模型字段校验、SSE 终止及身份一致性测试。
+
+**阶段限制**：Responses 及完整 Matrix Pipeline 仍使用旧目录；Gateway 尚会经兼容导出执行协议转换，待全部 codec 稳定后迁移执行调用边界。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
