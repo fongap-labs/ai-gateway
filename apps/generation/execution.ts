@@ -4,8 +4,8 @@
 // Exactly one generation attempt. Unknown outcomes remain terminal, including
 // network errors after the Provider may have accepted a billable operation.
 
-import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';

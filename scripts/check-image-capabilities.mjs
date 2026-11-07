@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Image capability metadata must not drift from real Provider adapters.
 import assert from 'node:assert/strict';
-import { IMAGE_PROVIDER_IDS, canRouteImageGeneration, isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
+import { canRouteImageGeneration, IMAGE_PROVIDER_IDS, isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderAdapter } from '../src/providers/registry.ts';
 
 const sizes = ['1024x1024', '1024x1536', '1536x1024'];
