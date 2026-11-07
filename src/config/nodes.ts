@@ -21,7 +21,7 @@
 // strings are configuration errors.
 
 import { loadOAuthProviders } from '../oauth/provider-configs.ts';
-import { getProviderAdapter, providerWire } from '../providers/registry.ts';
+import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
 import { trimTrailingSlashes } from '../utils/trim.ts';
@@ -327,7 +327,7 @@ function buildRuntimeNode(
     return null;
   }
 
-  // Provider names are identifiers, not display strings: the provider registry
+  // Provider names are identifiers, not display strings: the provider profile
   // looks them up case-insensitively, but the OAuth provider configuration and
   // the onboarding routes compare them verbatim. A node configured as
   // "Anthropic" would otherwise load as ready and never authenticate.
@@ -337,13 +337,15 @@ function buildRuntimeNode(
     return null;
   }
 
+  const profile = getProviderProfile(provider);
+
   // base_url is required for static-credential nodes. Tier 2 `auth:"oauth"`
-  // subscription nodes may omit base_url: their provider adapter owns the
-  // upstream endpoint when it declares subscriptionEndpoint, so onboarding a
+  // subscription nodes may omit base_url: their Provider profile declares the
+  // upstream endpoint when subscriptionEndpoint exists, so onboarding a
   // subscription needs only {id, provider, auth:"oauth", models}. A missing
   // base_url with no provider default is a configuration error (fail-closed).
   const rawBaseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
-  const baseUrl = rawBaseUrl || (auth === 'oauth' ? (getProviderAdapter(provider).subscriptionEndpoint ?? '') : '');
+  const baseUrl = rawBaseUrl || (auth === 'oauth' ? (profile.subscriptionEndpoint ?? '') : '');
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -384,7 +386,7 @@ function buildRuntimeNode(
   if (models === null) return null;
   const priority = parsePriority(rec.priority, id, diagnostics);
   if (priority === null) return null;
-  const { protocol, surfaces } = providerWire(provider);
+  const { protocol, surfaces } = profile.wire;
 
   return {
     id,

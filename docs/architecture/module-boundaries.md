@@ -34,6 +34,10 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 `apps/inference/index.ts` 和 `apps/generation/index.ts` 仅保留私有 HTTP 鉴权、执行票据验证及健康检查；物理上游请求、OAuth/订阅解析和生成结果归一化分别归入各自的 `execution.ts`，错误信封由各自 `response.ts` 定义。两中心均不允许实现 Tier 调度、跨节点重试或对冲；中心内部业务逻辑仍需继续从共享 `src/` 依赖中抽离。
 
+## Provider 静态路由描述符
+
+`packages/contracts/provider-profiles.ts` 只提供 Provider 协议、surface、流式用量能力和 Tier 2 默认上游地址等无凭据的路由元数据。Gateway 配置解析器从该模块读取，避免直接调用 `src/providers/registry.ts` 的真实 Provider Adapter。使用 `scripts/check-provider-profiles.mjs` 对所有内置及未知 Provider 逐一验证与实际适配器语义一致。目前 OAuth 默认常量与旧直连路径仍可能通过其他模块间接引用注册表，不能据此宣称 Gateway 已不包含 Provider 代码。
+
 ## 图片能力目录与执行权限边界
 
 `packages/contracts/image-capabilities.ts` 仅包含纯能力声明及无凭据的初步资格判断，不导入具体 Provider Adapter。Gateway 预检只用轻量描述符筛选路由候选；Generation Center 独立重新验证真实 Provider Adapter、节点、模型映射和上游 URL。`scripts/check-image-capabilities.mjs` 用三种实际图片适配器交叉核对支持尺寸、映射和非法组合，防止声明漂移。这并不表示 Gateway 其他配置模块中的 Provider 导入已经全部清除。
