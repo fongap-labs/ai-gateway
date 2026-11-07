@@ -15,6 +15,11 @@ function walk(folder) {
     return statSync(target).isDirectory() ? walk(target) : target.endsWith('.ts') ? [target] : [];
   });
 }
+const biomeConfig = readFileSync(join(root, 'biome.jsonc'), 'utf8');
+for (const glob of ['apps/**/*.ts', 'packages/**/*.ts', 'operations/**/*.ts']) {
+  assert.ok(biomeConfig.includes(`"${glob}"`), `Biome must check every extracted runtime module: ${glob}`);
+}
+
 let checked = 0;
 for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))]) {
   const local = relative(root, file).replaceAll('\\', '/');

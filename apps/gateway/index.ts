@@ -5,9 +5,9 @@
 
 import { sanitizedInternalErrorForRoute } from '../../src/observability/diagnostic-endpoints.ts';
 import { gatewayStats, isCountedRoute, trackClientResponse } from '../../src/observability/gateway-stats.ts';
-import { handleRequest } from './request-handler.ts';
 import { detectRoute, normalizePath } from '../../src/request/router.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
+import { handleRequest } from './request-handler.ts';
 
 export default {
   async fetch(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
@@ -31,5 +31,4 @@ export default {
       return sanitizedInternalErrorForRoute(request, env, route, crypto.randomUUID().slice(0, 8));
     }
   },
-
 };

@@ -25,18 +25,24 @@ import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
 import { getProviderAdapter } from '../../src/providers/registry.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';
-import type { RuntimeNode } from '../../src/types/node.ts';
-import type { PolicyConfig } from '../../src/types/policy.ts';
-import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
-import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
-import type { TierMap } from '../../src/types/scheduler.ts';
-import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute, presentedCredentials } from '../../src/request/auth.ts';
+import {
+  authorize,
+  authorizeDeploymentHealth,
+  isDeploymentHealthCountTokensProbe,
+  isDeploymentHealthRoute,
+  presentedCredentials,
+} from '../../src/request/auth.ts';
 import { gatewayError } from '../../src/request/errors.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from '../../src/request/model-authz.ts';
 import { modelFallbackCandidates } from '../../src/request/model-fallback.ts';
 import { jsonResponse } from '../../src/request/response-helpers.ts';
 import { evaluateRouteFeasibility } from '../../src/request/route-feasibility.ts';
 import { acceptsHtml, detectRoute, normalizePath } from '../../src/request/router.ts';
+import type { RuntimeNode } from '../../src/types/node.ts';
+import type { PolicyConfig } from '../../src/types/policy.ts';
+import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
+import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
+import type { TierMap } from '../../src/types/scheduler.ts';
 
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
