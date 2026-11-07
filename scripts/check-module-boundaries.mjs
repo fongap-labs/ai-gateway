@@ -85,6 +85,12 @@ for (const center of ['inference', 'generation']) {
   assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
   assert.doesNotMatch(executor, /runTierLoop|dispatchWithHedge/, `${center} must not implement gateway scheduling`);
 }
+const imagePreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
+const imageExecutor = readFileSync(join(root, 'apps/generation/execution.ts'), 'utf8');
+assert.doesNotMatch(imagePreflight, /getProviderAdapter/, 'Gateway preflight must not execute Provider image adapters');
+assert.match(imagePreflight, /canRouteImageGeneration/, 'Gateway must use the shared image capability declaration');
+assert.match(imageExecutor, /isImageGenerationProvider/, 'Generation Center must enforce the same Provider capability declaration');
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

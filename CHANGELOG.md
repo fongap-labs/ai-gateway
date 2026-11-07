@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- 新增: 图片路由能力改用无凭据共享声明，Gateway 不再直接执行 Provider 适配器。
+- 新增: 图片能力与三类 Provider 适配器的模型、尺寸及输入校验一致性测试。
+
+
 - 新增: Gateway 直接拥有跨协议回退编排及统一尝试预算，旧 `src/request/fallback.ts` 只保留兼容导出，暂不改变 IR 正文转换语义。
 
 

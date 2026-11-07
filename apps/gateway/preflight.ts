@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
+import { canRouteImageGeneration } from '../../packages/contracts/image-capabilities.ts';
 import { loadAccessKeysConfig } from '../../src/config/access-keys.ts';
 import { getBool } from '../../src/config/env.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
@@ -23,7 +24,7 @@ import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../../src
 import { validateImageGenerationRequest } from '../../src/protocol/image.ts';
 import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
-import { getProviderAdapter } from '../../src/providers/registry.ts';
+
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';
 import {
   authorize,
@@ -536,17 +537,5 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 // wire capability. It requires explicit model mapping and a real API-key node;
 // a wildcard or a Codex/Code Assist subscription cannot claim image support.
 function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
-  if (node.auth === 'oauth' || !Object.hasOwn(node.models, logical) || !node.surfaces.includes('images_generations')) return false;
-  const adapter = getProviderAdapter(node.provider).image;
-  if (!adapter) return false;
-  try {
-    return (
-      adapter.prepare(node.baseUrl, node.models[logical] as string, {
-        prompt: String(body.prompt),
-        size: (body.size ?? '1024x1024') as '1024x1024' | '1024x1536' | '1536x1024',
-      }) !== null
-    );
-  } catch {
-    return false;
-  }
+  return canRouteImageGeneration(node, logical, body.size ?? '1024x1024');
 }
