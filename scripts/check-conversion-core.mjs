@@ -5,15 +5,9 @@ import assert from 'node:assert/strict';
 
 for (const unit of ['ir', 'budget', 'diag', 'result', 'validation']) {
   const packageModule = await import(`../packages/conversion-core/${unit}.ts`);
-  const oldPath = ['ir', 'budget', 'diag'].includes(unit)
-    ? `../src/conversion/matrix/${unit}.ts`
-    : `../src/conversion/${unit}.ts`;
+  const oldPath = ['ir', 'budget', 'diag'].includes(unit) ? `../src/conversion/matrix/${unit}.ts` : `../src/conversion/${unit}.ts`;
   const compatibilityModule = await import(oldPath);
-  assert.deepEqual(
-    Object.keys(compatibilityModule).sort(),
-    Object.keys(packageModule).sort(),
-    `Export inventory drift: ${unit}`,
-  );
+  assert.deepEqual(Object.keys(compatibilityModule).sort(), Object.keys(packageModule).sort(), `Export inventory drift: ${unit}`);
   for (const name of Object.keys(packageModule)) {
     assert.equal(compatibilityModule[name], packageModule[name], `Duplicate implementation: ${unit}.${name}`);
   }
