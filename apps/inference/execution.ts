@@ -85,7 +85,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
   let outboundBody: Record<string, unknown> = clientBody;
-  let mutated = false;
+  let isMutated = false;
   if (invocation.inputSurface) {
     const from = protocolForSurface(invocation.inputSurface);
     const to = protocolForSurface(invocation.surface);
@@ -97,7 +97,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
       const converted = convertMatrixRequest(from, to, clientBody, { isNonstreamPreferred: invocation.preferNonstream === true });
       if (highRiskSemanticLoss(converted).length > 0) return problem(422, 'center_conversion_semantic_loss');
       outboundBody = converted.body;
-      mutated = true;
+      isMutated = true;
     } catch (error) {
       if (error instanceof ConversionError) return problem(400, 'center_conversion_invalid');
       throw error;
@@ -107,11 +107,11 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   const clientRequest = forwardedRequest(request);
   if (physicalModel !== invocation.logicalModel) {
     outboundBody = { ...outboundBody, model: physicalModel };
-    mutated = true;
+    isMutated = true;
   }
   if (invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env)) {
     outboundBody = withUsageStreamOptions(outboundBody);
-    mutated = true;
+    isMutated = true;
   }
 
   let credential = node.credential;
@@ -135,7 +135,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     credential = resolved.token;
     if (prepared.body) {
       outboundBody = prepared.body;
-      mutated = true;
+      isMutated = true;
     }
     upstreamUrl = prepared.upstreamUrl;
     wire = adapter.wire;
@@ -159,7 +159,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     invocation.requestId,
     isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders } : undefined,
   );
-  const body = mutated ? JSON.stringify(outboundBody) : rawBody;
+  const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
   const controller = new AbortController();
   const remainingMs = invocation.deadlineMs - Date.now();
   if (remainingMs <= 0) return problem(408, 'center_deadline_expired');
