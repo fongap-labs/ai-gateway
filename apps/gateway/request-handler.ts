@@ -13,7 +13,6 @@
 // Streaming rule: the first-event guard runs BEFORE any streaming Response is
 // returned to the client; after that point transparent failover is forbidden.
 
-import { runTierLoop } from './tier-loop.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
@@ -21,6 +20,13 @@ import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../s
 import { RetrySlot } from '../../src/reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
+import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from '../../src/request/edge-cache.ts';
+import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
+import { runFallbackChain } from '../../src/request/fallback.ts';
+import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from '../../src/request/model-fallback.ts';
+import { evaluateRouteFeasibility } from '../../src/request/route-feasibility.ts';
+import { detectRoute, normalizePath, TIER_ORDER } from '../../src/request/router.ts';
+import { makeTier1Rng } from '../../src/request/tier-loop.ts';
 import { supportsRequest } from '../../src/scheduler/scheduler.ts';
 import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from '../../src/scheduler/tier1-affinity.ts';
 import { tier1ModelAvailability } from '../../src/scheduler/tier1-scheduler.ts';
@@ -28,15 +34,8 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
-
-import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from '../../src/request/edge-cache.ts';
-import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
-import { runFallbackChain } from '../../src/request/fallback.ts';
-import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from '../../src/request/model-fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
-import { evaluateRouteFeasibility } from '../../src/request/route-feasibility.ts';
-import { detectRoute, normalizePath, TIER_ORDER } from '../../src/request/router.ts';
-import { makeTier1Rng } from '../../src/request/tier-loop.ts';
+import { runTierLoop } from './tier-loop.ts';
 
 // A streaming attempt on a model that still has a sibling after it gives up
 // after this long when the upstream stays silent. Only the last model in the

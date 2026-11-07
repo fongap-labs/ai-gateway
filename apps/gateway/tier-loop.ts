@@ -7,19 +7,14 @@
 // only execute one physical attempt, and must not introduce a second scheduler.
 
 import { isSpeculativeRetryAfter } from '../../src/reliability/retry-budget.ts';
+import { dispatchWithHedge } from '../../src/request/attempt.ts';
+import { buildBudgetExhaustedResponse } from '../../src/request/errors.ts';
+import { TIER_ORDER } from '../../src/request/router.ts';
+import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from '../../src/request/tier-loop.ts';
 import { recordTier1AffinityDecision } from '../../src/scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { ConversionContext, LoopContext, LoopState } from '../../src/types/request.ts';
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
-import { dispatchWithHedge } from '../../src/request/attempt.ts';
-import { buildBudgetExhaustedResponse } from '../../src/request/errors.ts';
-import { TIER_ORDER } from '../../src/request/router.ts';
-import {
-  computeTierCaps,
-  countRemainingDispatchableAttempts,
-  pickForTier,
-  redistributeUnusedTierAttempts,
-} from '../../src/request/tier-loop.ts';
 
 // Whether the next attempt may be dispatched. A retry after an upstream that was
 // slow or failing (not a plain pool rotation) draws on the isolate retry budget;
