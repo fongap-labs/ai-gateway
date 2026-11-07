@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: Anthropic 对象转换与 SSE 编解码器归属推理中心，旧路径兼容导出。
+
+
 - 新增: Chat 转换器与 SSE 编解码器归属 Inference Center，旧路径保留单一兼容导出。
 
 
