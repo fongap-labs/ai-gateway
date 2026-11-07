@@ -27,8 +27,8 @@ import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, 
 import { responsesObjectToIr } from './responses.ts';
 import { ResponsesStreamDecoder, ResponsesStreamEncoder } from './responses-stream.ts';
 
-export { ConversionError };
 export { convertMatrixRequest, isMatrixPair } from '../../../apps/inference/conversion/request.ts';
+export { ConversionError };
 
 // ---- Stream translation ------------------------------------------------------
 

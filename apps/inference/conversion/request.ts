@@ -3,7 +3,7 @@
 //
 // Inference-owned protocol request conversion. Gateway callers temporarily
 // use a compatibility export; this module is the sole conversion implementation.
-import { MatrixDiag } from '../../../packages/conversion-core/diag.ts';
+import type { MatrixDiag } from '../../../packages/conversion-core/diag.ts';
 import type { IrProtocol, IrRequest } from '../../../packages/conversion-core/ir.ts';
 import type { ConversionResult, StructuredOutputStrategy } from '../../../packages/conversion-core/result.ts';
 import { ConversionError } from '../../../packages/conversion-core/validation.ts';
