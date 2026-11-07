@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: Responses 对象与 SSE 编解码器归推理中心，事件构造器归共享转换核心。
+
+
 - 新增: Anthropic 对象转换与 SSE 编解码器归属推理中心，旧路径兼容导出。
 
 
