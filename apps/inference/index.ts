@@ -5,10 +5,12 @@
 // Provider selection, OAuth resolution and the single physical fetch live in
 // execution.ts; do not add a second scheduler here.
 
+import { INFERENCE_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { executeNative } from './execution.ts';
+import { handleInferencePreflight } from './preflight.ts';
 import { problem } from './response.ts';
 
 const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
@@ -20,6 +22,11 @@ export async function handleInferenceCenterRequest(request: Request, env: Gatewa
     return new Response(JSON.stringify({ status: 'ok', center: 'inference' }), {
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     });
+  }
+  if (path === INFERENCE_PREFLIGHT_PATH && request.method === 'POST') {
+    const preflight = parseInferencePreflightInvocation(request);
+    if (!preflight) return problem(400, 'center_preflight_contract_invalid');
+    return handleInferencePreflight(request, preflight);
   }
   if (path !== '/internal/execute' || request.method !== 'POST') return problem(404, 'center_route_not_found');
   const invocation = parseExecutionInvocation(request, ALLOWED_SURFACES);

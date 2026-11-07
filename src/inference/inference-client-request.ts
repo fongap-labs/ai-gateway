@@ -33,7 +33,7 @@ export class InferenceCenterUnavailable extends Error {
 
 type InferenceService = ExecutionTransport;
 
-function configuredService(env: GatewayEnv): InferenceService {
+export function configuredInferenceService(env: GatewayEnv): InferenceService {
   const service = env.AIG_INFERENCE_SERVICE as InferenceService | undefined;
   const key = env.AIG_INFERENCE_AUTH_KEY;
   if (!service || typeof service.fetch !== 'function' || typeof key !== 'string' || key.length < 32) {
@@ -44,7 +44,7 @@ function configuredService(env: GatewayEnv): InferenceService {
 
 /** Build one request. Caller remains responsible for retries, budgets and SSE commit. */
 export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
-  configuredService(env);
+  configuredInferenceService(env);
   const key = env.AIG_INFERENCE_AUTH_KEY as string;
   const headers = buildExecutionHeaders(
     {
@@ -74,6 +74,6 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
 
 /** No implicit fallback to the legacy provider network path. */
 export async function invokeInferenceNode(env: GatewayEnv, invocation: InferenceInvocation): Promise<Response> {
-  const service = configuredService(env);
+  const service = configuredInferenceService(env);
   return service.fetch(buildInferenceRequest(env, invocation));
 }

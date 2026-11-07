@@ -53,6 +53,8 @@ import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
 import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../../src/conversion/result.ts';
 import { ConversionError } from '../../src/conversion/validation.ts';
+import { InferenceCenterUnavailable } from '../../src/inference/inference-client-request.ts';
+import { checkInferenceConversion } from '../../src/inference/inference-preflight-client.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
 import { computeTierCaps } from '../../src/request/tier-loop.ts';
@@ -136,8 +138,37 @@ export async function runFallbackChain({
       // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
       // stream flag so the provider may answer with one JSON body (streaming
       // clients still get the forced upstream stream).
-      conversionResult = convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
+      // When the center is configured, do not execute the full translator in
+      // Gateway: ask the private center for metadata-only feasibility instead.
+      // Legacy unbound mode still needs the converted body for direct dispatch.
+      conversionResult =
+        'AIG_INFERENCE_SERVICE' in env
+          ? await checkInferenceConversion(env, {
+              request,
+              requestId,
+              from,
+              to,
+              body: bodyJson,
+              isNonstreamPreferred,
+              deadlineMs: requestStartMs + failoverBudgetMs,
+            })
+          : convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
     } catch (e) {
+      if (e instanceof InferenceCenterUnavailable) {
+        // A preflight RPC failure is not a Provider failure. Fail closed
+        // without charging a logical attempt, node health or dispatch count.
+        return gatewayError(
+          request,
+          env,
+          route,
+          503,
+          'Private inference conversion preflight is unavailable.',
+          requestId,
+          undefined,
+          undefined,
+          'gateway_inference_preflight_unavailable',
+        );
+      }
       if (e instanceof ConversionError) {
         conversionRejectedCount++;
         if (e.requestField) unsupportedRequestFields.add(e.requestField);

@@ -110,6 +110,14 @@ Gateway 的 `runFallbackChain` 继续进行独立转换可行性和高风险语�
 
 注意：此批次下沉的是**成功的非流式对象响应**，并非所有 SSE。中心仍不负责 Gateway 的逻辑请求调度、首事件提交、故障回退、限流与结算事务。后续要独立迁移流式响应转换及协议兼容预检，并在完成等价测试后删除旧 Provider 直连执行。部署必须**先升级支持 v3 的 Inference Center，再升级 Gateway**；本 PR 不触发部署或密钥更新。
 
+## Gateway 请求转换预检委托（中心已绑定）
+
+已绑定 `AIG_INFERENCE_SERVICE` 的 Gateway 在跨协议 fallback 前调用 `/internal/conversion/preflight`（独立版本 1、复用中心高熵认证、1.5s 上限，校验 UUID 和 Deadline）。中心只读解析客户端正文并运行 Matrix 请求转换，响应**仅包含固定的 fidelity/diagnostics/structuredOutput 或拒绝字段名**，不返回提示词、消息、工具参数、转换后的正文，也不接触 Provider 或任何 OAuth 凭据。
+
+Gateway 依据诊断继续拒绝高风险语义丢失并安排 Tier 选择；中心不拥有重试、Hedge、429、节点权重和物理尝试预算。中心拒绝或连线故障会返回明确的 503，**不能回退为 Gateway 本地转换或 Provider 直连**，且不计入物理尝试。此端点必须随中心先部署，再部署 Gateway 的委托调用。尚未绑定中心的兼容路径仍由 Gateway 本地执行转换并保留其原有行为，以便最后删除旧 Provider 路径时统一清理。
+
+当前新增预检独立内网调用（仅跨协议 fallback 阶段），需后续观察其耗时和消耗；不作为生产部署验收或性能改进的证明。SSE 流式响应下沉与完整撤除旧直连仍未完成。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

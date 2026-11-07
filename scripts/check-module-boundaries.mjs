@@ -241,6 +241,13 @@ assert.match(responseCenter, /replyToObject\(reply, clientProtocol\)/, 'Inferenc
 assert.match(responseGateway, /isTranslatedObjectEnvelope\(native\)/, 'Gateway must strictly validate pretranslated objects');
 assert.match(responseGateway, /recordTokens\(c, node, native.upstreamUsage\)/, 'Gateway must settle the physical upstream usage once');
 assert.match(responseContract, /EXECUTION_OBJECT_CONTRACT_VERSION = '3'/, 'v3 object conversion must use its own contract version');
+const inferencePreflight = readFileSync(join(root, 'apps/inference/preflight.ts'), 'utf8');
+const delegatedFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
+const inferencePreflightClient = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
+assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Center may run full conversion preflight when bound');
+assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
+assert.match(inferencePreflightClient, /INFERENCE_PREFLIGHT_PATH/, 'Private preflight client must use its dedicated endpoint');
+assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/, 'Inference preflight cannot dispatch or schedule Provider calls');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
