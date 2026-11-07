@@ -39,6 +39,8 @@ const builtinProfiles: Readonly<Record<string, ProviderProfile>> = Object.freeze
 });
 
 export function getProviderProfile(provider: string): ProviderProfile {
-  const key = String(provider || '').trim().toLowerCase();
+  const key = String(provider || '')
+    .trim()
+    .toLowerCase();
   return builtinProfiles[key] ?? GENERIC_OPENAI_PROFILE;
 }

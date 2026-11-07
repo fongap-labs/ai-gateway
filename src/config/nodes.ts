@@ -20,8 +20,8 @@
 // Unknown fields, credential material, alternate model shapes, and numeric
 // strings are configuration errors.
 
-import { loadOAuthProviders } from '../oauth/provider-configs.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
+import { loadOAuthProviders } from '../oauth/provider-configs.ts';
 import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
 import { trimTrailingSlashes } from '../utils/trim.ts';
