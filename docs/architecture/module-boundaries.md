@@ -12,6 +12,10 @@
 - `packages/provider-kit`、`packages/transport`、`packages/observability`：仅放跨业务单元复用的基础设施。
 - `operations`：Dashboard、聚合、维护，不进入请求热路径。
 
+## 源码静态质量门禁
+
+Biome 范围覆盖 `src/**/*.ts`、`apps/**/*.ts`、`packages/**/*.ts`、`operations/**/*.ts`；TypeScript 严格类型检查覆盖相同运行时代码。`check:boundaries` 验证这些源码目录不能被未来配置遗漏。
+
 ## 已落实的第一阶段约束
 
 `packages/contracts/execution.ts` 统一版本、表面协议、执行票据字段、响应结果与用量事件类型，推理/生成中心及其客户端统一使用该文件，不再分别实现鉴权和头校验。
