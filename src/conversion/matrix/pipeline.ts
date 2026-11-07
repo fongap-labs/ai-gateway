@@ -31,8 +31,7 @@ import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, 
 import { ResponsesStreamDecoder, ResponsesStreamEncoder } from './responses-stream.ts';
 
 export { convertMatrixRequest, isMatrixPair } from '../../../apps/inference/conversion/request.ts';
-export { replyFromNativeObject, replyToAnthropicObject, replyToChatObject, replyToObject, replyToResponsesObject };
-export { ConversionError };
+export { ConversionError, replyFromNativeObject, replyToAnthropicObject, replyToChatObject, replyToObject, replyToResponsesObject };
 
 // ---- Stream translation ------------------------------------------------------
 

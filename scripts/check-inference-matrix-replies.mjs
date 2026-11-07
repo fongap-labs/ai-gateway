@@ -3,16 +3,16 @@
 // Native object reply conversion and compatibility identity contracts.
 import assert from 'node:assert/strict';
 import {
-  replyFromNativeObject as ownerFrom,
   replyToAnthropicObject as ownerAnthropic,
   replyToChatObject as ownerChat,
+  replyFromNativeObject as ownerFrom,
   replyToObject as ownerRender,
   replyToResponsesObject as ownerResponses,
 } from '../apps/inference/conversion/response.ts';
 import {
-  replyFromNativeObject as compatFrom,
   replyToAnthropicObject as compatAnthropic,
   replyToChatObject as compatChat,
+  replyFromNativeObject as compatFrom,
   replyToObject as compatRender,
   replyToResponsesObject as compatResponses,
 } from '../src/conversion/matrix/pipeline.ts';
