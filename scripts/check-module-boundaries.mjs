@@ -212,10 +212,17 @@ assert.ok(
 );
 assert.doesNotMatch(matrixLegacyPipeline, /export (?:async )?function /, 'Gateway Matrix pipeline must have no executor logic');
 for (const functionName of ['openMatrixStream', 'collectMatrixObject', 'synthesizeMatrixStreamFromObject']) {
-  assert.ok(inferenceStreamOwner.includes(`export ${functionName === 'collectMatrixObject' ? 'async ' : ''}function ${functionName}(`), `Inference must own Matrix SSE ${functionName}`);
+  assert.ok(
+    inferenceStreamOwner.includes(`export ${functionName === 'collectMatrixObject' ? 'async ' : ''}function ${functionName}(`),
+    `Inference must own Matrix SSE ${functionName}`,
+  );
 }
 assert.doesNotMatch(inferenceStreamOwner, /from ['"][^'"]*\/src\//, 'Inference Matrix stream may use only neutral packages and local codecs');
-assert.doesNotMatch(inferenceStreamOwner, /ensureFirstSseEvent|dispatchWithHedge|runTierLoop/, 'Inference stream codec must not own Gateway commit/failover');
+assert.doesNotMatch(
+  inferenceStreamOwner,
+  /ensureFirstSseEvent|dispatchWithHedge|runTierLoop/,
+  'Inference stream codec must not own Gateway commit/failover',
+);
 
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');

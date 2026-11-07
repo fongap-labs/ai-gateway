@@ -4,7 +4,13 @@
 // Inference-owned Matrix stream conversion, native-object collection and
 // synthetic SSE rendering. Gateway still owns first-event commit and retry.
 
-import { type BudgetStopReason, ConversionBudgetStop, createMatrixBudget, type MatrixConversionBudget, outputUnitsOf } from '../../../packages/conversion-core/budget.ts';
+import {
+  type BudgetStopReason,
+  ConversionBudgetStop,
+  createMatrixBudget,
+  type MatrixConversionBudget,
+  outputUnitsOf,
+} from '../../../packages/conversion-core/budget.ts';
 import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, isRecord } from '../../../packages/conversion-core/ir.ts';
 import { ResponsesEventBuilder } from '../../../packages/conversion-core/responses-events.ts';
 import type { ConversionDiagnostic } from '../../../packages/conversion-core/result.ts';

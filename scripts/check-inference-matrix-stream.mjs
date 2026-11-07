@@ -18,10 +18,17 @@ assert.strictEqual(oldStream, ownedStream);
 assert.strictEqual(oldSynthesize, ownedSynthesize);
 
 const encoder = new TextEncoder();
-const lines = [
-  { id: 'cmpl-stream', object: 'chat.completion.chunk', model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }] },
+const frames = [
+  {
+    id: 'cmpl-stream',
+    object: 'chat.completion.chunk',
+    model: 'test-model',
+    choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }],
+  },
   { id: 'cmpl-stream', object: 'chat.completion.chunk', model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
-].map((part) => `data: ${JSON.stringify(part)}\n\n`).join('') + 'data: [DONE]\n\n';
+].map((part) => `data: ${JSON.stringify(part)}\n\n`);
+frames.push('data: [DONE]\n\n');
+const lines = frames.join('');
 function body() {
   return new ReadableStream({
     start(controller) {
