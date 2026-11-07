@@ -4,9 +4,9 @@
 // A private, bounded conversion check: no node selection or Provider attempt.
 import {
   buildInferencePreflightHeaders,
+  type ConversionPreflightApproval,
   INFERENCE_PREFLIGHT_PATH,
   isConversionPreflightResult,
-  type ConversionPreflightApproval,
 } from '../../packages/contracts/conversion-preflight.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import type { ConversionResult } from '../../packages/conversion-core/result.ts';
@@ -33,10 +33,7 @@ export async function checkInferenceConversion(
   const now = Date.now();
   const deadlineMs = Math.min(invocation.deadlineMs, now + MAX_PREFLIGHT_WAIT_MS);
   if (deadlineMs <= now) throw new InferenceCenterUnavailable();
-  const headers = buildInferencePreflightHeaders(
-    { requestId: invocation.requestId, deadlineMs },
-    env.AIG_INFERENCE_AUTH_KEY as string,
-  );
+  const headers = buildInferencePreflightHeaders({ requestId: invocation.requestId, deadlineMs }, env.AIG_INFERENCE_AUTH_KEY as string);
   const controller = new AbortController();
   const timerId = setTimeout(() => controller.abort(), deadlineMs - now);
   const onAbort = () => controller.abort();

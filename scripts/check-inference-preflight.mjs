@@ -79,19 +79,28 @@ try {
   const headers = buildInferencePreflightHeaders({ requestId, deadlineMs: Date.now() + 15_000 }, key);
   headers.set('x-aig-preflight-version', '2');
   assert.equal(
-    (await handleInferenceCenterRequest(
-      new Request('https://inference.internal/internal/conversion/preflight', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ from: 'openai_chat', to: 'anthropic', body: bodyByProtocol.openai_chat }),
-      }),
-      env,
-    )).status,
+    (
+      await handleInferenceCenterRequest(
+        new Request('https://inference.internal/internal/conversion/preflight', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ from: 'openai_chat', to: 'anthropic', body: bodyByProtocol.openai_chat }),
+        }),
+        env,
+      )
+    ).status,
     400,
   );
   assert.equal(upstreamAttempts, 0);
 
-  const unavailable = { ...env, AIG_INFERENCE_SERVICE: { fetch: async () => { throw new Error('network down'); } } };
+  const unavailable = {
+    ...env,
+    AIG_INFERENCE_SERVICE: {
+      fetch: async () => {
+        throw new Error('network down');
+      },
+    },
+  };
   await assert.rejects(
     checkInferenceConversion(unavailable, {
       request: client,

@@ -37,7 +37,10 @@ export function isConversionPreflightResult(value: unknown): value is Conversion
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const data = value as Record<string, unknown>;
   if (data.ok === false) {
-    return data.code === 'conversion_not_supported' && (data.requestField === undefined || (typeof data.requestField === 'string' && data.requestField.length <= 64));
+    return (
+      data.code === 'conversion_not_supported' &&
+      (data.requestField === undefined || (typeof data.requestField === 'string' && data.requestField.length <= 64))
+    );
   }
   if (data.ok !== true || !['exact', 'portable', 'degraded'].includes(String(data.fidelity)) || !Array.isArray(data.diagnostics)) return false;
   if (
@@ -48,11 +51,17 @@ export function isConversionPreflightResult(value: unknown): value is Conversion
         typeof d === 'object' &&
         !Array.isArray(d) &&
         typeof (d as { feature?: unknown }).feature === 'string' &&
-        ((d as { feature: string }).feature.length <= 128) &&
+        (d as { feature: string }).feature.length <= 128 &&
         ['mapped', 'dropped', 'emulated', 'defaulted'].includes(String((d as { action?: unknown }).action)),
     )
-  ) return false;
+  )
+    return false;
   if (data.structuredOutput === undefined) return true;
   const output = data.structuredOutput;
-  return !!output && typeof output === 'object' && !Array.isArray(output) && ['native', 'tool', 'prompt'].includes(String((output as { strategy?: unknown }).strategy));
+  return (
+    !!output &&
+    typeof output === 'object' &&
+    !Array.isArray(output) &&
+    ['native', 'tool', 'prompt'].includes(String((output as { strategy?: unknown }).strategy))
+  );
 }
