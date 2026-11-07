@@ -228,6 +228,11 @@ assert.doesNotMatch(
   'Inference stream codec must not own Gateway commit/failover',
 );
 
+const inferenceExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const centerDispatch = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'Inference must execute the physical protocol request conversion');
+assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
+assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

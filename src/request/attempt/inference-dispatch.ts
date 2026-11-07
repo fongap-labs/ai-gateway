@@ -5,6 +5,7 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
+import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { invokeInferenceNode } from '../../inference/inference-client-request.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
@@ -21,6 +22,19 @@ import { handleSuccess } from './success.ts';
 
 const INTERNAL_TARGET = 'https://inference.internal/internal/execute';
 
+function inputSurfaceForClientRoute(route: string): ExecutionInputSurface | null {
+  switch (route) {
+    case 'openai_chat':
+      return 'chat_completions';
+    case 'openai_responses':
+      return 'responses';
+    case 'anthropic_messages':
+      return 'messages';
+    default:
+      return null;
+  }
+}
+
 function stopForCenter(c: AttemptContext, status: number, code: string): AttemptOutcome {
   rotateWithNeutralEnd(c.state, c.node, KIND.AUTH, c, true);
   return {
@@ -32,8 +46,12 @@ function stopForCenter(c: AttemptContext, status: number, code: string): Attempt
 export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Record<string, unknown>): Promise<AttemptOutcome> {
   const { request, env, node, state, reqDescriptor, policy, limits, requestedModel, route } = c;
   const effectiveModel = reqDescriptor.model;
-  const body: Record<string, unknown> = { ...sourceBody, model: effectiveModel };
-  if (c.fakeStream && c.surface === 'chat_completions') body.stream = true;
+  // The center executes conversion from the ORIGINAL protocol shape.
+  // Gateway's converted body remains an admission dry-run, not the wire body.
+  const inputSurface = c.conversionContext ? inputSurfaceForClientRoute(c.conversionContext.clientRoute) : undefined;
+  if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid');
+  const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
+  if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
   // Avoid a second copy for normal native requests with no alias or stream mutation.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
   const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify(body);
@@ -83,6 +101,8 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       node,
       logicalModel: effectiveModel,
       surface: c.surface ?? reqDescriptor.surface,
+      inputSurface: inputSurface ?? undefined,
+      preferNonstream: c.conversionContext?.isNonstreamPreferred ? true : undefined,
       deadlineMs: c.attemptDeadlineMs,
       body: outboundBody,
       signal: controller.signal,

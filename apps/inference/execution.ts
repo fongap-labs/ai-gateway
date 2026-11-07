@@ -4,7 +4,10 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
-import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
+import type { ExecutionInputSurface, ExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
+import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
+import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { getOAuthProvider } from '../../src/oauth/provider-configs.ts';
@@ -18,10 +21,24 @@ import type { SubscriptionWire } from '../../src/subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { GatewayEnv } from '../../src/types/runtime.ts';
+import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 type Invocation = ExecutionInvocation;
+
+function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface']): IrProtocol | null {
+  switch (surface) {
+    case 'chat_completions':
+      return 'openai_chat';
+    case 'responses':
+      return 'openai_responses';
+    case 'messages':
+      return 'anthropic';
+    default:
+      return null;
+  }
+}
 
 function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
   const node = configuredNodes.find((entry) => entry.id === invocation.nodeId);
@@ -67,14 +84,34 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
+  let outboundBody: Record<string, unknown> = clientBody;
+  let isMutated = false;
+  if (invocation.inputSurface) {
+    const from = protocolForSurface(invocation.inputSurface);
+    const to = protocolForSurface(invocation.surface);
+    const matchesNode = node.protocol === 'anthropic' ? invocation.surface === 'messages' : invocation.surface !== 'messages';
+    if (!matchesNode || !from || !to || !isMatrixPair(from, to)) return problem(400, 'center_conversion_route_invalid');
+    try {
+      // Independently validate and convert the original client shape BEFORE
+      // any physical Provider attempt. Gateway's dry-run is not trusted.
+      const converted = convertMatrixRequest(from, to, clientBody, { isNonstreamPreferred: invocation.preferNonstream === true });
+      if (highRiskSemanticLoss(converted).length > 0) return problem(422, 'center_conversion_semantic_loss');
+      outboundBody = converted.body;
+      isMutated = true;
+    } catch (error) {
+      if (error instanceof ConversionError) return problem(400, 'center_conversion_invalid');
+      throw error;
+    }
+  }
   const physicalModel = node.models[invocation.logicalModel] ?? invocation.logicalModel;
   const clientRequest = forwardedRequest(request);
-  let outboundBody: Record<string, unknown> = clientBody;
-  let mutated = physicalModel !== invocation.logicalModel;
-  if (mutated) outboundBody = { ...outboundBody, model: physicalModel };
+  if (physicalModel !== invocation.logicalModel) {
+    outboundBody = { ...outboundBody, model: physicalModel };
+    isMutated = true;
+  }
   if (invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env)) {
     outboundBody = withUsageStreamOptions(outboundBody);
-    mutated = true;
+    isMutated = true;
   }
 
   let credential = node.credential;
@@ -98,7 +135,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     credential = resolved.token;
     if (prepared.body) {
       outboundBody = prepared.body;
-      mutated = true;
+      isMutated = true;
     }
     upstreamUrl = prepared.upstreamUrl;
     wire = adapter.wire;
@@ -122,7 +159,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     invocation.requestId,
     isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders } : undefined,
   );
-  const body = mutated ? JSON.stringify(outboundBody) : rawBody;
+  const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
   const controller = new AbortController();
   const remainingMs = invocation.deadlineMs - Date.now();
   if (remainingMs <= 0) return problem(408, 'center_deadline_expired');

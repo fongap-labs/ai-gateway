@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Inference v2 契约执行跨协议请求转换，原生调用仍兼容 v1。
+
 - 新增: Matrix SSE 编解码与收集执行归推理中心，旧 Pipeline 仅兼容导出。
 
 - 新增: SSE 扫描、截止时间、流转发与内部标记迁入共享 Transport，旧入口兼容。

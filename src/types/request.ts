@@ -67,6 +67,8 @@ export type ConversionContext = {
   /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   convertedBody: Record<string, unknown>;
   clientRoute: string;
+  /** Verbatim preference used for the Gateway dry-run and Inference execution. */
+  isNonstreamPreferred: boolean;
 };
 
 /**
