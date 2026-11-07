@@ -148,6 +148,25 @@ for (const file of ['apps/inference/conversion/anthropic.ts', 'apps/inference/co
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
 }
 
+// Responses converters and pure SSE event builder must not regress to src.
+for (const [shim, owner] of [
+  ['src/conversion/matrix/responses.ts', '../../../apps/inference/conversion/responses.ts'],
+  ['src/conversion/matrix/responses-stream.ts', '../../../apps/inference/conversion/responses-stream.ts'],
+  ['src/protocol/responses/events.ts', '../../../packages/conversion-core/responses-events.ts'],
+]) {
+  const compatibility = readFileSync(join(root, shim), 'utf8');
+  assert.ok(compatibility.includes(`export * from '${owner}';`), `Responses compatibility export missing: ${shim}`);
+  assert.doesNotMatch(compatibility, /export (?:function|class) /, `Responses implementation duplicated: ${shim}`);
+}
+for (const file of [
+  'apps/inference/conversion/responses.ts',
+  'apps/inference/conversion/responses-stream.ts',
+  'packages/conversion-core/responses-events.ts',
+]) {
+  const owner = readFileSync(join(root, file), 'utf8');
+  assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Responses implementation imports legacy src: ${file}`);
+}
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

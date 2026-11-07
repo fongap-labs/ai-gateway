@@ -66,6 +66,12 @@ Anthropic Messages 对象解析器与 SSE 编解码器已移入 `apps/inference/
 
 **阶段限制**：Responses 及完整 Matrix Pipeline 仍使用旧目录；Gateway 尚会经兼容导出执行协议转换，待全部 codec 稳定后迁移执行调用边界。
 
+## 推理中心转换器迁移：Responses
+
+Responses 对象转换和 SSE 编解码实现由 `apps/inference/conversion/responses*.ts` 持有。原生 Responses SSE 事件构造器已作为纯模块迁至 `packages/conversion-core/responses-events.ts`，Gateway 及推理中心可共享同一个类和事件格式。所有旧路径只提供同一实现的兼容导出，新增负向字段校验、终态和序号格式合同测试。
+
+**阶段限制**：尽管 Chat、Anthropic、Responses 的协议编解码源码均已归推理中心，Gateway 仍通过旧导出执行 Matrix Pipeline 请求/响应转换。下一阶段要将其执行逻辑及流式边界真正移入推理中心。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
