@@ -22,6 +22,10 @@
 
 运行入口分别落在 `apps/gateway/index.ts`、`apps/inference/index.ts`、`apps/generation/index.ts`；原有 `src/index.ts` 等路径仅保留兼容性转发，现有 Wrangler 配置不改变，避免本批次触发生产部署行为变化。
 
+## 请求与鉴权控制面归属
+
+Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/preflight.ts`，负责入口认证、模型授权、请求编排、家族回退以及统一的请求级调度预算。`src/request/handler.ts` 与 `src/request/preflight.ts` 变为兼容性导出，供既有测试和旧内部引用逐步迁移。现阶段它们仍使用 `src/` 内的其他策略/配置工具，未声称 Provider 与协议转换已彻底迁出。
+
 ## 单一 Tier 执行循环
 
 `apps/gateway/tier-loop.ts` 拥有原 `src/request/handler.ts` 的实际 Tier 1/2/3 物理尝试调度，使用现有策略选择器、每请求逻辑预算与 Hedge 模块。此轮仅迁移位置，不修改任何调度算法。现存 `src/request/tier-loop.ts` 继续提供 Tier 分配等纯辅助函数，不创建第二套调度。后续随着请求处理模块的完全迁移，将消除 `src/request/handler.ts` 的过渡引用。
