@@ -17,10 +17,10 @@
 
 const guardedStreamState = new WeakMap<object, { failureReason: string | null }>();
 
-import { createSseScanner, GUARD_ERROR, guardError, type GuardErrorCode, type SseEventHandler } from '../../packages/transport/sse.ts';
+import { createSseScanner, GUARD_ERROR, type GuardErrorCode, guardError, type SseEventHandler } from '../../packages/transport/sse.ts';
 
-export { createSseScanner, FIRST_EVENT_MAX_SSE_LINE, GUARD_ERROR, readWithDeadline } from '../../packages/transport/sse.ts';
 export type { GuardErrorCode, SseEventHandler, SseEventState } from '../../packages/transport/sse.ts';
+export { createSseScanner, FIRST_EVENT_MAX_SSE_LINE, GUARD_ERROR, readWithDeadline } from '../../packages/transport/sse.ts';
 
 export const FIRST_EVENT_MAX_PRE_BYTES = 2 * 1024 * 1024;
 

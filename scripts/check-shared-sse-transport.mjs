@@ -5,16 +5,16 @@ import assert from 'node:assert/strict';
 import { markSyntheticClientStreamHeaders as ownedMarker } from '../packages/transport/client-lifecycle.ts';
 import { convertSseStream as ownedRelay } from '../packages/transport/convert-sse.ts';
 import {
-  createSseScanner as ownedScanner,
-  FIRST_EVENT_MAX_SSE_LINE as ownedLimit,
   readWithDeadline as ownedDeadline,
+  FIRST_EVENT_MAX_SSE_LINE as ownedLimit,
+  createSseScanner as ownedScanner,
 } from '../packages/transport/sse.ts';
 import { convertSseStream as legacyRelay } from '../src/conversion/sse.ts';
 import { markSyntheticClientStreamHeaders as legacyMarker } from '../src/stream/client-lifecycle.ts';
 import {
-  createSseScanner as legacyScanner,
-  FIRST_EVENT_MAX_SSE_LINE as legacyLimit,
   readWithDeadline as legacyDeadline,
+  FIRST_EVENT_MAX_SSE_LINE as legacyLimit,
+  createSseScanner as legacyScanner,
 } from '../src/stream/guard.ts';
 
 assert.strictEqual(ownedRelay, legacyRelay);
@@ -48,6 +48,20 @@ const stream = ownedRelay(
   () => finished,
 );
 assert.equal(await new Response(stream).text(), '{"value":"ok"}');
-const reader = new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('x')); controller.close(); } }).getReader();
-assert.equal(new TextDecoder().decode((await ownedDeadline(reader, null, async () => { throw new Error('unexpected timeout'); })).value), 'x');
+const reader = new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode('x'));
+    controller.close();
+  },
+}).getReader();
+assert.equal(
+  new TextDecoder().decode(
+    (
+      await ownedDeadline(reader, null, async () => {
+        throw new Error('unexpected timeout');
+      })
+    ).value,
+  ),
+  'x',
+);
 console.log('Shared SSE parser, relay, deadline, synthetic marker and legacy function identity passed.');
