@@ -178,6 +178,15 @@ assert.doesNotMatch(matrixPipelineCompat, /export function convertMatrixRequest\
 assert.match(matrixRequestOwner, /export function convertMatrixRequest\(/, 'Inference must own protocol request conversion');
 assert.doesNotMatch(matrixRequestOwner, /from ['"][^'"]*\/src\//, 'Request conversion must only use shared contracts and local codecs');
 
+// Native reply decode/render is a single Inference-owned implementation.
+const matrixReplyOwner = readFileSync(join(root, 'apps/inference/conversion/response.ts'), 'utf8');
+const matrixReplyLegacy = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
+assert.match(matrixReplyOwner, /export function replyFromNativeObject\(/, 'Inference must decode native reply objects');
+assert.match(matrixReplyOwner, /export function replyToObject\(/, 'Inference must render reply objects');
+assert.doesNotMatch(matrixReplyLegacy, /export function replyToObject\(/, 'Gateway must not own duplicate object rendering');
+assert.doesNotMatch(matrixReplyLegacy, /export function replyFromNativeObject\(/, 'Gateway must not own duplicate object decoding');
+assert.doesNotMatch(matrixReplyOwner, /from ['"][^'"]*\/src\//, 'Inference object conversion must not import legacy src');
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
