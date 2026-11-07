@@ -120,6 +120,21 @@ for (const [shim, target] of [
   );
 }
 
+// All Chat conversion implementations belong to the Inference Center.
+// Legacy paths can re-export them but cannot carry duplicate conversion code.
+for (const [shim, owner] of [
+  ['src/conversion/matrix/chat.ts', '../../../apps/inference/conversion/chat.ts'],
+  ['src/conversion/matrix/chat-stream.ts', '../../../apps/inference/conversion/chat-stream.ts'],
+]) {
+  const compatibility = readFileSync(join(root, shim), 'utf8');
+  assert.ok(compatibility.includes(`export * from '${owner}';`), `Chat converter compatibility export missing: ${shim}`);
+  assert.doesNotMatch(compatibility, /export (?:function|class) /, `Chat conversion implementation duplicated: ${shim}`);
+}
+for (const file of ['apps/inference/conversion/chat.ts', 'apps/inference/conversion/chat-stream.ts']) {
+  const owner = readFileSync(join(root, file), 'utf8');
+  assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
+}
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

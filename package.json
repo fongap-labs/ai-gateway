@@ -16,8 +16,8 @@
     "security:scan": "node scripts/secret-scan.mjs",
     "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities && npm run check:provider-profiles && npm run check:conversion-core && npm run check:inference-chat-codec",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
@@ -41,7 +41,8 @@
     "check:inference-contract": "node scripts/check-inference-center.mjs",
     "check:image-capabilities": "node scripts/check-image-capabilities.mjs",
     "check:provider-profiles": "node scripts/check-provider-profiles.mjs",
-    "check:conversion-core": "node scripts/check-conversion-core.mjs"
+    "check:conversion-core": "node scripts/check-conversion-core.mjs",
+    "check:inference-chat-codec": "node scripts/check-inference-chat-codec.mjs"
   },
   "keywords": [
     "ai-gateway",
