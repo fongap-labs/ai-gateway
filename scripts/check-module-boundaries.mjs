@@ -32,10 +32,18 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
   }
   checked++;
 }
-assert.ok(checked > 0, 'No contract package found');
+assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
+for (const [app, shim] of [
+  ['apps/gateway/index.ts', 'src/index.ts'],
+  ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],
+  ['apps/generation/index.ts', 'src/generation/generation-center-entry.ts'],
+]) {
+  assert.ok(existsSync(join(root, app)), 'Missing running app: ' + app);
+  assert.match(readFileSync(join(root, shim), 'utf8'), /apps\//, 'Compatibility entrypoint not delegated: ' + shim);
+}
 for (const path of [
-  'src/inference/inference-center-entry.ts',
-  'src/generation/generation-center-entry.ts',
+  'apps/inference/index.ts',
+  'apps/generation/index.ts',
   'src/inference/inference-client-request.ts',
   'src/generation/generation-client-request.ts',
 ]) {

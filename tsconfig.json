@@ -20,7 +20,8 @@
   },
   "include": [
     "src/**/*.ts",
-    "packages/**/*.ts"
+    "packages/**/*.ts",
+    "apps/**/*.ts"
   ],
   "exclude": [
     "node_modules",
