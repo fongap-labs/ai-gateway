@@ -33,6 +33,11 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
   checked++;
 }
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
+const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
+const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
+assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
+assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
