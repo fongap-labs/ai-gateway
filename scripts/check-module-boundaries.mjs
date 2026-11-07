@@ -35,7 +35,11 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
-assert.match(readFileSync(join(root, 'src/index.ts'), 'utf8'), /operations\/maintenance\/usage\.ts/, 'Cloudflare composition must retain scheduled maintenance');
+assert.match(
+  readFileSync(join(root, 'src/index.ts'), 'utf8'),
+  /operations\/maintenance\/usage\.ts/,
+  'Cloudflare composition must retain scheduled maintenance',
+);
 for (const [app, shim] of [
   ['apps/gateway/index.ts', 'src/index.ts'],
   ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],

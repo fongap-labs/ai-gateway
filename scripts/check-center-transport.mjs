@@ -3,8 +3,8 @@
 // Native HTTP Request/Response transport tests. No Cloudflare account,
 // external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
-import { buildGenerationRequest, invokeGenerationNode, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
-import { buildInferenceRequest, invokeInferenceNode, InferenceCenterUnavailable } from '../src/inference/inference-client-request.ts';
+import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../src/generation/generation-client-request.ts';
+import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../src/inference/inference-client-request.ts';
 
 const inferenceKey = 'test-inference-center-authentication-32-plus';
 const generationKey = 'test-generation-center-authentication-32-plus';
@@ -25,7 +25,10 @@ const privateHttpTransport = {
     assert.equal(request.headers.has('x-api-key'), false);
     assert.equal(request.headers.has('x-aig-client-secret'), false);
     assert.equal((await request.json()).model, 'code-pro');
-    return new Response('{"model":"code-pro","ok":true}', { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } });
+    return new Response('{"model":"code-pro","ok":true}', {
+      status: 200,
+      headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+    });
   },
 };
 const clientRequest = new Request('https://client.example/v1/chat/completions', {
@@ -76,5 +79,8 @@ assert.equal(invocations, 2);
 assert.throws(() => buildGenerationRequest({}, generation), GenerationCenterUnavailable);
 await assert.rejects(() => invokeGenerationNode({ AIG_GENERATION_AUTH_KEY: generationKey }, generation), GenerationCenterUnavailable);
 assert.equal(invocations, 2);
-assert.equal(calls.every((call) => call.url.endsWith('/internal/execute')), true);
+assert.equal(
+  calls.every((call) => call.url.endsWith('/internal/execute')),
+  true,
+);
 console.log('Both centers passed standard HTTP Mock transport and isolation contracts.');
