@@ -15,7 +15,7 @@ export type ProviderProfile = Readonly<{
 const GENERIC_OPENAI_PROFILE: ProviderProfile = Object.freeze({
   wire: { protocol: 'openai', surfaces: ['chat_completions'] },
   streamUsage: true,
-});
+} as const);
 
 const builtinProfiles: Readonly<Record<string, ProviderProfile>> = Object.freeze({
   openai: {
