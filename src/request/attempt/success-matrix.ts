@@ -10,6 +10,7 @@
 // cross-protocol pair is matrix-owned; native passes carry no conversion
 // context and never land here.
 
+import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { ConversionBudgetStop } from '../../conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
@@ -140,6 +141,22 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
       const classification = classifyPostHeadersFailure(new Error('matrix upstream returned a non-object body'));
       recordOutcome(state, node, classification, c, { latencyMs: Date.now() - (c.attemptStartMs as number), status: upstream.status });
       return { rotate: true, kind: classification.kind };
+    }
+    // A v3 center object is already in the client protocol. Treat its raw
+    // usage as physical upstream usage exactly once; DO NOT decode/re-encode
+    // its payload through the Matrix pipeline again.
+    if (upstream.headers.get('x-aig-response-format') === INFERENCE_TRANSLATED_OBJECT_FORMAT) {
+      if (!isTranslatedObjectEnvelope(native) || c.clientWantsStream) {
+        const classification = classifyPostHeadersFailure(new Error('center returned invalid translated object envelope'));
+        recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status });
+        return { rotate: true, kind: classification.kind };
+      }
+      if (native.upstreamUsage !== null) observeUpstreamAttemptUsage(c, native.upstreamUsage);
+      recordTokens(c, node, native.upstreamUsage);
+      recordNodeSuccess(c, node, latencyMs);
+      const object = { ...native.response };
+      if (object.model !== undefined) object.model = requestedModel;
+      return { response: jsonResponse(200, object, env, request, extraHeaders) };
     }
     const { reply } = replyFromNativeObject(upstreamIr, native);
     if (reply.rawUsage !== undefined && reply.rawUsage !== null) observeUpstreamAttemptUsage(c, reply.rawUsage);

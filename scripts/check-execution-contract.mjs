@@ -76,4 +76,30 @@ assert.equal(parseExecutionInvocation(makeRequest(downgraded), allowed, now), nu
 const v2WithoutConversion = new Headers(headers);
 v2WithoutConversion.set('x-aig-contract-version', '2');
 assert.equal(parseExecutionInvocation(makeRequest(v2WithoutConversion), allowed, now), null);
-console.log('Execution contract v1: construction, validation, authorization and negative cases passed.');
+const returnedObject = { ...translated, returnObject: true };
+const returnedHeaders = buildExecutionHeaders(returnedObject, 'x-aig-inference-auth', key);
+assert.equal(returnedHeaders.get('x-aig-contract-version'), '3');
+assert.equal(returnedHeaders.get('x-aig-return-object'), 'true');
+assert.deepEqual(parseExecutionInvocation(makeRequest(returnedHeaders), allowed, now), returnedObject);
+for (const [name, value] of [
+  ['x-aig-contract-version', '2'],
+  ['x-aig-contract-version', '1'],
+  ['x-aig-return-object', 'false'],
+  ['x-aig-return-object', ''],
+  ['x-aig-conversion-prefer-nonstream', 'false'],
+]) {
+  const invalid = new Headers(returnedHeaders);
+  invalid.set(name, value);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `v3 ${name}`);
+}
+const v3WithoutPreference = new Headers(returnedHeaders);
+v3WithoutPreference.delete('x-aig-conversion-prefer-nonstream');
+assert.equal(parseExecutionInvocation(makeRequest(v3WithoutPreference), allowed, now), null);
+const v3WithoutInput = new Headers(returnedHeaders);
+v3WithoutInput.delete('x-aig-input-surface');
+assert.equal(parseExecutionInvocation(makeRequest(v3WithoutInput), allowed, now), null);
+const v2WithObject = new Headers(translatedHeaders);
+v2WithObject.set('x-aig-return-object', 'true');
+assert.equal(parseExecutionInvocation(makeRequest(v2WithObject), allowed, now), null);
+
+console.log('Execution contract v1/v2/v3: construction, validation, authorization and negative cases passed.');
