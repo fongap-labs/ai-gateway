@@ -22,7 +22,7 @@ import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from '../../src/request/edge-cache.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
-import { runFallbackChain } from '../../src/request/fallback.ts';
+
 import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from '../../src/request/model-fallback.ts';
 import { evaluateRouteFeasibility } from '../../src/request/route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from '../../src/request/router.ts';
@@ -34,6 +34,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
+import { runFallbackChain } from './fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { runTierLoop } from './tier-loop.ts';
 

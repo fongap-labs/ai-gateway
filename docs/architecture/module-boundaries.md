@@ -34,6 +34,10 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 `apps/inference/index.ts` 和 `apps/generation/index.ts` 仅保留私有 HTTP 鉴权、执行票据验证及健康检查；物理上游请求、OAuth/订阅解析和生成结果归一化分别归入各自的 `execution.ts`，错误信封由各自 `response.ts` 定义。两中心均不允许实现 Tier 调度、跨节点重试或对冲；中心内部业务逻辑仍需继续从共享 `src/` 依赖中抽离。
 
+## Gateway 控制面 fallback 编排
+
+`apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
+
 ## 单一 Tier 执行循环
 
 `apps/gateway/tier-loop.ts` 拥有原 `src/request/handler.ts` 的实际 Tier 1/2/3 物理尝试调度，使用现有策略选择器、每请求逻辑预算与 Hedge 模块。此轮仅迁移位置，不修改任何调度算法。现存 `src/request/tier-loop.ts` 继续提供 Tier 分配等纯辅助函数，不创建第二套调度。后续随着请求处理模块的完全迁移，将消除 `src/request/handler.ts` 的过渡引用。
