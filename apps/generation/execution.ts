@@ -4,6 +4,7 @@
 // Exactly one generation attempt. Unknown outcomes remain terminal, including
 // network errors after the Provider may have accepted a billable operation.
 
+import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
@@ -21,13 +22,12 @@ import { problem } from './response.ts';
 const MAX_REQUEST_BYTES = 16 * 1024;
 const MAX_NATIVE_REPLY_BYTES = 16 * 1024 * 1024;
 const MAX_CONVERTED_REPLY_BYTES = 2 * 1024 * 1024;
-const IMAGE_PROVIDERS = new Set(['openai-image', 'google-image', 'cloudflare-image']);
 
 type Invocation = ExecutionInvocation;
 
 function generationNode(nodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
   const node = nodes.find((candidate) => candidate.id === invocation.nodeId);
-  if (!node || !IMAGE_PROVIDERS.has(node.provider) || isSubscriptionNode(node)) return null;
+  if (!node || !isImageGenerationProvider(node.provider) || isSubscriptionNode(node)) return null;
   if (!node.surfaces.includes('images_generations')) return null;
   if (!collectKnownModels(nodes, env).has(invocation.logicalModel)) return null;
   if (Object.keys(node.models).length > 0 && !Object.hasOwn(node.models, invocation.logicalModel)) return null;

@@ -16,8 +16,8 @@
     "security:scan": "node scripts/secret-scan.mjs",
     "lint": "npx biome check .",
     "typecheck": "npx tsc --noEmit",
-    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract",
-    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract",
+    "validate:merge": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities",
+    "validate:deploy": "npm run check && npm run check:deployment-config && npm run migrations:check && npm run security:scan && npm run check:docs && npm run lint && npm run typecheck && npm run check:stream && npm run check:links && npm run check:generation-contract && npm run check:contracts && npm run check:boundaries && npm run check:transport && npm run check:inference-contract && npm run check:image-capabilities",
     "dev": "node scripts/cloudflare-wrangler.mjs dev",
     "deploy": "node scripts/cloudflare-wrangler.mjs deploy --keep-vars",
     "tail": "node scripts/cloudflare-wrangler.mjs tail",
@@ -38,7 +38,8 @@
     "check:contracts": "node scripts/check-execution-contract.mjs",
     "check:boundaries": "node scripts/check-module-boundaries.mjs",
     "check:transport": "node scripts/check-center-transport.mjs",
-    "check:inference-contract": "node scripts/check-inference-center.mjs"
+    "check:inference-contract": "node scripts/check-inference-center.mjs",
+    "check:image-capabilities": "node scripts/check-image-capabilities.mjs"
   },
   "keywords": [
     "ai-gateway",
