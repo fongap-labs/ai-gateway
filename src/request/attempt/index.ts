@@ -7,8 +7,9 @@
 // imports attemptNode / dispatchWithHedge from it); this directory holds the
 // split internals:
 //
-//   dispatch.ts        one node attempt: outbound prep, timeouts, fetch,
-//                      non-OK / network / client-abort classification entry
+//   dispatch.ts        request accounting, center selection, and strict legacy seam
+//   legacy-provider-dispatch.ts  transitional direct-Provider transport; delete after parity
+//   attempt-mode.ts    shared buffered reply decision
 //   body-release.ts    drop large request-body references after streaming
 //                      commits, so the prompt tree is not retained
 //   hedge.ts           hedge delay race, twin selection, shared deadline,
@@ -27,7 +28,8 @@
 // Dependency direction (acyclic at runtime):
 //   attempt.ts -> index.ts -> { dispatch.ts -> success.ts ->
 //   { success-stream.ts, success-object.ts } -> observability.ts,
-//   dispatch.ts -> body-release.ts, outcome.ts, observability.ts ->
+//   dispatch.ts -> legacy-provider-dispatch.ts -> body-release.ts,
+//   outcome.ts, observability.ts ->
 //   body-release.ts, hedge.ts -> dispatch.ts }.
 // success-stream.ts / success-object.ts import SuccessArgs from success.ts as
 // a type-only contract, so they add no runtime cycle.

@@ -95,6 +95,17 @@ assert.doesNotMatch(imagePreflight, /getProviderAdapter/, 'Gateway preflight mus
 assert.match(imagePreflight, /canRouteImageGeneration/, 'Gateway must use the shared image capability declaration');
 assert.match(imageExecutor, /isImageGenerationProvider/, 'Generation Center must enforce the same Provider capability declaration');
 
+const dispatchSource = readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8');
+const legacySource = readFileSync(join(root, 'src/request/attempt/legacy-provider-dispatch.ts'), 'utf8');
+assert.doesNotMatch(
+  dispatchSource,
+  /await fetch\(|resolveSubscriptionCredential|getProviderAdapter|buildUpstreamHeadersFor/,
+  'Gateway dispatch selector must not perform Provider execution or OAuth',
+);
+assert.match(dispatchSource, /dispatchLegacyProvider\(c, sourceBody\)/, 'Old direct transport must have one explicit seam');
+assert.match(legacySource, /export async function dispatchLegacyProvider\(/, 'Legacy transport must be isolated for later deletion');
+assert.match(legacySource, /await fetch\(/, 'Legacy outbound request must stay behind its seam');
+assert.doesNotMatch(legacySource, /runTierLoop|dispatchWithHedge/, 'Legacy transport must not own request-level scheduling');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
