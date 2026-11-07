@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: Chat 转换器与 SSE 编解码器归属 Inference Center，旧路径保留单一兼容导出。
+
+
 - 新增: 抽离转换 IR、预算、诊断及校验核心，旧路径仅保留兼容导出。
 
 - 新增: 隔离旧 Provider 直连执行，Gateway 只保留执行选择与记账。
