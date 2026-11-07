@@ -171,7 +171,7 @@ for (const file of [
 const matrixRequestOwner = readFileSync(join(root, 'apps/inference/conversion/request.ts'), 'utf8');
 const matrixPipelineCompat = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.ok(
-  matrixPipelineCompat.includes("export { convertMatrixRequest, isMatrixPair } from '../../../apps/inference/conversion/request.ts';"),
+  matrixPipelineCompat.includes("export * from '../../../apps/inference/conversion/request.ts';"),
   'Old matrix request pipeline must export the same inference-owned request converter',
 );
 assert.doesNotMatch(matrixPipelineCompat, /export function convertMatrixRequest\(/, 'Do not duplicate conversion in Gateway');
@@ -185,6 +185,7 @@ assert.match(matrixReplyOwner, /export function replyFromNativeObject\(/, 'Infer
 assert.match(matrixReplyOwner, /export function replyToObject\(/, 'Inference must render reply objects');
 assert.doesNotMatch(matrixReplyLegacy, /export function replyToObject\(/, 'Gateway must not own duplicate object rendering');
 assert.doesNotMatch(matrixReplyLegacy, /export function replyFromNativeObject\(/, 'Gateway must not own duplicate object decoding');
+assert.ok(matrixReplyLegacy.includes("export * from '../../../apps/inference/conversion/response.ts';"), 'Old Matrix replies must use one inference-owned implementation');
 assert.doesNotMatch(matrixReplyOwner, /from ['"][^'"]*\/src\//, 'Inference object conversion must not import legacy src');
 
 // SSE parsing, deadline reads and conversion relay must use one shared owner.
