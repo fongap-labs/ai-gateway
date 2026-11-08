@@ -16,6 +16,11 @@ const node = {
 };
 const env = {
   AIG_INFERENCE_AUTH_KEY: key,
+  AIG_INFERENCE_SERVICE: {
+    fetch: async () => {
+      throw new Error('Service Binding transport is not invoked in this center test');
+    },
+  },
   AIG_TIER3_NODES_01: JSON.stringify([node]),
   AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-credential-no-real-access' }),
 };
