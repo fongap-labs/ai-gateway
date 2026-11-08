@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 测试: 中央原生推理与同 Tier 故障切换改走真实 Inference Center。
+- 新增: 原生推理与同 Tier 故障切换的 Inference Center 中央回归覆盖。
 
 - 修复: 中心启用时 Gateway 不再读取或解析遗留 Provider 凭据分片。
 
