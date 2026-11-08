@@ -303,6 +303,14 @@ Action Worker [#1531](https://github.com/fongap-labs/action-worker/pull/1531) �
 
 **本批只增加中心执行等价回归，不改运行时或生产配置。** 剩余的旧 Gateway Provider 直连与非中心测试仍需逐一排查，未完成前不得删除运行时分支，亦不执行部署。
 
+## 中央跨协议转换遗留合同：第二十一批
+
+Action Worker [#1532](https://github.com/fongap-labs/action-worker/pull/1532) 已通过静态分析、命名、安全、合同、私有沙箱和 validate-merge，合并为不可变测试包 `94708203061ca4bc13394319d7594b587de7b4e2`。中央 `conversion-test.mjs` 的所有真实 Gateway 请求合同现通过 `handleInferenceCenterRequest` 私有中心完成 Provider 访问，覆盖 Anthropic Messages / OpenAI Chat / Responses 的原生与跨协议转换，以及 529/429/5xx 回退、工具调用、首事件超时、Hedge、取消和 SSE 返回行为。
+
+原有客户端响应形状、状态、Provider 调用顺序及时间预算等断言均保留；新增每个黑盒用例的私有 `/internal/execute` 物理调用次数与真实 Provider `fetch` 一一对应的校验，转换预检不计物理尝试。Gateway 测试环境删除静态 Provider Secret，中心独立持有凭据；中心 RPC 只允许已知的私有路径且不传播客户端鉴权头。纯函数转换测试保持原验收职责。
+
+**本批仅升级中央等价回归，不修改 Gateway Runtime、Secrets、Service Binding 或部署。** 仍须审计其它中央套件中遗留的直连模拟以及源码引用，再删除 `legacy-provider-dispatch.ts` 和旧执行模式选择器；不得将测试包迁移误报为运行时退役。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
