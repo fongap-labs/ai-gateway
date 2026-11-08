@@ -155,6 +155,29 @@ try {
     AIG_TIER3_CREDENTIALS_01: env.AIG_TIER3_CREDENTIALS_01,
   });
   assert.equal(redactedGateway.nodes[0].credential, '', 'Gateway must never retain an upstream key for center-owned nodes');
+  const staleSecretGateway = loadGatewayConfig({
+    ...secretless,
+    AIG_INFERENCE_ACTIVE: 'true',
+    AIG_TIER3_CREDENTIALS_01: '{invalid-json:',
+  });
+  assert.equal(staleSecretGateway.ready, true, 'Gateway must ignore obsolete secret values when inference center is active');
+  assert.equal(staleSecretGateway.hasConfigErrors, false, 'unused Provider secret values must not affect active Gateway config');
+  const forbiddenSecretRead = { ...secretless, AIG_INFERENCE_ACTIVE: 'true' };
+  Object.defineProperty(forbiddenSecretRead, 'AIG_TIER3_CREDENTIALS_01', {
+    enumerable: true,
+    get() {
+      throw new Error('Gateway must never read Provider credential shards when a private center is active');
+    },
+  });
+  const noSecretRead = loadGatewayConfig(forbiddenSecretRead);
+  assert.equal(noSecretRead.ready, true);
+  assert.equal(noSecretRead.nodes[0].credential, '');
+  assert.deepEqual(noSecretRead.bindings.secretShards, ['AIG_TIER3_CREDENTIALS_01']);
+  assert.equal(
+    loadExecutionConfig({ ...secretless, AIG_TIER3_CREDENTIALS_01: '{invalid-json:' }).ready,
+    false,
+    'private center must continue rejecting malformed credential shards',
+  );
   assert.equal(loadExecutionConfig(env).nodes[0].credential, providerSecret, 'private center owns the Provider credential');
 
   console.log('Private inference center auth, native mapping, network classification and fail-closed contract passed.');
