@@ -37,7 +37,14 @@ import { isAnthropicNativeRealOutputForConversion, isOpenAIChatRealOutputForConv
 import type { AttemptOutcome, ConversionContext } from '../../types/request.ts';
 import { gatewayError } from '../errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../response-helpers.ts';
-import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordNodeBudgetStop, recordNodeSuccess, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
+import {
+  makeNodeStreamTrack,
+  observeUpstreamAttemptUsage,
+  recordNodeBudgetStop,
+  recordNodeSuccess,
+  recordTokens,
+  recordUndeliveredUpstreamAttempt,
+} from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
