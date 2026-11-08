@@ -5,7 +5,7 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
-import { loadExecutionConfig } from '../src/config/nodes.ts';
+import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
@@ -178,6 +178,23 @@ try {
   const imageConfig = loadExecutionConfig(imageEnv);
   assert.equal(imageConfig.hasConfigErrors, false, `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`);
   assert.equal(imageConfig.ready, true, 'center image fixture must have a usable provider node');
+
+  // Image generation is center-only even without a deployment marker. Gateway
+  // can route image-only nodes using metadata without retaining Provider keys.
+  const imageGatewayEnv = {
+    AIG_ACCESS_KEY_AGENT: 'center-image-test-client-key',
+    AIG_TIER3_NODES_01: env.AIG_TIER3_NODES_01,
+  };
+  const imageGatewayConfig = loadGatewayConfig(imageGatewayEnv);
+  assert.equal(imageGatewayConfig.ready, true);
+  assert.equal(imageGatewayConfig.nodes[0].credential, '');
+  assert.equal(loadExecutionConfig(imageGatewayEnv).ready, false, 'private generation center still requires a Provider key');
+  const imageGatewayWithSecret = loadGatewayConfig({
+    ...imageGatewayEnv,
+    AIG_TIER3_CREDENTIALS_01: env.AIG_TIER3_CREDENTIALS_01,
+  });
+  assert.equal(imageGatewayWithSecret.nodes[0].credential, '', 'Gateway must not retain a center-owned image key');
+  assert.equal(loadExecutionConfig(env).nodes[0].credential, secret, 'private Generation Center owns its Provider key');
 
   console.log('Private generation center contracts passed.');
 } finally {

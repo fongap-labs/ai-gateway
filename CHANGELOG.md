@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 中心模式允许 Gateway 无 Provider 密钥规划节点；私有中心继续严格校验凭据。
+
 - 修复: Inference Center 启用后绑定缺失时禁止直连 Provider。
 
 - 新增: 图片生成仅通过私有 Generation Center 执行；删除 Gateway 旧直连中的图片实现，缺失中心时安全返回 503；推理旧直连仍待拆除。
