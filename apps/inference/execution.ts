@@ -24,8 +24,8 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
-import type { MatrixStreamBudget } from './conversion/stream.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
+import type { MatrixStreamBudget } from './conversion/stream.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;

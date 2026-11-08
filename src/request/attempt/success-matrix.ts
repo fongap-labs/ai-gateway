@@ -13,7 +13,7 @@
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
-import { ConversionBudgetStop, type BudgetStopReason } from '../../conversion/matrix/budget.ts';
+import { type BudgetStopReason, ConversionBudgetStop } from '../../conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
 import { isRecord } from '../../conversion/matrix/ir.ts';
 import {

@@ -40,7 +40,9 @@ const encoder = new TextEncoder();
 function providerStream() {
   const parts = [
     {
-      id: 'cmpl-v5', object: 'chat.completion.chunk', model: 'physical-chat-test',
+      id: 'cmpl-v5',
+      object: 'chat.completion.chunk',
+      model: 'physical-chat-test',
       choices: [{ index: 0, delta: { role: 'assistant', content: 'Hello over budget' }, finish_reason: null }],
     },
     {
@@ -84,9 +86,7 @@ try {
   const truncated = await handleInferenceCenterRequest(inbound('truncate'), env);
   assert.equal(truncated.status, 200);
   const truncatedStops = [];
-  const shortened = await new Response(
-    decodeFramedInferenceResponse(truncated, { onBudgetStop: (reason) => truncatedStops.push(reason) }),
-  ).text();
+  const shortened = await new Response(decodeFramedInferenceResponse(truncated, { onBudgetStop: (reason) => truncatedStops.push(reason) })).text();
   assert.deepEqual(truncatedStops, ['output_units']);
   assert.match(shortened, /message_stop/);
   assert.doesNotMatch(shortened, /conversion_budget_exceeded|Hello over budget/);

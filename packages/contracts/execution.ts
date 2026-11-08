@@ -4,11 +4,7 @@
 // Internal execution contract v1-v5. This module is intentionally runtime-neutral:
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
 
-import {
-  type InferenceStreamBudget,
-  parseInferenceStreamBudget,
-  serializeInferenceStreamBudget,
-} from './inference-stream-budget.ts';
+import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
 
 export const EXECUTION_CONTRACT_VERSION = '1' as const;
 export const EXECUTION_TRANSLATION_CONTRACT_VERSION = '2' as const;
@@ -86,15 +82,16 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version': invocation.returnStream && invocation.streamBudget
-      ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
-      : invocation.returnStream
-        ? EXECUTION_STREAM_CONTRACT_VERSION
-        : invocation.returnObject
-          ? EXECUTION_OBJECT_CONTRACT_VERSION
-          : invocation.inputSurface
-            ? EXECUTION_TRANSLATION_CONTRACT_VERSION
-            : EXECUTION_CONTRACT_VERSION,
+    'x-aig-contract-version':
+      invocation.returnStream && invocation.streamBudget
+        ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+        : invocation.returnStream
+          ? EXECUTION_STREAM_CONTRACT_VERSION
+          : invocation.returnObject
+            ? EXECUTION_OBJECT_CONTRACT_VERSION
+            : invocation.inputSurface
+              ? EXECUTION_TRANSLATION_CONTRACT_VERSION
+              : EXECUTION_CONTRACT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-node-id': invocation.nodeId,
     'x-aig-model': invocation.logicalModel,
