@@ -336,7 +336,11 @@ for (const [legacy, owner] of [
 ]) {
   const compatibility = readFileSync(join(root, legacy), 'utf8');
   assert.ok(compatibility.includes(`export * from '${owner}'`), `${legacy} must delegate to its unique owner`);
-  assert.doesNotMatch(compatibility, /export (?:async )?function |export (?:const|class) /, `Legacy usage module duplicates implementation: ${legacy}`);
+  assert.doesNotMatch(
+    compatibility,
+    /export (?:async )?function |export (?:const|class) /,
+    `Legacy usage module duplicates implementation: ${legacy}`,
+  );
 }
 const operationsAggregation = readFileSync(join(root, 'operations/maintenance/aggregation.ts'), 'utf8');
 const operationsRetention = readFileSync(join(root, 'operations/maintenance/retention.ts'), 'utf8');
