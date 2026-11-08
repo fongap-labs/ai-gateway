@@ -112,6 +112,11 @@ assert.doesNotMatch(
   /AIG_GENERATION_ACTIVE|route === 'openai_images' &&/,
   'Images must not depend on an optional legacy activation switch',
 );
+assert.match(
+  dispatchSource,
+  /'AIG_INFERENCE_SERVICE' in env \|\| env\.AIG_INFERENCE_ACTIVE === 'true'/,
+  'An explicitly enabled inference center must fail closed without a binding',
+);
 assert.match(dispatchSource, /dispatchLegacyProvider\(c, sourceBody\)/, 'Old inference transport must have one explicit seam');
 assert.doesNotMatch(
   legacySource,

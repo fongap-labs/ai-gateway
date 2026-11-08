@@ -78,9 +78,10 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // A missing Service Binding or auth key fails closed (503); never dispatch a
   // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
-  // A bound inference center cannot silently fall back to direct Provider
-  // execution if the center rejects, times out, or loses its credential.
-  if (route !== 'openai_images' && 'AIG_INFERENCE_SERVICE' in env) {
+  // An explicit deployment cutover is fail-closed even if the Service
+  // Binding is missing or broken. Do not silently call a Provider directly.
+  // Unbound legacy inference remains only until central test parity is done.
+  if ('AIG_INFERENCE_SERVICE' in env || env.AIG_INFERENCE_ACTIVE === 'true') {
     return dispatchInferenceAttempt(c, sourceBody);
   }
   return dispatchLegacyProvider(c, sourceBody);
