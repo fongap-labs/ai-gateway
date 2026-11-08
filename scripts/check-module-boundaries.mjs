@@ -88,10 +88,11 @@ for (const center of ['inference', 'generation']) {
 const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
 assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
 assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
+assert.match(nodeConfigSource, /const isGatewayInferenceCenterOwned = shouldRequireClientKey;/, 'Gateway must always be metadata-only');
 assert.match(
   nodeConfigSource,
-  /isGatewayInferenceCenterActive \? \[\] : sortedSecretShards/,
-  'Center-enabled Gateway must not parse or retain physical Provider secret shards',
+  /isGatewayInferenceCenterOwned \? \[\] : sortedSecretShards/,
+  'Public Gateway must never parse or retain physical Provider credentials',
 );
 
 const imagePreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
@@ -101,36 +102,26 @@ assert.match(imagePreflight, /canRouteImageGeneration/, 'Gateway must use the sh
 assert.match(imageExecutor, /isImageGenerationProvider/, 'Generation Center must enforce the same Provider capability declaration');
 
 const dispatchSource = readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8');
-const legacySource = readFileSync(join(root, 'src/request/attempt/legacy-provider-dispatch.ts'), 'utf8');
 assert.doesNotMatch(
   dispatchSource,
-  /await fetch\(|resolveSubscriptionCredential|getProviderAdapter|buildUpstreamHeadersFor/,
-  'Gateway dispatch selector must not perform Provider execution or OAuth',
+  /await fetch\(|resolveSubscriptionCredential|getProviderAdapter|buildUpstreamHeadersFor|dispatchLegacyProvider/,
+  'Gateway attempts must not execute Provider logic or reference any legacy direct transport',
 );
 assert.match(
   dispatchSource,
   /if \(route === 'openai_images'\) return dispatchGenerationAttempt\(c\);/,
-  'Images must always route through Generation Center',
-);
-assert.doesNotMatch(
-  dispatchSource,
-  /AIG_GENERATION_ACTIVE|route === 'openai_images' &&/,
-  'Images must not depend on an optional legacy activation switch',
+  'Image generation must always route through Generation Center',
 );
 assert.match(
   dispatchSource,
-  /'AIG_INFERENCE_SERVICE' in env \|\| env\.AIG_INFERENCE_ACTIVE === 'true'/,
-  'An explicitly enabled inference center must fail closed without a binding',
+  /return dispatchInferenceAttempt\(c, sourceBody\);/,
+  'Every inference attempt must route through the private Inference Center',
 );
-assert.match(dispatchSource, /dispatchLegacyProvider\(c, sourceBody\)/, 'Old inference transport must have one explicit seam');
-assert.doesNotMatch(
-  legacySource,
-  /openai_images|preparedImage|PreparedImageRequest|\.image\b/,
-  'Legacy Provider path must never contain image-generation execution',
+assert.doesNotMatch(dispatchSource, /AIG_INFERENCE_ACTIVE|AIG_GENERATION_ACTIVE/, 'No runtime switch may re-enable direct Provider execution');
+assert.ok(
+  !existsSync(join(root, 'src/request/attempt/legacy-provider-dispatch.ts')),
+  'Legacy direct Provider dispatcher must be deleted, not retained behind a flag',
 );
-assert.match(legacySource, /export async function dispatchLegacyProvider\(/, 'Legacy transport must be isolated for later deletion');
-assert.match(legacySource, /await fetch\(/, 'Legacy outbound request must stay behind its seam');
-assert.doesNotMatch(legacySource, /runTierLoop|dispatchWithHedge/, 'Legacy transport must not own request-level scheduling');
 for (const [shim, target] of [
   ['src/conversion/matrix/ir.ts', '../../../packages/conversion-core/ir.ts'],
   ['src/conversion/matrix/budget.ts', '../../../packages/conversion-core/budget.ts'],
