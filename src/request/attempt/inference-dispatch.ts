@@ -139,6 +139,20 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   c.upstreamStatus = upstream.status;
 
   const executionResult = upstream.headers.get('x-aig-result');
+  // A private center can resolve with a 499 after the caller aborts, rather
+  // than rejecting its Service Binding promise. Client cancellation must
+  // retain the same neutral 499 behavior in both completion paths; treating
+  // an unmarked center response as an outage would incorrectly return 503.
+  if (c.hedgeAbort?.signal.aborted) {
+    detach();
+    return hedgeLoserOutcome(c, node, 'center_headers');
+  }
+  if (request.signal.aborted) {
+    detach();
+    if (executionResult === 'dispatched') recordUndeliveredUpstreamAttempt(c, node);
+    recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: c.headersMs });
+    return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
+  }
   if (executionResult === 'attempted' && upstream.headers.get('x-aig-error-kind') === 'center_upstream_network') {
     detach();
     const classified = classifyNetworkError(false);
