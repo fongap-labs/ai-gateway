@@ -55,7 +55,8 @@ for (const [legacy, owner, exports] of [
 ]) {
   const compat = readFileSync(join(root, legacy), 'utf8');
   assert.ok(compat.includes(`from '${owner}'`), `${legacy} must only re-export neutral shared types`);
-  assert.ok(!/^(?!\\s*\\/\\/)(?:export\\s+type\\s+\\w+\\s*=|import\\s)/m.test(compat), `${legacy} must not define or import runtime types`);
+  assert.doesNotMatch(compat, /^import /m, `${legacy} must not import an implementation`);
+  assert.doesNotMatch(compat, /^export type \w+(?:<.*>)?\s*=/m, `${legacy} must not define runtime types`);
   for (const typeName of exports) {
     assert.match(readFileSync(join(root, 'packages/contracts', owner.split('/').at(-1)), 'utf8'), new RegExp(`export type ${typeName}\\b`));
   }
