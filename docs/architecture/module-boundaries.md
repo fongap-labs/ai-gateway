@@ -287,6 +287,14 @@ Action Worker 的 `rate-limit-strategy-test.mjs` 429 冷却阶梯、配额文本
 
 连同本测试包中的热路径缓冲、Retry Budget 和流式稳定性测试，本批进一步减少了依赖旧 Gateway 直连模式的回归覆盖。**但旧执行模块和模式选择器仍存在，不得把测试迁移视为生产源码已完成彻底拆分。** 下一步须排查所有尚未中心化的真实网络测试、删除已无引用的旧直连分支并加强源码边界门禁；本批不触发部署。
 
+## 中央请求执行所有权合同：第十九批
+
+中央 Action Worker [#1530](https://github.com/fongap-labs/action-worker/pull/1530) 已通过静态分析、命名、安全、合同、私有沙箱及 validate-merge，并合并为不可变测试包 SHA `17077173f114241ca0172cebe41bd120371f7ea8`。其中 `request-execution-test.mjs` 的真实 Gateway 客户端请求执行合同现统一走私有 `handleInferenceCenterRequest`，中心独立拥有各 Tier Provider 凭据，Gateway 仅持有节点元数据、客户端鉴权和私有中心认证。
+
+原有 Responses 首事件卡顿后的同族模型回退、非 200 错误体卡顿后的节点轮转、缓冲 JSON 合成 SSE，以及正常结束/客户端取消后的请求统计断言均保留。每项新增真实 Provider 网络请求次数与私有 `/internal/execute` 次数一一对应的检查；转换预检不计物理尝试，内部请求不得携带客户端 Authorization 或 x-api-key。
+
+**本批仅完成请求执行所有权的中央回归迁移，尚未删除 `legacy-provider-dispatch.ts`、旧执行模式选择器或 OAuth 管理端代码。** 后续应继续迁移未中心化的真实网络合同，独立验证源码删除不会引入未配置中心时的隐式直连，并在合并前执行完整门禁。本批不修改 Gateway Runtime、生产 Secrets、Service Binding 或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
