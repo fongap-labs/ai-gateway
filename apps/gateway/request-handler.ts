@@ -32,7 +32,7 @@ import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from
 import { tier1ModelAvailability } from '../../src/scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
-import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
+import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
 import { runFallbackChain } from './fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';
