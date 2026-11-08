@@ -373,6 +373,14 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 `check:boundaries` 同时遍历 `operations/`，禁止应用和 Operations 重新导入旧 Runtime 类型，禁止 Operations 反向依赖其他应用，并要求三套应用及 Operations 入口直接引用中立合同。此项推进源码/类型依赖解耦，但**不代表 Operations 已独立打包**；统计持久化实现仍依赖 `src/observability/`，后续须继续迁移并验证独立构建。生产配置、密钥与部署均未改变。
 
+## 用量持久化中立模块与 Operations 聚合
+
+D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 isolate 统计缓冲分别位于 `packages/usage-store/{time-buckets,keys,statements,buffer}.ts`，由 Gateway 请求统计与 Operations 定时维护共享。小时→天、天→周的聚合实现归属于 `operations/maintenance/aggregation.ts`，由已有 `retention.ts` 直接调用；旧 `src/observability/` 对应路径全部变为 re-export，保持外部 API 兼容。
+
+`check:boundaries` 现在禁止 Operations 反向导入任何 `src/` 或其他应用，实现静态依赖闭包 `operations/ → packages/`；中立包不得引用 `src/` 或 `apps/`。旧路径不得恢复 D1 缓冲、SQL 和聚合的第二份实现。
+
+本项不改变 D1 表结构、合并缓冲时序、UTC/UTC+8 统计口径、Cron 触发、失败回退与清理顺序。仅完成源码归属，**独立部署及整个仓库的分服务构建合同仍待验证**；不触及生产配置或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
