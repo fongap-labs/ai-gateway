@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
+import { preDispatchProblem } from '../apps/inference/response.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
-import { preDispatchProblem } from '../apps/inference/response.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
@@ -89,7 +89,6 @@ try {
   assert.equal(missingSubscription.headers.get('x-aig-result'), 'skipped');
   assert.equal(missingSubscription.headers.get('x-aig-error-kind'), 'center_subscription_unavailable');
   assert.equal((await missingSubscription.json()).error.retryable, false);
-
 
   // Deployment intent must prevent a silent direct-Provider fallback even if
   // the private Service Binding is absent. No physical attempt is chargeable.
