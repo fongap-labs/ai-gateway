@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Claude Messages、SSE 与工具回退的私有中心黑盒回归覆盖。
+
 - 新增: 截止时间与订阅开关的无密钥中心模式回归覆盖。
 
 - 修复: 中央 Responses 回归区分私有转换预检与 Provider 物理执行计数。
