@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: Operations 新增无生产绑定的独立打包 dry-run 验收。
+- 维护: 独立打包门禁加入中央合并校验。
 - 维护: 将 D1 用量基础统计模块移入中立 Usage Store，定时聚合归属 Operations。
 - 维护: 旧可观测性模块只作兼容导出，锁定跨应用依赖方向。
 - 维护: 定时统计聚合与保留期清理归入 Operations。
