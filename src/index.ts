@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Cloudflare-compatible composition root. Gateway owns requests;
-// operations owns scheduled usage maintenance, outside the Gateway app.
+// Cloudflare-compatible composition root. Independent Gateway and Operations
+// applications own their handlers; this file only preserves the deployed
+// composition until their build and deployment units are independently selected.
 import gateway from '../apps/gateway/index.ts';
-import { runUsageMaintenance } from '../operations/maintenance/usage.ts';
-import type { GatewayEnv } from './types/runtime.ts';
+import operations from '../operations/index.ts';
 
 export default {
   fetch: gateway.fetch,
-  async scheduled(_controller: unknown, env: GatewayEnv): Promise<void> {
-    await runUsageMaintenance(env);
-  },
+  scheduled: operations.scheduled,
 };
