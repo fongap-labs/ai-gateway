@@ -313,6 +313,14 @@ Action Worker [#1532](https://github.com/fongap-labs/action-worker/pull/1532) �
 
 **本批除中央等价回归外，还包含明确的 Gateway Runtime 客户端取消分类修复；不修改生产 Secrets、Service Binding 或部署。** 仍须审计其它中央套件中遗留的直连模拟以及源码引用，再删除 `legacy-provider-dispatch.ts` 和旧执行模式选择器；不得将测试包迁移误报为运行时退役。
 
+## 新增模型配置驱动与目录合同：第二十二批
+
+Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) 已通过静态分析、命名、安全、合同、私有沙箱与 validate-merge，并合并为不可变测试包 `00b1131ddc350188b281073e0a8e4d0f2e6445fe`。中央 `model-catalog-test.mjs` 的全新逻辑模型 Brand-New → 上游 gpt-brand-new 真实客户端请求改由 `handleInferenceCenterRequest` 私有执行，仍不需要修改 Gateway 的模型路由源码。原客户端 JSON 内容及 `/v1/models` 中工具能力、推理强度元数据断言保持原样。
+
+新增严格的一次 `/internal/execute` 对应一次真实 Provider 网络调用断言、Gateway 不持有静态 Provider 密钥、中心内部鉴权与外部客户头隔离。模型目录只读查询必须保持中心物理调用与转换预检零增量，不允许元数据接口引发计费请求。
+
+**本批只更新测试包引用与验收记录，不改 Gateway Runtime、Secrets、Service Binding 或部署。** 旧直连源码尚待全套依赖归零后删除。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
