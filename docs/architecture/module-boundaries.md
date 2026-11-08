@@ -345,6 +345,8 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 中央 Action Worker [#1539](https://github.com/fongap-labs/action-worker/pull/1539) 已整合 Tier 1 共享冷却、Claude Code 高风险字段与 17/19 MiB 大请求的中心等价合同，另有 Action Worker [#1540](https://github.com/fongap-labs/action-worker/pull/1540) 将 17 项剩余 OAuth／订阅上游执行合同迁入私有中心。两批合并后的中央测试包固定为 `138f30ad8143d795702b63495f4edfa79ec59c11`。该源码退役变更必须在最终 HEAD 上完整通过中央 Linux、Security、CI Evidence、PR Governance 与 validate-merge 后才能合并。**不更改生产 Secrets、Service Binding、部署或发布。**
 
+中央 Action Worker [#1541](https://github.com/fongap-labs/action-worker/pull/1541) 进一步将真实架构黑盒请求切至私有中心、把 Provider 凭据冲突判定归属 `loadExecutionConfig`，并维护两阶段源码切换的预算校验。最新不可变中央包为 `9f980005ae776ef5f3676b675b765966787aa783`，AG 当前 HEAD 必须使用该 SHA 通过完整 Linux/Security/CI Evidence/PR Governance/validate-merge 才允许退役旧执行器。旧 Gateway 在任何模式下不能直接持有 Provider 密钥或调用上游；旧中心参数与当前中心实行差异若出现，必须在真实中心修复而非放宽协议断言。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
