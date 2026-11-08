@@ -14,6 +14,9 @@ const node = {
   models: { 'chat-test': 'physical-chat-test' },
 };
 const env = {
+  // Contract construction requires a configured private transport even when
+  // the test invokes the center entrypoint directly (no network call).
+  AIG_INFERENCE_SERVICE: { fetch: async () => { throw new Error('unexpected inference transport call'); } },
   AIG_INFERENCE_AUTH_KEY: key,
   AIG_TIER3_NODES_01: JSON.stringify([node]),
   AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'fake-only-credential' }),
