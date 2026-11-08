@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 中央 Responses 回归区分私有转换预检与 Provider 物理执行计数。
+
 - 新增: Responses 429/503/400 与未知模型终态诊断的私有中心回归覆盖。
 - 修复: 中央协议矩阵测试重复导入 Inference Center 入口导致的语法错误。
 
