@@ -23,6 +23,7 @@ const env = {
 };
 const validBody = { model: 'chat-test', messages: [{ role: 'user', content: 'Hello' }] };
 function request(body = validBody, overrides = {}) {
+  const json = JSON.stringify(body);
   return new Request('https://inference.internal/internal/execute', {
     method: 'POST',
     headers: {
@@ -34,9 +35,10 @@ function request(body = validBody, overrides = {}) {
       'x-aig-surface': 'chat_completions',
       'x-aig-deadline-ms': String(Date.now() + 90_000),
       'x-aig-inference-auth': internalKey,
+      'content-length': String(new Blob([json]).size),
       ...overrides,
     },
-    body: JSON.stringify(body),
+    body: json,
   });
 }
 const originalFetch = globalThis.fetch;
@@ -186,6 +188,79 @@ try {
     'private center must continue rejecting malformed credential shards',
   );
   assert.equal(loadExecutionConfig(env).nodes[0].credential, providerSecret, 'private center owns the Provider credential');
+
+  // Size and memory compatibility are a hard prerequisite for removing the
+  // Gateway's legacy Provider dispatch. Both sides share the same 20 MiB
+  // default ceiling, while each worker isolate has an independent 32 MiB
+  // in-flight body budget.
+  const MIB = 1024 * 1024;
+  assert.equal(getLimits(env).maxBodyBytes, 20 * MIB);
+  const providerOk = () =>
+    new Response(
+      JSON.stringify({
+        id: 'cmpl-large',
+        object: 'chat.completion',
+        model: 'gpt-test-upstream',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  globalThis.fetch = async (_url, options) => {
+    attempts++;
+    assert.match(String(options.body).slice(0, 80), /"model":"gpt-test-upstream"/);
+    return providerOk();
+  };
+  const acceptedLargeBody = { model: 'chat-test', messages: [{ role: 'user', content: 'a'.repeat(19 * MIB) }] };
+  const accepted = await handleInferenceCenterRequest(request(acceptedLargeBody), env);
+  assert.equal(accepted.status, 200, 'a 19 MiB Gateway-compatible body must reach the private Provider executor');
+  const attemptsAfterLarge = attempts;
+  const overLimitBody = { model: 'chat-test', messages: [{ role: 'user', content: 'b'.repeat(21 * MIB) }] };
+  assert.equal((await handleInferenceCenterRequest(request(overLimitBody), env)).status, 413, 'a declared 21 MiB body is rejected');
+  assert.equal(
+    (await handleInferenceCenterRequest(request(overLimitBody, { 'content-length': '12' }), env)).status,
+    413,
+    'forged small Content-Length must not defeat the bounded streaming body reader',
+  );
+  assert.equal(
+    (await handleInferenceCenterRequest(request(validBody, { 'content-length': '-1' }), env)).status,
+    400,
+    'an invalid signed private body length is rejected before a Provider call',
+  );
+  assert.equal(attempts, attemptsAfterLarge, 'oversized or invalid bodies never execute Provider requests');
+
+  // Even if two independent Gateway isolates can each admit a large request,
+  // a single private center isolate must not retain both 17 MiB bodies.
+  const heldBody = { model: 'chat-test', messages: [{ role: 'user', content: 'c'.repeat(17 * MIB) }] };
+  let releaseProvider;
+  let notifyStarted;
+  const started = new Promise((resolve) => {
+    notifyStarted = resolve;
+  });
+  const gate = new Promise((resolve) => {
+    releaseProvider = resolve;
+  });
+  let heldCalls = 0;
+  globalThis.fetch = async () => {
+    attempts++;
+    heldCalls++;
+    if (heldCalls === 1) {
+      notifyStarted();
+      await gate;
+    }
+    return providerOk();
+  };
+  const first = handleInferenceCenterRequest(request(heldBody), env);
+  await started;
+  const memoryRefusal = await handleInferenceCenterRequest(request(heldBody), env);
+  assert.equal(memoryRefusal.status, 503);
+  assert.equal(memoryRefusal.headers.get('retry-after'), '1');
+  assert.equal(memoryRefusal.headers.get('x-aig-result'), null, 'admission refusal never claims a physical attempt');
+  assert.equal(heldCalls, 1, 'the second request must not reach a Provider');
+  releaseProvider();
+  assert.equal((await first).status, 200);
+  assert.equal((await handleInferenceCenterRequest(request(validBody), env)).status, 200, 'memory budget is refunded after execution');
+  assert.equal(heldCalls, 2);
+  assert.equal(attempts, attemptsAfterLarge + 2, 'only two admitted requests reach physical execution');
 
   console.log('Private inference center auth, native mapping, network classification and fail-closed contract passed.');
 } finally {
