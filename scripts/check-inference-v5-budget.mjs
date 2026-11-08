@@ -46,7 +46,9 @@ function providerStream() {
       choices: [{ index: 0, delta: { role: 'assistant', content: 'Hello over budget' }, finish_reason: null }],
     },
     {
-      id: 'cmpl-v5', object: 'chat.completion.chunk', model: 'physical-chat-test',
+      id: 'cmpl-v5',
+      object: 'chat.completion.chunk',
+      model: 'physical-chat-test',
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
     },
   ];
