@@ -88,7 +88,8 @@ try {
   const decoded = decodeFramedInferenceResponse(center, { onBudgetStop: (reason) => reasons.push(reason) });
   const clientSse = await new Response(decoded).text();
   assert.deepEqual(reasons, ['output_units']);
-  assert.match(clientSse, /conversion_budget_exceeded/);
+  assert.match(clientSse, /event: error/);
+  assert.match(clientSse, /Gateway conversion output budget exceeded\./);
   assert.doesNotMatch(clientSse, /Hello over budget/);
   assert.equal(dispatched, 1);
 
