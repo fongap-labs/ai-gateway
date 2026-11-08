@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
+import { getLimits } from '../src/config/timeouts.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
+import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
 const internalKey = 'local-inference-center-contract-test-key-32';
 const providerSecret = 'test-provider-credential-not-a-real-key';
@@ -79,7 +81,54 @@ try {
   assert.equal(failed.headers.get('x-aig-result'), 'attempted');
   assert.equal(failed.headers.get('x-aig-error-kind'), 'center_upstream_network');
   assert.equal(attempts, 2, 'center executes one physical attempt and never retries');
-  console.log('Private inference center auth, native mapping, network classification and single-attempt contract passed.');
+
+  // Deployment intent must prevent a silent direct-Provider fallback even if
+  // the private Service Binding is absent. No physical attempt is chargeable.
+  const unboundEnv = { ...env, AIG_INFERENCE_ACTIVE: 'true' };
+  const unboundState = {
+    attempted: new Set(),
+    attempts: [],
+    logicalAttempts: 0,
+    dispatches: 0,
+    failureKinds: {},
+    maxAttempts: 2,
+    requestId: '12345678-1234-4234-8234-123456789012',
+    requestedModel: 'chat-test',
+    logger: { info: () => {} },
+  };
+  const unboundAttempt = await attemptNode({
+    request: new Request('https://client.example/v1/chat/completions', { method: 'POST' }),
+    env: unboundEnv,
+    node: {
+      ...node,
+      tier: 'tier-3',
+      protocol: 'openai',
+      surfaces: ['chat_completions'],
+      baseUrl: node.base_url,
+      credential: providerSecret,
+    },
+    route: 'openai_chat',
+    reqDescriptor: {
+      model: 'chat-test',
+      surface: 'chat_completions',
+      bodyChars: JSON.stringify(validBody).length,
+    },
+    bodyJson: validBody,
+    requestedModel: 'chat-test',
+    requestId: unboundState.requestId,
+    state: unboundState,
+    policy: { headersTimeoutMs: null },
+    limits: getLimits(unboundEnv),
+    remainingDispatchableAttempts: 1,
+    failoverBudgetMs: 60_000,
+    requestStartMs: Date.now(),
+  });
+  assert.equal(unboundAttempt.response?.status, 503);
+  assert.equal(unboundAttempt.budgetCharged, false);
+  assert.equal(unboundState.logicalAttempts, 0);
+  assert.equal(unboundState.dispatches, 0);
+  assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
+  console.log('Private inference center auth, native mapping, network classification and fail-closed contract passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }

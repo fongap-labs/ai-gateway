@@ -94,7 +94,7 @@ Action Worker 规定：一个源码仓库只允许一套产品布局。AI Gatewa
 
 ## 主网关接线（#210）
 
-中央部署器仅当环境变量 `AIG_INFERENCE_TARGET=ai-inference-center` 时生成 `AIG_INFERENCE_SERVICE` 私有绑定。该变量是部署选择器，不转存为运行时 Worker Var。启用时必须在同一部署环境配置 `AIG_INFERENCE_AUTH_KEY`（至少 32 字符的高熵 Secret）；缺失时部署预检直接失败。
+中央部署器仅当环境变量 `AIG_INFERENCE_TARGET=ai-inference-center` 时生成 `AIG_INFERENCE_SERVICE` 私有绑定。该变量是部署选择器，本身不转存为运行时 Worker Var；部署器同时生成受控运行时标记 `AIG_INFERENCE_ACTIVE=true`。网关在检测到此标记时，即使 Service Binding 丢失也只能失败并返回 503，不得使用旧 Provider 直连。未选择目标时部署器清除人工输入的同名标记，防止误激活。启用时必须在同一部署环境配置 `AIG_INFERENCE_AUTH_KEY`（至少 32 字符的高熵 Secret）；缺失时部署预检直接失败。
 
 ```text
 AIG_INFERENCE_TARGET = ai-inference-center  # 部署变量，启用后不再回落直连

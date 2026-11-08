@@ -129,6 +129,9 @@ assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
 assert.equal(centerBindingConfig.vars.AIG_INFERENCE_TARGET, undefined);
+assert.equal(centerBindingConfig.vars.AIG_INFERENCE_ACTIVE, 'true');
+assert.equal(buildWranglerConfig({}).vars.AIG_INFERENCE_ACTIVE, undefined);
+assert.equal(buildWranglerConfig({ AIG_INFERENCE_ACTIVE: 'true' }).vars.AIG_INFERENCE_ACTIVE, undefined);
 assert.equal(buildWranglerConfig({}).services, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_INFERENCE_TARGET: 'other-center' }));
 const generationBound = buildWranglerConfig({ AIG_GENERATION_TARGET: 'ai-generation-center' });
@@ -139,6 +142,8 @@ assert.equal(buildWranglerConfig({}).vars.AIG_GENERATION_ACTIVE, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_GENERATION_TARGET: 'untrusted-target' }));
 const bothCenters = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center', AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.equal(bothCenters.services.length, 2);
+assert.equal(bothCenters.vars.AIG_INFERENCE_ACTIVE, 'true');
+assert.equal(bothCenters.vars.AIG_GENERATION_ACTIVE, 'true');
 
 // Production deploy reads only deployment credentials; runtime secret values remain remote.
 const deployInputs = {

@@ -355,7 +355,9 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
   const runtimeVars = { ...vars };
   delete runtimeVars.AIG_INFERENCE_TARGET;
   delete runtimeVars.AIG_GENERATION_TARGET;
+  delete runtimeVars.AIG_INFERENCE_ACTIVE;
   delete runtimeVars.AIG_GENERATION_ACTIVE;
+  if (inferenceTarget) runtimeVars.AIG_INFERENCE_ACTIVE = 'true';
   if (generationTarget) runtimeVars.AIG_GENERATION_ACTIVE = 'true';
   const out = {
     name: 'ai-gateway',
