@@ -17,7 +17,6 @@
 //                                   7-day query window)
 
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { getUtcWeekStartUtcMs } from '../../packages/usage-store/time-buckets.ts';
 import { flushUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import {
   DAILY_RETENTION_MS,
@@ -32,6 +31,7 @@ import {
   WEEK_MS,
   WEEKLY_RETENTION_MS,
 } from '../../packages/usage-store/keys.ts';
+import { getUtcWeekStartUtcMs } from '../../packages/usage-store/time-buckets.ts';
 
 const HOURLY_RETENTION_DAYS = HOURLY_RETENTION_MS / DAY_MS;
 const DAILY_RETENTION_WEEKS = DAILY_RETENTION_MS / WEEK_MS;
