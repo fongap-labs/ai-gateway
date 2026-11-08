@@ -343,7 +343,7 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 `loadGatewayConfig` 对公开 Gateway 不再解析任何 `AIG_TIER*_CREDENTIALS_*` 值，即使旧部署仍注入密钥、或者私有中心尚未配置；仅能力中心的 `loadExecutionConfig` 负责严格读取上游密钥。旧静态配置校验测试如仍假定 Gateway 拥有 Provider 凭据，必须迁移为能力中心验证，不得为凑绿放松中心密钥审查。
 
-中央 Action Worker [#1539](https://github.com/fongap-labs/action-worker/pull/1539) 已整合 Tier 1 共享冷却、Claude Code 高风险字段与 17/19 MiB 大请求的中心等价合同，测试包固定为 `85878205cc8be80dd5633fc394f2b30856e1ab37`。该源码退役变更必须在最终 HEAD 上完整通过中央 Linux、Security、CI Evidence、PR Governance 与 validate-merge 后才能合并。**不更改生产 Secrets、Service Binding、部署或发布。**
+中央 Action Worker [#1539](https://github.com/fongap-labs/action-worker/pull/1539) 已整合 Tier 1 共享冷却、Claude Code 高风险字段与 17/19 MiB 大请求的中心等价合同，另有 Action Worker [#1540](https://github.com/fongap-labs/action-worker/pull/1540) 将 17 项剩余 OAuth／订阅上游执行合同迁入私有中心。两批合并后的中央测试包固定为 `138f30ad8143d795702b63495f4edfa79ec59c11`。该源码退役变更必须在最终 HEAD 上完整通过中央 Linux、Security、CI Evidence、PR Governance 与 validate-merge 后才能合并。**不更改生产 Secrets、Service Binding、部署或发布。**
 
 ## 尚待迁移
 
