@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 定时统计聚合与保留期清理归入 Operations。
+- 维护: 原 Token 统计保留期路径只保留兼容导出。
 - 维护: 共享 Runtime 和 D1 类型统一归属中立 Contracts。
 - 维护: 应用与 Operations 不再引用旧 Runtime 类型定义。
 - 维护: Gateway 私有中心调用客户端迁入 `apps/gateway/transport/`。
