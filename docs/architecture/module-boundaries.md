@@ -251,6 +251,14 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 这些属于不应发生物理推理的准入/配置测试。流完成、边缘缓存编码等纯函数单元测试不需要人为引入私有 Service Binding，应继续以原职责边界验证。Gateway 旧推理 Provider 直连源码仍未删除；必须先核对剩余实际请求用例、直连接口与部署模式，再实施源码级退役。本批仅更新不可变测试包引用和文档，禁止生产部署。
 
+## Claude Code Messages 原生与回退合同：第十三批
+
+中央 Action Worker `claude-contract-test.mjs` 的 24 项真实 Gateway 客户端黑盒合同现接入私有 Inference Center：Anthropic Messages 原生非流式及 SSE、思考与工具块、工具调用/结果传递、客户端鉴权、400/429/5xx、首事件与截断处理，以及 Claude Code → OpenAI Chat 的 metadata、cache_control、工具调用映射和不可转换语义拒绝。
+
+测试私有中心拥有 Provider 静态凭据，Gateway 只持有节点元数据与内部 Service Binding。每项回归强制对齐私有 `/internal/execute` 调用数与真实 Provider 网络访问数；独立转换预检不作物理调用计算，Gateway 客户端的授权头不得进入中心上游请求。此前协议与一般 SSE 中央合同继续保留。
+
+这只证明该 Claude Messages 测试套件已完成中心等价迁移。Codex Responses 与其他实际 Gateway 请求测试、OAuth 管理端、运行时旧 Provider 直连和部署选择器仍须分别清理，本批不执行生产部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
