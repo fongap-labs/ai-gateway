@@ -273,6 +273,12 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 独立中心测试环境持有各 Tier Provider 凭据，Gateway 侧删除所有三层静态密钥；每项测试要求实际 Provider 网络请求数与私有 `/internal/execute` 次数一致，预检单列。原有响应码、并发占用、节点健康、Tier 1 inFlight、取消与防泄漏断言全部保留。**这代表压力合同的测试等价覆盖，不代表完成旧执行分支的源码退役。** 下阶段需审计尚未迁移的真实 Gateway 测试、严格禁止无中心物理派发，并独立评估受保护的旧部署模式；本批不部署。
 
+## 中央 429 模型作用域与 413 尺寸合同：第十六批
+
+Action Worker 的 `rate-limit-strategy-test.mjs` 429 冷却阶梯、配额文本解析、模型/帐号级故障作用域、413 大请求后的小请求可用性、模型缺失恢复等合同仍保留原有算法断言；其中真实 Gateway 请求路径现使用独立私有 Inference Center。Provider 凭据仅存于中心测试环境，Gateway 删除旧 `AIG_TIER1_CREDENTIALS_01` 并通过内部 Service Binding 调度物理执行。
+
+每个用例以增量计数检查私有 `/internal/execute` 与真实 Provider 网络调用次数一致，转换预检另计；内部 RPC 不携带客户端鉴权头。**本批完成的是 429/413 中央回归迁移，尚未删除旧直连源码**。接下来需要对剩余真实 Gateway 客户端合同进行迁移，随后从入口和执行选择器中移除直连旁路，并单独完成生产配置与部署切换审批。本批未更改 Runtime 或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
