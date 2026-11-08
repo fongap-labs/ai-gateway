@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Request-level attempt accounting and execution-mode selection. Actual
-// Provider fetches remain in the isolated LEGACY module only until the center
-// contract reaches parity. Never add Provider/OAuth imports to this file.
+// Request-level attempt accounting and execution-mode selection. Image
+// generation always uses its private center; the remaining legacy seam is
+// limited to unbound inference until its parity migration is complete.
 
 import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
@@ -74,10 +74,10 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   c.surface = surface;
   const sourceBody = conversionContext ? conversionContext.convertedBody : bodyJson;
 
-  // Explicit generation activation is a hard cutover even without a binding.
-  if (route === 'openai_images' && (env.AIG_GENERATION_ACTIVE === 'true' || 'AIG_GENERATION_SERVICE' in env)) {
-    return dispatchGenerationAttempt(c);
-  }
+  // Image generation is non-idempotent and must always use the private center.
+  // A missing Service Binding or auth key fails closed (503); never dispatch a
+  // paid generation directly from Gateway or silently retry another Provider.
+  if (route === 'openai_images') return dispatchGenerationAttempt(c);
   // A bound inference center cannot silently fall back to direct Provider
   // execution if the center rejects, times out, or loses its credential.
   if (route !== 'openai_images' && 'AIG_INFERENCE_SERVICE' in env) {

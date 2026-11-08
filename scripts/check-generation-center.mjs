@@ -5,9 +5,11 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
+import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
+import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
 const internalKey = 'generation-test-auth-key-at-least-32-chars';
 const secret = 'fake-provider-credential-for-test-only';
@@ -115,6 +117,68 @@ try {
 
   assert.deepEqual(quotaFromCenter(new Headers({ 'x-aig-quota-signal': '{"remainingRequests":3}' }))?.remainingRequests, 3);
   assert.equal(quotaFromCenter(new Headers({ 'x-aig-quota-signal': '{"remainingRequests":-1}' })), null);
+  // A missing center must fail before a physical Provider request. This checks
+  // the real Gateway dispatch selector, not only the private transport helper.
+  const unboundState = {
+    attempted: new Set(),
+    attempts: [],
+    logicalAttempts: 0,
+    dispatches: 0,
+    failureKinds: {},
+    maxAttempts: 2,
+    requestId: '12345678-1234-4234-8234-123456789012',
+    requestedModel: 'image-test',
+    logger: { info: () => {} },
+  };
+  const unboundAttempt = await attemptNode({
+    request: new Request('https://client.example/v1/images/generations', { method: 'POST' }),
+    env,
+    route: 'openai_images',
+    node: { ...node, tier: 'tier-3', protocol: 'openai', surfaces: ['images_generations'] },
+    reqDescriptor: { model: 'image-test', protocol: 'openai', surface: 'images_generations' },
+    bodyJson: validBody,
+    conversionContext: null,
+    requestId: unboundState.requestId,
+    requestedModel: 'image-test',
+    remainingDispatchableAttempts: 1,
+    failoverBudgetMs: 60_000,
+    requestStartMs: Date.now(),
+    state: unboundState,
+  });
+  assert.equal(unboundAttempt.response?.status, 503);
+  assert.equal(unboundAttempt.budgetCharged, false);
+  assert.equal(unboundState.logicalAttempts, 0);
+  assert.equal(unboundState.dispatches, 0);
+  assert.equal(requests, 2, 'missing Generation Center must never call physical Provider');
+
+  // The central image suite config must be accepted identically by the
+  // Gateway and private center; production never bypasses invalid config.
+  const imageModel = 'Image-Creator';
+  const imageEnv = {
+    AIG_GENERATION_AUTH_KEY: internalKey,
+    AIG_ACCESS_KEY_AGENT: 'backend-agent-test-key',
+    AIG_ACCESS_MODELS_AGENT: imageModel,
+    AIG_ACCESS_KEY_AIR: 'frontend-air-test-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_TIER1_NODES_01: JSON.stringify([
+      { id: 'image-1', provider: 'openai-image', base_url: 'https://api.openai.com', models: { [imageModel]: 'gpt-image-1' } },
+    ]),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'image-1': 'upstream-mock-secret' }),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [imageModel]: {
+        policy: 'default',
+        visibility: 'internal',
+        ui_visible: false,
+        group: 'image',
+        modalities: { input: ['text'], output: ['image'] },
+      },
+    }),
+    AIG_REQUEST_ADMISSION: 'false',
+  };
+  const imageConfig = loadExecutionConfig(imageEnv);
+  assert.equal(imageConfig.hasConfigErrors, false, `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`);
+  assert.equal(imageConfig.ready, true, 'center image fixture must have a usable provider node');
+
   console.log('Private generation center contracts passed.');
 } finally {
   globalThis.fetch = originalFetch;

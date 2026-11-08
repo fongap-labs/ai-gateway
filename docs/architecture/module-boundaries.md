@@ -42,11 +42,15 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 `packages/contracts/image-capabilities.ts` 仅包含纯能力声明及无凭据的初步资格判断，不导入具体 Provider Adapter。Gateway 预检只用轻量描述符筛选路由候选；Generation Center 独立重新验证真实 Provider Adapter、节点、模型映射和上游 URL。`scripts/check-image-capabilities.mjs` 用三种实际图片适配器交叉核对支持尺寸、映射和非法组合，防止声明漂移。这并不表示 Gateway 其他配置模块中的 Provider 导入已经全部清除。
 
-## 旧 Provider 执行路径隔离（待删除）
+## 生成中心独占图片执行（本批已收敛）
+
+Gateway 图片请求现在**无条件委托** `dispatchGenerationAttempt`，不再取决于 `AIG_GENERATION_ACTIVE` 或 Service Binding 是否预先存在。缺失私有中心绑定/认证时明确返回 503，不能落入旧 Provider 直连。旧 `legacy-provider-dispatch.ts` 的图片适配、直接请求和图片异常处理已删除，保留的旧直连仅服务于尚未完成测试迁移的推理路径。中央图片生成测试使用真实私有 Generation Center 内存绑定模拟物理 Provider 请求；静态边界检查防止未来回归。此轮未修改任何部署或生产密钥，启用这一源码版本前必须具备可用的私有 Generation Center。
+
+## 旧 Provider 执行路径隔离（推理部分待删除）
 
 `src/request/attempt/dispatch.ts` 已收敛为单次尝试记账和能力中心选择；原本混杂在该文件中的 URL、OAuth、Provider 私钥、物理 fetch、错误响应及订阅线协议处理迁入专用的 `src/request/attempt/legacy-provider-dispatch.ts`。`attempt-mode.ts` 保持缓冲判定单一实现。新边界检查阻止调度层重新导入 Provider/OAuth。
 
-**注意：这仍是源码层面隔离，不是删除旧执行路径。** 未绑定私有中心的环境仍使用兼容分支；下一阶段必须先完成中心合同等价测试，然后彻底删除它及其执行密钥依赖。当前不修改生产部署配置。
+**注意：这仍是源码层面隔离，不是删除旧执行路径。** 未绑定推理中心的环境仍使用推理兼容分支；图片生成已经彻底脱离旧路径。下一阶段须迁移推理中央合同测试，再删除剩余推理直连及其密钥依赖。当前不修改生产部署配置。
 
 ## 纯协议转换核心已抽离
 
