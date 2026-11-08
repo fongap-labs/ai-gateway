@@ -42,7 +42,7 @@ import { acceptsHtml, detectRoute, normalizePath } from '../../src/request/route
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
-import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
+import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
 
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
