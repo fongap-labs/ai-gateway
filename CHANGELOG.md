@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 中心启用时 Gateway 不再读取或解析遗留 Provider 凭据分片。
+
 - 新增: 中心模式允许 Gateway 无 Provider 密钥规划节点；私有中心继续严格校验凭据。
 
 - 修复: Inference Center 启用后绑定缺失时禁止直连 Provider。

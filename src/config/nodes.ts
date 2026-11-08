@@ -132,6 +132,9 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   diagnostics.push(...auxDiagnostics);
   const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `AIG_ACCESS_KEY_${g}`));
 
+  // Center-enabled Gateway never owns physical Provider credentials.
+  // Decide this before parsing secret shards to avoid even reading their values.
+  const isGatewayInferenceCenterActive = shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
   const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
   const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
   let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
@@ -163,7 +166,11 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const conflictedIds = new Set<string>();
   let hasConfigErrors = auxDiagnostics.length > 0;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
-  for (const shard of sortedSecretShards) {
+  // Keep only shard *names* for deployment diagnostics. Active Gateway
+  // scheduling must not parse (or cache) secrets even if an old deployment
+  // still injects them; execution centers validate their own credentials.
+  const secretShardsToParse = isGatewayInferenceCenterActive ? [] : sortedSecretShards;
+  for (const shard of secretShardsToParse) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics, { isSecret: true });
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       diagnostics.push(`${shard.key}: must be a JSON object { nodeId: credential }`);
@@ -194,7 +201,6 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   // Gateway schedules center-owned attempts using public node metadata only.
   // The private centers still require their own Provider credential shards.
-  const isGatewayInferenceCenterActive = shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);

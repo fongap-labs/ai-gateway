@@ -88,6 +88,11 @@ for (const center of ['inference', 'generation']) {
 const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
 assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
 assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
+assert.match(
+  nodeConfigSource,
+  /isGatewayInferenceCenterActive \? \[\] : sortedSecretShards/,
+  'Center-enabled Gateway must not parse or retain physical Provider secret shards',
+);
 
 const imagePreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
 const imageExecutor = readFileSync(join(root, 'apps/generation/execution.ts'), 'utf8');

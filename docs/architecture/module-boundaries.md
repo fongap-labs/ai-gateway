@@ -165,6 +165,8 @@ Gateway 在以下已明确属于能力中心的候选节点上，只解析公开
 - Inference Center 已有私有 Service Binding，或受控激活标记 `AIG_INFERENCE_ACTIVE=true`；
 - 仅支持 `images_generations` 的图片 Provider（图片请求已强制通过 Generation Center）。
 
+当 Gateway 已明确启用 Inference Center 时，即使运行环境仍残留旧的 `AIG_TIER*_CREDENTIALS_*`，也只枚举分片名称，不读取或解析其值；过期密钥、错误 JSON 不会进入公开网关内存中的凭据映射。未启用 Inference Center 的旧推理路径仍需要解析凭据，直至最终退役。
+
 私有 Inference / Generation Center 的 `loadExecutionConfig` 仍严格要求静态凭据，不能因为公开 Gateway 可无密钥规划而放松中心的密钥校验。Gateway 未启用推理中心时的旧直连仍须提供真实凭据；这一批不读取、移动、复制或删除生产 Secret，也不修改生产部署。下一阶段才能经受控方案从 Gateway 运行时清单中移除剩余 Provider 凭据和 OAuth 执行依赖。
 
 ## 尚待迁移
