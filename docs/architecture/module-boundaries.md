@@ -118,6 +118,14 @@ Gateway 依据诊断继续拒绝高风险语义丢失并安排 Tier 选择；中
 
 当前新增预检独立内网调用（仅跨协议 fallback 阶段），需后续观察其耗时和消耗；不作为生产部署验收或性能改进的证明。SSE 流式响应下沉与完整撤除旧直连仍未完成。
 
+## 下一阶段：Inference 私有流式分帧通道（尚未切流）
+
+`packages/contracts/inference-stream-frames.ts` 提供运行时中立的版本化二进制流分帧：客户端 SSE 字节（chunk）、原始 Provider 用量（usage）、转换预算停止原因（budget）与完整终止标志（done）在同一私有传输中独立编码。解码器支持分块边界、总尺寸限制、非法帧拒绝、终止完整性校验和取消向上传播，绝不把 usage/budget 原始载荷当作客户端 SSE。
+
+`apps/inference/conversion/framed-stream.ts` 已可调用真实 Matrix SSE 编解码器并生成私有分帧流；`src/inference/inference-stream-client.ts` 只将经内部响应格式与内容类型校验的流解出，并提供原始用量与预算事件回调。新增本地合同测试验证 Chat→Anthropic SSE 转换、独立物理用量、预算停止、损坏/截断/伪造帧拒绝及取消传播。架构检查禁止将协议内用量直接透传。
+
+**当前没有改动 v1/v2/v3 执行契约，也没有让 Gateway 在生产请求中使用该格式。** 下一批需要明确 v4 能力协商、上游首事件预提交与 Failover 边界、预算停止的中性结算、原始用量 exactly-once，以及未标记/未知版本的硬拒绝，然后才能启用真正的中心流式响应转换。正式运行仍须先中心后 Gateway 升级；不得在缺少 Gateway 解帧器时下发私有帧。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。
