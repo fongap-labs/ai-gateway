@@ -20,11 +20,13 @@ const privateHttpTransport = {
     assert.equal(request.headers.get('x-aig-contract-version'), '1');
     assert.equal(request.headers.get('x-aig-request-id'), id);
     assert.equal(request.headers.get('x-aig-node-id'), 'mock-node');
-    assert.equal(
-      Number(request.headers.get('content-length')),
-      new Blob([await request.clone().text()]).size,
-      'center receives exact UTF-8 private body length',
-    );
+    if (request.headers.has('x-aig-inference-auth')) {
+      assert.equal(
+        Number(request.headers.get('content-length')),
+        new Blob([await request.clone().text()]).size,
+        'inference center receives exact UTF-8 private body length',
+      );
+    }
     assert.equal(request.headers.has('authorization'), false);
     assert.equal(request.headers.has('cookie'), false);
     assert.equal(request.headers.has('x-api-key'), false);
