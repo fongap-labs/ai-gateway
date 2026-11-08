@@ -199,7 +199,9 @@ Gateway 在以下已明确属于能力中心的候选节点上，只解析公开
 
 执行测试在发出客户端请求前从 Gateway 环境删除 `AIG_TOKEN_ENCRYPTION_KEY`；私有中心单独持有解密密钥、OAuth Provider 配置和 Token D1 绑定。验证私有 `/internal/execute` 调用、Provider 鉴权头、无 Token 时禁止物理访问、刷新后密文持久化；Gateway 的 OAuth 授权/回调配置与管理端入口仍须单独迁移审查。
 
-上述改动只增加中心合同回归覆盖，并不代表 Runtime OAuth 管理端或全部旧 Provider 直连依赖已经删除。**不得据此删除 `legacy-provider-dispatch.ts`**；其余复杂错误、订阅失效与流式转换等须先完成等价测试。本批不更改生产配置、密钥或部署。
+本批同时修复了中心路径的订阅预执行语义差距：Inference Center 仅在 OAuth Token 缺失、订阅适配器不可用或拒绝请求且**尚未发出物理 Provider 调用**时，以 `x-aig-result: skipped` 和精确 `x-aig-error-kind` 回报。Gateway 只对 `auth: oauth` 节点及三种受控状态码/错误码组合执行无计费、中性轮转；普通中心异常、未知原因和非订阅节点的伪造 skipped 状态仍失败关闭，禁止静默绕过中心直连。缺失 Token 的旧 502 调度耗尽语义由中心恢复，且不会接触 Provider。
+
+这完成了有限的 OAuth 执行语义修正，但不代表 OAuth 管理端或全部旧 Provider 直连依赖已经删除。**不得据此删除 `legacy-provider-dispatch.ts`**；其余复杂错误、订阅失效与流式转换仍需完成等价测试。本批不更改生产配置、密钥或部署。
 
 ## 尚待迁移
 
