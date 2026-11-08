@@ -3,8 +3,25 @@
 // Native HTTP Request/Response transport tests. No Cloudflare account,
 // external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
+
+// Gateway owns both private Center clients. The old paths remain lightweight
+// compatibility exports only; no execution, HTTP or secret policy may drift
+// back into src/inference or src/generation.
+for (const [kind, oldPath] of [
+  ['inference', 'inference'],
+  ['generation', 'generation'],
+]) {
+  const owner = readFileSync(new URL(`../apps/gateway/transport/${kind}-client-request.ts`, import.meta.url), 'utf8');
+  const shim = readFileSync(new URL(`../src/${oldPath}/${kind}-client-request.ts`, import.meta.url), 'utf8');
+  const caller = readFileSync(new URL(`../src/request/attempt/${kind}-dispatch.ts`, import.meta.url), 'utf8');
+  assert.match(owner, /export async function invoke(?:Inference|Generation)Node\(/, `${kind} Gateway client owns transport`);
+  assert.match(shim, new RegExp(`export \\* from ['"]\.\.\/\.\.\/apps\/gateway\/transport\/${kind}-client-request\.ts['"];`), `${kind} legacy file is a pure re-export`);
+  assert.doesNotMatch(shim, /function |await fetch\(|class /, `${kind} legacy path cannot regain physical transport`);
+  assert.match(caller, new RegExp(`apps\/gateway\/transport\/${kind}-client-request\.ts`), `${kind} attempt imports Gateway-owned transport directly`);
+}
 
 const inferenceKey = 'test-inference-center-authentication-32-plus';
 const generationKey = 'test-generation-center-authentication-32-plus';
