@@ -229,6 +229,22 @@ Action Worker 的 `protocol-fallback-test.mjs` 中 protocol-matrix 测试组已�
 
 该测试组同时验证 Gateway 端不持有 Provider 静态凭据、内部调用不携带外部客户端认证头；对每个用例要求私有 `/internal/execute` 物理执行数与模拟 Provider 网络访问数严格相等，转换预检不计作物理执行。源代码级的旧 Provider 直连模块仍存在；其他独立测试套件和旧路径下的特殊行为继续按边界审查。本批不修改生产运行时、绑定或部署。
 
+## 中央模型族与物理失败域回归：第十批
+
+Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra→Max→Pro 的 429 全暂时性失败顺序改由真实私有 Inference Center 执行，保留原有 Retry-After、故障类型、对外返回 503 和物理模型映射。每个模型族三次中心 `/internal/execute`；Gateway 不读取静态 Provider 密钥。
+
+模型失败域合同验证同一物理模型被多个逻辑别名引用时不会无界重复调用；同账号不同物理模型各有独立失败域；不同 Provider 账号即使映射同一模型也应独立重试。保留原始 2/4/3 次物理访问与 Gateway attempt/dispatch/failure_kinds 计数，并增加相同的中心物理执行次数和客户端凭据隔离断言。
+
+**本批仅提升真实中心回归覆盖，未删除源码旧直连分支。** 下一步按剩余中央套件与模块依赖完成归零审查，确认无旧执行必要后再精简生产 Gateway。未更改生产绑定、密钥或部署。
+
+## 中央 Responses 错误诊断回归：第十一批
+
+中央 `protocol-fallback-test.mjs` 的 Responses 终态诊断已迁移到私有 Inference Center：429 首次物理执行后模型冷却，第二次请求不得重试中心；503 物理失败后的唯一兜底重试仍全部在中心；400 上游错误返回受控客户端信息、不泄露 Provider 原始错误；未知模型直接由 Gateway 拒绝，中心物理执行次数为零。保留原有 `x-gateway-error-code`、attempts、dispatches、failure_kinds 和 Responses 协议 JSON 错误对象。
+
+第十批初始测试包曾因合并阶段重复导入中心入口而在 CI 发生模块语法错误。第十一批中央测试包删除重复导入，确保整个测试套件可以被 Node 正常加载，且保留模型族与物理失败域的所有断言。这些工作仍是回归覆盖，不代替对旧 Provider 源码依赖的全面验收。
+
+第十一批完整回归另外确认：Responses 协议的私有 `/internal/conversion/preflight` 与 `/internal/execute` 是两类不同的内部调用，预检不会发出物理 Provider 请求。中央测试严格限定仅允许这两条已知路径，并只对 `/internal/execute` 统计 Provider 物理派发；429 冷却期间虽然可以预检，但不可重复访问 Provider。以上已纳入固定 SHA 的回归合同。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
