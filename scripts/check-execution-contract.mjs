@@ -129,4 +129,38 @@ const v1WithV4Marker = new Headers(headers);
 v1WithV4Marker.set('x-aig-return-stream', 'true');
 assert.equal(parseExecutionInvocation(makeRequest(v1WithV4Marker), allowed, now), null);
 
-console.log('Execution contract v1/v2/v3/v4: construction, validation, authorization and negative cases passed.');
+const cfg = { maxEvents: 100, maxOutputUnits: 200, maxToolEvents: 30, maxToolArgUnits: 1000, maxOutputTokens: 0 };
+const budgetStream = { ...streamed, streamBudget: { mode: 'error', cfg } };
+const budgetHeaders = buildExecutionHeaders(budgetStream, 'x-aig-inference-auth', key);
+assert.equal(budgetHeaders.get('x-aig-contract-version'), '5');
+assert.deepEqual(parseExecutionInvocation(makeRequest(budgetHeaders), allowed, now), budgetStream);
+assert.equal(streamedHeaders.has('x-aig-stream-budget'), false);
+for (const invalidBudget of [
+  '',
+  '{',
+  '[]',
+  JSON.stringify({ mode: 'error', cfg: { ...cfg, maxOutputUnits: 0 } }),
+  JSON.stringify({ mode: 'error', cfg: { ...cfg, maxOutputUnits: 1.5 } }),
+  JSON.stringify({ mode: 'bad', cfg }),
+  JSON.stringify({ mode: 'error', cfg: { ...cfg, extra: 1 } }),
+  JSON.stringify({ mode: 'error', cfg: { ...cfg, maxEvents: 100000000 } }),
+  JSON.stringify({ mode: 'error', cfg, extra: true }),
+  'x'.repeat(513),
+]) {
+  const invalid = new Headers(budgetHeaders);
+  invalid.set('x-aig-stream-budget', invalidBudget);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `invalid v5 budget: ${invalidBudget.slice(0, 30)}`);
+}
+for (const version of ['1', '2', '3', '4', '9']) {
+  const invalid = new Headers(budgetHeaders);
+  invalid.set('x-aig-contract-version', version);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `v5 downgrade ${version}`);
+}
+const missing = new Headers(budgetHeaders);
+missing.delete('x-aig-stream-budget');
+assert.equal(parseExecutionInvocation(makeRequest(missing), allowed, now), null);
+const v4WithBudget = new Headers(streamedHeaders);
+v4WithBudget.set('x-aig-stream-budget', budgetHeaders.get('x-aig-stream-budget'));
+assert.equal(parseExecutionInvocation(makeRequest(v4WithBudget), allowed, now), null);
+
+console.log('Execution contracts v1-v5: strict budgets, isolation, version and authorization validation passed.');

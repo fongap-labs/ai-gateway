@@ -6,6 +6,7 @@
 
 import type { ExecutionInputSurface, ExecutionTransport } from '../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../packages/contracts/execution.ts';
+import type { InferenceStreamBudget } from '../../packages/contracts/inference-stream-budget.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
@@ -20,6 +21,7 @@ export type InferenceInvocation = {
   preferNonstream?: true;
   returnObject?: true;
   returnStream?: true;
+  streamBudget?: InferenceStreamBudget;
   displayModel?: string;
   deadlineMs: number;
   body: string;
@@ -59,6 +61,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
       preferNonstream: invocation.preferNonstream,
       returnObject: invocation.returnObject,
       returnStream: invocation.returnStream,
+      streamBudget: invocation.streamBudget,
       displayModel: invocation.displayModel,
     },
     'x-aig-inference-auth',

@@ -13,7 +13,7 @@
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
-import { ConversionBudgetStop } from '../../conversion/matrix/budget.ts';
+import { ConversionBudgetStop, type BudgetStopReason } from '../../conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
 import { isRecord } from '../../conversion/matrix/ir.ts';
 import {
@@ -198,6 +198,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   // First-event guard BEFORE any committed byte, with the upstream protocol's
   // real-output predicate (same contract as the native and legacy paths).
   let upstreamUsage: unknown = null;
+  let centerBudgetStop: BudgetStopReason | null = null;
   let guardSource = upstream;
   if (isFramed) {
     try {
@@ -209,10 +210,11 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
           upstreamUsage = usage;
           observeUpstreamAttemptUsage(c, usage);
         },
-        onBudgetStop: () => {
-          // This v4 slice intentionally excludes configured conversion
-          // budgets; an unexpected budget frame is a protocol violation.
-          throw new Error('unexpected private inference budget stop');
+        onBudgetStop: (reason) => {
+          if (!limits.conversionBudget || centerBudgetStop !== null) {
+            throw new Error('unexpected private inference budget stop');
+          }
+          centerBudgetStop = reason;
         },
       });
       guardSource = new Response(decoded, { status: 200, headers: { 'content-type': 'text/event-stream' } });
@@ -298,7 +300,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   const fallbackId = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   if (c.clientWantsStream) {
     const handle = isFramed
-      ? { clientStream: guarded.body as ReadableStream<Uint8Array>, budgetExceeded: () => null }
+      ? { clientStream: guarded.body as ReadableStream<Uint8Array>, budgetExceeded: () => centerBudgetStop }
       : openMatrixStream(guarded.body, upstreamIr, clientIr, fallbackId, {
           model: requestedModel,
           onUpstreamUsage: (u) => {
