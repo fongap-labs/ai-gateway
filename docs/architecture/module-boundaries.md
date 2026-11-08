@@ -223,6 +223,12 @@ Action Worker 黑盒集成测试现将六项 Gateway 调度/流量边界迁至�
 
 这些测试除保留原有客户端状态码、诊断和响应合同外，还断言 **私有 Inference Center 调用次数为零**，防止鉴权失败、配置错误或只读接口意外触发实际推理。至此中央 `integration-test.mjs` 的现存黑盒用例已经全部进入私有中心模式，但不代表其它中央子测试包均已完成迁移；旧 Gateway Provider 直连仍须按全仓库测试依赖、协议与入口审计结果退役。本批不改变运行时或部署配置。
 
+## 中央跨协议与回退矩阵回归：第九批
+
+Action Worker 的 `protocol-fallback-test.mjs` 中 protocol-matrix 测试组已整体使用私有 Inference Center：Chat、Messages 和 Responses 原生 Provider 选择；同 Surface 失败切换；Responses→Messages、Chat→Messages、Messages→Chat 的受控跨协议矩阵；禁用 fallback 后的安全拒绝；Hedge 仅使用相同协议 Surface；节点 Schema 无效时不发起执行；客户端逻辑模型 ID 不被上游物理 ID 污染。
+
+该测试组同时验证 Gateway 端不持有 Provider 静态凭据、内部调用不携带外部客户端认证头；对每个用例要求私有 `/internal/execute` 物理执行数与模拟 Provider 网络访问数严格相等，转换预检不计作物理执行。源代码级的旧 Provider 直连模块仍存在；其他独立测试套件和旧路径下的特殊行为继续按边界审查。本批不修改生产运行时、绑定或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
