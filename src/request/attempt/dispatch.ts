@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Request-level attempt accounting and execution-mode selection. Image
-// generation always uses its private center; the remaining legacy seam is
-// limited to unbound inference until its parity migration is complete.
+// Request-level attempt accounting; all execution is private-center owned.
+// An unavailable center always fails closed, never to a direct Provider.
 
 import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { dispatchGenerationAttempt } from './generation-dispatch.ts';
 import { dispatchInferenceAttempt } from './inference-dispatch.ts';
-import { dispatchLegacyProvider } from './legacy-provider-dispatch.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 
 export { isBufferedUpstreamReply } from './attempt-mode.ts';
@@ -79,10 +77,8 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
   // An explicit deployment cutover is fail-closed even if the Service
-  // Binding is missing or broken. Do not silently call a Provider directly.
-  // Unbound legacy inference remains only until central test parity is done.
-  if ('AIG_INFERENCE_SERVICE' in env || env.AIG_INFERENCE_ACTIVE === 'true') {
-    return dispatchInferenceAttempt(c, sourceBody);
-  }
-  return dispatchLegacyProvider(c, sourceBody);
+  // The Gateway never owns Provider credentials or outbound network calls.
+  // A missing/invalid Service Binding is classified by dispatchInferenceAttempt
+  // as a neutral 503; it MUST NOT trigger a legacy direct-provider fallback.
+  return dispatchInferenceAttempt(c, sourceBody);
 }
