@@ -71,6 +71,10 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
     const value = invocation.request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // Trust only the Gateway's freshly serialized body, never the untrusted
+  // client's Content-Length. This lets the center charge the real private
+  // payload size before reading it, even when the client used chunked upload.
+  headers.set('content-length', String(new Blob([invocation.body]).size));
   return new Request('https://inference.internal/internal/execute', {
     method: 'POST',
     headers,
