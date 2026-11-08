@@ -39,6 +39,24 @@ assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider
 const accessGroupPattern = KEY_GROUPS.join('|');
 
 const pkg = JSON.parse(read('package.json'));
+const operationsBuild = JSON.parse(read('wrangler.operations-build.jsonc'));
+assert.equal(operationsBuild.name, 'ai-operations-build-check');
+assert.equal(operationsBuild.main, 'operations/index.ts');
+assert.equal(operationsBuild.workers_dev, false);
+assert.equal(operationsBuild.compatibility_date, config.compatibility_date);
+for (const key of ['triggers', 'routes', 'route', 'custom_domains', 'services', 'vars', 'secrets', 'kv_namespaces', 'd1_databases', 'inherit']) {
+  assert.equal(Object.hasOwn(operationsBuild, key), false, `Operations build-only config must not declare ${key}`);
+}
+assert.ok(
+  Object.keys(operationsBuild).every((key) => ['name', 'main', 'workers_dev', 'compatibility_date', 'compatibility_flags'].includes(key)),
+  'Operations build-only config cannot gain deployment properties',
+);
+assert.match(pkg.scripts['check:operations'] || '', /cloudflare-wrangler\.mjs deploy --dry-run --config wrangler\.operations-build\.jsonc/);
+assert.ok(
+  (pkg.scripts['validate:merge'] || '').includes('npm run check:operations') &&
+    (pkg.scripts['validate:deploy'] || '').includes('npm run check:operations'),
+  'Independent Operations build must be validated on every change',
+);
 for (const scriptName of ['deploy', 'tail', 'cf:login', 'cf:whoami']) {
   assert.match(pkg.scripts?.[scriptName] || '', /cloudflare-wrangler\.mjs/);
 }
