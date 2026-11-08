@@ -6,8 +6,8 @@
 
 import type { ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';
-import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
+import type { RuntimeNode } from '../../../src/types/node.ts';
 
 type GenerationService = ExecutionTransport;
 
