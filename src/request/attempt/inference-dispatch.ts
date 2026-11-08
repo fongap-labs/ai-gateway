@@ -58,9 +58,16 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify(body);
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
-  // First v4 slice: leave active conversion budgets on the proven v2 path.
-  // Budget-event settlement is a separate compatibility-critical migration.
-  const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && !limits.conversionBudget && c.bodyJson.stream === true);
+  // v4 handles ordinary streams; authenticated v5 carries bounded budgets
+  // so Inference executes the same IR budget before producing public SSE.
+  const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && c.bodyJson.stream === true);
+  const streamBudget =
+    returnStream && limits.conversionBudget
+      ? {
+          mode: limits.conversionBudgetMode,
+          cfg: { ...limits.conversionBudgetCfg, maxOutputTokens: limits.conversionBudgetMaxTokens },
+        }
+      : undefined;
   const hasBufferedResponse = !c.conversionContext && !c.clientWantsStream && !c.fakeStream;
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
@@ -109,6 +116,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       preferNonstream: c.conversionContext?.isNonstreamPreferred ? true : undefined,
       returnObject: c.conversionContext?.isNonstreamPreferred && !c.clientWantsStream && !c.fakeStream ? true : undefined,
       returnStream: returnStream ? true : undefined,
+      streamBudget,
       displayModel: returnStream ? requestedModel : undefined,
       deadlineMs: c.attemptDeadlineMs,
       body: outboundBody,

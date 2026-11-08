@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Internal execution contract v1. This module is intentionally runtime-neutral:
+// Internal execution contract v1-v5. This module is intentionally runtime-neutral:
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
+
+import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
 
 export const EXECUTION_CONTRACT_VERSION = '1' as const;
 export const EXECUTION_TRANSLATION_CONTRACT_VERSION = '2' as const;
 export const EXECUTION_OBJECT_CONTRACT_VERSION = '3' as const;
 export const EXECUTION_STREAM_CONTRACT_VERSION = '4' as const;
+export const EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5' as const;
 export const INFERENCE_TRANSLATED_OBJECT_FORMAT = 'translated-object-v1' as const;
 export const EXECUTION_PATH = '/internal/execute' as const;
 export const MAX_EXECUTION_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
@@ -31,6 +34,8 @@ export type ExecutionInvocation = {
   returnObject?: true;
   /** v4 only: private framed SSE for client-streaming requests. */
   returnStream?: true;
+  /** v5 only: bounded cross-center conversion budget; v4 forbids this field. */
+  streamBudget?: InferenceStreamBudget;
   /** The authorized public model name, not the physical Provider model. */
   displayModel?: string;
 };
@@ -77,13 +82,16 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version': invocation.returnStream
-      ? EXECUTION_STREAM_CONTRACT_VERSION
-      : invocation.returnObject
-        ? EXECUTION_OBJECT_CONTRACT_VERSION
-        : invocation.inputSurface
-          ? EXECUTION_TRANSLATION_CONTRACT_VERSION
-          : EXECUTION_CONTRACT_VERSION,
+    'x-aig-contract-version':
+      invocation.returnStream && invocation.streamBudget
+        ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+        : invocation.returnStream
+          ? EXECUTION_STREAM_CONTRACT_VERSION
+          : invocation.returnObject
+            ? EXECUTION_OBJECT_CONTRACT_VERSION
+            : invocation.inputSurface
+              ? EXECUTION_TRANSLATION_CONTRACT_VERSION
+              : EXECUTION_CONTRACT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-node-id': invocation.nodeId,
     'x-aig-model': invocation.logicalModel,
@@ -95,6 +103,7 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
   if (invocation.returnObject) headers.set('x-aig-return-object', 'true');
   if (invocation.returnStream) headers.set('x-aig-return-stream', 'true');
+  if (invocation.streamBudget) headers.set('x-aig-stream-budget', serializeInferenceStreamBudget(invocation.streamBudget));
   if (invocation.displayModel) headers.set('x-aig-display-model', invocation.displayModel);
   return headers;
 }
@@ -110,7 +119,8 @@ export function parseExecutionInvocation(
     version !== EXECUTION_CONTRACT_VERSION &&
     version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
     version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
-    version !== EXECUTION_STREAM_CONTRACT_VERSION
+    version !== EXECUTION_STREAM_CONTRACT_VERSION &&
+    version !== EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
   )
     return null;
   const requestId = request.headers.get('x-aig-request-id') ?? '';
@@ -130,6 +140,9 @@ export function parseExecutionInvocation(
   const returnObject = request.headers.get('x-aig-return-object');
   const returnStream = request.headers.get('x-aig-return-stream');
   const displayModel = request.headers.get('x-aig-display-model');
+  const rawStreamBudget = request.headers.get('x-aig-stream-budget');
+  const streamBudget = version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION ? parseInferenceStreamBudget(rawStreamBudget) : null;
+  if (version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION ? streamBudget === null : rawStreamBudget !== null) return null;
   if (rawInputSurface === null) {
     if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
       return null;
@@ -138,7 +151,8 @@ export function parseExecutionInvocation(
   if (
     (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
       version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
-      version !== EXECUTION_STREAM_CONTRACT_VERSION) ||
+      version !== EXECUTION_STREAM_CONTRACT_VERSION &&
+      version !== EXECUTION_BUDGET_STREAM_CONTRACT_VERSION) ||
     rawSurface === 'images_generations' ||
     !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
     rawInputSurface === rawSurface
@@ -146,7 +160,7 @@ export function parseExecutionInvocation(
     return null;
   if (preferNonstream !== null && preferNonstream !== 'true') return null;
   if (version === EXECUTION_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== 'true')) return null;
-  if (version === EXECUTION_STREAM_CONTRACT_VERSION) {
+  if (version === EXECUTION_STREAM_CONTRACT_VERSION || version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION) {
     if (
       returnStream !== 'true' ||
       returnObject !== null ||
@@ -168,6 +182,7 @@ export function parseExecutionInvocation(
     ...(preferNonstream === 'true' ? { preferNonstream: true as const } : {}),
     ...(returnObject === 'true' ? { returnObject: true as const } : {}),
     ...(returnStream === 'true' ? { returnStream: true as const, displayModel: displayModel as string } : {}),
+    ...(streamBudget ? { streamBudget } : {}),
   };
 }
 

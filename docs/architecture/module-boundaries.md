@@ -134,6 +134,14 @@ Gateway 当前仅在绑定中心、客户端真实请求 SSE 且 `conversionBudg
 
 **部署顺序必须先支持 v4 的 Inference Center，随后是申请 v4 的 Gateway。** 本批仅修改源码并以本地模拟 Provider 测试验证，未触发部署。后续分批支持转换预算帧和预算中性结算；再评估完全淘汰 v2 流转换、无中心时的旧直连路径。
 
+## v5 跨中心转换预算：中心执行、Gateway 结算
+
+预算已开启且客户端要求 SSE 时，Gateway 使用 `ExecutionContract v5`：除了 v4 的源/目标协议与公开模型，还通过 `x-aig-stream-budget` 发送严格校验的 mode（`error`/`truncate`）和五项有界预算。旧 v4 禁止该头，旧中心不能接受 v5，从而避免静默绕过预算。无预算流仍使用 v4；原生 v1/v2、非流式 v3 均未改变。
+
+Inference Center 按此票据配置唯一 `openMatrixStream` 的预算 Tracker。超限时，中心产生与原 Gateway 相同的协议错误片段或短回复，并在私有传输帧上独立发送预算停止原因。Gateway 解帧后继续执行原首事件判定、原始 Provider 用量观测与一次性结算：`error` 模式为中性结束，不重复计入交付或节点故障；`truncate` 模式为成功的正常短回复。预算帧不能进入公开 SSE。
+
+滚动升级顺序必须是**先中心后 Gateway**；此次只更改源码与门禁，不改部署、Secrets、Service Binding 或生产路由。后续仍须进一步清除 Gateway 的旧直连 Provider 执行路径与重复转换实现依赖。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

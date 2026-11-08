@@ -50,7 +50,7 @@ const data = [
     usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, upstream_private_tag: 'private-only' },
   },
 ];
-const providerSse = data.map((part) => `data: ${JSON.stringify(part)}\n\n`).join('') + 'data: [DONE]\n\n';
+const providerSse = `${data.map((part) => `data: ${JSON.stringify(part)}\n\n`).join('')}data: [DONE]\n\n`;
 const center = buildFramedMatrixResponse(source(encoder.encode(providerSse)), 'openai_chat', 'anthropic', 'framed-id', { model: 'model-test' });
 assert.equal(center.headers.get('content-type'), INFERENCE_FRAMED_STREAM_CONTENT_TYPE);
 assert.equal(center.headers.get('x-aig-response-format'), INFERENCE_FRAMED_STREAM_FORMAT);

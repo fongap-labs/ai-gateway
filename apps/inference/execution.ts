@@ -5,6 +5,7 @@
 // model family retries, Tier scheduling or public routing in this module.
 
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
@@ -24,6 +25,7 @@ import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
+import type { MatrixStreamBudget } from './conversion/stream.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -40,6 +42,21 @@ function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface
     default:
       return null;
   }
+}
+
+// Only authenticated v5 stream tickets carry explicit, validated budgets.
+// v4 streams remain byte-for-byte unchanged and cannot silently inherit one.
+function streamFramingOptions(invocation: Invocation, clientProtocol: IrProtocol): { model?: string; budget?: MatrixStreamBudget } {
+  if (!invocation.streamBudget) return { model: invocation.displayModel };
+  const { cfg, mode } = invocation.streamBudget;
+  return {
+    model: invocation.displayModel,
+    budget: {
+      cfg,
+      mode,
+      stopChunk: mode === 'error' ? conversionBudgetErrorChunk(clientProtocol, invocation.requestId) : null,
+    },
+  };
 }
 
 // v3 is an opt-in for buffered objects only. An absent marker always means
@@ -249,7 +266,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
         const from = protocolForSurface(invocation.surface);
         const to = protocolForSurface(invocation.inputSurface);
         if (!from || !to) return problem(400, 'center_conversion_route_invalid');
-        const framed = buildFramedMatrixResponse(nativeStream, from, to, invocation.requestId, { model: invocation.displayModel });
+        const framed = buildFramedMatrixResponse(nativeStream, from, to, invocation.requestId, streamFramingOptions(invocation, to));
         outgoing.set('content-type', framed.headers.get('content-type') ?? '');
         outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
         return new Response(framed.body, { status: upstream.status, headers: outgoing });
@@ -276,7 +293,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
     if (!from || !to) return problem(400, 'center_conversion_route_invalid');
-    const framed = buildFramedMatrixResponse(upstream.body, from, to, invocation.requestId, { model: invocation.displayModel });
+    const framed = buildFramedMatrixResponse(upstream.body, from, to, invocation.requestId, streamFramingOptions(invocation, to));
     outgoing.set('content-type', framed.headers.get('content-type') ?? '');
     outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
     return new Response(framed.body, { status: upstream.status, headers: outgoing });

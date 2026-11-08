@@ -270,9 +270,17 @@ const inferenceV4Dispatcher = readFileSync(join(root, 'src/request/attempt/infer
 const inferenceV4Success = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
-assert.match(inferenceV4Dispatcher, /!limits\.conversionBudget/, 'v4 must exclude unverified conversion-budget paths');
+assert.match(inferenceV4Contract, /EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5'/, 'v5 must isolate budgeted streams from legacy v4');
+assert.match(inferenceV4Dispatcher, /returnStream && limits\.conversionBudget/, 'Budgeted center streams must use v5, not local conversion');
 assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
 assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
+const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const budgetGateway = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+const budgetSettlement = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference must enforce v5 stream budgets');
+assert.match(budgetGateway, /streamBudget,/, 'Gateway must issue bounded v5 budgets');
+assert.match(budgetSettlement, /centerBudgetStop = reason/, 'Gateway must observe v5 private stop reasons');
+assert.match(budgetSettlement, /budgetExceeded: \(\) => centerBudgetStop/, 'Gateway must settle v5 budget event once');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
