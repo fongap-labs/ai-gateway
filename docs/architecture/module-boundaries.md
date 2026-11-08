@@ -245,6 +245,12 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 第十一批完整回归另外确认：Responses 协议的私有 `/internal/conversion/preflight` 与 `/internal/execute` 是两类不同的内部调用，预检不会发出物理 Provider 请求。中央测试严格限定仅允许这两条已知路径，并只对 `/internal/execute` 统计 Provider 物理派发；429 冷却期间虽然可以预检，但不可重复访问 Provider。以上已纳入固定 SHA 的回归合同。
 
+## 中央客户端准入与订阅开关回归：第十二批
+
+中央 Action Worker 的 `client-budget-test.mjs` 与 `subscription-switch-test.mjs` 现运行于启用 Inference Center、Gateway 不持有静态 Provider 凭据的环境。客户端过期、非法或重复截止时间的拒绝、合法截止时间对 Gateway 总预算的约束、OAuth 管理端禁用开关、订阅节点 Health 元数据及真值解析，保持原有状态码和响应合同，并逐项检查私有中心执行次数严格为零。
+
+这些属于不应发生物理推理的准入/配置测试。流完成、边缘缓存编码等纯函数单元测试不需要人为引入私有 Service Binding，应继续以原职责边界验证。Gateway 旧推理 Provider 直连源码仍未删除；必须先核对剩余实际请求用例、直连接口与部署模式，再实施源码级退役。本批仅更新不可变测试包引用和文档，禁止生产部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
