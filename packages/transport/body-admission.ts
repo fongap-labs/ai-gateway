@@ -18,10 +18,10 @@ export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET
       const bytes = declared > 0 ? declared : worstCase;
       if (bytes > 0 && inFlightBytes > 0 && inFlightBytes + bytes > limitBytes) return null;
       inFlightBytes += bytes;
-      let released = false;
+      let isReleased = false;
       return () => {
-        if (released) return;
-        released = true;
+        if (isReleased) return;
+        isReleased = true;
         inFlightBytes = Math.max(0, inFlightBytes - bytes);
       };
     },
