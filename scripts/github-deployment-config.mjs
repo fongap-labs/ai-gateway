@@ -327,7 +327,9 @@ export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) 
   const privateExecutionConfig = loadExecutionConfig(env);
   if (!privateExecutionConfig.ready || privateExecutionConfig.hasConfigErrors) {
     const details = privateExecutionConfig.diagnostics.length ? `: ${privateExecutionConfig.diagnostics.join('; ')}` : '';
-    throw new Error(`private execution runtime configuration is ${privateExecutionConfig.ready ? 'in error' : privateExecutionConfig.status}${details}`);
+    throw new Error(
+      `private execution runtime configuration is ${privateExecutionConfig.ready ? 'in error' : privateExecutionConfig.status}${details}`,
+    );
   }
   if (!config.ready || config.hasConfigErrors) {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
