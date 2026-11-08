@@ -16,7 +16,7 @@ import { extractQuotaSignal } from '../../src/reliability/quota-signal.ts';
 import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import { buildUpstreamHeadersFor } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import type { GatewayEnv } from '../../src/types/runtime.ts';
+import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 16 * 1024;
