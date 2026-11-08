@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-- 重构: Gateway 私有中心调用客户端迁入 `apps/gateway/transport/`。
-- 重构: 旧客户端路径只保留兼容导出，运行时直接依赖新归属。
+- 维护: Gateway 私有中心调用客户端迁入 `apps/gateway/transport/`。
+- 维护: 旧客户端路径只保留兼容导出，运行时直接依赖新归属。
 
 - 修复: 私有中心排除无效凭据节点时安全跳过，Gateway 继续尝试健康候选。
 
