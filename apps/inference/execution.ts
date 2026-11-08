@@ -26,7 +26,7 @@ import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
 import type { MatrixStreamBudget } from './conversion/stream.ts';
-import { problem } from './response.ts';
+import { preDispatchProblem, problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 type Invocation = ExecutionInvocation;
@@ -171,9 +171,9 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
 
   if (isSubscriptionNode(node)) {
     const resolved = await resolveSubscriptionCredential(env, node);
-    if (!resolved.ok) return problem(503, 'center_subscription_unavailable');
+    if (!resolved.ok) return preDispatchProblem(503, 'center_subscription_unavailable');
     const adapter = getProviderAdapter(node.provider).subscription;
-    if (!adapter) return problem(503, 'center_subscription_unsupported');
+    if (!adapter) return preDispatchProblem(503, 'center_subscription_unsupported');
     const prepared = adapter.prepare({
       node,
       credential: resolved,
@@ -181,7 +181,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
       body: outboundBody,
       surface: invocation.surface,
     });
-    if (!prepared) return problem(502, 'center_subscription_rejected');
+    if (!prepared) return preDispatchProblem(502, 'center_subscription_rejected');
     credential = resolved.token;
     if (prepared.body) {
       outboundBody = prepared.body;
