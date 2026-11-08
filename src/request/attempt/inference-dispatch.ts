@@ -145,6 +145,18 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
     return { rotate: true, kind: classified.kind };
   }
+  // OAuth credential/adapter failures happen before a physical Provider attempt.
+  // Preserve legacy neutral rotation while keeping every other center error fail-closed.
+  if (executionResult === 'skipped' && node.auth === 'oauth') {
+    const centerErrorKind = upstream.headers.get('x-aig-error-kind');
+    const isSubscriptionUnavailable =
+      upstream.status === 503 && (centerErrorKind === 'center_subscription_unavailable' || centerErrorKind === 'center_subscription_unsupported');
+    const isSubscriptionRejected = upstream.status === 502 && centerErrorKind === 'center_subscription_rejected';
+    if (isSubscriptionUnavailable || isSubscriptionRejected) {
+      detach();
+      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    }
+  }
   if (executionResult !== 'dispatched') {
     detach();
     return stopForCenter(c, upstream.status === 413 ? 413 : 503, 'gateway_inference_center_rejected');

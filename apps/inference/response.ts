@@ -13,3 +13,10 @@ export function problem(status: number, code: string, isRetryable = false): Resp
     },
   });
 }
+
+/** Explicitly signal that an OAuth subscription attempt never reached a Provider. */
+export function preDispatchProblem(status: number, code: string): Response {
+  const response = problem(status, code);
+  response.headers.set('x-aig-result', 'skipped');
+  return response;
+}
