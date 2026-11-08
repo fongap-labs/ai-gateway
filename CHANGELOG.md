@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 重构: 推理与生成的 Gateway 私有执行传输客户端迁入 `apps/gateway/transport/`，调用方直接使用新归属；旧位置只保留兼容导出。
+
 - 新增: Gateway 推理仅经私有中心执行，移除旧 Provider 直连与密钥解析分支。
 
 - 修复: 推理中心与 Gateway 统一 20 MiB 正文默认上限和受控配置。
