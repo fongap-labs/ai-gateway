@@ -9,7 +9,7 @@ import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts'
 import type { InferenceStreamBudget } from '../../../packages/contracts/inference-stream-budget.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { Surface } from '../../../src/types/protocol.ts';
-import type { GatewayEnv } from '../../../src/types/runtime.ts';
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 
 export type InferenceInvocation = {
   request: Request;
