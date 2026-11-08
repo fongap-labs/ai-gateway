@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
+import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
@@ -149,6 +150,38 @@ try {
   assert.equal(unboundState.logicalAttempts, 0);
   assert.equal(unboundState.dispatches, 0);
   assert.equal(requests, 2, 'missing Generation Center must never call physical Provider');
+
+  // The central image suite config must be accepted identically by the
+  // Gateway and private center; production never bypasses invalid config.
+  const imageModel = 'Image-Creator';
+  const imageEnv = {
+    AIG_GENERATION_AUTH_KEY: internalKey,
+    AIG_ACCESS_KEY_AGENT: 'backend-agent-test-key',
+    AIG_ACCESS_MODELS_AGENT: imageModel,
+    AIG_ACCESS_KEY_AIR: 'frontend-air-test-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_TIER1_NODES_01: JSON.stringify([
+      { id: 'image-1', provider: 'openai-image', base_url: 'https://api.openai.com', models: { [imageModel]: 'gpt-image-1' } },
+    ]),
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'image-1': 'upstream-mock-secret' }),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [imageModel]: {
+        policy: 'default',
+        visibility: 'internal',
+        ui_visible: false,
+        group: 'image',
+        modalities: { input: ['text'], output: ['image'] },
+      },
+    }),
+    AIG_REQUEST_ADMISSION: 'false',
+  };
+  const imageConfig = loadExecutionConfig(imageEnv);
+  assert.equal(
+    imageConfig.hasConfigErrors,
+    false,
+    `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`,
+  );
+  assert.equal(imageConfig.ready, true, 'center image fixture must have a usable provider node');
 
   console.log('Private generation center contracts passed.');
 } finally {
