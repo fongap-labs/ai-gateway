@@ -9,8 +9,10 @@ import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budge
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
+import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
+import { getLimits } from '../../src/config/timeouts.ts';
 import { getOAuthProvider } from '../../src/oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../../src/oauth/resolve.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
@@ -28,7 +30,9 @@ import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
 import type { MatrixStreamBudget } from './conversion/stream.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
-const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+// The physical center uses the same clamped maximum as Gateway preflight.
+// Its own memory pool remains separate, even in an in-process integration test.
+const centerBodyPool = createBodyAdmissionPool();
 type Invocation = ExecutionInvocation;
 
 function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface']): IrProtocol | null {
@@ -114,13 +118,40 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
 
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return problem(415, 'center_content_type_invalid');
-  const declaredSize = Number(request.headers.get('content-length'));
-  if (Number.isFinite(declaredSize) && declaredSize > MAX_REQUEST_BYTES) return problem(413, 'center_body_too_large');
+  const maxRequestBytes = getLimits(env).maxBodyBytes;
+  const rawLength = request.headers.get('content-length');
+  const declaredSize = rawLength === null ? 0 : Number(rawLength);
+  if (rawLength !== null && (!/^\d+$/.test(rawLength) || !Number.isSafeInteger(declaredSize))) {
+    return problem(400, 'center_body_length_invalid');
+  }
+  if (declaredSize > maxRequestBytes) return problem(413, 'center_body_too_large');
 
+  // The private center owns a separate isolate budget. Unknown lengths are
+  // charged the full read ceiling, so chunked uploads cannot evade admission.
+  const releaseBody = centerBodyPool.admit(declaredSize, maxRequestBytes);
+  if (!releaseBody) {
+    const rejected = problem(503, 'center_body_budget_exhausted', true);
+    rejected.headers.set('retry-after', '1');
+    return rejected;
+  }
+  try {
+    return await executeAdmittedNative(request, env, invocation, node, maxRequestBytes);
+  } finally {
+    releaseBody();
+  }
+}
+
+async function executeAdmittedNative(
+  request: Request,
+  env: GatewayEnv,
+  invocation: Invocation,
+  node: RuntimeNode,
+  maxRequestBytes: number,
+): Promise<Response> {
   let rawBody: string;
   let clientBody: Record<string, unknown>;
   try {
-    rawBody = await readBodyTextWithLimit(request, MAX_REQUEST_BYTES);
+    rawBody = await readBodyTextWithLimit(request, maxRequestBytes);
     const parsed: unknown = JSON.parse(rawBody);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return problem(400, 'center_body_invalid');
     clientBody = parsed as Record<string, unknown>;

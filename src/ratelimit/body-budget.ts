@@ -16,28 +16,17 @@
 // AIG_REQUEST_BODY_MAX_BYTES always fits. The release function returns the charged
 // amount, so an over-estimate is refunded in full.
 
-export const BODY_BYTES_IN_FLIGHT_BUDGET = 32 * 1024 * 1024;
+import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 
-let inFlightBytes = 0;
+export { BODY_BYTES_IN_FLIGHT_BUDGET } from '../../packages/transport/body-admission.ts';
 
-/**
- * Reserve bytes for one request body; returns the release function, or null when over budget.
- * `declaredBytes` is the Content-Length; `worstCaseBytes` is charged when it is not usable.
- */
+const gatewayBodyPool = createBodyAdmissionPool();
+
+/** Reserve a request body from the Gateway-owned isolate budget. */
 export function admitRequestBody(declaredBytes: number, worstCaseBytes: number): (() => void) | null {
-  const declared = Number.isFinite(declaredBytes) && declaredBytes > 0 ? Math.trunc(declaredBytes) : 0;
-  const worstCase = Number.isFinite(worstCaseBytes) && worstCaseBytes > 0 ? Math.trunc(worstCaseBytes) : 0;
-  const bytes = declared > 0 ? declared : worstCase;
-  if (bytes > 0 && inFlightBytes > 0 && inFlightBytes + bytes > BODY_BYTES_IN_FLIGHT_BUDGET) return null;
-  inFlightBytes += bytes;
-  let isReleased = false;
-  return () => {
-    if (isReleased) return;
-    isReleased = true;
-    inFlightBytes = Math.max(0, inFlightBytes - bytes);
-  };
+  return gatewayBodyPool.admit(declaredBytes, worstCaseBytes);
 }
 
 export function __resetBodyBudgetForTests(): void {
-  inFlightBytes = 0;
+  gatewayBodyPool.reset();
 }
