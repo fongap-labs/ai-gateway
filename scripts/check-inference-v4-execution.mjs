@@ -40,7 +40,7 @@ function inbound(overrides = {}) {
   });
 }
 const usage = { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5, physical_only: 'never-expose' };
-const upstream = [
+const providerEvents = [
   {
     id: 'cmpl-test',
     object: 'chat.completion.chunk',
@@ -54,7 +54,10 @@ const upstream = [
     choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
   },
   { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage },
-].map((part) => `data: ${JSON.stringify(part)}\n\n`).join('') + 'data: [DONE]\n\n';
+];
+const frames = providerEvents.map((part) => `data: ${JSON.stringify(part)}\n\n`);
+frames.push('data: [DONE]\n\n');
+const upstream = frames.join('');
 
 const originalFetch = globalThis.fetch;
 let attempts = 0;

@@ -131,11 +131,14 @@ export function parseExecutionInvocation(
   const returnStream = request.headers.get('x-aig-return-stream');
   const displayModel = request.headers.get('x-aig-display-model');
   if (rawInputSurface === null) {
-    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null) return null;
+    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
+      return null;
     return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
   }
   if (
-    (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION && version !== EXECUTION_OBJECT_CONTRACT_VERSION && version !== EXECUTION_STREAM_CONTRACT_VERSION) ||
+    (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
+      version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
+      version !== EXECUTION_STREAM_CONTRACT_VERSION) ||
     rawSurface === 'images_generations' ||
     !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
     rawInputSurface === rawSurface
