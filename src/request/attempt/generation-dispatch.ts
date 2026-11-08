@@ -5,8 +5,8 @@
 // Unknown outcomes and center faults are terminal; never retry behind the
 // user's back or silently use the legacy direct-provider path.
 
+import { GenerationCenterUnavailable, invokeGenerationNode } from '../../../apps/gateway/transport/generation-client-request.ts';
 import { attemptBudgetWindowMs } from '../../config/timeouts.ts';
-import { GenerationCenterUnavailable, invokeGenerationNode } from '../../generation/generation-client-request.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { quotaFromCenter } from '../../reliability/center-quota.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';

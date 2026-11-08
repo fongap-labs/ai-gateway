@@ -317,8 +317,8 @@ for (const [app, shim] of [
 for (const path of [
   'apps/inference/index.ts',
   'apps/generation/index.ts',
-  'src/inference/inference-client-request.ts',
-  'src/generation/generation-client-request.ts',
+  'apps/gateway/transport/inference-client-request.ts',
+  'apps/gateway/transport/generation-client-request.ts',
 ]) {
   const content = readFileSync(join(root, path), 'utf8');
   assert.match(content, /packages\/contracts\/execution\.ts/, `${path} does not use the contract`);

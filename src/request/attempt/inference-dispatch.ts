@@ -5,10 +5,10 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
+import { invokeInferenceNode } from '../../../apps/gateway/transport/inference-client-request.ts';
 import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, QUOTA_RETRY_AFTER_MAX_MS, requestSizeAllowanceMs } from '../../config/timeouts.ts';
-import { invokeInferenceNode } from '../../inference/inference-client-request.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';

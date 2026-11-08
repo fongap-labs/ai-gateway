@@ -357,6 +357,10 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 中央回归发现：Gateway 只解析公开元数据时，中心可能因节点凭据冲突将候选排除。中心必须为未进入物理执行的缺失节点返回精确的 `404 / center_route_unavailable / x-aig-result: skipped` 信号；Gateway 仅接受该完整组合做不计费、中性轮转，继续尝试其它通过中心密钥校验的候选。其它未知中心错误继续失败关闭，不能触发旧 Provider 直连。既有中央 `tier1-capacity-test.mjs` 必须验证坏节点被排除且好节点继续返回 200。
 
+## Gateway 私有能力中心调用客户端归属
+
+将 `src/inference/inference-client-request.ts` 与 `src/generation/generation-client-request.ts` 的传输实现迁至 `apps/gateway/transport/`，Gateway 的推理与生图执行层直接引用新位置；旧路径仅保留单行导出，以维持现有合同调用方兼容。标准 HTTP Request / Response、Service Binding 鉴权、客户端令牌隔离、截止时间及信号透传保持原合同。中央 `check:transport` 同时验证源码归属及私有请求行为。**本项为职责与源码迁移，不涉及能力中心物理执行实现，也不调整生产部署。**
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
