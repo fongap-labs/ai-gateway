@@ -4,7 +4,7 @@
 // external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
-import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../src/inference/inference-client-request.ts';
+import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 
 const inferenceKey = 'test-inference-center-authentication-32-plus';
 const generationKey = 'test-generation-center-authentication-32-plus';
