@@ -6,7 +6,7 @@
 
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
-import type { GatewayEnv } from '../../src/types/runtime.ts';
+import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { execute } from './execution.ts';
 import { problem } from './response.ts';
 
