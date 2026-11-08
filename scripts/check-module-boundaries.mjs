@@ -102,10 +102,22 @@ assert.doesNotMatch(
   /await fetch\(|resolveSubscriptionCredential|getProviderAdapter|buildUpstreamHeadersFor/,
   'Gateway dispatch selector must not perform Provider execution or OAuth',
 );
-assert.match(dispatchSource, /if \(route === 'openai_images'\) return dispatchGenerationAttempt\(c\);/, 'Images must always route through Generation Center');
-assert.doesNotMatch(dispatchSource, /AIG_GENERATION_ACTIVE|route === 'openai_images' &&/, 'Images must not depend on an optional legacy activation switch');
+assert.match(
+  dispatchSource,
+  /if \(route === 'openai_images'\) return dispatchGenerationAttempt\(c\);/,
+  'Images must always route through Generation Center',
+);
+assert.doesNotMatch(
+  dispatchSource,
+  /AIG_GENERATION_ACTIVE|route === 'openai_images' &&/,
+  'Images must not depend on an optional legacy activation switch',
+);
 assert.match(dispatchSource, /dispatchLegacyProvider\(c, sourceBody\)/, 'Old inference transport must have one explicit seam');
-assert.doesNotMatch(legacySource, /openai_images|preparedImage|PreparedImageRequest|\.image\b/, 'Legacy Provider path must never contain image-generation execution');
+assert.doesNotMatch(
+  legacySource,
+  /openai_images|preparedImage|PreparedImageRequest|\.image\b/,
+  'Legacy Provider path must never contain image-generation execution',
+);
 assert.match(legacySource, /export async function dispatchLegacyProvider\(/, 'Legacy transport must be isolated for later deletion');
 assert.match(legacySource, /await fetch\(/, 'Legacy outbound request must stay behind its seam');
 assert.doesNotMatch(legacySource, /runTierLoop|dispatchWithHedge/, 'Legacy transport must not own request-level scheduling');
