@@ -347,6 +347,16 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 中央 Action Worker [#1541](https://github.com/fongap-labs/action-worker/pull/1541) 进一步将真实架构黑盒请求切至私有中心、把 Provider 凭据冲突判定归属 `loadExecutionConfig`，并维护两阶段源码切换的预算校验。最新不可变中央包为 `9f980005ae776ef5f3676b675b765966787aa783`，AG 当前 HEAD 必须使用该 SHA 通过完整 Linux/Security/CI Evidence/PR Governance/validate-merge 才允许退役旧执行器。旧 Gateway 在任何模式下不能直接持有 Provider 密钥或调用上游；旧中心参数与当前中心实行差异若出现，必须在真实中心修复而非放宽协议断言。
 
+## Operations 源码入口独立（不切部署）
+
+`operations/index.ts` 正式拥有定时维护 `scheduled` 入口，直接调用 `operations/maintenance/usage.ts`；`src/index.ts` 仅保留 Cloudflare 的 `fetch` 和 `scheduled` 兼容组合，公开 `apps/gateway/index.ts` 不承担定时维护职责。静态架构边界门禁强制检查三个文件之间的委托关系，防止统计维护重新混入请求热路径。
+
+此变更不改变现有 `wrangler.jsonc`、Cron 时间、D1 绑定、生产 Secrets、部署或发布。**独立入口不等于 Operations 已独立部署或整套应用已独立构建**：仍须继续隔离其 `src/observability` 依赖并建立独立构建合同。
+
+### 私有中心排除无效节点后的安全轮转
+
+中央回归发现：Gateway 只解析公开元数据时，中心可能因节点凭据冲突将候选排除。中心必须为未进入物理执行的缺失节点返回精确的 `404 / center_route_unavailable / x-aig-result: skipped` 信号；Gateway 仅接受该完整组合做不计费、中性轮转，继续尝试其它通过中心密钥校验的候选。其它未知中心错误继续失败关闭，不能触发旧 Provider 直连。既有中央 `tier1-capacity-test.mjs` 必须验证坏节点被排除且好节点继续返回 200。
+
 ## Gateway 私有能力中心调用客户端归属
 
 将 `src/inference/inference-client-request.ts` 与 `src/generation/generation-client-request.ts` 的传输实现迁至 `apps/gateway/transport/`，Gateway 的推理与生图执行层直接引用新位置；旧路径仅保留单行导出，以维持现有合同调用方兼容。标准 HTTP Request / Response、Service Binding 鉴权、客户端令牌隔离、截止时间及信号透传保持原合同。中央 `check:transport` 同时验证源码归属及私有请求行为。**本项为职责与源码迁移，不涉及能力中心物理执行实现，也不调整生产部署。**
