@@ -61,7 +61,7 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
 }
 
 async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
-  const { env, route, node, reqDescriptor, conversionContext, bodyJson } = c;
+  const { route, node, reqDescriptor, conversionContext, bodyJson } = c;
   const attemptStartMs = Date.now();
   c.attemptStartMs = attemptStartMs;
   // Created BEFORE the physical attempt and before any hedge context copies.
@@ -76,7 +76,6 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // A missing Service Binding or auth key fails closed (503); never dispatch a
   // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
-  // An explicit deployment cutover is fail-closed even if the Service
   // The Gateway never owns Provider credentials or outbound network calls.
   // A missing/invalid Service Binding is classified by dispatchInferenceAttempt
   // as a neutral 503; it MUST NOT trigger a legacy direct-provider fallback.
