@@ -94,7 +94,7 @@ try {
 
   // Deployment intent must prevent a silent direct-Provider fallback even if
   // the private Service Binding is absent. No physical attempt is chargeable.
-  const unboundEnv = { ...env, AIG_INFERENCE_ACTIVE: 'true' };
+  const unboundEnv = { ...env }; // No binding or activation flag may ever re-enable direct Provider execution.
   const unboundState = {
     attempted: new Set(),
     attempts: [],
@@ -140,8 +140,8 @@ try {
   assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
 
   // A center-owned Gateway must be routable with NO static Provider secrets.
-  // An unbound legacy Gateway and private execution center still reject that
-  // same secretless static node, preventing credential-free Provider fetches.
+  // A public Gateway can route secretless metadata even when a private binding
+  // is missing; the dispatch layer must fail closed rather than use Provider keys.
   const secretless = {
     AIG_ACCESS_KEY_AGENT: 'center-metadata-test-client-key',
     AIG_TIER3_NODES_01: env.AIG_TIER3_NODES_01,
@@ -156,7 +156,7 @@ try {
   });
   assert.equal(boundGateway.ready, true);
   assert.equal(boundGateway.nodes[0].credential, '');
-  assert.equal(loadGatewayConfig(secretless).ready, false, 'legacy inference requires a real Provider key');
+  assert.equal(loadGatewayConfig(secretless).ready, true, 'public Gateway never requires static Provider credentials');
   assert.equal(loadExecutionConfig(secretless).ready, false, 'private inference must retain credential enforcement');
   const redactedGateway = loadGatewayConfig({
     ...secretless,

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
-import { loadGatewayConfig } from '../src/config/nodes.ts';
+import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -247,7 +247,15 @@ export function preflight(env) {
   if (analyticsDataset && !ANALYTICS_DATASET_NAME.test(analyticsDataset)) {
     errors.push('AIG_ANALYTICS_DATASET must be 1-64 letters, digits or underscores.');
   }
-  const config = loadGatewayConfig({ ...v.vars, ...s.secrets });
+  const managedEnv = { ...v.vars, ...s.secrets };
+  const config = loadGatewayConfig(managedEnv);
+  // Even though the public Gateway is metadata-only, deployment preflight
+  // MUST still validate the independent private Provider execution snapshot.
+  // Otherwise a cross-tier or ambiguous secret could silently pass the gate.
+  const privateExecutionConfig = loadExecutionConfig(managedEnv);
+  if (!privateExecutionConfig.ready || privateExecutionConfig.hasConfigErrors) {
+    errors.push(`Private execution configuration is invalid: ${privateExecutionConfig.diagnostics.join('; ')}`);
+  }
   // A rejected setting is a mistake to fix, not capacity to accept: the runtime
   // keeps serving around it, but it never ships, whatever AIG_ALLOW_DEGRADED says.
   if (config.hasConfigErrors) {
@@ -314,6 +322,15 @@ export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
 export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) {
   const env = { ...runtime.vars, ...runtime.secrets };
   const config = loadGatewayConfig(env);
+  // The Gateway no longer reads secret shards. Validate them at the same
+  // strict private-center boundary before any deployment package is emitted.
+  const privateExecutionConfig = loadExecutionConfig(env);
+  if (!privateExecutionConfig.ready || privateExecutionConfig.hasConfigErrors) {
+    const details = privateExecutionConfig.diagnostics.length ? `: ${privateExecutionConfig.diagnostics.join('; ')}` : '';
+    throw new Error(
+      `private execution runtime configuration is ${privateExecutionConfig.ready ? 'in error' : privateExecutionConfig.status}${details}`,
+    );
+  }
   if (!config.ready || config.hasConfigErrors) {
     const details = config.diagnostics.length ? `: ${config.diagnostics.join('; ')}` : '';
     throw new Error(`gateway runtime configuration is ${config.ready ? 'in error' : config.status}${details}`);

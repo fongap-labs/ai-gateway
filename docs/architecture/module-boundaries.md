@@ -337,10 +337,20 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 本批锁定中央不可变测试包 `0fb160de1677a9b0abec9fac99c3d65136de914c`，须经 AI Gateway 最终 Head 全量 Linux、Security、CI Evidence、PR Governance 与 validate-merge 验收。**仅变更测试包引用与文档，不改生产 Runtime、Secrets、Service Binding 或部署；剩余旧 Gateway Provider 直连和执行选择器尚未退役。**
 
+## Gateway 推理中心强制切换：源码退役门禁
+
+本源码变更移除 `src/request/attempt/legacy-provider-dispatch.ts` 并删除推理旧执行模式选择器。所有推理尝试无条件走私有 `dispatchInferenceAttempt`；Service Binding 缺失或无效时只允许无 Provider 调用的受控 503，而不是凭旧 Secret 静默直连。
+
+`loadGatewayConfig` 对公开 Gateway 不再解析任何 `AIG_TIER*_CREDENTIALS_*` 值，即使旧部署仍注入密钥、或者私有中心尚未配置；仅能力中心的 `loadExecutionConfig` 负责严格读取上游密钥。旧静态配置校验测试如仍假定 Gateway 拥有 Provider 凭据，必须迁移为能力中心验证，不得为凑绿放松中心密钥审查。
+
+中央 Action Worker [#1539](https://github.com/fongap-labs/action-worker/pull/1539) 已整合 Tier 1 共享冷却、Claude Code 高风险字段与 17/19 MiB 大请求的中心等价合同，另有 Action Worker [#1540](https://github.com/fongap-labs/action-worker/pull/1540) 将 17 项剩余 OAuth／订阅上游执行合同迁入私有中心。两批合并后的中央测试包固定为 `138f30ad8143d795702b63495f4edfa79ec59c11`。该源码退役变更必须在最终 HEAD 上完整通过中央 Linux、Security、CI Evidence、PR Governance 与 validate-merge 后才能合并。**不更改生产 Secrets、Service Binding、部署或发布。**
+
+中央 Action Worker [#1541](https://github.com/fongap-labs/action-worker/pull/1541) 进一步将真实架构黑盒请求切至私有中心、把 Provider 凭据冲突判定归属 `loadExecutionConfig`，并维护两阶段源码切换的预算校验。最新不可变中央包为 `9f980005ae776ef5f3676b675b765966787aa783`，AG 当前 HEAD 必须使用该 SHA 通过完整 Linux/Security/CI Evidence/PR Governance/validate-merge 才允许退役旧执行器。旧 Gateway 在任何模式下不能直接持有 Provider 密钥或调用上游；旧中心参数与当前中心实行差异若出现，必须在真实中心修复而非放宽协议断言。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
-2. 网关只调用 `ExecutionTransport`，彻底移走直连 Provider 和 OAuth。
+2. Gateway 物理推理统一走私有中心；继续移走非执行 OAuth 管理和 Provider 配置兼容依赖。
 3. 由推理中心拥有双向协议转换、流处理和物理上游用量；Gateway 仅有界检查首事件。
 4. 对已有多模态理解建立真实感知中心，不制造无功能服务；生成中心继续完善非幂等边界。
 5. 独立运维与可观测处理；新增本地 HTTP Mock 合同测试；删除入口旧路径和例外。

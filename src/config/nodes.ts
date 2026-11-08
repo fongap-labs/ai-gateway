@@ -132,9 +132,9 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   diagnostics.push(...auxDiagnostics);
   const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `AIG_ACCESS_KEY_${g}`));
 
-  // Center-enabled Gateway never owns physical Provider credentials.
-  // Decide this before parsing secret shards to avoid even reading their values.
-  const isGatewayInferenceCenterActive = shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
+  // The public Gateway is ALWAYS metadata-only, even when its private center
+  // binding is temporarily unavailable. Never parse upstream Provider secrets.
+  const isGatewayInferenceCenterOwned = shouldRequireClientKey;
   const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
   const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
   let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
@@ -166,10 +166,9 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const conflictedIds = new Set<string>();
   let hasConfigErrors = auxDiagnostics.length > 0;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
-  // Keep only shard *names* for deployment diagnostics. Active Gateway
-  // scheduling must not parse (or cache) secrets even if an old deployment
-  // still injects them; execution centers validate their own credentials.
-  const secretShardsToParse = isGatewayInferenceCenterActive ? [] : sortedSecretShards;
+  // Only private centers parse physical credentials. The public Gateway
+  // preserves shard names for migration diagnostics without reading values.
+  const secretShardsToParse = isGatewayInferenceCenterOwned ? [] : sortedSecretShards;
   for (const shard of secretShardsToParse) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics, { isSecret: true });
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -233,7 +232,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
         shard.key,
         diagnostics,
         shouldRequireClientKey,
-        isGatewayInferenceCenterActive,
+        isGatewayInferenceCenterOwned,
       );
       if (!node) continue;
       if (node.auth === 'oauth' && !isSubscriptionEnabled) {
@@ -301,7 +300,7 @@ function buildRuntimeNode(
   sourceKey: string,
   diagnostics: string[],
   isGateway: boolean,
-  isGatewayInferenceCenterActive: boolean,
+  isGatewayInferenceCenterOwned: boolean,
 ): RuntimeNode | null {
   if (!rawNode || typeof rawNode !== 'object' || Array.isArray(rawNode)) {
     diagnostics.push(`${sourceKey}: entry is not a JSON object`);
@@ -359,7 +358,7 @@ function buildRuntimeNode(
 
   const profile = getProviderProfile(provider);
   const isImageOnly = profile.wire.surfaces.length === 1 && profile.wire.surfaces[0] === 'images_generations';
-  const credentialBelongsToCenter = isGateway && (isGatewayInferenceCenterActive || isImageOnly);
+  const credentialBelongsToCenter = isGateway && (isGatewayInferenceCenterOwned || isImageOnly);
 
   // base_url is required for static-credential nodes. Tier 2 `auth:"oauth"`
   // subscription nodes may omit base_url: their Provider profile declares the

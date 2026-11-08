@@ -7,7 +7,7 @@
 
 import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
-import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, QUOTA_RETRY_AFTER_MAX_MS, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { invokeInferenceNode } from '../../inference/inference-client-request.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
@@ -216,7 +216,24 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   if (!upstream.ok) {
     detach();
     const errorText = await safeReadErrorBody(upstream, 4096, c.attemptDeadlineMs);
-    const classified = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
+    let classified = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
+    // The private center alone decodes subscription-specific error windows.
+    // Accept only a bounded neutral duration from the authenticated center;
+    // keep physical Provider adapter code and raw headers out of Gateway.
+    const resetHeader = upstream.headers.get('x-aig-subscription-quota-reset-ms');
+    const resetMs = resetHeader && /^[1-9]\d*$/.test(resetHeader) ? Number(resetHeader) : 0;
+    if (
+      node.auth === 'oauth' &&
+      classified.kind === KIND.RATE_LIMIT &&
+      Number.isSafeInteger(resetMs) &&
+      resetMs > 0 &&
+      resetMs <= QUOTA_RETRY_AFTER_MAX_MS
+    ) {
+      classified = { ...classified, cooldownMs: Math.max(classified.cooldownMs, resetMs) };
+      if (node.tier === 'tier-1') {
+        recordTier1QuotaReport(node.id, { remainingRequests: 0, resetAtMs: Date.now() + resetMs, source: 'private-subscription-window' });
+      }
+    }
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status, diagnostic: errorText });
     if (classified.action === 'stop') {
