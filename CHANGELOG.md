@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 将 D1 用量基础统计模块移入中立 Usage Store，定时聚合归属 Operations。
+- 维护: 旧可观测性模块只作兼容导出，锁定跨应用依赖方向。
 - 维护: 定时统计聚合与保留期清理归入 Operations。
 - 维护: 原 Token 统计保留期路径只保留兼容导出。
 - 维护: 共享 Runtime 和 D1 类型统一归属中立 Contracts。
