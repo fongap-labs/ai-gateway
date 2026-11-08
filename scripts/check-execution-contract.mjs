@@ -114,7 +114,7 @@ for (const [name, value] of [
   ['x-aig-return-stream', 'false'],
   ['x-aig-return-stream', ''],
   ['x-aig-display-model', ''],
-  ['x-aig-display-model', '\\n'],
+  ['x-aig-display-model', 'x'.repeat(129)],
   ['x-aig-conversion-prefer-nonstream', 'true'],
   ['x-aig-return-object', 'true'],
 ]) {
