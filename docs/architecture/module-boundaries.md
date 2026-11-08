@@ -329,6 +329,14 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 两项中央 PR 均已通过全部门禁，本批锁定最新不可变 SHA `ffa5c274cd0ded7158e38934e6de7dc6a45b720f`，由 AI Gateway 再进行中央 Linux 全量、Security、CI Evidence、PR Governance 与 validate-merge 验收。**本批不改运行时与部署配置**。凭据冲突、无效分片、部署预检等旧配置语义测试仍然保留原配置环境，整套 Tier 1 容量测试尚未完成中心化；不能因此删除 `legacy-provider-dispatch.ts` 或宣布旧直连已退役。
 
+## 无密钥健康接口与会话亲和合同：第二十四批
+
+中央 Action Worker [#1536](https://github.com/fongap-labs/action-worker/pull/1536) 将 `health-visibility-test.mjs` 三项客户端合同迁移到显式启用 Inference Center 的无 Provider 静态密钥环境：AIR 客户端仅可看到允许的模型节点，PRO 客户端保持全节点可见，未授权请求拒绝 401；所有 `/health` 只读请求必须保证私有中心物理执行与转换预检零调用。该 PR 在 Action Worker 基线更新后重新通过全部门禁，并合并为 `0fb160de1677a9b0abec9fac99c3d65136de914c`。
+
+中央 Action Worker [#1537](https://github.com/fongap-labs/action-worker/pull/1537) 将 `tier1-capacity-test.mjs` 的六组实际 Gateway 请求迁移至私有中心：单密钥无多余 KV 亲和读写、KV 超时与错误不拖慢请求/不制造写入、Claude Code 会话标识识别、每个实际 Provider 尝试精确关联 Analytics 事件以及 Analytics 故障不影响成功请求。保留原 KV 次数、响应状态、计时与事件字段断言；新增私有 `/internal/execute` 对真实 Provider 请求的一一对应检查。配置/密钥冲突与大请求预算等未迁移用例仍单独保留。
+
+本批锁定中央不可变测试包 `0fb160de1677a9b0abec9fac99c3d65136de914c`，须经 AI Gateway 最终 Head 全量 Linux、Security、CI Evidence、PR Governance 与 validate-merge 验收。**仅变更测试包引用与文档，不改生产 Runtime、Secrets、Service Binding 或部署；剩余旧 Gateway Provider 直连和执行选择器尚未退役。**
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
