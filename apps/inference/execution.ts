@@ -23,7 +23,7 @@ import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import type { SubscriptionWire } from '../../src/subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import type { GatewayEnv } from '../../src/types/runtime.ts';
+import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
