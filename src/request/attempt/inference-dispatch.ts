@@ -150,7 +150,8 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   if (executionResult === 'skipped' && node.auth === 'oauth') {
     const centerErrorKind = upstream.headers.get('x-aig-error-kind');
     const isSubscriptionUnavailable =
-      upstream.status === 503 && (centerErrorKind === 'center_subscription_unavailable' || centerErrorKind === 'center_subscription_unsupported');
+      upstream.status === 503 &&
+      (centerErrorKind === 'center_subscription_unavailable' || centerErrorKind === 'center_subscription_unsupported');
     const isSubscriptionRejected = upstream.status === 502 && centerErrorKind === 'center_subscription_rejected';
     if (isSubscriptionUnavailable || isSubscriptionRejected) {
       detach();
