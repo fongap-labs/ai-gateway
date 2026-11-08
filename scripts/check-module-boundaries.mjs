@@ -299,11 +299,13 @@ assert.match(budgetSettlement, /centerBudgetStop = reason/, 'Gateway must observ
 assert.match(budgetSettlement, /budgetExceeded: \(\) => centerBudgetStop/, 'Gateway must settle v5 budget event once');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
-assert.match(
-  readFileSync(join(root, 'src/index.ts'), 'utf8'),
-  /operations\/maintenance\/usage\.ts/,
-  'Cloudflare composition must retain scheduled maintenance',
-);
+const operationsSource = readFileSync(join(root, 'operations/index.ts'), 'utf8');
+const compositionRoot = readFileSync(join(root, 'src/index.ts'), 'utf8');
+assert.match(operationsSource, /from '\.\/maintenance\/usage\.ts'/, 'Operations must own the scheduled maintenance implementation');
+assert.match(operationsSource, /export async function scheduled\(/, 'Operations must expose an independent scheduled entry');
+assert.match(compositionRoot, /import operations from '\.\.\/operations\/index\.ts'/, 'Cloudflare composition must delegate to Operations');
+assert.match(compositionRoot, /scheduled: operations\.scheduled/, 'Composition must preserve Cron behavior');
+assert.doesNotMatch(compositionRoot, /runUsageMaintenance|maintainUsageStats|async scheduled/, 'Composition must not own maintenance implementation');
 for (const [app, shim] of [
   ['apps/gateway/index.ts', 'src/index.ts'],
   ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],

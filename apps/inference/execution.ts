@@ -117,7 +117,10 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   // by loadExecutionConfig; an entirely unusable center still fails closed.
   if (!config.ready) return problem(503, 'center_configuration_invalid');
   const node = nativeNode(config.nodes, invocation, env);
-  if (!node) return problem(404, 'center_route_unavailable');
+  // This node is absent from the center's strictly validated physical pool.
+  // Tell Gateway no Provider execution occurred so it may try another
+  // metadata-visible node without falsely marking the Provider unhealthy.
+  if (!node) return preDispatchProblem(404, 'center_route_unavailable');
 
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return problem(415, 'center_content_type_invalid');
