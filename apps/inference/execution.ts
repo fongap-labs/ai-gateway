@@ -112,7 +112,10 @@ function forwardedRequest(request: Request): Request {
 
 export async function executeNative(request: Request, env: GatewayEnv, invocation: Invocation): Promise<Response> {
   const config = loadExecutionConfig(env);
-  if (!config.ready || config.hasConfigErrors) return problem(503, 'center_configuration_invalid');
+  // Keep serving strictly validated nodes in a degraded configuration, as the
+  // former Gateway did. Invalid nodes and missing secrets are already excluded
+  // by loadExecutionConfig; an entirely unusable center still fails closed.
+  if (!config.ready) return problem(503, 'center_configuration_invalid');
   const node = nativeNode(config.nodes, invocation, env);
   if (!node) return problem(404, 'center_route_unavailable');
 
