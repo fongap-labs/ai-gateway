@@ -121,7 +121,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   const maxRequestBytes = getLimits(env).maxBodyBytes;
   const rawLength = request.headers.get('content-length');
   const declaredSize = rawLength === null ? 0 : Number(rawLength);
-  if (rawLength !== null && (!/^\\d+$/.test(rawLength) || !Number.isSafeInteger(declaredSize))) {
+  if (rawLength !== null && (!/^\d+$/.test(rawLength) || !Number.isSafeInteger(declaredSize))) {
     return problem(400, 'center_body_length_invalid');
   }
   if (declaredSize > maxRequestBytes) return problem(413, 'center_body_too_large');
