@@ -313,6 +313,14 @@ Action Worker [#1532](https://github.com/fongap-labs/action-worker/pull/1532) �
 
 **本批除中央等价回归外，还包含明确的 Gateway Runtime 客户端取消分类修复；不修改生产 Secrets、Service Binding 或部署。** 仍须审计其它中央套件中遗留的直连模拟以及源码引用，再删除 `legacy-provider-dispatch.ts` 和旧执行模式选择器；不得将测试包迁移误报为运行时退役。
 
+## 动态模型目录与可靠性调优合同：第二十二批
+
+中央 Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) 已迁移新增逻辑模型的真实 Chat 请求：仅配置新增 Brand-New → gpt-brand-new 映射，即可走私有 Inference Center，`/v1/models` 仍保持只读且不发生物理派发。Gateway 侧不持有 Provider 凭据，私有 `/internal/execute` 与真实物理请求计数一致，中心不接收客户端认证密钥。
+
+中央 Action Worker [#1534](https://github.com/fongap-labs/action-worker/pull/1534) 进一步将可靠性调优黑盒合同接入私有中心：五小时配额型 429 逐阶冷却且健康兄弟账号继续服务；分钟级 429 不误判为长期配额；Tier 3 Retry-After 上限；缓冲、流式与大 Prompt 不同 Header 和 Hedge 延时；Claude Code Messages→Chat 可选服务工具保留普通函数工具，强制不可降级语义继续拒绝。纯函数测试不变；所有实际 Provider fetch 严格对应私有 `/internal/execute`，转换预检不算物理执行，外部认证头不透传。
+
+两项中央测试已通过各自完整门禁；本批锁定不可变测试包 SHA `07f6f227fa23d92ebe490c7854e183b9aeca3040`，并要求 AI Gateway 最终 HEAD 再完成全量 Linux、安全、CI Evidence、PR Governance 与 validate-merge。**本批只提升中心化测试覆盖，不改变 Gateway Runtime、生产 Secrets、Service Binding、发布或部署。** `legacy-provider-dispatch.ts`、旧模式选择器以及其它仍使用直连测试的用例，尚未完成退役核验。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
