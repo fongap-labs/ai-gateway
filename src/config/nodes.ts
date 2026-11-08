@@ -194,8 +194,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   // Gateway schedules center-owned attempts using public node metadata only.
   // The private centers still require their own Provider credential shards.
-  const isGatewayInferenceCenterActive =
-    shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
+  const isGatewayInferenceCenterActive = shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
@@ -220,7 +219,16 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
         hasConfigErrors = true;
         continue;
       }
-      const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics, shouldRequireClientKey, isGatewayInferenceCenterActive);
+      const node = buildRuntimeNode(
+        rawNode,
+        tier,
+        credentials,
+        isHttpAllowed,
+        shard.key,
+        diagnostics,
+        shouldRequireClientKey,
+        isGatewayInferenceCenterActive,
+      );
       if (!node) continue;
       if (node.auth === 'oauth' && !isSubscriptionEnabled) {
         // Disabled subscription nodes are not part of the configuration at all.
