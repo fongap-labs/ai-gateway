@@ -6,6 +6,7 @@
 // Once the binding exists there is NO automatic direct-provider fallback.
 
 import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
+import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { invokeInferenceNode } from '../../inference/inference-client-request.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
@@ -57,6 +58,9 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify(body);
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
+  // First v4 slice: leave active conversion budgets on the proven v2 path.
+  // Budget-event settlement is a separate compatibility-critical migration.
+  const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && !limits.conversionBudget && c.bodyJson.stream === true);
   const hasBufferedResponse = !c.conversionContext && !c.clientWantsStream && !c.fakeStream;
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
@@ -104,6 +108,8 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       inputSurface: inputSurface ?? undefined,
       preferNonstream: c.conversionContext?.isNonstreamPreferred ? true : undefined,
       returnObject: c.conversionContext?.isNonstreamPreferred && !c.clientWantsStream && !c.fakeStream ? true : undefined,
+      returnStream: returnStream ? true : undefined,
+      displayModel: returnStream ? requestedModel : undefined,
       deadlineMs: c.attemptDeadlineMs,
       body: outboundBody,
       signal: controller.signal,
@@ -135,6 +141,18 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     detach();
     return stopForCenter(c, upstream.status === 413 ? 413 : 503, 'gateway_inference_center_rejected');
   }
+  if (
+    returnStream &&
+    upstream.ok &&
+    (isOpenAIStreamingResponse(upstream) ||
+      (upstream.headers.has('x-aig-response-format') && upstream.headers.get('x-aig-response-format') !== INFERENCE_FRAMED_STREAM_FORMAT))
+  ) {
+    // A v4 center MUST NOT return unframed SSE. Reject before any client
+    // response byte; no fallback to the direct Provider path.
+    detach();
+    recordUndeliveredUpstreamAttempt(c, node);
+    return stopForCenter(c, 502, 'gateway_inference_stream_format_invalid');
+  }
   if (node.tier === 'tier-1') {
     const signal = quotaFromCenter(upstream.headers);
     if (signal) recordTier1QuotaReport(node.id, signal);
@@ -159,6 +177,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const successContext = successNode === node ? c : { ...c, node: successNode };
   return handleSuccess({
     upstream,
+    centerFramedStreamExpected: returnStream,
     c: successContext,
     targetUrl: INTERNAL_TARGET,
     latencyMs: c.headersMs,

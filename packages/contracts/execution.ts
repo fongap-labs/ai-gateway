@@ -7,6 +7,7 @@
 export const EXECUTION_CONTRACT_VERSION = '1' as const;
 export const EXECUTION_TRANSLATION_CONTRACT_VERSION = '2' as const;
 export const EXECUTION_OBJECT_CONTRACT_VERSION = '3' as const;
+export const EXECUTION_STREAM_CONTRACT_VERSION = '4' as const;
 export const INFERENCE_TRANSLATED_OBJECT_FORMAT = 'translated-object-v1' as const;
 export const EXECUTION_PATH = '/internal/execute' as const;
 export const MAX_EXECUTION_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
@@ -28,6 +29,10 @@ export type ExecutionInvocation = {
   preferNonstream?: true;
   /** v3 only: translate a buffered Provider object to client protocol in center. */
   returnObject?: true;
+  /** v4 only: private framed SSE for client-streaming requests. */
+  returnStream?: true;
+  /** The authorized public model name, not the physical Provider model. */
+  displayModel?: string;
 };
 
 export type ExecutionError = {
@@ -72,11 +77,13 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version': invocation.returnObject
-      ? EXECUTION_OBJECT_CONTRACT_VERSION
-      : invocation.inputSurface
-        ? EXECUTION_TRANSLATION_CONTRACT_VERSION
-        : EXECUTION_CONTRACT_VERSION,
+    'x-aig-contract-version': invocation.returnStream
+      ? EXECUTION_STREAM_CONTRACT_VERSION
+      : invocation.returnObject
+        ? EXECUTION_OBJECT_CONTRACT_VERSION
+        : invocation.inputSurface
+          ? EXECUTION_TRANSLATION_CONTRACT_VERSION
+          : EXECUTION_CONTRACT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-node-id': invocation.nodeId,
     'x-aig-model': invocation.logicalModel,
@@ -87,6 +94,8 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   if (invocation.inputSurface) headers.set('x-aig-input-surface', invocation.inputSurface);
   if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
   if (invocation.returnObject) headers.set('x-aig-return-object', 'true');
+  if (invocation.returnStream) headers.set('x-aig-return-stream', 'true');
+  if (invocation.displayModel) headers.set('x-aig-display-model', invocation.displayModel);
   return headers;
 }
 
@@ -97,7 +106,12 @@ export function parseExecutionInvocation(
   nowMs = Date.now(),
 ): ExecutionInvocation | null {
   const version = request.headers.get('x-aig-contract-version');
-  if (version !== EXECUTION_CONTRACT_VERSION && version !== EXECUTION_TRANSLATION_CONTRACT_VERSION && version !== EXECUTION_OBJECT_CONTRACT_VERSION)
+  if (
+    version !== EXECUTION_CONTRACT_VERSION &&
+    version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
+    version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
+    version !== EXECUTION_STREAM_CONTRACT_VERSION
+  )
     return null;
   const requestId = request.headers.get('x-aig-request-id') ?? '';
   const nodeId = request.headers.get('x-aig-node-id') ?? '';
@@ -114,12 +128,17 @@ export function parseExecutionInvocation(
   const rawInputSurface = request.headers.get('x-aig-input-surface');
   const preferNonstream = request.headers.get('x-aig-conversion-prefer-nonstream');
   const returnObject = request.headers.get('x-aig-return-object');
+  const returnStream = request.headers.get('x-aig-return-stream');
+  const displayModel = request.headers.get('x-aig-display-model');
   if (rawInputSurface === null) {
-    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null) return null;
+    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
+      return null;
     return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
   }
   if (
-    (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION && version !== EXECUTION_OBJECT_CONTRACT_VERSION) ||
+    (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
+      version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
+      version !== EXECUTION_STREAM_CONTRACT_VERSION) ||
     rawSurface === 'images_generations' ||
     !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
     rawInputSurface === rawSurface
@@ -127,6 +146,17 @@ export function parseExecutionInvocation(
     return null;
   if (preferNonstream !== null && preferNonstream !== 'true') return null;
   if (version === EXECUTION_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== 'true')) return null;
+  if (version === EXECUTION_STREAM_CONTRACT_VERSION) {
+    if (
+      returnStream !== 'true' ||
+      returnObject !== null ||
+      preferNonstream !== null ||
+      !displayModel ||
+      displayModel.length > 128 ||
+      /[\r\n]/.test(displayModel)
+    )
+      return null;
+  } else if (returnStream !== null || displayModel !== null) return null;
   if (version === EXECUTION_TRANSLATION_CONTRACT_VERSION && returnObject !== null) return null;
   return {
     requestId,
@@ -137,6 +167,7 @@ export function parseExecutionInvocation(
     inputSurface: rawInputSurface as ExecutionInputSurface,
     ...(preferNonstream === 'true' ? { preferNonstream: true as const } : {}),
     ...(returnObject === 'true' ? { returnObject: true as const } : {}),
+    ...(returnStream === 'true' ? { returnStream: true as const, displayModel: displayModel as string } : {}),
   };
 }
 
