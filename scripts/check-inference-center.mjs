@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
+import { preDispatchProblem } from '../apps/inference/response.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
@@ -82,6 +83,13 @@ try {
   assert.equal(failed.headers.get('x-aig-result'), 'attempted');
   assert.equal(failed.headers.get('x-aig-error-kind'), 'center_upstream_network');
   assert.equal(attempts, 2, 'center executes one physical attempt and never retries');
+  // Pre-dispatch OAuth skips must be explicit; ordinary center problems never
+  // acquire a 'skipped' marker or become eligible for Gateway rotation.
+  const missingSubscription = preDispatchProblem(503, 'center_subscription_unavailable');
+  assert.equal(missingSubscription.headers.get('x-aig-result'), 'skipped');
+  assert.equal(missingSubscription.headers.get('x-aig-error-kind'), 'center_subscription_unavailable');
+  assert.equal((await missingSubscription.json()).error.retryable, false);
+
 
   // Deployment intent must prevent a silent direct-Provider fallback even if
   // the private Service Binding is absent. No physical attempt is chargeable.
