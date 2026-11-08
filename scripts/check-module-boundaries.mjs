@@ -331,6 +331,22 @@ const operationsSource = readFileSync(join(root, 'operations/index.ts'), 'utf8')
 const compositionRoot = readFileSync(join(root, 'src/index.ts'), 'utf8');
 assert.match(operationsSource, /from '\.\/maintenance\/usage\.ts'/, 'Operations must own the scheduled maintenance implementation');
 assert.match(operationsSource, /export async function scheduled\(/, 'Operations must expose an independent scheduled entry');
+// Usage aggregation and retention must have one Operations-owned executor.
+// The former observability source path remains a compatibility export only.
+const usageMaint = readFileSync(join(root, 'operations/maintenance/usage.ts'), 'utf8');
+const retentionOwner = readFileSync(join(root, 'operations/maintenance/retention.ts'), 'utf8');
+const retentionCompat = readFileSync(join(root, 'src/observability/token-usage-store/retention.ts'), 'utf8');
+assert.match(usageMaint, /from '\.\/retention\.ts'/, 'Scheduled usage maintenance must call its Operations-owned executor');
+assert.doesNotMatch(usageMaint, /from ['"][^'"]*\/src\/observability\/token-usage-store\.ts/, 'Cron must not use old maintenance facade');
+assert.match(retentionOwner, /export async function maintainUsageStats\(/, 'Operations must implement usage maintenance');
+assert.match(retentionOwner, /aggregation failed; retention cleanup deferred/, 'Failed aggregation must never discard source rows');
+assert.match(retentionOwner, /await flushUsageBuffer\(/, 'Maintenance must flush pending usage before aggregating');
+assert.ok(
+  retentionCompat.includes("from '../../../operations/maintenance/retention.ts'"),
+  'Legacy retention path must re-export the Operations implementation',
+);
+assert.doesNotMatch(retentionCompat, /export async function /, 'Legacy retention must not duplicate scheduled cleanup logic');
+
 assert.match(compositionRoot, /import operations from '\.\.\/operations\/index\.ts'/, 'Cloudflare composition must delegate to Operations');
 assert.match(compositionRoot, /scheduled: operations\.scheduled/, 'Composition must preserve Cron behavior');
 assert.doesNotMatch(compositionRoot, /runUsageMaintenance|maintainUsageStats|async scheduled/, 'Composition must not own maintenance implementation');
