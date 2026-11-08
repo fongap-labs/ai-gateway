@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 调整: 图片生成仅通过私有 Generation Center 执行；删除 Gateway 旧直连中的图片实现，缺失中心时安全返回 503；推理旧直连仍待拆除。
+
 - 新增: Inference v5 预算流式契约与中心执行、私有停止事件和 Gateway 中性结算；无预算继续 v4。
 
 - 新增: Inference v4 在未开启转换预算时实际接管流式响应转换，Gateway 解帧后保留首事件及用量结算。

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Transitional direct Provider transport. ISOLATED for deletion after center
-// parity: never called when the respective private capability center is active.
+// Transitional INFERENCE-only direct Provider transport. Image generation
+// is always delegated to its private center and must never reach this module.
+// This remaining seam is deleted once inference parity tests are migrated.
 // This module MUST NOT own Tier selection, cross-node retry or Hedge policy.
 
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
@@ -11,7 +12,6 @@ import { resolveSubscriptionCredential } from '../../oauth/resolve.ts';
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { buildTargetUrl, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse, withUsageStreamOptions } from '../../protocol/openai.ts';
-import type { ImageSize, PreparedImageRequest } from '../../providers/image-generation.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../providers/registry.ts';
 import {
   classifyClientAbort,
@@ -89,25 +89,6 @@ export async function dispatchLegacyProvider(c: AttemptContext, sourceBody: Reco
     // beyond the model rewrite.
     outboundObject = { ...sourceBody, model: upstreamModel };
   }
-  // Image generation has its own provider-native body and must never inherit
-  // chat streaming arguments, OAuth subscription entitlements, or tool fields.
-  let preparedImage: PreparedImageRequest | null = null;
-  if (route === 'openai_images') {
-    const adapter = getProviderAdapter(node.provider).image;
-    if (!adapter || isSubscriptionNode(node)) return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
-    try {
-      preparedImage = adapter.prepare(node.baseUrl, upstreamModel, {
-        prompt: String(bodyJson.prompt),
-        size: (bodyJson.size ?? '1024x1024') as ImageSize,
-      });
-    } catch {
-      return rotateWithNeutralEnd(state, node, KIND.INVALID_BASE_URL, c, true);
-    }
-    if (!preparedImage) return rotateWithNeutralEnd(state, node, KIND.CLIENT, c, true);
-    outboundObject = preparedImage.body;
-    isBodyMutated = true;
-  }
-
   // Ask the OpenAI-chat upstream to report usage in the final streaming chunk.
   // This is a passive protocol hint (include_usage) that changes nothing the
   // client sees and is gated by provider quirks + operator switches, so an
@@ -190,11 +171,9 @@ export async function dispatchLegacyProvider(c: AttemptContext, sourceBody: Reco
 
   let targetUrl: URL | string;
   try {
-    targetUrl = preparedImage
-      ? preparedImage.url
-      : subscriptionUpstreamUrl
-        ? new URL(subscriptionUpstreamUrl).toString()
-        : buildTargetUrl(node.baseUrl, resolveUpstreamPath(upstreamProtocol, surface));
+    targetUrl = subscriptionUpstreamUrl
+      ? new URL(subscriptionUpstreamUrl).toString()
+      : buildTargetUrl(node.baseUrl, resolveUpstreamPath(upstreamProtocol, surface));
   } catch {
     return rotateWithNeutralEnd(state, node, classifyPreDispatchInvalidBaseUrl().kind, c, true);
   }
@@ -206,14 +185,6 @@ export async function dispatchLegacyProvider(c: AttemptContext, sourceBody: Reco
     requestId,
     isSubscriptionNode(node) ? { auth: 'oauth', extraHeaders: subscriptionExtraHeaders } : undefined,
   );
-  if (preparedImage) {
-    headers.set('content-type', 'application/json');
-    headers.set('accept', 'application/json');
-    if (preparedImage.auth === 'google-key') {
-      headers.delete('Authorization');
-      headers.set('x-goog-api-key', credential);
-    }
-  }
   const controller = new AbortController();
   let hasHeadersTimeoutHit = false;
   const hedgeAbort = c.hedgeAbort;
@@ -285,23 +256,6 @@ export async function dispatchLegacyProvider(c: AttemptContext, sourceBody: Reco
     }
     const classification = classifyNetworkError(hasHeadersTimeoutHit);
     recordOutcome(state, node, classification, c, { latencyMs });
-    // A dispatched generation can have succeeded even when the response was
-    // lost. Never resubmit it to another provider and double-charge the user.
-    if (route === 'openai_images') {
-      return {
-        response: gatewayError(
-          request,
-          env,
-          route,
-          502,
-          'Image generation outcome is unknown after a connection failure; not retried.',
-          requestId,
-          undefined,
-          undefined,
-          'gateway_image_outcome_unknown',
-        ),
-      };
-    }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.debug(`upstream fetch failed on ${node.id}: ${errorMessage}`);
     return { rotate: true, kind: classification.kind };
@@ -353,26 +307,6 @@ export async function dispatchLegacyProvider(c: AttemptContext, sourceBody: Reco
     // only that explicit report; malformed/non-JSON bodies remain "missing".
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));
     recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorText });
-    // Retry only a definitive pre-generation rejection: 429 or missing model.
-    // All other image errors are terminal, and provider bodies stay private.
-    if (route === 'openai_images') {
-      if (classification.kind === KIND.RATE_LIMIT || classification.kind === KIND.MODEL_MISSING || classification.kind === KIND.ENDPOINT_NOT_FOUND) {
-        return { rotate: true, kind: classification.kind };
-      }
-      return {
-        response: gatewayError(
-          request,
-          env,
-          route,
-          502,
-          'Image generation failed at the upstream; retry is disabled to prevent duplicate generation.',
-          requestId,
-          undefined,
-          undefined,
-          'gateway_image_upstream_failed',
-        ),
-      };
-    }
     if (classification.action === 'stop') {
       return {
         response: buildClientErrorResponse(request, env, route, requestId, requestedModel, upstream.status, errorText, state, exposeUpstreamInfo),

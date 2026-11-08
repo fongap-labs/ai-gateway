@@ -13,7 +13,7 @@
 | `AIG_GENERATION_TARGET` | Action Worker 部署变量 | 可选；仅接受 `ai-generation-center`，空值代表尚未切换 |
 | `AIG_GENERATION_SERVICE` | 主网关私有 Service Binding | 由部署器生成，目标为 `ai-generation-center` |
 | `AIG_GENERATION_AUTH_KEY` | 主网关与生成中心 Secret | 独立高熵内部认证密钥，至少 32 字符，缺失必须失败 |
-| `AIG_GENERATION_ACTIVE` | 主网关受控运行时标记 | 由部署器从目标变量生成，禁止手工替代部署条件 |
+| `AIG_GENERATION_ACTIVE` | 历史部署标记 | 本批源码不再以此开关决定执行路径；是否有有效中心绑定与密钥由私有执行客户端检查 |
 | `AIG_TIER{N}_NODES_XX` | 生成中心 Variables | 选定节点及模型映射，与主网关的受控配置一致 |
 | `AIG_TIER{N}_CREDENTIALS_XX` | 生成中心 Secrets | Provider 实际凭据，不从客户端请求或主网关请求头读取 |
 | `AIG_MODELS_CONFIG` | 生成中心 Variable | 仅授权的已知逻辑模型目录 |
@@ -51,10 +51,10 @@ Action Worker 执行类型、静态、安全、合同和两个中心 dry-run 构
 → 内部健康和真实小额图片生成验收
 → 受控环境设 AIG_GENERATION_TARGET=ai-generation-center
 → 部署网关并进行限流、故障、额度、成功率与耗时对照
-→ 验证后再清理旧主 Worker 图片适配路径
+→ 仅在中心绑定及专用 Secret 准备完成后发布 center-only Gateway 源码
 ```
 
-没有验证中心端的凭据配置、生产灰度和回滚映射之前，不允许直接启用。**即使 Cloudflare 内部 Service Binding 失联，网关也不能隐式退回到直接调用 Provider。** 因部署器设置 `AIG_GENERATION_ACTIVE=true`，绑定失联仍会走明确错误路径。
+**源码从本批起无条件使用 Generation Center**：即使缺少 `AIG_GENERATION_ACTIVE`、内部绑定或密钥，网关也不得回退到旧 Provider 直连；未配置中心时返回 503。生产发布前必须先验收中心、Provider 凭据和 Gateway 私有 Service Binding，否则图片生成不可用。本批不修改部署、Secret 或路由流量，运营侧切换仍须经受控灰度与回滚验收。
 
 回滚必须恢复旧构建与对应变量/Secret/绑定组合，先停止放量，再按 Action Worker 中央治理流程执行；恢复旧入口不能仅删除一个孤立 Secret。
 
