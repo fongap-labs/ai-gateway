@@ -353,6 +353,10 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 此变更不改变现有 `wrangler.jsonc`、Cron 时间、D1 绑定、生产 Secrets、部署或发布。**独立入口不等于 Operations 已独立部署或整套应用已独立构建**：仍须继续隔离其 `src/observability` 依赖并建立独立构建合同。
 
+### 私有中心排除无效节点后的安全轮转
+
+中央回归发现：Gateway 只解析公开元数据时，中心可能因节点凭据冲突将候选排除。中心必须为未进入物理执行的缺失节点返回精确的 `404 / center_route_unavailable / x-aig-result: skipped` 信号；Gateway 仅接受该完整组合做不计费、中性轮转，继续尝试其它通过中心密钥校验的候选。其它未知中心错误继续失败关闭，不能触发旧 Provider 直连。既有中央 `tier1-capacity-test.mjs` 必须验证坏节点被排除且好节点继续返回 200。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
