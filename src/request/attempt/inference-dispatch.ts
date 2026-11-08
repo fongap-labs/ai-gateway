@@ -159,6 +159,13 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
     return { rotate: true, kind: classified.kind };
   }
+  // Public Gateway sees metadata-only nodes. The private center may exclude
+  // an invalid credential binding: this authenticated, exact pre-dispatch
+  // signal lets the scheduler try another candidate without charging usage.
+  if (executionResult === 'skipped' && upstream.status === 404 && upstream.headers.get('x-aig-error-kind') === 'center_route_unavailable') {
+    detach();
+    return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+  }
   // OAuth credential/adapter failures happen before a physical Provider attempt.
   // Preserve legacy neutral rotation while keeping every other center error fail-closed.
   if (executionResult === 'skipped' && node.auth === 'oauth') {
