@@ -41,7 +41,7 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
       );
     }
     if (local.startsWith('operations/')) {
-      assert.ok(!target.startsWith('apps/'), `${local} must not depend on an application: ${target}`);
+      assert.ok(!target.startsWith('apps/') && !target.startsWith('src/'), `${local} must depend on owned or neutral modules: ${target}`);
     }
   }
   checked++;
@@ -325,6 +325,32 @@ assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference 
 assert.match(budgetGateway, /streamBudget,/, 'Gateway must issue bounded v5 budgets');
 assert.match(budgetSettlement, /centerBudgetStop = reason/, 'Gateway must observe v5 private stop reasons');
 assert.match(budgetSettlement, /budgetExceeded: \(\) => centerBudgetStop/, 'Gateway must settle v5 budget event once');
+// Scheduled maintenance is an application boundary. The D1 primitives
+// shared with request-time accounting belong to the neutral usage-store package.
+for (const [legacy, owner] of [
+  ['src/observability/time-buckets.ts', '../../packages/usage-store/time-buckets.ts'],
+  ['src/observability/token-usage-store/keys.ts', '../../../packages/usage-store/keys.ts'],
+  ['src/observability/token-usage-store/statements.ts', '../../../packages/usage-store/statements.ts'],
+  ['src/observability/token-usage-store/buffer.ts', '../../../packages/usage-store/buffer.ts'],
+  ['src/observability/token-usage-store/aggregation.ts', '../../../operations/maintenance/aggregation.ts'],
+]) {
+  const compatibility = readFileSync(join(root, legacy), 'utf8');
+  assert.ok(compatibility.includes(`export * from '${owner}'`), `${legacy} must delegate to its unique owner`);
+  assert.doesNotMatch(compatibility, /export (?:async )?function |export (?:const|class) /, `Legacy usage module duplicates implementation: ${legacy}`);
+}
+const operationsAggregation = readFileSync(join(root, 'operations/maintenance/aggregation.ts'), 'utf8');
+const operationsRetention = readFileSync(join(root, 'operations/maintenance/retention.ts'), 'utf8');
+assert.match(operationsAggregation, /export async function aggregateHourlyToDaily\(/, 'Operations must own hourly aggregation');
+assert.match(operationsAggregation, /export async function aggregateDailyToWeekly\(/, 'Operations must own weekly aggregation');
+assert.ok(
+  operationsRetention.includes("import('./aggregation.ts')"),
+  'Scheduled maintenance must use the Operations-owned aggregation implementation',
+);
+assert.ok(
+  operationsRetention.includes("from '../../packages/usage-store/keys.ts'") &&
+    operationsRetention.includes("from '../../packages/usage-store/buffer.ts'"),
+  'Scheduled maintenance must consume neutral usage-store primitives directly',
+);
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 const operationsSource = readFileSync(join(root, 'operations/index.ts'), 'utf8');
