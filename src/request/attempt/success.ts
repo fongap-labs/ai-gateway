@@ -22,6 +22,8 @@ export type SuccessArgs = {
   latencyMs: number;
   detach: () => void;
   upstreamWasStreaming: boolean;
+  /** Only set by authenticated Inference Center execution dispatch. */
+  centerFramedStreamExpected?: boolean;
   attemptStartMs?: number;
 };
 

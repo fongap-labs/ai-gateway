@@ -264,6 +264,15 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame contract cannot import legacy Gateway source');
 
+const inferenceV4Contract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
+const inferenceV4Executor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const inferenceV4Dispatcher = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+const inferenceV4Success = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
+assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
+assert.match(inferenceV4Dispatcher, /!limits\.conversionBudget/, 'v4 must exclude unverified conversion-budget paths');
+assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
+assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(

@@ -126,6 +126,14 @@ Gateway 依据诊断继续拒绝高风险语义丢失并安排 Tier 选择；中
 
 **当前没有改动 v1/v2/v3 执行契约，也没有让 Gateway 在生产请求中使用该格式。** 下一批需要明确 v4 能力协商、上游首事件预提交与 Failover 边界、预算停止的中性结算、原始用量 exactly-once，以及未标记/未知版本的硬拒绝，然后才能启用真正的中心流式响应转换。正式运行仍须先中心后 Gateway 升级；不得在缺少 Gateway 解帧器时下发私有帧。
 
+## v4 推理流式执行分批接入（无转换预算路径）
+
+私有推理中心已在契约 v4 接收明示的 `x-aig-return-stream: true` 与已授权的对外模型名称（`x-aig-display-model`），强制仅接受**跨协议 + stream=true + 无非流偏好**。v1/v2/v3 不允许携带这些字段；旧中心不认识 v4 会硬拒绝，避免将私有二进制协议误作为公开 SSE。中心执行真正的 Matrix 流式转换并返回 `inference-framed-v1` 私有流，数据、Provider 物理用量及终态分开编码。上游不支持 SSE 而返回原生 JSON 时仍保持旧对象回退处理，不伪造分帧标记。
+
+Gateway 当前仅在绑定中心、客户端真实请求 SSE 且 `conversionBudget=false` 时申请 v4；开启 `AIG_CONVERSION_BUDGET` 的所有流请求仍沿 v2 的既有 Gateway 转换路径，等待预算中立结算等价验证。Gateway 在**首事件检查前**严格校验并解开私有分帧，第一输出判断基于客户端协议而非 Provider 目标协议；用量由私有回调交给现有 `observeUpstreamAttemptUsage` / `recordTokens` 的单次账本，不重复解码客户端数据。取消、超时、首事件失败及转换数据结算仍由原 Gateway 守卫和流跟踪层管理。中心未持有 Tier/Hedge/429 或客户端计费权。
+
+**部署顺序必须先支持 v4 的 Inference Center，随后是申请 v4 的 Gateway。** 本批仅修改源码并以本地模拟 Provider 测试验证，未触发部署。后续分批支持转换预算帧和预算中性结算；再评估完全淘汰 v2 流转换、无中心时的旧直连路径。
+
 ## Gateway 控制面 fallback 编排
 
 `apps/gateway/fallback.ts` 拥有跨协议目标遍历、语义损失拒绝、统一墙钟 / 尝试预算和共享 Tier 策略。旧 `src/request/fallback.ts` 只保留测试/兼容导出；Gateway 请求处理器直接使用自有模块。这个阶段尚未下沉正文转换：`convertMatrixRequest` 及响应 SSE/IR 处理目前仍经 `src/conversion/` 在 Gateway 请求链中执行，不能把目录搬迁误报为执行面隔离。后续应使能力中心拥有预检、转换与物理尝试，并从 Gateway 移除对正文转换器的运行时调用。

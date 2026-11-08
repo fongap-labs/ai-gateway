@@ -21,6 +21,7 @@ import type { SubscriptionWire } from '../../src/subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { GatewayEnv } from '../../src/types/runtime.ts';
+import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
 import { problem } from './response.ts';
@@ -112,6 +113,10 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
+  // v4 is solely for real streaming requests; never synthesize an object
+  // protocol response under a private framed-stream ticket.
+  if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
+    return problem(400, 'center_stream_invalid');
   let outboundBody: Record<string, unknown> = clientBody;
   let isMutated = false;
   if (invocation.inputSurface) {
@@ -239,8 +244,18 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
 
   if (wire && upstream.ok) {
     if (content?.toLowerCase().includes('text/event-stream')) {
+      const nativeStream = wire.streamToNative(upstream.body, { messageId: invocation.requestId, model: physicalModel });
+      if (invocation.returnStream && invocation.inputSurface) {
+        const from = protocolForSurface(invocation.surface);
+        const to = protocolForSurface(invocation.inputSurface);
+        if (!from || !to) return problem(400, 'center_conversion_route_invalid');
+        const framed = buildFramedMatrixResponse(nativeStream, from, to, invocation.requestId, { model: invocation.displayModel });
+        outgoing.set('content-type', framed.headers.get('content-type') ?? '');
+        outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
+        return new Response(framed.body, { status: upstream.status, headers: outgoing });
+      }
       outgoing.set('content-type', 'text/event-stream');
-      return new Response(wire.streamToNative(upstream.body, { messageId: invocation.requestId, model: physicalModel }), {
+      return new Response(nativeStream, {
         status: upstream.status,
         headers: outgoing,
       });
@@ -256,6 +271,15 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     const translated = translatedObject(native, invocation, outgoing, upstream.status);
     if (translated) return translated;
     return new Response(JSON.stringify(native), { status: upstream.status, headers: outgoing });
+  }
+  if (invocation.returnStream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
+    const from = protocolForSurface(invocation.surface);
+    const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
+    if (!from || !to) return problem(400, 'center_conversion_route_invalid');
+    const framed = buildFramedMatrixResponse(upstream.body, from, to, invocation.requestId, { model: invocation.displayModel });
+    outgoing.set('content-type', framed.headers.get('content-type') ?? '');
+    outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
+    return new Response(framed.body, { status: upstream.status, headers: outgoing });
   }
   if (invocation.returnObject && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
     // Only explicit v3 buffered-object calls are inspected in the center.

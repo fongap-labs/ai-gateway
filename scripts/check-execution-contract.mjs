@@ -102,4 +102,31 @@ const v2WithObject = new Headers(translatedHeaders);
 v2WithObject.set('x-aig-return-object', 'true');
 assert.equal(parseExecutionInvocation(makeRequest(v2WithObject), allowed, now), null);
 
-console.log('Execution contract v1/v2/v3: construction, validation, authorization and negative cases passed.');
+const streamed = { ...invocation, inputSurface: 'messages', returnStream: true, displayModel: 'public-chat-model' };
+const streamedHeaders = buildExecutionHeaders(streamed, 'x-aig-inference-auth', key);
+assert.equal(streamedHeaders.get('x-aig-contract-version'), '4');
+assert.equal(streamedHeaders.get('x-aig-return-stream'), 'true');
+assert.deepEqual(parseExecutionInvocation(makeRequest(streamedHeaders), allowed, now), streamed);
+assert.equal(streamedHeaders.get('x-aig-display-model'), 'public-chat-model');
+for (const [name, value] of [
+  ['x-aig-contract-version', '3'],
+  ['x-aig-contract-version', '2'],
+  ['x-aig-return-stream', 'false'],
+  ['x-aig-return-stream', ''],
+  ['x-aig-display-model', ''],
+  ['x-aig-display-model', '\\n'],
+  ['x-aig-conversion-prefer-nonstream', 'true'],
+  ['x-aig-return-object', 'true'],
+]) {
+  const invalid = new Headers(streamedHeaders);
+  invalid.set(name, value);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `v4 ${name}`);
+}
+const v4NoInput = new Headers(streamedHeaders);
+v4NoInput.delete('x-aig-input-surface');
+assert.equal(parseExecutionInvocation(makeRequest(v4NoInput), allowed, now), null);
+const v1WithV4Marker = new Headers(headers);
+v1WithV4Marker.set('x-aig-return-stream', 'true');
+assert.equal(parseExecutionInvocation(makeRequest(v1WithV4Marker), allowed, now), null);
+
+console.log('Execution contract v1/v2/v3/v4: construction, validation, authorization and negative cases passed.');

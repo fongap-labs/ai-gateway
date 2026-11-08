@@ -11,6 +11,7 @@
 // context and never land here.
 
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
+import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { ConversionBudgetStop } from '../../conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../conversion/matrix/ir.ts';
@@ -23,6 +24,7 @@ import {
   replyToObject,
   synthesizeMatrixStreamFromObject,
 } from '../../conversion/matrix/pipeline.ts';
+import { decodeFramedInferenceResponse } from '../../inference/inference-stream-client.ts';
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
 import { readBufferedReplyText } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
@@ -116,7 +118,13 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     const classification = classifyPostHeadersFailure(new Error('matrix upstream rejected the conversion request'));
     return { rotate: true, kind: classification.kind };
   }
-  const upstreamStreaming = isOpenAIStreamingResponse(upstream);
+  const isFramed = s.centerFramedStreamExpected && upstream.headers.get('x-aig-response-format') === INFERENCE_FRAMED_STREAM_FORMAT;
+  if (s.centerFramedStreamExpected && upstream.headers.has('x-aig-response-format') && !isFramed) {
+    detach();
+    recordUndeliveredUpstreamAttempt(c, node);
+    return { response: gatewayError(request, env, route, 502, 'Private inference stream format mismatch.', requestId) };
+  }
+  const upstreamStreaming = isFramed || isOpenAIStreamingResponse(upstream);
 
   // ---- JSON upstream (provider ignored stream:true) -------------------------
   if (!upstreamStreaming) {
@@ -182,6 +190,32 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   // ---- SSE upstream ----------------------------------------------------------
   // First-event guard BEFORE any committed byte, with the upstream protocol's
   // real-output predicate (same contract as the native and legacy paths).
+  let upstreamUsage: unknown = null;
+  let guardSource = upstream;
+  if (isFramed) {
+    try {
+      // Decode private frames before Gateway's first-public-event guard.
+      // Usage is recorded from the physical Provider, never from the client
+      // format, and the client cannot receive the private control frames.
+      const decoded = decodeFramedInferenceResponse(upstream, {
+        onUsage: (usage) => {
+          upstreamUsage = usage;
+          observeUpstreamAttemptUsage(c, usage);
+        },
+        onBudgetStop: () => {
+          // This v4 slice intentionally excludes configured conversion
+          // budgets; an unexpected budget frame is a protocol violation.
+          throw new Error('unexpected private inference budget stop');
+        },
+      });
+      guardSource = new Response(decoded, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    } catch {
+      detach();
+      recordUndeliveredUpstreamAttempt(c, node);
+      return { response: gatewayError(request, env, route, 502, 'Invalid private inference stream.', requestId) };
+    }
+  }
+
   const guardStartMs = Date.now();
   let guarded: Response;
   try {
@@ -195,15 +229,15 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
       Math.min(remainingRequestBudgetMs, remainingAttemptBudgetMs),
       1,
     );
+    const guardProtocol = isFramed ? clientIr : upstreamIr;
     const isRealOutput =
-      upstreamIr === 'anthropic'
+      guardProtocol === 'anthropic'
         ? isAnthropicNativeRealOutputForConversion
-        : upstreamIr === 'openai_responses'
+        : guardProtocol === 'openai_responses'
           ? isResponsesRealOutput
           : isOpenAIChatRealOutputForConversion;
-    guarded = await ensureFirstSseEvent(upstream, firstEventTimeout, request.signal, isRealOutput, (event: unknown) => {
-      // Usage observer consumes the RAW upstream lifecycle event.
-      observeUpstreamAttemptUsage(c, event);
+    guarded = await ensureFirstSseEvent(guardSource, firstEventTimeout, request.signal, isRealOutput, (event: unknown) => {
+      if (!isFramed) observeUpstreamAttemptUsage(c, event);
     });
   } catch (e) {
     detach();
@@ -255,19 +289,19 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   // conversion path (rawUsage otherwise reports only what the upstream sent).
   const seedInputTokens = upstreamIr === 'anthropic' ? estimateAnthropicInputTokens(bodyJson) : 0;
   const fallbackId = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-  let upstreamUsage: unknown = null;
-
   if (c.clientWantsStream) {
-    const handle = openMatrixStream(guarded.body, upstreamIr, clientIr, fallbackId, {
-      model: requestedModel,
-      onUpstreamUsage: (u) => {
-        upstreamUsage = u;
-        // Raw upstream usage feeds accounting; the translated client shape is
-        // cosmetic and must not enter node token statistics.
-        observeUpstreamAttemptUsage(c, u);
-      },
-      ...(budget ? { budget: { cfg: budget.cfg, mode: budget.mode, stopChunk: budget.stopChunk } } : {}),
-    });
+    const handle = isFramed
+      ? { clientStream: guarded.body as ReadableStream<Uint8Array>, budgetExceeded: () => null }
+      : openMatrixStream(guarded.body, upstreamIr, clientIr, fallbackId, {
+          model: requestedModel,
+          onUpstreamUsage: (u) => {
+            upstreamUsage = u;
+            // Raw upstream usage feeds accounting; the translated client shape
+            // is cosmetic and must not enter node token statistics.
+            observeUpstreamAttemptUsage(c, u);
+          },
+          ...(budget ? { budget: { cfg: budget.cfg, mode: budget.mode, stopChunk: budget.stopChunk } } : {}),
+        });
     // A budget stop in "error" mode is a NEUTRAL end with its own record: the
     // relay/track outcome callbacks must NOT run their success/interrupted
     // story on top of it (that would count the request as delivered or cool

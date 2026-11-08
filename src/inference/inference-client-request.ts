@@ -19,6 +19,8 @@ export type InferenceInvocation = {
   inputSurface?: ExecutionInputSurface;
   preferNonstream?: true;
   returnObject?: true;
+  returnStream?: true;
+  displayModel?: string;
   deadlineMs: number;
   body: string;
   signal?: AbortSignal;
@@ -56,6 +58,8 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
       inputSurface: invocation.inputSurface,
       preferNonstream: invocation.preferNonstream,
       returnObject: invocation.returnObject,
+      returnStream: invocation.returnStream,
+      displayModel: invocation.displayModel,
     },
     'x-aig-inference-auth',
     key,
