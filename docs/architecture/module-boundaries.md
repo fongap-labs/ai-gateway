@@ -259,6 +259,14 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 这只证明该 Claude Messages 测试套件已完成中心等价迁移。Codex Responses 与其他实际 Gateway 请求测试、OAuth 管理端、运行时旧 Provider 直连和部署选择器仍须分别清理，本批不执行生产部署。
 
+## Codex Responses 原生与流式合同：第十四批
+
+中央 Action Worker 的 `codex-contract-test.mjs` 已将 19 项真实 Gateway 客户端黑盒回归切换为私有 Inference Center：Responses 原生非流式与 SSE、reasoning、工具调用与函数参数增量、首事件前与首事件提交后的不同回退规则、401/429/5xx、Responses 诊断头、工具和上下文直传。
+
+测试在独立中心持有 Provider 静态密钥，Gateway 只接入节点元数据、私有 Service Binding 和中心认证。测试以每用例累积计数独立验证 `/internal/execute` 次数等于真实上游 Provider 物理调用次数，避免同一用例重新设置模拟上游时遗漏前一阶段尝试；转换预检不算物理执行。客户端认证不能通过内部请求泄漏。该迁移保持原有客户端 SSE、模型身份和工具形状断言。
+
+此批不代表旧 Provider 直连源码已删除。剩余实际网络测试的中心化、最终依赖扫描、运行时旧路径移除与部署选择器调整仍须独立完成；本批不涉及生产部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
