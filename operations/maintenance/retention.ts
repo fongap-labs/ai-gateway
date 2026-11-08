@@ -17,8 +17,8 @@
 //                                   7-day query window)
 
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { getUtcWeekStartUtcMs } from '../../src/observability/time-buckets.ts';
-import { flushUsageBuffer } from '../../src/observability/token-usage-store/buffer.ts';
+import { getUtcWeekStartUtcMs } from '../../packages/usage-store/time-buckets.ts';
+import { flushUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import {
   DAILY_RETENTION_MS,
   DAY_MS,
@@ -31,7 +31,7 @@ import {
   tokenStatsD1,
   WEEK_MS,
   WEEKLY_RETENTION_MS,
-} from '../../src/observability/token-usage-store/keys.ts';
+} from '../../packages/usage-store/keys.ts';
 
 const HOURLY_RETENTION_DAYS = HOURLY_RETENTION_MS / DAY_MS;
 const DAILY_RETENTION_WEEKS = DAILY_RETENTION_MS / WEEK_MS;
@@ -116,7 +116,7 @@ export async function maintainUsageStats(env: GatewayEnv, now: number = Date.now
   // Local import to avoid a circular reference: aggregation.ts does
   // not need anything from retention.ts, but the orchestrator
   // chains them. The dynamic import keeps the module graph a DAG.
-  const { aggregateHourlyToDaily, aggregateDailyToWeekly } = await import('../../src/observability/token-usage-store/aggregation.ts');
+  const { aggregateHourlyToDaily, aggregateDailyToWeekly } = await import('./aggregation.ts');
   const aggDaily = await aggregateHourlyToDaily(env, now).catch((e) => ({ error: e?.message || e }));
   const aggWeekly = await aggregateDailyToWeekly(env, now).catch((e) => ({ error: e?.message || e }));
   // Never delete source rows when their rollup failed: a failed daily pass
