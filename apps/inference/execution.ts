@@ -6,10 +6,10 @@
 
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
-import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
+import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
