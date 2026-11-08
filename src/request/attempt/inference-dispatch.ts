@@ -173,6 +173,27 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   }
   if (executionResult !== 'dispatched') {
     detach();
+    // A center-isolate memory refusal is request-local, not evidence of a bad
+    // Provider or an unavailable center. Preserve the Gateway's retryable
+    // body-budget 503 and never charge an upstream execution.
+    if (upstream.status === 503 && upstream.headers.get('x-aig-error-kind') === 'center_body_budget_exhausted') {
+      rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+      return {
+        budgetCharged: false,
+        response: gatewayError(
+          request,
+          env,
+          route,
+          503,
+          'Gateway is busy with other large requests; retry shortly.',
+          c.requestId,
+          undefined,
+          { 'retry-after': '1' },
+          'gateway_body_budget_exhausted',
+          true,
+        ),
+      };
+    }
     return stopForCenter(c, upstream.status === 413 ? 413 : 503, 'gateway_inference_center_rejected');
   }
   if (
