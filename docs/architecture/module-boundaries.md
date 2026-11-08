@@ -193,6 +193,14 @@ Gateway 在以下已明确属于能力中心的候选节点上，只解析公开
 
 验证继续覆盖 Gateway 不持有 Provider 静态密钥、中心物理执行次数、各 Tier 实际调用顺序、冷却指标以及对冲结算。**这只是既有回归覆盖的迁移，不代表全部 Provider 直连调用已删除**：复杂流式预算中断、订阅 OAuth、配额结算变体、协议转换失败及其他旧测试仍待迁移。所有生产路由和部署保持不变。
 
+## 订阅 OAuth 执行回归：第五批
+
+中央 Action Worker OAuth 黑盒测试将 Tier 2 OpenAI Token 解密与 Bearer 分发、无 Token 安全拒绝、Anthropic Bearer 而非 x-api-key，以及 OAuth Refresh Grant 后的 D1 更新与上游执行四条路径迁移至真实私有 Inference Center。
+
+执行测试在发出客户端请求前从 Gateway 环境删除 `AIG_TOKEN_ENCRYPTION_KEY`；私有中心单独持有解密密钥、OAuth Provider 配置和 Token D1 绑定。验证私有 `/internal/execute` 调用、Provider 鉴权头、无 Token 时禁止物理访问、刷新后密文持久化；Gateway 的 OAuth 授权/回调配置与管理端入口仍须单独迁移审查。
+
+上述改动只增加中心合同回归覆盖，并不代表 Runtime OAuth 管理端或全部旧 Provider 直连依赖已经删除。**不得据此删除 `legacy-provider-dispatch.ts`**；其余复杂错误、订阅失效与流式转换等须先完成等价测试。本批不更改生产配置、密钥或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
