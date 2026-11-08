@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 推理流式首事件、禁止重放和占用释放的中心化回归覆盖。
+
 - 新增: Anthropic SSE 与跨协议转换的 Inference Center 中央回归覆盖。
 
 - 新增: 原生推理与同 Tier 故障切换的 Inference Center 中央回归覆盖。
