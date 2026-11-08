@@ -1,0 +1,10 @@
+{
+  // BUILD CHECK ONLY. This configuration has no routes, scheduled triggers,
+  // credentials or database bindings. It must never be used for deployment.
+  // Existing production Cron remains owned by wrangler.jsonc during migration.
+  "name": "ai-operations-build-check",
+  "main": "operations/index.ts",
+  "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["enable_request_signal"],
+  "workers_dev": false
+}
