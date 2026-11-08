@@ -12,10 +12,10 @@ import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
-import { getLimits } from '../../src/config/timeouts.ts';
+import { getLimits, QUOTA_RETRY_AFTER_MAX_MS } from '../../src/config/timeouts.ts';
 import { getOAuthProvider } from '../../src/oauth/provider-configs.ts';
 import { resolveSubscriptionCredential } from '../../src/oauth/resolve.ts';
-import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
+import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText, safeReadErrorBody } from '../../src/protocol/http.ts';
 import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../src/providers/registry.ts';
 import { extractQuotaSignal } from '../../src/reliability/quota-signal.ts';
@@ -288,6 +288,19 @@ async function executeAdmittedNative(
         resetAtMs: quota.resetAtMs,
       }),
     );
+  }
+
+  // Provider-specific subscription quota windows are interpreted ONLY in the
+  // private executor. Gateway receives a bounded neutral duration, not raw
+  // Provider headers or a dependency on subscription adapters.
+  if (!upstream.ok && upstream.status === 429 && isSubscriptionNode(node)) {
+    const errorText = await safeReadErrorBody(upstream, 4096, invocation.deadlineMs);
+    const subscription = getProviderAdapter(node.provider).subscription;
+    const candidate = subscription?.quotaResetHint?.({ status: upstream.status, headers: upstream.headers, body: errorText }, Date.now());
+    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+      outgoing.set('x-aig-subscription-quota-reset-ms', String(Math.min(Math.trunc(candidate), QUOTA_RETRY_AFTER_MAX_MS)));
+    }
+    return new Response(errorText, { status: upstream.status, headers: outgoing });
   }
 
   if (wire && upstream.ok) {
