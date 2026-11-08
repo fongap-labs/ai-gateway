@@ -6,6 +6,7 @@
 
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
+import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';
@@ -16,7 +17,6 @@ import { extractQuotaSignal } from '../../src/reliability/quota-signal.ts';
 import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import { buildUpstreamHeadersFor } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { problem } from './response.ts';
 
 const MAX_REQUEST_BYTES = 16 * 1024;

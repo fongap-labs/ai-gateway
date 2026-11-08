@@ -21,7 +21,7 @@ for (const glob of ['apps/**/*.ts', 'packages/**/*.ts', 'operations/**/*.ts']) {
 }
 
 let checked = 0;
-for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))]) {
+for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps')), ...walk(join(root, 'operations'))]) {
   const local = relative(root, file).replaceAll('\\', '/');
   const imports = [...readFileSync(file, 'utf8').matchAll(/(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g)];
   for (const [, specifier] of imports) {
@@ -34,10 +34,38 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
       const ownApp = local.split('/')[1];
       assert.ok(!target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`), `${local} imports another app: ${target}`);
     }
+    if (local.startsWith('apps/') || local.startsWith('operations/')) {
+      assert.ok(
+        target !== 'src/types/runtime.ts' && target !== 'src/types/cloudflare.ts',
+        `${local} must import the shared runtime type contract directly: ${target}`,
+      );
+    }
+    if (local.startsWith('operations/')) {
+      assert.ok(!target.startsWith('apps/'), `${local} must not depend on an application: ${target}`);
+    }
   }
   checked++;
 }
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
+// Runtime and D1 binding types are cross-application contracts, not a
+// dependency on the former monolithic Gateway runtime directory.
+for (const [legacy, owner, exports] of [
+  ['src/types/cloudflare.ts', '../../packages/contracts/cloudflare.ts', ['D1Database', 'D1PreparedStatement', 'D1Result']],
+  ['src/types/runtime.ts', '../../packages/contracts/runtime.ts', ['ExecutionContextLike', 'GatewayEnv', 'GatewayLogger']],
+]) {
+  const compat = readFileSync(join(root, legacy), 'utf8');
+  assert.ok(compat.includes(`from '${owner}'`), `${legacy} must only re-export neutral shared types`);
+  assert.doesNotMatch(compat, /^import /m, `${legacy} must not import an implementation`);
+  assert.doesNotMatch(compat, /^export type \w+(?:<.*>)?\s*=/m, `${legacy} must not define runtime types`);
+  for (const typeName of exports) {
+    assert.match(readFileSync(join(root, 'packages/contracts', owner.split('/').at(-1)), 'utf8'), new RegExp(`export type ${typeName}\\b`));
+  }
+}
+for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/generation/index.ts', 'operations/index.ts']) {
+  const source = readFileSync(join(root, entry), 'utf8');
+  assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
+}
+
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');

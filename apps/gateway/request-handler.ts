@@ -13,6 +13,7 @@
 // Streaming rule: the first-event guard runs BEFORE any streaming Response is
 // returned to the client; after that point transparent failover is forbidden.
 
+import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
@@ -32,7 +33,6 @@ import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from
 import { tier1ModelAvailability } from '../../src/scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
-import type { ExecutionContextLike, GatewayEnv } from '../../src/types/runtime.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
 import { runFallbackChain } from './fallback.ts';
 import { preflight as runPreflight } from './preflight.ts';

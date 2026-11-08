@@ -5,6 +5,7 @@
 // model family retries, Tier scheduling or public routing in this module.
 
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
@@ -23,7 +24,6 @@ import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import type { SubscriptionWire } from '../../src/subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import type { GatewayEnv } from '../../src/types/runtime.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
