@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Operations 独立定时维护入口，Gateway 与原 Cloudflare 入口仅组合调用。
+
 - 新增: Gateway 推理仅经私有中心执行，移除旧 Provider 直连与密钥解析分支。
 
 - 修复: 推理中心与 Gateway 统一 20 MiB 正文默认上限和受控配置。
