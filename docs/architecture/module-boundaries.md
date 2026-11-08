@@ -267,6 +267,12 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 此批不代表旧 Provider 直连源码已删除。剩余实际网络测试的中心化、最终依赖扫描、运行时旧路径移除与部署选择器调整仍须独立完成；本批不涉及生产部署。
 
+## 中央压力、并发与取消合同：第十五批
+
+中央 Action Worker 的 `stress-test.mjs` 9 组 Gateway 黑盒压力与故障注入合同已迁移到真实私有 Inference Center：Tier 1 并发突发、P2C 软负载、显式 max_in_flight 限制、Tier 1 耗尽后 Tier 2 兜底、429 限流风暴冷却、half-open 单探针恢复、SSE 提交后客户端取消、wall-clock 总预算截止、混合临时错误的状态释放。
+
+独立中心测试环境持有各 Tier Provider 凭据，Gateway 侧删除所有三层静态密钥；每项测试要求实际 Provider 网络请求数与私有 `/internal/execute` 次数一致，预检单列。原有响应码、并发占用、节点健康、Tier 1 inFlight、取消与防泄漏断言全部保留。**这代表压力合同的测试等价覆盖，不代表完成旧执行分支的源码退役。** 下阶段需审计尚未迁移的真实 Gateway 测试、严格禁止无中心物理派发，并独立评估受保护的旧部署模式；本批不部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
