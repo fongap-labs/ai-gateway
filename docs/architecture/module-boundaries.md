@@ -237,6 +237,12 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 **本批仅提升真实中心回归覆盖，未删除源码旧直连分支。** 下一步按剩余中央套件与模块依赖完成归零审查，确认无旧执行必要后再精简生产 Gateway。未更改生产绑定、密钥或部署。
 
+## 中央 Responses 错误诊断回归：第十一批
+
+中央 `protocol-fallback-test.mjs` 的 Responses 终态诊断已迁移到私有 Inference Center：429 首次物理执行后模型冷却，第二次请求不得重试中心；503 物理失败后的唯一兜底重试仍全部在中心；400 上游错误返回受控客户端信息、不泄露 Provider 原始错误；未知模型直接由 Gateway 拒绝，中心物理执行次数为零。保留原有 `x-gateway-error-code`、attempts、dispatches、failure_kinds 和 Responses 协议 JSON 错误对象。
+
+第十批初始测试包曾因合并阶段重复导入中心入口而在 CI 发生模块语法错误。第十一批中央测试包删除重复导入，确保整个测试套件可以被 Node 正常加载，且保留模型族与物理失败域的所有断言。这些工作仍是回归覆盖，不代替对旧 Provider 源码依赖的全面验收。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
