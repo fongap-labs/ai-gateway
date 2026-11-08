@@ -3,9 +3,13 @@
 //
 // Private v4 stream adapter. Not connected to dispatch until the Gateway
 // can own first-output admission and settle every raw usage/budget event.
-import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT, frameInferenceStream } from '../../../packages/contracts/inference-stream-frames.ts';
+import {
+  frameInferenceStream,
+  INFERENCE_FRAMED_STREAM_CONTENT_TYPE,
+  INFERENCE_FRAMED_STREAM_FORMAT,
+} from '../../../packages/contracts/inference-stream-frames.ts';
 import type { IrProtocol } from '../../../packages/conversion-core/ir.ts';
-import { openMatrixStream, type MatrixStreamBudget, type MatrixStreamHandle } from './stream.ts';
+import { type MatrixStreamBudget, type MatrixStreamHandle, openMatrixStream } from './stream.ts';
 
 export function buildFramedMatrixResponse(
   upstreamBody: ReadableStream<Uint8Array> | null | undefined,

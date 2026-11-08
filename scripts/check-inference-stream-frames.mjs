@@ -98,14 +98,17 @@ await rejectBytes([new Uint8Array([0xa7, 0x01, 0x01, 0, 1, 0, 1])]); // oversize
 await rejectBytes([encodeInferenceFrame({ kind: 'budget', reason: 'events' }), encodeInferenceFrame({ kind: 'budget', reason: 'events' }), done]);
 
 let wasCancelled = false;
-const cancellable = frameInferenceStream(() => new ReadableStream({
-  pull(controller) {
-    controller.enqueue(encoder.encode('data: still-going\n\n'));
-  },
-  cancel() {
-    wasCancelled = true;
-  },
-}));
+const cancellable = frameInferenceStream(
+  () =>
+    new ReadableStream({
+      pull(controller) {
+        controller.enqueue(encoder.encode('data: still-going\n\n'));
+      },
+      cancel() {
+        wasCancelled = true;
+      },
+    }),
+);
 const reader = unframeInferenceStream(cancellable).getReader();
 assert.equal((await reader.read()).done, false);
 await reader.cancel('client abort');

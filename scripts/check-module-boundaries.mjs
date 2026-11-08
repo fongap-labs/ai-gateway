@@ -257,7 +257,11 @@ assert.match(frameContract, /export function frameInferenceStream\(/, 'Private s
 assert.match(frameContract, /export function unframeInferenceStream\(/, 'Private stream must require explicit Gateway decoding');
 assert.match(frameProducer, /openMatrixStream\(/, 'Inference must execute real Matrix SSE conversion');
 assert.match(frameConsumer, /unframeInferenceStream\(/, 'Gateway decoder must strip private control frames');
-assert.doesNotMatch(frameProducer, /ensureFirstSseEvent|recordTokens|runTierLoop/, 'Inference frame producer must not own Gateway scheduling/accounting');
+assert.doesNotMatch(
+  frameProducer,
+  /ensureFirstSseEvent|recordTokens|runTierLoop/,
+  'Inference frame producer must not own Gateway scheduling/accounting',
+);
 assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame contract cannot import legacy Gateway source');
 
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');

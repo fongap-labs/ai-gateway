@@ -21,7 +21,11 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 type FrameKind = 1 | 2 | 3 | 4;
-type Frame = { kind: 'chunk'; bytes: Uint8Array } | { kind: 'usage'; usage: Record<string, unknown> } | { kind: 'budget'; reason: BudgetStopReason } | { kind: 'done' };
+type Frame =
+  | { kind: 'chunk'; bytes: Uint8Array }
+  | { kind: 'usage'; usage: Record<string, unknown> }
+  | { kind: 'budget'; reason: BudgetStopReason }
+  | { kind: 'done' };
 
 function privateFrameError(): Error {
   return new Error('invalid private inference stream frame');
