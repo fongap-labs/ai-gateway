@@ -361,6 +361,12 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 将 `src/inference/inference-client-request.ts` 与 `src/generation/generation-client-request.ts` 的传输实现迁至 `apps/gateway/transport/`，Gateway 的推理与生图执行层直接引用新位置；旧路径仅保留单行导出，以维持现有合同调用方兼容。标准 HTTP Request / Response、Service Binding 鉴权、客户端令牌隔离、截止时间及信号透传保持原合同。中央 `check:transport` 同时验证源码归属及私有请求行为。**本项为职责与源码迁移，不涉及能力中心物理执行实现，也不调整生产部署。**
 
+## 中立运行时类型合同：应用解耦
+
+`packages/contracts/cloudflare.ts` 现在拥有 D1 结构类型，`packages/contracts/runtime.ts` 拥有共享环境和执行上下文类型。Gateway、Inference、Generation 与 Operations 直接导入这些中立类型，不再依赖旧 `src/types/` 实现。原 `src/types/cloudflare.ts`、`src/types/runtime.ts` 仅提供兼容性的 type-only re-export，保持既有调用方的类型兼容而不引入运行时代码。
+
+`check:boundaries` 同时遍历 `operations/`，禁止应用和 Operations 重新导入旧 Runtime 类型，禁止 Operations 反向依赖其他应用，并要求三套应用及 Operations 入口直接引用中立合同。此项推进源码/类型依赖解耦，但**不代表 Operations 已独立打包**；统计持久化实现仍依赖 `src/observability/`，后续须继续迁移并验证独立构建。生产配置、密钥与部署均未改变。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
