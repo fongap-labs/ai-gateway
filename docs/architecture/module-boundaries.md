@@ -158,6 +158,15 @@ Inference Center 按此票据配置唯一 `openMatrixStream` 的预算 Tracker�
 
 `apps/gateway/index.ts` 只负责用户请求；`operations/maintenance/usage.ts` 负责定时统计维护。`src/index.ts` 为当前 Cloudflare 入口组合二者，保留既有 cron 行为，后续才将维护任务拆成独立部署单元。新增标准 HTTP Mock 调用测试，不需要实际 Cloudflare Service Binding。
 
+## 节点元数据与 Provider 凭据隔离（本批源码）
+
+Gateway 在以下已明确属于能力中心的候选节点上，只解析公开节点元数据，不再要求或留存静态 Provider 凭据：
+
+- Inference Center 已有私有 Service Binding，或受控激活标记 `AIG_INFERENCE_ACTIVE=true`；
+- 仅支持 `images_generations` 的图片 Provider（图片请求已强制通过 Generation Center）。
+
+私有 Inference / Generation Center 的 `loadExecutionConfig` 仍严格要求静态凭据，不能因为公开 Gateway 可无密钥规划而放松中心的密钥校验。Gateway 未启用推理中心时的旧直连仍须提供真实凭据；这一批不读取、移动、复制或删除生产 Secret，也不修改生产部署。下一阶段才能经受控方案从 Gateway 运行时清单中移除剩余 Provider 凭据和 OAuth 执行依赖。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

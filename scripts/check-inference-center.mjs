@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
+import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
@@ -128,6 +129,34 @@ try {
   assert.equal(unboundState.logicalAttempts, 0);
   assert.equal(unboundState.dispatches, 0);
   assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
+
+  // A center-owned Gateway must be routable with NO static Provider secrets.
+  // An unbound legacy Gateway and private execution center still reject that
+  // same secretless static node, preventing credential-free Provider fetches.
+  const secretless = {
+    AIG_ACCESS_KEY_AGENT: 'center-metadata-test-client-key',
+    AIG_TIER3_NODES_01: env.AIG_TIER3_NODES_01,
+  };
+  const activeGateway = loadGatewayConfig({ ...secretless, AIG_INFERENCE_ACTIVE: 'true' });
+  assert.equal(activeGateway.ready, true);
+  assert.equal(activeGateway.nodes.length, 1);
+  assert.equal(activeGateway.nodes[0].credential, '');
+  const boundGateway = loadGatewayConfig({
+    ...secretless,
+    AIG_INFERENCE_SERVICE: { fetch: async () => new Response(null, { status: 503 }) },
+  });
+  assert.equal(boundGateway.ready, true);
+  assert.equal(boundGateway.nodes[0].credential, '');
+  assert.equal(loadGatewayConfig(secretless).ready, false, 'legacy inference requires a real Provider key');
+  assert.equal(loadExecutionConfig(secretless).ready, false, 'private inference must retain credential enforcement');
+  const redactedGateway = loadGatewayConfig({
+    ...secretless,
+    AIG_INFERENCE_ACTIVE: 'true',
+    AIG_TIER3_CREDENTIALS_01: env.AIG_TIER3_CREDENTIALS_01,
+  });
+  assert.equal(redactedGateway.nodes[0].credential, '', 'Gateway must never retain an upstream key for center-owned nodes');
+  assert.equal(loadExecutionConfig(env).nodes[0].credential, providerSecret, 'private center owns the Provider credential');
+
   console.log('Private inference center auth, native mapping, network classification and fail-closed contract passed.');
 } finally {
   globalThis.fetch = originalFetch;
