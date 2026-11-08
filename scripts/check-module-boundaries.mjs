@@ -66,7 +66,6 @@ for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/g
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
 
-
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');
