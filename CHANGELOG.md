@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 重构: 共享 Runtime 和 D1 类型统一归属中立 Contracts。
+- 修复: 应用与 Operations 不再引用旧 Runtime 类型定义。
 - 维护: Gateway 私有中心调用客户端迁入 `apps/gateway/transport/`。
 - 维护: 旧客户端路径只保留兼容导出，运行时直接依赖新归属。
 
