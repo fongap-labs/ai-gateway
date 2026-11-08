@@ -243,6 +243,8 @@ Action Worker 的模型族合同测试将 Code-Ultra→Max→Pro 与 Audit-Ultra
 
 第十批初始测试包曾因合并阶段重复导入中心入口而在 CI 发生模块语法错误。第十一批中央测试包删除重复导入，确保整个测试套件可以被 Node 正常加载，且保留模型族与物理失败域的所有断言。这些工作仍是回归覆盖，不代替对旧 Provider 源码依赖的全面验收。
 
+第十一批完整回归另外确认：Responses 协议的私有 `/internal/conversion/preflight` 与 `/internal/execute` 是两类不同的内部调用，预检不会发出物理 Provider 请求。中央测试严格限定仅允许这两条已知路径，并只对 `/internal/execute` 统计 Provider 物理派发；429 冷却期间虽然可以预检，但不可重复访问 Provider。以上已纳入固定 SHA 的回归合同。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
