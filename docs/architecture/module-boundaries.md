@@ -321,6 +321,14 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 **本批只更新测试包引用与验收记录，不改 Gateway Runtime、Secrets、Service Binding 或部署。** 旧直连源码尚待全套依赖归零后删除。
 
+## Tier 1 保活与可靠性调优合同：第二十三批
+
+中央 Action Worker [#1534](https://github.com/fongap-labs/action-worker/pull/1534) 已将可靠性调优中的真实 Gateway 请求迁移至私有推理中心，覆盖五小时配额型 429 分级冷却、分钟级限流、Tier 3 Retry-After、缓冲/流式/大 Prompt 超时与 Hedge 窗口，以及 Claude Code Messages→Chat 的可选工具和不可降级语义拒绝。原有客户端状态码、冷却状态与请求时限断言保持不变。
+
+中央 Action Worker [#1535](https://github.com/fongap-labs/action-worker/pull/1535) 在 `tier1-capacity-test.mjs` 内迁移五组真实请求：同一密钥 403 后继续服务、单密钥 5xx 的一次受限重试、超过限制不得重试、429/403/400 不得错误进行同密钥重试，以及全节点瞬态故障后的有限恢复。真实 Provider 物理 fetch 必须逐次对应私有 `/internal/execute`；Gateway 不携带静态 Provider Secret，内部 RPC 限制路径与鉴权头。
+
+两项中央 PR 均已通过全部门禁，本批锁定最新不可变 SHA `ffa5c274cd0ded7158e38934e6de7dc6a45b720f`，由 AI Gateway 再进行中央 Linux 全量、Security、CI Evidence、PR Governance 与 validate-merge 验收。**本批不改运行时与部署配置**。凭据冲突、无效分片、部署预检等旧配置语义测试仍然保留原配置环境，整套 Tier 1 容量测试尚未完成中心化；不能因此删除 `legacy-provider-dispatch.ts` 或宣布旧直连已退役。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
