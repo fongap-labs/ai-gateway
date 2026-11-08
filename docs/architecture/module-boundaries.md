@@ -381,6 +381,12 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 本项不改变 D1 表结构、合并缓冲时序、UTC/UTC+8 统计口径、Cron 触发、失败回退与清理顺序。仅完成源码归属，**独立部署及整个仓库的分服务构建合同仍待验证**；不触及生产配置或部署。
 
+## Operations 独立构建合同
+
+`wrangler.operations-build.jsonc` 是仅供源码打包验证的隔离配置，入口为 `operations/index.ts`，不会配置生产 Worker、Service Binding、Token、D1、KV、外部路由或 Cron。合并门禁强制运行 `npm run check:operations`（Wrangler `deploy --dry-run`），以及配置安全合同；它只构建临时工件，不发布或切换服务。
+
+这让 Operations 从独立源码目录进入**可单独打包**的验收阶段。由于未配置生产环境绑定，不能把成功 dry-run 视作已完成生产部署、D1 绑定或 Cron 迁移。当前部署仍由 `wrangler.jsonc` 和旧组合入口承载；不得在本阶段启用独立生产定时任务。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
