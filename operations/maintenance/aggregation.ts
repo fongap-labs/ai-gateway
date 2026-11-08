@@ -11,8 +11,8 @@
 
 import type { D1PreparedStatement } from '../../packages/contracts/cloudflare.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { getUtcWeekStartUtcMs } from '../../packages/usage-store/time-buckets.ts';
 import { HOURLY_RETENTION_MS, isoDayUtc8, TABLE, TABLE_DAILY, TABLE_WEEKLY, tokenStatsD1 } from '../../packages/usage-store/keys.ts';
+import { getUtcWeekStartUtcMs } from '../../packages/usage-store/time-buckets.ts';
 
 type AggregateRow = {
   input: number;
