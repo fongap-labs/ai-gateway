@@ -194,7 +194,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   // Gateway schedules center-owned attempts using public node metadata only.
   // The private centers still require their own Provider credential shards.
-  const gatewayInferenceUsesCenter =
+  const isGatewayInferenceCenterActive =
     shouldRequireClientKey && (env.AIG_INFERENCE_ACTIVE === 'true' || 'AIG_INFERENCE_SERVICE' in env);
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
@@ -220,7 +220,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
         hasConfigErrors = true;
         continue;
       }
-      const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics, shouldRequireClientKey, gatewayInferenceUsesCenter);
+      const node = buildRuntimeNode(rawNode, tier, credentials, isHttpAllowed, shard.key, diagnostics, shouldRequireClientKey, isGatewayInferenceCenterActive);
       if (!node) continue;
       if (node.auth === 'oauth' && !isSubscriptionEnabled) {
         // Disabled subscription nodes are not part of the configuration at all.
@@ -287,7 +287,7 @@ function buildRuntimeNode(
   sourceKey: string,
   diagnostics: string[],
   isGateway: boolean,
-  gatewayInferenceUsesCenter: boolean,
+  isGatewayInferenceCenterActive: boolean,
 ): RuntimeNode | null {
   if (!rawNode || typeof rawNode !== 'object' || Array.isArray(rawNode)) {
     diagnostics.push(`${sourceKey}: entry is not a JSON object`);
@@ -345,7 +345,7 @@ function buildRuntimeNode(
 
   const profile = getProviderProfile(provider);
   const isImageOnly = profile.wire.surfaces.length === 1 && profile.wire.surfaces[0] === 'images_generations';
-  const credentialBelongsToCenter = isGateway && (gatewayInferenceUsesCenter || isImageOnly);
+  const credentialBelongsToCenter = isGateway && (isGatewayInferenceCenterActive || isImageOnly);
 
   // base_url is required for static-credential nodes. Tier 2 `auth:"oauth"`
   // subscription nodes may omit base_url: their Provider profile declares the
