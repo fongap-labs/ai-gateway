@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 并发突发、Tier 2 兜底、429 风暴、恢复探针与 SSE 取消的私有中心压力回归覆盖。
+
 - 新增: Codex Responses、SSE、工具调用和故障边界的中心回归覆盖。
 
 - 新增: Claude Messages、SSE 与工具回退的私有中心黑盒回归覆盖。
