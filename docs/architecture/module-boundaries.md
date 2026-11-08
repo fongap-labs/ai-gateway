@@ -347,6 +347,12 @@ Action Worker [#1533](https://github.com/fongap-labs/action-worker/pull/1533) �
 
 中央 Action Worker [#1541](https://github.com/fongap-labs/action-worker/pull/1541) 进一步将真实架构黑盒请求切至私有中心、把 Provider 凭据冲突判定归属 `loadExecutionConfig`，并维护两阶段源码切换的预算校验。最新不可变中央包为 `9f980005ae776ef5f3676b675b765966787aa783`，AG 当前 HEAD 必须使用该 SHA 通过完整 Linux/Security/CI Evidence/PR Governance/validate-merge 才允许退役旧执行器。旧 Gateway 在任何模式下不能直接持有 Provider 密钥或调用上游；旧中心参数与当前中心实行差异若出现，必须在真实中心修复而非放宽协议断言。
 
+## Operations 源码入口独立（不切部署）
+
+`operations/index.ts` 正式拥有定时维护 `scheduled` 入口，直接调用 `operations/maintenance/usage.ts`；`src/index.ts` 仅保留 Cloudflare 的 `fetch` 和 `scheduled` 兼容组合，公开 `apps/gateway/index.ts` 不承担定时维护职责。静态架构边界门禁强制检查三个文件之间的委托关系，防止统计维护重新混入请求热路径。
+
+此变更不改变现有 `wrangler.jsonc`、Cron 时间、D1 绑定、生产 Secrets、部署或发布。**独立入口不等于 Operations 已独立部署或整套应用已独立构建**：仍须继续隔离其 `src/observability` 依赖并建立独立构建合同。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
