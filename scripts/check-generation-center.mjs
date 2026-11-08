@@ -5,9 +5,9 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
+import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
-import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
@@ -176,11 +176,7 @@ try {
     AIG_REQUEST_ADMISSION: 'false',
   };
   const imageConfig = loadExecutionConfig(imageEnv);
-  assert.equal(
-    imageConfig.hasConfigErrors,
-    false,
-    `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`,
-  );
+  assert.equal(imageConfig.hasConfigErrors, false, `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`);
   assert.equal(imageConfig.ready, true, 'center image fixture must have a usable provider node');
 
   console.log('Private generation center contracts passed.');
