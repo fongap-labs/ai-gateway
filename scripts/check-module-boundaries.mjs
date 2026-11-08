@@ -248,6 +248,22 @@ assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Cente
 assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
 assert.match(inferencePreflightClient, /INFERENCE_PREFLIGHT_PATH/, 'Private preflight client must use its dedicated endpoint');
 assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/, 'Inference preflight cannot dispatch or schedule Provider calls');
+// Internal framed streams must have one shared codec and must not carry
+// private Provider accounting data directly to the public response.
+const frameContract = readFileSync(join(root, 'packages/contracts/inference-stream-frames.ts'), 'utf8');
+const frameProducer = readFileSync(join(root, 'apps/inference/conversion/framed-stream.ts'), 'utf8');
+const frameConsumer = readFileSync(join(root, 'src/inference/inference-stream-client.ts'), 'utf8');
+assert.match(frameContract, /export function frameInferenceStream\(/, 'Private stream must have one framed encoder');
+assert.match(frameContract, /export function unframeInferenceStream\(/, 'Private stream must require explicit Gateway decoding');
+assert.match(frameProducer, /openMatrixStream\(/, 'Inference must execute real Matrix SSE conversion');
+assert.match(frameConsumer, /unframeInferenceStream\(/, 'Gateway decoder must strip private control frames');
+assert.doesNotMatch(
+  frameProducer,
+  /ensureFirstSseEvent|recordTokens|runTierLoop/,
+  'Inference frame producer must not own Gateway scheduling/accounting',
+);
+assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame contract cannot import legacy Gateway source');
+
 const gatewaySource = readFileSync(join(root, 'apps/gateway/index.ts'), 'utf8');
 assert.doesNotMatch(gatewaySource, /maintainUsageStats|async scheduled/, 'Gateway app must not own scheduled D1 maintenance');
 assert.match(
