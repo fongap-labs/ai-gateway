@@ -295,6 +295,14 @@ Action Worker 的 `rate-limit-strategy-test.mjs` 429 冷却阶梯、配额文本
 
 **本批仅完成请求执行所有权的中央回归迁移，尚未删除 `legacy-provider-dispatch.ts`、旧执行模式选择器或 OAuth 管理端代码。** 后续应继续迁移未中心化的真实网络合同，独立验证源码删除不会引入未配置中心时的隐式直连，并在合并前执行完整门禁。本批不修改 Gateway Runtime、生产 Secrets、Service Binding 或部署。
 
+## 中央 Groq ITPM 413 回退合同：第二十批
+
+Action Worker [#1531](https://github.com/fongap-labs/action-worker/pull/1531) 已通过静态分析、命名、安全、中央合同、沙箱和 validate-merge，合并提交 `66fca480ad5c0177b4dd7f93e8036c01ce39ad32`。中央 `cooldown-quota-test.mjs` 的真实 Gateway 请求已通过私有 `handleInferenceCenterRequest` 执行，Tier 1 Groq Provider 与 Tier 2 兜底 Provider 凭据仅存在中心环境。
+
+保留上游返回 413（ITPM 本请求额度超限）时不施加全节点冷却、允许转下一个 Tier 2 候选、对外成功回复及原始物理调用顺序；同时校验每一次 Provider 物理请求恰由一次私有 `/internal/execute` 发起，内部 RPC 不能转送客户端认证头，Gateway 不携带任何静态 Provider 凭据。原本纯函数 413 分类合同保持不变。
+
+**本批只增加中心执行等价回归，不改运行时或生产配置。** 剩余的旧 Gateway Provider 直连与非中心测试仍需逐一排查，未完成前不得删除运行时分支，亦不执行部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
