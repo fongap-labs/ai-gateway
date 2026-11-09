@@ -50,6 +50,8 @@ Cloudflare Worker 部署
 
 清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
+**两层架构切换保护**：AG #312 已合并，仓库的 `automatic: true` 仍然有效。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过而实际部署作业当时为 `waiting`，目标是 `main` 的 `56adb64e`。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得批准该等待作业。后续状态需重新核查，不能因本文记录为 waiting 就推定它始终未执行。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
+
 ## 自动部署
 
 在中央 CI 对当前默认分支 HEAD 运行成功之后，Action Worker 会解析源码所有的部署清单。只有同时满足以下条件，才会进行自动部署：
@@ -94,7 +96,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 可选的 `AIG_IS_DEPLOY_ENABLED=false` 紧急开关（kill switch）；
 - `CLOUDFLARE_ACCOUNT_ID`；
 - `AIG_PUBLIC_URL`；
-- 至少一个 `AIG_TIER{1,2,3}_NODES_XX` 分片；
+- 至少一个 `AIG_TIER{1,2}_NODES_XX` 分片；旧 `AIG_TIER3_*` 不得出现在新运行时；
 - 配置 Tier 1 节点时所需的 `AIG_AFFINITY_KV_ID`（GitHub 部署预检强制要求；运行时缺失时亲和自动禁用，主链路仍可用）；
 - 可选的 `AIG_ALLOW_DEGRADED=true`：显式允许带着被排除的节点继续部署（默认拒绝）；
 - 可选的 `AIG_USAGE_D1_ID`；
