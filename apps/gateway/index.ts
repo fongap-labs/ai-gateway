@@ -6,7 +6,7 @@
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { sanitizedInternalErrorForRoute } from '../../src/observability/diagnostic-endpoints.ts';
 import { gatewayStats, isCountedRoute, trackClientResponse } from '../../src/observability/gateway-stats.ts';
-import { detectRoute, normalizePath } from '../../src/request/router.ts';
+import { detectRoute, normalizePath } from './policy/router.ts';
 import { handleRequest } from './request-handler.ts';
 
 export default {
