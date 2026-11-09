@@ -102,10 +102,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   const missing = [];
   const retiredNames = [...names].filter(
     (name) =>
-      name.startsWith('AIG_TIER3_') ||
-      name.startsWith('AIG_OAUTH_') ||
-      name === 'AIG_TOKEN_ENCRYPTION_KEY' ||
-      name === 'AIG_IS_SUBSCRIPTION_ENABLED',
+      name.startsWith('AIG_TIER3_') || name.startsWith('AIG_OAUTH_') || name === 'AIG_TOKEN_ENCRYPTION_KEY' || name === 'AIG_IS_SUBSCRIPTION_ENABLED',
   );
   if (retiredNames.length > 0) missing.push(`Retired Tier 3 or subscriber Secret bindings remain (${retiredNames.sort().join(', ')})`);
   const upstreamSecrets = [...names].filter((name) => NODE_SECRET.test(name));
