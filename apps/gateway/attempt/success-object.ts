@@ -18,7 +18,7 @@ import {
   recordTier1NonStreamTtft,
   recordTokens,
   recordUndeliveredUpstreamAttempt,
-} from '../../../src/request/attempt/observability.ts';
+} from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
 import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { collectAnthropicMessageObject, synthesizeAnthropicFromMessage } from '../../../src/stream/anthropic-native.ts';

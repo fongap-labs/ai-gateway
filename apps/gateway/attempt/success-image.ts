@@ -8,7 +8,7 @@
 import { corsHeaders, readBodyTextBounded } from '../../../src/protocol/http.ts';
 import { getProviderAdapter } from '../../../src/providers/registry.ts';
 import { classifyClientAbort, classifyEmptyResponse, KIND } from '../../../src/reliability/classify.ts';
-import { recordNodeSuccess } from '../../../src/request/attempt/observability.ts';
+import { recordNodeSuccess } from './observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from '../../../src/request/attempt/outcome.ts';
 import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import type { AttemptOutcome } from '../../../src/types/request.ts';
