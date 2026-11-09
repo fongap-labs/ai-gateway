@@ -6,8 +6,8 @@ import { assertReleaseTopology } from './check-private-center-release.mjs';
 
 const sha = 'a'.repeat(40);
 const db = { binding: 'TOKEN_STATS_DB', database_name: 'test-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' };
-const inferenceNodes = JSON.stringify([{ id: 'test-text', provider: 'openai', models: { 'Chat': 'gpt-4o' } }]);
-const imageNodes = JSON.stringify([{ id: 'test-image', provider: 'openai-image', models: { 'Image': 'gpt-image-1' } }]);
+const inferenceNodes = JSON.stringify([{ id: 'test-text', provider: 'openai', models: { Chat: 'gpt-4o' } }]);
+const imageNodes = JSON.stringify([{ id: 'test-image', provider: 'openai-image', models: { Image: 'gpt-image-1' } }]);
 const config = {
   source_sha: sha,
   approved_for_production: false,
