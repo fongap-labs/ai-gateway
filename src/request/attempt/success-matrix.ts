@@ -24,7 +24,7 @@ import {
   replyToObject,
   synthesizeMatrixStreamFromObject,
 } from '../../conversion/matrix/pipeline.ts';
-import { decodeFramedInferenceResponse } from '../../inference/inference-stream-client.ts';
+import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
 import { readBufferedReplyText } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
