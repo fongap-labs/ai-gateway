@@ -868,6 +868,22 @@ const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport
 const legacyPreflightShim = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
 assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Center may run full conversion preflight when bound');
 assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
+assert.doesNotMatch(
+  delegatedFallback,
+  /\bconvertMatrixRequest\s*\(|\bopenMatrixStream\s*\(|from ['"][^'"]*\/conversion\/matrix\/pipeline\.ts['"]/,
+  'Gateway fallback must never import or execute the protocol converter locally',
+);
+assert.doesNotMatch(
+  delegatedFallback,
+  /'AIG_INFERENCE_SERVICE' in env\s*\?/,
+  'A missing Inference Service Binding must never activate local conversion',
+);
+assert.match(
+  delegatedFallback,
+  /from '\.\.\/\.\.\/packages\/conversion-core\/protocol-pairs\.ts'/,
+  'Gateway fallback protocol feasibility must come from pure control-plane metadata',
+);
+
 assert.match(
   delegatedFallback,
   /from '\.\/transport\/inference-preflight-client\.ts'/,
