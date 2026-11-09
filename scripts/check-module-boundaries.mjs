@@ -287,10 +287,21 @@ assert.match(responseGateway, /recordTokens\(c, node, native.upstreamUsage\)/, '
 assert.match(responseContract, /EXECUTION_OBJECT_CONTRACT_VERSION = '3'/, 'v3 object conversion must use its own contract version');
 const inferencePreflight = readFileSync(join(root, 'apps/inference/preflight.ts'), 'utf8');
 const delegatedFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
-const inferencePreflightClient = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
+const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport/inference-preflight-client.ts'), 'utf8');
+const legacyPreflightShim = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
 assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Center may run full conversion preflight when bound');
 assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
+assert.match(
+  delegatedFallback,
+  /from '\.\/transport\/inference-preflight-client\.ts'/,
+  'Gateway must directly import its owned private preflight client',
+);
 assert.match(inferencePreflightClient, /INFERENCE_PREFLIGHT_PATH/, 'Private preflight client must use its dedicated endpoint');
+assert.ok(
+  legacyPreflightShim.includes("from '../../apps/gateway/transport/inference-preflight-client.ts'"),
+  'Legacy preflight import must only re-export the Gateway transport',
+);
+assert.doesNotMatch(legacyPreflightShim, /export async function /, 'Legacy preflight path must not duplicate execution logic');
 assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/, 'Inference preflight cannot dispatch or schedule Provider calls');
 // Internal framed streams must have one shared codec and must not carry
 // private Provider accounting data directly to the public response.
