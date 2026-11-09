@@ -479,6 +479,51 @@ assert.ok(
 );
 assert.doesNotMatch(tier23Owner, /dispatchLegacyProvider|fetch\(/, 'Scheduler must not execute physical Provider requests');
 
+// Tier 1 long-lived cooldown KV coordination is Gateway-owned. The old
+// reliability path is a pure forwarding entry so tests, old callers and the
+// active Gateway share the same in-memory cache, refresh state and writer.
+const sharedCooldownCompat = readFileSync(join(root, 'src/reliability/tier1-shared-cooldowns.ts'), 'utf8');
+const sharedCooldownOwner = readFileSync(join(root, 'apps/gateway/reliability/tier1-shared-cooldowns.ts'), 'utf8');
+assert.ok(
+  sharedCooldownCompat.includes("export * from '../../apps/gateway/reliability/tier1-shared-cooldowns.ts';"),
+  'Old Tier 1 shared cooldown path must re-export its Gateway owner',
+);
+assert.doesNotMatch(
+  sharedCooldownCompat,
+  /^(?:import|export (?:async )?(?:function|const|class|type)|(?:const|let) )/m,
+  'The old Tier 1 cooldown path may not keep another implementation or isolate state',
+);
+for (const symbol of ['hydrateSharedTier1Cooldowns', 'shareLongTier1Cooldowns', '__resetSharedTier1CooldownsForTests']) {
+  assert.ok(sharedCooldownOwner.includes(`function ${symbol}(`), `Gateway must own Tier 1 cooldown ${symbol}`);
+}
+assert.ok(
+  sharedCooldownOwner.includes("from '../../../packages/contracts/runtime.ts'") &&
+    sharedCooldownOwner.includes("from '../../../src/reliability/tier1-state.ts'"),
+  'Gateway cooldown sharing must reuse the neutral binding type and the existing single Tier 1 state',
+);
+for (const required of [
+  'const REFRESH_MS = 5 * 60_000;',
+  'const READ_TIMEOUT_MS = 50;',
+  'let known: Tier1SharedCooldown[] = [];',
+  'let isWriting = false;',
+  'let isDirty = false;',
+  'Promise.race([load, timeout])',
+  'while (isDirty)',
+  'adoptTier1Cooldown(entry)',
+]) {
+  assert.ok(sharedCooldownOwner.includes(required), `Shared Tier 1 cooldown behavior must be preserved: ${required}`);
+}
+assert.ok(
+  readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8').includes("from './reliability/tier1-shared-cooldowns.ts'") &&
+    readFileSync(join(root, 'apps/gateway/attempt/outcome.ts'), 'utf8').includes("from '../reliability/tier1-shared-cooldowns.ts'"),
+  'Gateway ingress and physical attempt outcome must call the same owned cooldown module directly',
+);
+const tierPolicyOwner = readFileSync(join(root, 'apps/gateway/scheduling/tier-policy.ts'), 'utf8');
+assert.ok(
+  tierPolicyOwner.includes("from './scheduler.ts'") && !tierPolicyOwner.includes("from '../../../src/scheduler/scheduler.ts'"),
+  'Tier budget policy must use the Gateway-owned Tier 2/3 selector rather than the legacy facade',
+);
+
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
 for (const [name, symbol] of [

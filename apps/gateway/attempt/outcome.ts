@@ -21,7 +21,6 @@ import type { FailureClassification, FailureKind } from '../../../src/reliabilit
 import { classifyHedgeRaceLoss, KIND } from '../../../src/reliability/classify.ts';
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordModelMissing, recordNeutralEnd } from '../../../src/reliability/node-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../../src/reliability/tier1-heat.ts';
-import { shareLongTier1Cooldowns } from '../../../src/reliability/tier1-shared-cooldowns.ts';
 import {
   applyTier1Outcome,
   classifyTier1Failure,
@@ -32,6 +31,7 @@ import {
 } from '../../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { AttemptContext, AttemptOutcome, LoopState } from '../../../src/types/request.ts';
+import { shareLongTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { upstreamModelOf } from '../response/response-helpers.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 

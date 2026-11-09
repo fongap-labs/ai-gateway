@@ -10,12 +10,12 @@
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { tier1CountDispatchableNodes, tier1HasDispatchableNode } from '../../../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../../../src/scheduler/routing-strategy.ts';
-import { countDispatchableNodes, tierHasDispatchableNode } from '../../../src/scheduler/scheduler.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { PolicyConfig } from '../../../src/types/policy.ts';
 import type { RoutableRequest, Tier, TierMap } from '../../../src/types/scheduler.ts';
 import { cryptoRng } from '../../../src/utils/crypto-rng.ts';
 import { TIER_ORDER } from '../policy/router.ts';
+import { countDispatchableNodes, tierHasDispatchableNode } from './scheduler.ts';
 
 function tier1Dispatchable(
   nodes: ReadonlyArray<RuntimeNode>,
