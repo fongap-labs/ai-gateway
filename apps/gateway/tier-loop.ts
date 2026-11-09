@@ -6,7 +6,7 @@
 // request-wide attempt accounting and retry admission. Capability centers
 // only execute one physical attempt, and must not introduce a second scheduler.
 
-import { isSpeculativeRetryAfter } from '../../src/reliability/retry-budget.ts';
+import { isSpeculativeRetryAfter } from './reliability/retry-budget.ts';
 import { dispatchWithHedge } from '../../src/request/attempt.ts';
 import { recordTier1AffinityDecision } from '../../src/scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';

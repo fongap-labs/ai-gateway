@@ -105,6 +105,27 @@ for (const entry of ['src/request/attempt/inference-dispatch.ts', 'src/request/a
   assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/reliability\/center-quota\.ts['"]/);
 }
 
+// Gateway owns the isolate-local speculative retry budget. Legacy imports
+// must share the one live slot counter instead of duplicating mutable state.
+const retryBudgetLegacy = readFileSync(join(root, 'src/reliability/retry-budget.ts'), 'utf8');
+const retryBudgetOwner = readFileSync(join(root, 'apps/gateway/reliability/retry-budget.ts'), 'utf8');
+const retryBudgetRequest = readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8');
+const retryBudgetLoop = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+assert.ok(
+  retryBudgetLegacy.includes("export * from '../../apps/gateway/reliability/retry-budget.ts';"),
+  'Legacy retry budget must forward to the one Gateway owner',
+);
+assert.doesNotMatch(retryBudgetLegacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.match(retryBudgetOwner, /export class RetrySlot/, 'Gateway must own speculative retry slots');
+assert.match(retryBudgetOwner, /export function isSpeculativeRetryAfter\(/);
+assert.match(retryBudgetOwner, /export function snapshotRetryBudget\(/);
+assert.match(retryBudgetOwner, /RETRY_BUDGET_MIN = 3/, 'Gateway minimum admission contract must remain stable');
+assert.ok(retryBudgetRequest.includes("from './reliability/retry-budget.ts'"), 'Gateway request admission must directly share the retry owner');
+assert.ok(retryBudgetLoop.includes("from './reliability/retry-budget.ts'"), 'Gateway tier policy must directly share the retry owner');
+for (const caller of [retryBudgetRequest, retryBudgetLoop]) {
+  assert.doesNotMatch(caller, /from ['"]\.\.\/\.\.\/src\/reliability\/retry-budget\.ts['"]/);
+}
+
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [

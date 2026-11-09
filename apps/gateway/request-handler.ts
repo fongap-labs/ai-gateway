@@ -18,7 +18,7 @@ import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
-import { RetrySlot } from '../../src/reliability/retry-budget.ts';
+import { RetrySlot } from './reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import { supportsRequest } from '../../src/scheduler/scheduler.ts';
