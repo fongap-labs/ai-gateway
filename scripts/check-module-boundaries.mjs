@@ -502,11 +502,11 @@ assert.ok(
   'Gateway cooldown sharing must reuse the neutral binding type and the existing single Tier 1 state',
 );
 for (const required of [
-  "const REFRESH_MS = 5 * 60_000;",
-  "const READ_TIMEOUT_MS = 50;",
-  "let known: Tier1SharedCooldown[] = [];",
-  "let isWriting = false;",
-  "let isDirty = false;",
+  'const REFRESH_MS = 5 * 60_000;',
+  'const READ_TIMEOUT_MS = 50;',
+  'let known: Tier1SharedCooldown[] = [];',
+  'let isWriting = false;',
+  'let isDirty = false;',
   'Promise.race([load, timeout])',
   'while (isDirty)',
   'adoptTier1Cooldown(entry)',
@@ -520,8 +520,7 @@ assert.ok(
 );
 const tierPolicyOwner = readFileSync(join(root, 'apps/gateway/scheduling/tier-policy.ts'), 'utf8');
 assert.ok(
-  tierPolicyOwner.includes("from './scheduler.ts'") &&
-    !tierPolicyOwner.includes("from '../../../src/scheduler/scheduler.ts'"),
+  tierPolicyOwner.includes("from './scheduler.ts'") && !tierPolicyOwner.includes("from '../../../src/scheduler/scheduler.ts'"),
   'Tier budget policy must use the Gateway-owned Tier 2/3 selector rather than the legacy facade',
 );
 
