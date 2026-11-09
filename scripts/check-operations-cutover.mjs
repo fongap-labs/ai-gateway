@@ -4,7 +4,7 @@
 // double-run D1 retention, so the candidate remains deliberately disabled.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { scheduled, default as operations } from '../operations/standalone.ts';
+import { default as operations, scheduled } from '../operations/standalone.ts';
 
 const read = (file) => JSON.parse(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
 const gateway = read('wrangler.jsonc');
