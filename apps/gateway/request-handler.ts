@@ -21,8 +21,6 @@ import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../s
 import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import { supportsRequest } from '../../src/scheduler/scheduler.ts';
-import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from '../../src/scheduler/tier1-affinity.ts';
-import { tier1ModelAvailability } from '../../src/scheduler/tier1-scheduler.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
@@ -35,6 +33,8 @@ import { preflight as runPreflight } from './preflight.ts';
 import { RetrySlot } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './response/errors.ts';
 import { makeTier1Rng } from './scheduling/tier-policy.ts';
+import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from './scheduling/tier1-affinity.ts';
+import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
 
 // A streaming attempt on a model that still has a sibling after it gives up
