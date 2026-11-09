@@ -15,6 +15,7 @@
 //     Manual code-paste flow for providers whose OAuth client does not allow
 //     arbitrary redirect URIs (e.g., Google Gemini CLI).
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { readEnv } from '../../../src/config/env.ts';
 import { hasTokenKey } from '../../../src/oauth/crypto.ts';
 import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from '../../../src/oauth/provider-configs.ts';
@@ -31,7 +32,6 @@ import { getLogger } from '../../../src/observability/logger.ts';
 import { corsHeaders, htmlResponse, readBodyTextWithLimit } from '../../../src/protocol/http.ts';
 import { getProviderAdapter } from '../../../src/providers/registry.ts';
 import type { OAuthProviderConfig } from '../../../src/providers/types.ts';
-import type { GatewayEnv } from '../../../src/types/runtime.ts';
 import { trimTrailingSlashes } from '../../../src/utils/trim.ts';
 import { authorize, authorizeCredentials } from '../policy/auth.ts';
 
