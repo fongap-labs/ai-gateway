@@ -409,6 +409,14 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 本次完成 Gateway 主请求路径一批实质源码迁移，**不意味着 `src/request/` 全部清空**：后续还有模型回退、错误处理、尝试/执行与观测模块；OAuth 管理路径归属也仍需收敛。生产 Wrangler、Secrets、配额、Service Binding、路由和部署均保持不变。
 
+## Gateway 模型回退和 Tier 调度策略所有权
+
+`apps/gateway/policy/model-fallback.ts` 负责模型家族、前缀隔离、Air 只上行、容量优先选择及有界重查规划；`apps/gateway/scheduling/tier-policy.ts` 负责 Tier 1→2→3 调度优先级、显式 Tier 尝试上限、请求级已用预算抵扣和未用预算的有界释放。Gateway 的 `preflight`、`request-handler`、`fallback`、`tier-loop` 直接调用这些应用自有策略，不跨服务引入第二个调度器。
+
+原 `src/request/model-fallback.ts`、`src/request/tier-loop.ts` 只保留兼容导出。中央模块门禁要求现有预算/配额硬边界和唯一实现持续成立；所有接口和实际运行顺序不变。
+
+本项仅完成模型家族回退和 Tier 选择策略的源码归属；`src/request/attempt/` 的响应结算和结果处理、错误响应、统计与 OAuth 兼容依赖还未全部迁移，不得报告整体架构已完成。生产部署、Secrets、Cron 与 Service Binding 均不变。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
