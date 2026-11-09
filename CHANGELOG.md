@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: OpenAI 与 Anthropic 原生传输语义迁入中立 Transport，旧导入仅兼容。
+- 维护: 上游鉴权头、路径与有效响应判断仍保持相同合同。
+
 - 维护: Provider 配额信号解析和协议类型迁入中立 Contracts。
 - 维护: Inference、Generation 直接使用共享实现，旧路径仅保留兼容导出。
 
