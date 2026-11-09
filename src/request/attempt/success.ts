@@ -9,9 +9,9 @@
 // in those modules rather than rebuilding a generic result engine here.
 
 import { handleImageSuccess } from '../../../apps/gateway/attempt/success-image.ts';
+import { handleMatrixSuccess, isMatrixConversion } from '../../../apps/gateway/attempt/success-matrix.ts';
 import { commitTier1RecoveryProbe } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { handleMatrixSuccess, isMatrixConversion } from './success-matrix.ts';
 import { handleObjectSuccess } from './success-object.ts';
 import { handleStreamingSuccess } from './success-stream.ts';
 

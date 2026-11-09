@@ -397,7 +397,7 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 ## Gateway 私有推理流解码归属
 
-`apps/gateway/transport/inference-stream-client.ts` 是内部推理流帧解码器的唯一实现，`src/request/attempt/success-matrix.ts` 的 Gateway 响应逻辑直接引用它。原 `src/inference/inference-stream-client.ts` 仅保留兼容导出。中央帧流 Mock 合同直接覆盖新的运行时代码，并由架构门禁阻止旧位置恢复独立实现。
+`apps/gateway/transport/inference-stream-client.ts` 是内部推理流帧解码器的唯一实现，`apps/gateway/attempt/success-matrix.ts` 的 Gateway 响应逻辑直接引用它。原 `src/inference/inference-stream-client.ts` 仅保留兼容导出。中央帧流 Mock 合同直接覆盖新的运行时代码，并由架构门禁阻止旧位置恢复独立实现。
 
 生产配置及服务调用方式保持不变；私有流帧必须经共享合同 `unframeInferenceStream` 解码后才能进入 Gateway 的首事件保护与客户端流输出，物理 Provider 用量继续按现有结算边界处理。
 
@@ -435,7 +435,7 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 将原 `src/request/attempt/success-image.ts` 的完整运行实现迁至 `apps/gateway/attempt/success-image.ts`，旧路径仅作兼容导出；`src/request/attempt/success.ts` 统一分发器直接调用新归属。图像生成的非幂等终态、取消、响应格式及记账行为保持原合同。
 
-`success-stream.ts` 由于本次中央测试包仍从旧路径直接检查首事件守卫与流生命周期而保留原实现，未经授权不修改 Action Worker 测试；对象、矩阵、对冲、dispatch、outcome 和物理尝试观测仍有剩余源码迁移。无生产配置或部署改动。
+`success-stream.ts` 因中央测试包仍从旧路径直接检查首事件守卫与流生命周期而保留原实现。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。没有调整 Action Worker 测试。对象、对冲、dispatch、outcome 和物理尝试观测仍有剩余源码迁移。无生产配置或部署改动。
 
 ## 尚待迁移
 
