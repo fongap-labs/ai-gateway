@@ -8,7 +8,7 @@ import { googleProviderAdapter } from './google.ts';
 import { googleImageProviderAdapter } from './google-image.ts';
 import { openAIProviderAdapter } from './openai.ts';
 import { openAIImageProviderAdapter } from './openai-image.ts';
-import type { OAuthProviderConfig, ProviderAdapter, ProviderWire } from './types.ts';
+import type { ProviderAdapter, ProviderWire } from './types.ts';
 
 const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.freeze({
   openai: openAIProviderAdapter,
@@ -29,14 +29,6 @@ export function getProviderAdapter(provider: string): ProviderAdapter {
 
 export function providerWire(provider: string): ProviderWire {
   return getProviderAdapter(provider).wire;
-}
-
-export function builtinOAuthProviderConfigs(): Record<string, OAuthProviderConfig> {
-  const defaults: Record<string, OAuthProviderConfig> = {};
-  for (const [name, adapter] of Object.entries(PROVIDER_REGISTRY)) {
-    if (adapter.oauth) defaults[name] = adapter.oauth;
-  }
-  return defaults;
 }
 
 export function streamUsageEnabled(
