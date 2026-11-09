@@ -449,6 +449,12 @@ Tier 1 会话亲和 KV 缓存、短时熔断与 P2C 候选选择分别归属于 
 
 本批不改变 KV 时限、熔断阈值、上游选择或失败回退，不涉及生产部署。
 
+## Gateway Tier 2/3 选择器归属
+
+Tier 2/3 的协议及 surface 硬门禁、模型资格、即时可用性、候选评分、槽申请和竞争回避，由 `apps/gateway/scheduling/scheduler.ts` 单一实现。`src/scheduler/scheduler.ts` 只保留兼容导出，旧测试和旧模块调用获得相同函数身份；`apps/gateway/request-handler.ts` 与 `apps/gateway/attempt/hedge.ts` 直接调用新的 Gateway owner。
+
+此次仅变更源码所有权，不改变 Tier 2/3 优先级、活跃请求排序、健康/TTFT 与 LRU 比较、冷却/熔断、模型/协议支持和 hedge 候选行为。节点可靠性状态暂仍复用 `src/reliability/node-state.ts`，后续逐步收口；不涉及中心私有执行、生产配置和部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

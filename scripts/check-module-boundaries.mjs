@@ -452,6 +452,33 @@ assert.ok(tier1GatewayRequest.includes("from './scheduling/tier1-scheduler.ts'")
 assert.ok(tier1GatewayLoop.includes("from './scheduling/tier1-affinity.ts'"));
 assert.ok(tier1GatewayHedge.includes("from '../scheduling/tier1-scheduler.ts'"));
 
+// Tier 2/3 dynamic selection and request eligibility share a single
+// Gateway-owned implementation. Legacy import paths only re-export it.
+const tier23Compat = readFileSync(join(root, 'src/scheduler/scheduler.ts'), 'utf8');
+const tier23Owner = readFileSync(join(root, 'apps/gateway/scheduling/scheduler.ts'), 'utf8');
+assert.ok(
+  tier23Compat.includes("export * from '../../apps/gateway/scheduling/scheduler.ts';"),
+  'Old Tier 2/3 scheduler must forward to the Gateway owner',
+);
+assert.doesNotMatch(
+  tier23Compat,
+  /^(?:import|export (?:async )?(?:function|const|class|type)) /m,
+  'Old Tier 2/3 scheduler must not duplicate implementation or state',
+);
+for (const symbol of ['supportsRequest', 'pickCandidate', 'tierHasDispatchableNode', 'countDispatchableNodes']) {
+  assert.match(tier23Owner, new RegExp(`export function ${symbol}\\(`), `Gateway must own Tier 2/3 ${symbol}`);
+}
+assert.match(tier23Owner, /from '..\/..\/..\/src\/reliability\/node-state.ts'/, 'Tier 2/3 must reuse existing node admission state');
+assert.ok(
+  readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8').includes("from './scheduling/scheduler.ts'"),
+  'Gateway request preflight must call its owned eligibility implementation',
+);
+assert.ok(
+  readFileSync(join(root, 'apps/gateway/attempt/hedge.ts'), 'utf8').includes("from '../scheduling/scheduler.ts'"),
+  'Gateway hedge must call its owned Tier 2/3 picker',
+);
+assert.doesNotMatch(tier23Owner, /dispatchLegacyProvider|fetch\(/, 'Scheduler must not execute physical Provider requests');
+
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
 for (const [name, symbol] of [

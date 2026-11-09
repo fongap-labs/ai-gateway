@@ -23,11 +23,11 @@
 import { adaptiveHedgeDelayMs } from '../../../src/config/timeouts.ts';
 import { classifyHedgeUnknown } from '../../../src/reliability/classify.ts';
 import { getTier1ModelPerf } from '../../../src/reliability/tier1-state.ts';
-import { pickCandidate } from '../../../src/scheduler/scheduler.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import type { PickedCandidate } from '../../../src/types/scheduler.ts';
 import { cryptoRng } from '../../../src/utils/crypto-rng.ts';
+import { pickCandidate } from '../scheduling/scheduler.ts';
 import { pickTier1Candidate } from '../scheduling/tier1-scheduler.ts';
 import { attemptNode, isBufferedUpstreamReply } from './dispatch.ts';
 
