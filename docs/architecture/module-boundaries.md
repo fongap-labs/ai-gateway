@@ -429,13 +429,13 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 `apps/gateway/attempt/body-release.ts` 统一处理大请求流式提交后的正文释放；`apps/gateway/attempt/attempt-mode.ts` 统一决定上游缓冲模式；`apps/gateway/attempt/oversize.ts` 统一处理超限响应终止。旧 `src/request/attempt/{body-release,attempt-mode,oversize}.ts` 仅作兼容导出，热路径直接依赖 Gateway-owned 代码，并由架构门禁固定。
 
-物理尝试用量及流统计现由 `apps/gateway/attempt/observability.ts` 唯一实现；`src/request/attempt/observability.ts` 仅兼容导出。中央测试包已按维护者明确授权升级，重复结算实现禁止。其他 attempt 调度和执行源码仍待迁移。无生产 Secret、Wrangler、Cron、D1、Service Binding、部署或发布改动。
+物理尝试用量及流统计现由 `apps/gateway/attempt/observability.ts` 唯一实现；`src/request/attempt/observability.ts` 仅兼容导出。中央测试包已按维护者明确授权升级，重复结算实现禁止。对冲与请求级选择器已迁归 Gateway，Inference/Generation 分发适配仍待迁移。无生产 Secret、Wrangler、Cron、D1、Service Binding、部署或发布改动。
 
 ## Gateway 成功响应处理实现归属
 
-将原 `src/request/attempt/success-image.ts` 的完整运行实现迁至 `apps/gateway/attempt/success-image.ts`，旧路径仅作兼容导出；`src/request/attempt/success.ts` 统一分发器直接调用新归属。图像生成的非幂等终态、取消、响应格式及记账行为保持原合同。
+将原 `src/request/attempt/success-image.ts` 的完整运行实现迁至 `apps/gateway/attempt/success-image.ts`，旧路径仅作兼容导出；`apps/gateway/attempt/success.ts` 统一分发器直接调用新归属。图像生成的非幂等终态、取消、响应格式及记账行为保持原合同。
 
-原生 `success-stream.ts` 的首事件提交、流生命周期与中断处理均已归属 `apps/gateway/attempt/success-stream.ts`，原目录仅兼容导出；中央测试包已锁定升级版并保留原行为断言。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。没有调整 Action Worker 测试。对象与物理尝试观测已迁归 Gateway；对冲、dispatch、outcome 仍待后续归属迁移。无生产配置或部署改动。
+原生 `success-stream.ts` 的首事件提交、流生命周期与中断处理均已归属 `apps/gateway/attempt/success-stream.ts`，原目录仅兼容导出；中央测试包已锁定升级版并保留原行为断言。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。经明确授权的中央测试包已改为检查真实 owner，并保留原行为断言。对象、物理尝试观测、终态结算、对冲及 dispatch 均已迁归 Gateway；Inference/Generation 两类分发适配仍待迁移。无生产配置或部署改动。
 
 ## Gateway OAuth 管理路由归属
 
