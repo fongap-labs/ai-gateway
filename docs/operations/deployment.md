@@ -185,9 +185,9 @@ Config 与 Secret 分片是相互独立（independent）的分区。运行时绑
 
 添加或轮换上游 key 的步骤：
 
-1. 将节点保留在相应的 `AIG_TIER*_NODES_XX` Variable 中；
-2. 在 Cloudflare Worker `ai-gateway` 的 Secrets 中，通过 Cloudflare Dashboard 或 Action Worker 的 `ai-gateway-ops` 工作流更新对应 Tier 的 `AIG_TIER*_CREDENTIALS_XX`；
-3. 更新后执行密钥盘点与健康检查；代码部署不会覆盖或重新上传这些凭据。
+1. 将节点保留在两层配置对应的 `AIG_TIER{1,2}_NODES_XX` Variable 中，并与私有中心的节点 ID 和模型映射保持一致；
+2. 仅在对应的 Cloudflare 私有 Worker `ai-inference-center` 或 `ai-generation-center` 中，通过受控 Secret 管理通道更新 `AIG_TIER{1,2}_CREDENTIALS_XX`；**公开 `ai-gateway` 不得继续存有 Provider Token**；
+3. 在两个中心分别核对 Secret 名称、节点运行资格和内部健康，完成独立审批后才能更新 Gateway Service Binding；普通代码部署不得代替中心密钥迁移。
 
 不要将凭据放入节点 JSON 中。
 
