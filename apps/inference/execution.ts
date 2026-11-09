@@ -295,7 +295,8 @@ async function executeAdmittedNative(
     }
     try {
       const parsed: unknown = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return dispatchedConversionProblem('center_converted_object_invalid');
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return dispatchedConversionProblem('center_converted_object_invalid');
       const framed = buildFramedMatrixObjectFallback(parsed as Record<string, unknown>, from, to, invocation.displayModel);
       outgoing.set('content-type', framed.headers.get('content-type') ?? '');
       outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
