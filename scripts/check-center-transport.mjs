@@ -22,8 +22,15 @@ for (const [kind, oldPath] of [
   assert.ok(shim.includes(`export * from '../../apps/gateway/transport/${kind}-client-request.ts';`), `${kind} legacy file is a pure re-export`);
   assert.doesNotMatch(shim, /function |await fetch\(|class /, `${kind} legacy path cannot regain physical transport`);
   assert.ok(caller.includes(`from '../transport/${kind}-client-request.ts'`), `${kind} attempt imports Gateway-owned transport directly`);
-  assert.ok(legacyCaller.includes(`export * from '../../../apps/gateway/attempt/${kind}-dispatch.ts';`), `${kind} legacy attempt forwards to Gateway owner`);
-  assert.doesNotMatch(legacyCaller, /^(?:import|export (?:async )?(?:function|const|class|type)) /m, `${kind} legacy attempt must not execute transport`);
+  assert.ok(
+    legacyCaller.includes(`export * from '../../../apps/gateway/attempt/${kind}-dispatch.ts';`),
+    `${kind} legacy attempt forwards to Gateway owner`,
+  );
+  assert.doesNotMatch(
+    legacyCaller,
+    /^(?:import|export (?:async )?(?:function|const|class|type)) /m,
+    `${kind} legacy attempt must not execute transport`,
+  );
 }
 
 const inferenceKey = 'test-inference-center-authentication-32-plus';
