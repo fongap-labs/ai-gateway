@@ -83,6 +83,12 @@ npm run validate:merge
 
 当触发部署的 `main` commit 只修改了 Markdown 文件和/或 `docs/**` 时，这属于预期行为。部署门禁会有意跳过仅涉及文档的变更，不进行 Worker 部署。
 
+## 边缘缓存的密钥隔离
+
+`x-gateway-cache: true` 只是客户端主动选择缓存，不会放宽身份隔离。边缘缓存只使用专门的 `AIG_EDGE_CACHE_HMAC_KEY` Cloudflare Secret（至少 32 字符）生成不可逆的客户端身份指纹；该密钥不能写入 GitHub Variables、节点 JSON 或公开响应。
+
+如果密钥不存在或长度不足，缓存安全地关闭，不产生 `x-gateway-cache-status: MISS/HIT`，推理请求仍走正常执行路径。旧会员加密变量 `AIG_TOKEN_ENCRYPTION_KEY` 已退役，不得作为缓存密钥恢复。为正式启用缓存，须在**单独批准的部署操作**中创建新 Secret、验证 Worker 绑定和请求隔离后再切换；不自动复制或删除历史 Secrets。
+
 ## 运行时 HTTP 故障
 
 ### 400 / 其他客户端类 4xx
