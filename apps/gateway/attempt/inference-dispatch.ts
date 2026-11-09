@@ -224,7 +224,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     if (signal) recordTier1QuotaReport(node.id, signal);
   }
 
-  if (returnCollectedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
+  if (returnTranslatedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     recordOutcome(state, node, classifyConversionBudget(), c, { latencyMs: c.headersMs, status: upstream.status });
