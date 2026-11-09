@@ -26,8 +26,6 @@ import { validateImageGenerationRequest } from '../../src/protocol/image.ts';
 import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';
-import { gatewayError } from '../../src/request/errors.ts';
-import { jsonResponse } from '../../src/request/response-helpers.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
@@ -43,6 +41,8 @@ import { authorizeModel, filterVisibleModels, resolveClientModel } from './polic
 import { modelFallbackCandidates } from './policy/model-fallback.ts';
 import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
 import { acceptsHtml, detectRoute, normalizePath } from './policy/router.ts';
+import { gatewayError } from './response/errors.ts';
+import { jsonResponse } from './response/response-helpers.ts';
 
 const ROUTE_PROTOCOL_SURFACE = Object.freeze({
   openai_chat: { protocol: 'openai', surface: 'chat_completions' },
