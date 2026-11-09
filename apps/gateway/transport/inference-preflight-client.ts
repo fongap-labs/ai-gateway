@@ -8,11 +8,11 @@ import {
   INFERENCE_PREFLIGHT_PATH,
   isConversionPreflightResult,
 } from '../../../packages/contracts/conversion-preflight.ts';
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import type { IrProtocol } from '../../../packages/conversion-core/ir.ts';
 import type { ConversionResult } from '../../../packages/conversion-core/result.ts';
 import { ConversionError } from '../../../packages/conversion-core/validation.ts';
 import { readBodyTextBounded } from '../../../src/protocol/http.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { configuredInferenceService, InferenceCenterUnavailable } from './inference-client-request.ts';
 
 const MAX_PREFLIGHT_WAIT_MS = 1_500;
