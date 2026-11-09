@@ -23,6 +23,7 @@
 ## 配置工具
 
 - `config-cli.mjs` 用于检查、校验、展示和比较运营者配置。
+- `tier-cutover-plan.mjs` 只读生成三层到两层的脱敏迁移预检报告；通过 `npm run config:cutover:plan -- --tier1 ... --tier2 ... --tier3 ... --credential-index ... --policies ...` 使用。具体契约见 [两层迁移预检](../docs/architecture/two-tier-cutover.md)。
 - `node-config-shards.mjs` 负责节点配置/Secret 分片的校验与规划原语。
 - `plan-node-configuration.mjs` 将这些原语以 CLI 的形式暴露出来。
 - `github-deployment-config.mjs` 负责将 GitHub Variables/Secrets 桥接到生产部署载荷中。
