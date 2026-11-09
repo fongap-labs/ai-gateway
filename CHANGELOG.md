@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 修复: stream-guard JSON 回退错误；补单次结算与 TTFT/时延验收。
+- 新增: Operations D1 幂等合同和四 Worker 回滚顺序；未切生产。
+
 - 新增: 增加 Cloudflare 四 Worker 只读盘点，检查路由、部署、绑定、D1/KV、Secret 名称及 Cron；Mock 验证，无生产访问。
 
 - 新增: 两层迁移预检复用运行时模型/策略校验，输出映射指纹及旧预算冲突，不输出模型名称或凭据值。
