@@ -64,7 +64,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
   // operator explicitly sets enabled=false.
   const hedgePolicy = args.policy?.hedge ?? null;
   if (!hedgePolicy || hedgePolicy.enabled === false) return attemptNode(args);
-  const tierKey: 'tier1' | 'tier2' | 'tier3' = `tier${args.tierNumber}`;
+  const tierKey: 'tier1' | 'tier2' = `tier${args.tierNumber}`;
   if (hedgePolicy.tiers && !hedgePolicy.tiers.includes(tierKey)) return attemptNode(args);
   if ((args.reqDescriptor.bodyChars ?? 0) > HEDGE_MAX_BODY_CHARS) return attemptNode(args);
   // The built-in delay adapts to what is known about this request: a large
