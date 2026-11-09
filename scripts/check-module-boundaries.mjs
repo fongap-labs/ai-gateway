@@ -169,6 +169,9 @@ for (const path of ['src/request/attempt/success-matrix.ts', 'src/request/attemp
   assert.ok(source.includes("from '../../../apps/gateway/attempt/oversize.ts'"), `${path} must call Gateway-owned oversized-reply handling directly`);
 }
 
+const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
+assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
+
 // Gateway alone owns client-facing error shaping, Retry-After policy and
 // response headers. The former src/request paths must never implement them.
 for (const [legacy, owner, symbol] of [
@@ -195,7 +198,6 @@ for (const path of [
   'src/request/attempt/success-object.ts',
   'src/request/attempt/success-stream.ts',
   'src/request/attempt/success-image.ts',
-  'src/request/attempt/oversize.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',
