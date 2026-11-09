@@ -7,9 +7,9 @@
 // by handler.ts. Extracting them shrinks handler.ts and makes the response
 // shaping logic independently inspectable without changing behavior.
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { corsHeaders } from '../../../src/protocol/http.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 
 const streamErrorEncoder = new TextEncoder();
 
