@@ -12,13 +12,6 @@ import {
   classifyPostHeadersFailure,
   classifyUpstreamStatus,
 } from '../../../src/reliability/classify.ts';
-import {
-  makeNodeStreamTrack,
-  recordNodeSuccess,
-  recordTier1NonStreamTtft,
-  recordTokens,
-  recordUndeliveredUpstreamAttempt,
-} from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
 import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { collectAnthropicMessageObject, synthesizeAnthropicFromMessage } from '../../../src/stream/anthropic-native.ts';
@@ -28,6 +21,7 @@ import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenA
 import type { AttemptOutcome } from '../../../src/types/request.ts';
 import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
+import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 
 /**

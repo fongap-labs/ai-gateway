@@ -358,10 +358,7 @@ assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.t
 for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts', 'success-stream.ts']) {
   const path = `src/request/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
-  assert.ok(
-    consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"),
-    `${path} must use Gateway-owned accounting`,
-  );
+  assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
   assert.doesNotMatch(consumer, /from ['"]\.\/observability\.ts['"]/);
 }
 for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts']) {
@@ -384,10 +381,7 @@ for (const [legacy, owner, symbol] of [
   assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
   assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
 }
-assert.ok(
-  attemptObservationOwner.includes("from './body-release.ts'"),
-  'Attempt observation must use Gateway-owned body release directly',
-);
+assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Attempt observation must use Gateway-owned body release directly');
 assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
@@ -404,10 +398,7 @@ assert.match(ownedObjectSuccess, /export async function handleObjectSuccess\(/);
 assert.ok(ownedObjectSuccess.includes("from './oversize.ts'"), 'Gateway object reply must use Gateway oversized handling');
 assert.ok(ownedObjectSuccess.includes("from '../response/errors.ts'"), 'Gateway object reply must use owned errors');
 assert.ok(ownedObjectSuccess.includes("from '../response/response-helpers.ts'"), 'Gateway object reply must use owned response helpers');
-assert.ok(
-  ownedObjectSuccess.includes("from './observability.ts'"),
-  'Object completion must preserve physical attempt usage accounting',
-);
+assert.ok(ownedObjectSuccess.includes("from './observability.ts'"), 'Object completion must preserve physical attempt usage accounting');
 assert.ok(
   successDispatcher.includes("from '../../../apps/gateway/attempt/success-object.ts'"),
   'Success dispatcher must call Gateway-owned object handler',
