@@ -126,7 +126,8 @@ try {
   assert.equal(overBudget.headers.get('x-aig-error-kind'), 'center_conversion_budget_exceeded');
   assert.equal(attempts, 4);
 
-  const invalidBudget = inbound({ streamBudget: { ...budget, cfg: { ...budget.cfg, maxOutputUnits: 0 } } });
+  const invalidBudget = inbound({ streamBudget: budget });
+  invalidBudget.headers.set('x-aig-stream-budget', JSON.stringify({ ...budget, cfg: { ...budget.cfg, maxOutputUnits: 0 } }));
   assert.equal((await handleInferenceCenterRequest(invalidBudget, env)).status, 400);
   assert.equal(attempts, 4);
 
