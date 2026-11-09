@@ -512,7 +512,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
 // Eligibility for the image surface is narrower than a provider's general
 // wire capability. It requires explicit model mapping and a real API-key node;
-// a wildcard or a Codex/Code Assist subscription cannot claim image support.
+// a wildcard cannot claim image support.
 function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
   return canRouteImageGeneration(node, logical, body.size ?? '1024x1024');
 }
