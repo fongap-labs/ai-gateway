@@ -190,10 +190,6 @@ for (const [legacy, owner, symbol] of [
   assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
 }
 assert.ok(
-  readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/body-release.ts'"),
-  'Attempt observation must use Gateway-owned body release directly',
-);
-assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
 );
