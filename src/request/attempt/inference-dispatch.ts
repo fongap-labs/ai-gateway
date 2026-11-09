@@ -5,6 +5,7 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
+import { quotaFromCenter } from '../../../apps/gateway/reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { invokeInferenceNode } from '../../../apps/gateway/transport/inference-client-request.ts';
 import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
@@ -13,7 +14,6 @@ import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, QUOTA_RETRY_AFTER_MAX_M
 import { reportedUsageFromJsonText } from '../../observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
-import { quotaFromCenter } from '../../reliability/center-quota.ts';
 import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
