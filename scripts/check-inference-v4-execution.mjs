@@ -21,8 +21,8 @@ const env = {
       throw new Error('Service Binding transport is not invoked in this center test');
     },
   },
-  AIG_TIER3_NODES_01: JSON.stringify([node]),
-  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-credential-no-real-access' }),
+  AIG_TIER2_NODES_01: JSON.stringify([node]),
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-credential-no-real-access' }),
 };
 const client = new Request('https://gateway.invalid/v1/messages', {
   method: 'POST',
