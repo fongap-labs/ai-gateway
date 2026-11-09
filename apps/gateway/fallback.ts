@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Protocol Fallback Orchestration.
+// Protocol Fallback Orchestration; private preflight owns request translation.
 //
 // Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
 // for the single source of truth): every directed pair among OpenAI Chat
@@ -32,7 +32,7 @@
 //     reachable fallback steps is precomputed by route-feasibility.ts at
 //     preflight time and carried through loopCtx.feasibility; runFallbackChain
 //     iterates that set rather than re-implementing the feasibility check.
-//   * If conversion throws ConversionError, or would drop high-risk semantic
+//   * If private conversion preflight rejects with ConversionError, or would drop high-risk semantic
 //     state, that fallback target is skipped before any upstream dispatch.
 //     The client request is still legal; the target protocol is incompatible.
 //     No logical attempt, dispatch, hedge, active-request, cooldown or circuit
