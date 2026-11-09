@@ -111,7 +111,10 @@ for (const [entry, expectedImports] of [
 ]) {
   const source = readFileSync(join(root, entry), 'utf8');
   for (const specifier of expectedImports) {
-      assert.ok(source.includes(`from '${specifier}'`), `${entry} must directly use Gateway policy/cache: ${specifier}`);
+    assert.ok(
+      source.includes(`from '${specifier}'`),
+      `${entry} must directly use Gateway policy/cache: ${specifier}`,
+    );
   }
   assert.doesNotMatch(
     source,
