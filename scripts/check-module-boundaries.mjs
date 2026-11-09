@@ -307,11 +307,22 @@ assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/,
 // private Provider accounting data directly to the public response.
 const frameContract = readFileSync(join(root, 'packages/contracts/inference-stream-frames.ts'), 'utf8');
 const frameProducer = readFileSync(join(root, 'apps/inference/conversion/framed-stream.ts'), 'utf8');
-const frameConsumer = readFileSync(join(root, 'src/inference/inference-stream-client.ts'), 'utf8');
+const frameConsumer = readFileSync(join(root, 'apps/gateway/transport/inference-stream-client.ts'), 'utf8');
+const frameConsumerShim = readFileSync(join(root, 'src/inference/inference-stream-client.ts'), 'utf8');
+assert.ok(
+  frameConsumerShim.includes("from '../../apps/gateway/transport/inference-stream-client.ts'"),
+  'Legacy inference frame decoder must be a Gateway compatibility export',
+);
+assert.doesNotMatch(frameConsumerShim, /export function /, 'Legacy frame decoder must not duplicate frame decoding');
 assert.match(frameContract, /export function frameInferenceStream\(/, 'Private stream must have one framed encoder');
 assert.match(frameContract, /export function unframeInferenceStream\(/, 'Private stream must require explicit Gateway decoding');
 assert.match(frameProducer, /openMatrixStream\(/, 'Inference must execute real Matrix SSE conversion');
 assert.match(frameConsumer, /unframeInferenceStream\(/, 'Gateway decoder must strip private control frames');
+assert.match(
+  readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8'),
+  /apps\/gateway\/transport\/inference-stream-client\.ts/,
+  'Gateway response handler must import its own private frame decoder',
+);
 assert.doesNotMatch(
   frameProducer,
   /ensureFirstSseEvent|recordTokens|runTierLoop/,

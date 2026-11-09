@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 私有推理流帧解码器迁入 Gateway 传输层。
+- 维护: 原流解码路径只保留兼容导出。
 - 维护: Gateway、Inference、Generation 三应用独立打包纳入门禁。
 - 维护: 推理预检客户端迁归 Gateway 传输层，旧路径只作兼容导出。
 - 维护: Operations 新增无生产绑定的独立打包 dry-run 验收。

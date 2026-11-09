@@ -395,6 +395,12 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 本阶段确认**三套应用可作为独立打包入口**，不等于模块依赖已全部清除，尤其 `src/request/`、OAuth 与可观测性仍待进一步迁移。生产 `wrangler*.jsonc`、Cloudflare Secrets、Cron、路由、Service Binding 均不变，也不执行部署。
 
+## Gateway 私有推理流解码归属
+
+`apps/gateway/transport/inference-stream-client.ts` 是内部推理流帧解码器的唯一实现，`src/request/attempt/success-matrix.ts` 的 Gateway 响应逻辑直接引用它。原 `src/inference/inference-stream-client.ts` 仅保留兼容导出。中央帧流 Mock 合同直接覆盖新的运行时代码，并由架构门禁阻止旧位置恢复独立实现。
+
+生产配置及服务调用方式保持不变；私有流帧必须经共享合同 `unframeInferenceStream` 解码后才能进入 Gateway 的首事件保护与客户端流输出，物理 Provider 用量继续按现有结算边界处理。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

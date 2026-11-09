@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // A v4 transport proof: center SSE conversion + private usage/budget framing.
 import assert from 'node:assert/strict';
+import { decodeFramedInferenceResponse } from '../apps/gateway/transport/inference-stream-client.ts';
 import { buildFramedMatrixResponse } from '../apps/inference/conversion/framed-stream.ts';
 import {
   encodeInferenceFrame,
@@ -10,7 +11,6 @@ import {
   INFERENCE_FRAMED_STREAM_FORMAT,
   unframeInferenceStream,
 } from '../packages/contracts/inference-stream-frames.ts';
-import { decodeFramedInferenceResponse } from '../src/inference/inference-stream-client.ts';
 
 const encoder = new TextEncoder();
 function source(bytes) {
