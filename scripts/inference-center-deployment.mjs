@@ -34,8 +34,12 @@ function privateBase() {
 }
 
 export function buildInferenceCenterDeployment(env) {
-  const legacy = Object.keys(env).filter((name) => name.startsWith('AIG_TIER3_')).sort();
-  const retired = Object.keys(env).filter((name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY');
+  const legacy = Object.keys(env)
+    .filter((name) => name.startsWith('AIG_TIER3_'))
+    .sort();
+  const retired = Object.keys(env).filter(
+    (name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY',
+  );
   if (retired.length > 0) throw new Error(`Retired subscription settings still configured: ${retired.sort().join(', ')}`);
   if (legacy.length > 0) throw new Error(`Legacy Tier 3 bindings must be explicitly migrated: ${legacy.join(', ')}`);
   required(env, 'CLOUDFLARE_API_TOKEN');
@@ -65,7 +69,11 @@ export function buildInferenceCenterDeployment(env) {
   for (const [name, value] of Object.entries(vars)) {
     if (!nodeVar.test(name)) continue;
     let nodes;
-    try { nodes = JSON.parse(value); } catch { throw new Error(`Invalid JSON in ${name}.`); }
+    try {
+      nodes = JSON.parse(value);
+    } catch {
+      throw new Error(`Invalid JSON in ${name}.`);
+    }
     if (!Array.isArray(nodes)) throw new Error(`Invalid nodes in ${name}.`);
     if (nodes.some((node) => node && typeof node === 'object' && Object.hasOwn(node, 'auth'))) {
       throw new Error(`Legacy subscriber auth nodes must be removed from ${name} before deploying.`);
