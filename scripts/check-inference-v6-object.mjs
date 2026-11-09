@@ -81,6 +81,8 @@ try {
   const invalidVersion = inbound();
   invalidVersion.headers.set('x-aig-contract-version', '3');
   assert.equal((await handleInferenceCenterRequest(invalidVersion, env)).status, 400);
+  const invalidClientStream = inbound({ body: JSON.stringify({ ...clientBody, stream: true }) });
+  assert.equal((await handleInferenceCenterRequest(invalidClientStream, env)).status, 400);
   const missingMarker = inbound();
   missingMarker.headers.delete('x-aig-return-object');
   assert.equal((await handleInferenceCenterRequest(missingMarker, env)).status, 400);
