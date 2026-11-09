@@ -33,13 +33,13 @@ import {
   isDeploymentHealthCountTokensProbe,
   isDeploymentHealthRoute,
   presentedCredentials,
-} from '../../src/request/auth.ts';
+} from './policy/auth.ts';
 import { gatewayError } from '../../src/request/errors.ts';
-import { authorizeModel, filterVisibleModels, resolveClientModel } from '../../src/request/model-authz.ts';
+import { authorizeModel, filterVisibleModels, resolveClientModel } from './policy/model-authz.ts';
 import { modelFallbackCandidates } from '../../src/request/model-fallback.ts';
 import { jsonResponse } from '../../src/request/response-helpers.ts';
-import { evaluateRouteFeasibility } from '../../src/request/route-feasibility.ts';
-import { acceptsHtml, detectRoute, normalizePath } from '../../src/request/router.ts';
+import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
+import { acceptsHtml, detectRoute, normalizePath } from './policy/router.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
