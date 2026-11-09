@@ -1,40 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Attempt Boundary - internal module map.
-//
-// src/request/attempt.ts remains the stable public boundary (handler.ts
-// imports attemptNode / dispatchWithHedge from it); this directory holds the
-// split internals:
-//
-//   dispatch.ts        request accounting, center selection, and strict legacy seam
-//   legacy-provider-dispatch.ts  transitional direct-Provider transport; delete after parity
-//   attempt-mode.ts    compatibility re-export of Gateway-owned buffered reply decision
-//   body-release.ts    compatibility export for Gateway-owned body release
-//                      commits, so the prompt tree is not retained
-//   hedge.ts           hedge delay race, twin selection, shared deadline,
-//                      winner/loser lifecycle + abort
-//   success.ts         thin success-finalization dispatcher
-//   success-stream.ts  first-event guard, stream passthrough/transforms,
-//                      commit/lifecycle wiring
-//   success-object.ts  complete-object assembly/synthesis (native path),
-//                      embedded-error and post-header result handling
-//   outcome.ts         AttemptOutcome construction, failure/rotate/stop,
-//                      logical attempt vs dispatch accounting
-//   observability.ts   token accounting, D1 persistence scheduling, stream
-//                      metrics, node success/TTFT recording (never affects
-//                      scheduling decisions)
-//
-// Dependency direction (acyclic at runtime):
-//   attempt.ts -> index.ts -> { dispatch.ts -> success.ts ->
-//   { success-stream.ts, success-object.ts, Gateway-owned success-matrix.ts } -> observability.ts,
-//   dispatch.ts -> legacy-provider-dispatch.ts -> body-release.ts,
-//   outcome.ts, observability.ts ->
-//   body-release.ts, hedge.ts -> dispatch.ts }.
-// success-stream.ts / success-object.ts import SuccessArgs from success.ts as
-// a type-only contract, so they add no runtime cycle.
-// No module here imports handler.ts, and nothing under reliability/ or
-// transport/ imports anything from request/.
-
-export { attemptNode } from './dispatch.ts';
-export { dispatchWithHedge } from './hedge.ts';
+// Stable legacy request-attempt entry. The real hedge and per-attempt
+// selector now belong to Gateway; this file never executes Provider calls.
+export { attemptNode } from '../../../apps/gateway/attempt/dispatch.ts';
+export { dispatchWithHedge } from '../../../apps/gateway/attempt/hedge.ts';

@@ -6,11 +6,11 @@
 // request-wide attempt accounting and retry admission. Capability centers
 // only execute one physical attempt, and must not introduce a second scheduler.
 
-import { dispatchWithHedge } from '../../src/request/attempt.ts';
 import { recordTier1AffinityDecision } from '../../src/scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { ConversionContext, LoopContext, LoopState } from '../../src/types/request.ts';
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
+import { dispatchWithHedge } from './attempt/hedge.ts';
 import { TIER_ORDER } from './policy/router.ts';
 import { isSpeculativeRetryAfter } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse } from './response/errors.ts';

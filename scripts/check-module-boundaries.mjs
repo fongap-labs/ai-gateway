@@ -368,7 +368,7 @@ for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUnde
 }
 assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Accounting must use Gateway body release');
 assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Accounting must reuse Gateway response helpers');
-for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts']) {
+for (const name of ['generation-dispatch.ts', 'inference-dispatch.ts']) {
   const path = `src/request/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
   assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
@@ -403,6 +403,29 @@ for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
   assert.ok(code.includes("from '../../../apps/gateway/attempt/outcome.ts'"), `${file} must call Gateway-owned outcome`);
 }
 
+// The hedge race and private-center selector are Gateway-owned. Old entry
+// points are compatibility only, and all live callers reach the same code.
+for (const [name, symbol] of [
+  ['dispatch', 'attemptNode'],
+  ['hedge', 'dispatchWithHedge'],
+]) {
+  const legacy = readFileSync(join(root, `src/request/attempt/${name}.ts`), 'utf8');
+  const owner = readFileSync(join(root, `apps/gateway/attempt/${name}.ts`), 'utf8');
+  assert.ok(legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`), `Old ${name} module must forward to its Gateway owner`);
+  assert.doesNotMatch(legacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+  assert.ok(owner.includes(`export async function ${symbol}(`), `Gateway must implement ${symbol}`);
+}
+const ownedDispatch = readFileSync(join(root, 'apps/gateway/attempt/dispatch.ts'), 'utf8');
+const ownedHedge = readFileSync(join(root, 'apps/gateway/attempt/hedge.ts'), 'utf8');
+assert.ok(ownedDispatch.includes("from './observability.ts'"), 'Gateway dispatch must share physical settlement');
+assert.ok(ownedHedge.includes("from './dispatch.ts'"), 'Hedge must invoke the unique Gateway attempt selector');
+assert.match(ownedHedge, /attemptDeadlineMs:\s*primaryArgs\.attemptDeadlineMs/, 'Hedge twins must share the primary deadline');
+const legacyAttemptIndex = readFileSync(join(root, 'src/request/attempt/index.ts'), 'utf8');
+assert.ok(legacyAttemptIndex.includes("from '../../../apps/gateway/attempt/dispatch.ts'"));
+assert.ok(legacyAttemptIndex.includes("from '../../../apps/gateway/attempt/hedge.ts'"));
+const gatewayTierLoopOwner = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+assert.ok(gatewayTierLoopOwner.includes("from './attempt/hedge.ts'"), 'Tier loop must call owned Gateway hedge');
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
@@ -418,7 +441,7 @@ for (const [legacy, owner, symbol] of [
 }
 assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Attempt observation must use Gateway-owned body release directly');
 assert.ok(
-  readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
+  readFileSync(join(root, 'apps/gateway/attempt/dispatch.ts'), 'utf8').includes("from './attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
 );
 // Buffered response completion must be Gateway-owned; old imports are shims.
@@ -559,7 +582,7 @@ assert.doesNotMatch(imagePreflight, /getProviderAdapter/, 'Gateway preflight mus
 assert.match(imagePreflight, /canRouteImageGeneration/, 'Gateway must use the shared image capability declaration');
 assert.match(imageExecutor, /isImageGenerationProvider/, 'Generation Center must enforce the same Provider capability declaration');
 
-const dispatchSource = readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8');
+const dispatchSource = readFileSync(join(root, 'apps/gateway/attempt/dispatch.ts'), 'utf8');
 assert.doesNotMatch(
   dispatchSource,
   /await fetch\(|resolveSubscriptionCredential|getProviderAdapter|buildUpstreamHeadersFor|dispatchLegacyProvider/,
