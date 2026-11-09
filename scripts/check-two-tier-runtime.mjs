@@ -3,6 +3,7 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
+import { preflight } from '../apps/gateway/preflight.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
@@ -91,9 +92,37 @@ assert.equal(oldOAuth.ready, false, 'old subscriber capacity must not be silentl
 assert.equal(oldOAuth.status, 'invalid');
 assert.equal(oldOAuth.nodesUsable, 0);
 assert.ok(oldOAuth.diagnostics.some((line) => line.includes('subscription auth marker')));
-const oldSubscriptionSecret = loadGatewayConfig({ ...base, AIG_OAUTH_PROVIDERS: '{}' });
-assert.equal(oldSubscriptionSecret.status, 'invalid', 'old membership OAuth provider config must fail closed');
-assert.equal(oldSubscriptionSecret.nodesUsable, 0, 'retired member settings cannot leave partial static capacity serving');
+for (const [legacySetting, value] of [
+  ['AIG_OAUTH_PROVIDERS', '{}'],
+  ['AIG_IS_SUBSCRIPTION_ENABLED', 'false'],
+  ['AIG_TOKEN_ENCRYPTION_KEY', 'fake-old-encryption-key'],
+]) {
+  const legacy = loadGatewayConfig({ ...base, [legacySetting]: value });
+  assert.equal(legacy.status, 'invalid', `retired membership setting ${legacySetting} must fail closed`);
+  assert.equal(legacy.nodesUsable, 0, 'membership settings must never leave partial API Token capacity serving');
+  assert.ok(legacy.diagnostics.some((line) => line.includes(legacySetting)));
+}
+
+const oldPrivateSecrets = loadExecutionConfig({
+  ...base,
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ 'token-a': 'new-token-only' }),
+  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ 'old-paid': 'fake-old-token' }),
+});
+assert.equal(oldPrivateSecrets.status, 'invalid', 'old paid credentials cannot be skipped by private-center load');
+assert.equal(oldPrivateSecrets.nodesUsable, 0);
+
+// The 404 guard must precede authorization, subscriptions and private-center
+// execution. A retired OAuth callback must never exchange, refresh or persist
+// tokens, even if an operator forgot to remove historical configuration.
+for (const method of ['GET', 'POST']) {
+  for (const uri of ['/oauth/start', '/oauth/callback', '/oauth/refresh']) {
+    const request = new Request(`https://gateway.example.invalid${uri}`, { method });
+    const terminal = await preflight(request, { ...base, AIG_OAUTH_PROVIDERS: '{}' }, { waitUntil() { throw new Error('Legacy OAuth must not schedule work'); } });
+    assert.equal(terminal.ok, false, `${method} ${uri} must terminate in Gateway`);
+    assert.equal(terminal.response.status, 404, `${method} ${uri} must remain unavailable`);
+    assert.equal(terminal.response.headers.get('set-cookie'), null, 'OAuth cookies must not be created');
+  }
+}
 
 const twoTierPolicy = {
   ...base,
