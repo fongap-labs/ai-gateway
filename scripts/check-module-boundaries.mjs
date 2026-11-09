@@ -99,9 +99,10 @@ assert.match(gatewayCenterQuotaOwner, /export function quotaFromCenter\(/);
 assert.match(gatewayCenterQuotaOwner, /encoded.length > 512/, 'Center quota must reject oversized hints');
 assert.match(gatewayCenterQuotaOwner, /Number.isSafeInteger/, 'Center quota must reject noninteger reports');
 assert.match(gatewayCenterQuotaOwner, /source: 'private-center'/, 'Center quota must only trust private signals');
-for (const entry of ['src/request/attempt/inference-dispatch.ts', 'src/request/attempt/generation-dispatch.ts']) {
-  const consumer = readFileSync(join(root, entry), 'utf8');
-  assert.ok(consumer.includes("from '../../../apps/gateway/reliability/center-quota.ts'"), `${entry} must call Gateway-owned quota parser`);
+for (const name of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
+  const path = `apps/gateway/attempt/${name}`;
+  const consumer = readFileSync(join(root, path), 'utf8');
+  assert.ok(consumer.includes("from '../reliability/center-quota.ts'"), `${path} must call Gateway-owned quota parser`);
   assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/reliability\/center-quota\.ts['"]/);
 }
 
@@ -350,8 +351,8 @@ for (const file of ['success-image.ts', 'success-matrix.ts', 'success-object.ts'
   assert.ok(source.includes("from './success.ts'"), `${file} must use the Gateway-owned SuccessArgs type`);
 }
 for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
-  const source = readFileSync(join(root, 'src/request/attempt', file), 'utf8');
-  assert.ok(source.includes("from '../../../apps/gateway/attempt/success.ts'"), `${file} must call the Gateway-owned success finalizer`);
+  const source = readFileSync(join(root, 'apps/gateway/attempt', file), 'utf8');
+  assert.ok(source.includes("from './success.ts'"), `${file} must call Gateway-owned success finalizer`);
 }
 
 // Every physical upstream attempt must settle once through the unique
@@ -369,10 +370,10 @@ for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUnde
 assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Accounting must use Gateway body release');
 assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Accounting must reuse Gateway response helpers');
 for (const name of ['generation-dispatch.ts', 'inference-dispatch.ts']) {
-  const path = `src/request/attempt/${name}`;
+  const path = `apps/gateway/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
-  assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
-  assert.doesNotMatch(consumer, /from ['"]\.\/observability\.ts['"]/);
+  assert.ok(consumer.includes("from './observability.ts'"), `${path} must share Gateway accounting`);
+  assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/\.\.\/src\/request\/attempt\/observability\.ts['"]/);
 }
 for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts']) {
   const path = `apps/gateway/attempt/${name}`;
@@ -399,9 +400,28 @@ for (const file of ['success-image.ts', 'success-matrix.ts', 'success-object.ts'
   assert.ok(code.includes("from './outcome.ts'"), `${file} must call Gateway-owned outcome`);
 }
 for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
-  const code = readFileSync(join(root, 'src/request/attempt', file), 'utf8');
-  assert.ok(code.includes("from '../../../apps/gateway/attempt/outcome.ts'"), `${file} must call Gateway-owned outcome`);
+  const code = readFileSync(join(root, 'apps/gateway/attempt', file), 'utf8');
+  assert.ok(code.includes("from './outcome.ts'"), `${file} must call Gateway-owned outcome`);
 }
+
+// Private-center request adapters belong to Gateway, never to legacy src.
+for (const [name, functionName] of [
+  ['inference-dispatch', 'dispatchInferenceAttempt'],
+  ['generation-dispatch', 'dispatchGenerationAttempt'],
+]) {
+  const legacy = readFileSync(join(root, `src/request/attempt/${name}.ts`), 'utf8');
+  const owner = readFileSync(join(root, `apps/gateway/attempt/${name}.ts`), 'utf8');
+  assert.ok(legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`), `Old ${name} path must forward to Gateway owner`);
+  assert.doesNotMatch(legacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+  assert.ok(owner.includes(`export async function ${functionName}(`), `Gateway must implement ${functionName}`);
+  assert.ok(owner.includes("from '../transport/"), `${name} must delegate only through the private center client`);
+  assert.ok(owner.includes("from './success.ts'"), `${name} must reuse the same Gateway success finalizer`);
+  assert.ok(owner.includes("from './outcome.ts'"), `${name} must reuse the same Gateway failure finalizer`);
+  assert.doesNotMatch(owner, /dispatchLegacyProvider|buildUpstreamHeadersFor|resolveSubscriptionCredential/);
+}
+const gatewayAttemptSelector = readFileSync(join(root, 'apps/gateway/attempt/dispatch.ts'), 'utf8');
+assert.ok(gatewayAttemptSelector.includes("from './inference-dispatch.ts'"));
+assert.ok(gatewayAttemptSelector.includes("from './generation-dispatch.ts'"));
 
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
@@ -495,8 +515,8 @@ for (const path of [
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
   'apps/gateway/attempt/outcome.ts',
-  'src/request/attempt/inference-dispatch.ts',
-  'src/request/attempt/generation-dispatch.ts',
+  'apps/gateway/attempt/inference-dispatch.ts',
+  'apps/gateway/attempt/generation-dispatch.ts',
 ]) {
   const consumer = readFileSync(join(root, path), 'utf8');
   const prefix = path.startsWith('apps/gateway/attempt/')
@@ -726,7 +746,7 @@ assert.doesNotMatch(
 );
 
 const inferenceExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
-const centerDispatch = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+const centerDispatch = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'Inference must execute the physical protocol request conversion');
 assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
@@ -785,7 +805,7 @@ assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame cont
 
 const inferenceV4Contract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
 const inferenceV4Executor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
-const inferenceV4Dispatcher = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+const inferenceV4Dispatcher = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
@@ -794,7 +814,7 @@ assert.match(inferenceV4Dispatcher, /returnStream && limits\.conversionBudget/, 
 assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
 assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
 const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
-const budgetGateway = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
+const budgetGateway = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const budgetSettlement = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference must enforce v5 stream budgets');
 assert.match(budgetGateway, /streamBudget,/, 'Gateway must issue bounded v5 budgets');
