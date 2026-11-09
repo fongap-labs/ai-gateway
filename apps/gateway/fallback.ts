@@ -48,9 +48,9 @@
 //     answer is a 400 that names them, and the client can resend without them.
 
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
+import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
-import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
 import type { ConversionResult } from '../../src/conversion/result.ts';
 import { ConversionError } from '../../src/conversion/validation.ts';
 import { InferenceCenterUnavailable } from '../../src/inference/inference-client-request.ts';
