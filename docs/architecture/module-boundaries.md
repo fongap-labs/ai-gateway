@@ -433,9 +433,9 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 ## Gateway 成功响应处理实现归属
 
-将原 `src/request/attempt/success-image.ts`、`success-stream.ts` 的完整运行实现迁至 `apps/gateway/attempt/`，旧路径仅作兼容导出。`src/request/attempt/success.ts` 统一选择器直接调用新归属；流首事件确认、取消/中断、已交付 Token 记账、图像生成非幂等终态及响应模型映射行为均保持原合同。
+将原 `src/request/attempt/success-image.ts` 的完整运行实现迁至 `apps/gateway/attempt/success-image.ts`，旧路径仅作兼容导出；`src/request/attempt/success.ts` 统一分发器直接调用新归属。图像生成的非幂等终态、取消、响应格式及记账行为保持原合同。
 
-本批不改物理尝试观测、计费实现位置及中央 Action Worker 测试，不新增 Provider 执行；旧请求尝试中的对象、矩阵、对冲、dispatch、outcome 仍需继续清理。生产配置与部署不变。
+`success-stream.ts` 由于本次中央测试包仍从旧路径直接检查首事件守卫与流生命周期而保留原实现，未经授权不修改 Action Worker 测试；对象、矩阵、对冲、dispatch、outcome 和物理尝试观测仍有剩余源码迁移。无生产配置或部署改动。
 
 ## 尚待迁移
 

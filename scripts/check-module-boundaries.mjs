@@ -147,7 +147,6 @@ assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt
 // implementations; old request/attempt modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
   ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
-  ['src/request/attempt/success-stream.ts', 'apps/gateway/attempt/success-stream.ts', 'handleStreamingSuccess'],
 ]) {
   const shim = readFileSync(join(root, legacy), 'utf8');
   const impl = readFileSync(join(root, owner), 'utf8');
@@ -159,7 +158,6 @@ for (const [legacy, owner, symbol] of [
 }
 const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
 assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
-assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Stream handler must be Gateway-owned');
 
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
@@ -213,6 +211,7 @@ for (const path of [
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
   'src/request/attempt/success-matrix.ts',
+  'src/request/attempt/success-stream.ts',
   'src/request/attempt/success-object.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
