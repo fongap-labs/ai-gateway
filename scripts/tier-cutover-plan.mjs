@@ -36,6 +36,12 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
   const targetCounts = { tier1: 0, tier2: 0 };
 
   for (const tier of TIERS) {
+    if (!Object.hasOwn(tiers, tier) && !Object.hasOwn(tiers, 'tier' + tier)) {
+      blockers.push('tier' + tier + ': source inventory not supplied; provide [] explicitly when empty');
+    }
+  }
+
+  for (const tier of TIERS) {
     const label = 'tier' + tier;
     const nodes = tierNodes(tiers, tier);
     if (!Array.isArray(nodes)) {
@@ -119,6 +125,7 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
     }
   }
 
+  if (policies === null) blockers.push('Policy inventory not supplied; pass --policies with {} when no custom policies exist');
   if (policies !== null) {
     if (!plainObject(policies)) {
       blockers.push('Policies must be an object keyed by policy name');
@@ -131,6 +138,12 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
         }
         const attempts = policy.tier_attempts;
         const hedgeTiers = policy.hedge?.tiers;
+        if (attempts !== undefined && attempts !== null && !plainObject(attempts)) {
+          blockers.push('Policy ' + safe + ' has malformed tier_attempts');
+        }
+        if (hedgeTiers !== undefined && !Array.isArray(hedgeTiers)) {
+          blockers.push('Policy ' + safe + ' has malformed hedge.tiers');
+        }
         const hasOldTwo = plainObject(attempts) && Object.hasOwn(attempts, 'tier2');
         const hasOldThree = plainObject(attempts) && Object.hasOwn(attempts, 'tier3');
         const affectedHedge = Array.isArray(hedgeTiers) && hedgeTiers.some((value) => value === 'tier2' || value === 'tier3');
@@ -193,7 +206,7 @@ function readJson(file, label) {
 
 async function main() {
   const args = argumentsFrom(process.argv.slice(2));
-  const tiers = Object.fromEntries(TIERS.map((tier) => [tier, args['tier' + tier] ? readJson(args['tier' + tier], 'tier' + tier) : []]));
+  const tiers = Object.fromEntries(TIERS.filter((tier) => args['tier' + tier]).map((tier) => [tier, readJson(args['tier' + tier], 'tier' + tier)]));
   const credentialIndex = args['credential-index'] ? readJson(args['credential-index'], 'credential-index') : null;
   const policies = args.policies ? readJson(args.policies, 'policies') : null;
   const result = planTwoTierCutover({ tiers, credentialIndex, policies });
