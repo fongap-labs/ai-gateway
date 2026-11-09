@@ -23,10 +23,10 @@
 // dispatch layer rotates the attempt to another node. A subscription node
 // never receives traffic with a missing or stale credential.
 
+import type { StoredSubscriptionToken } from '../../packages/oauth/token-store.ts';
+import { loadSubscriptionToken, markTokenStatus, persistRefreshedToken } from '../../packages/oauth/token-store.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import { getOAuthProvider } from './provider-configs.ts';
-import type { StoredSubscriptionToken } from './token-store.ts';
-import { loadSubscriptionToken, markTokenStatus, persistRefreshedToken } from './token-store.ts';
 
 type CacheEntry = { token: string; expiresAt: number; accountId: string | null };
 const isolateCache = new Map<string, CacheEntry>();

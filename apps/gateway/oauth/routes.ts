@@ -16,9 +16,7 @@
 //     arbitrary redirect URIs (e.g., Google Gemini CLI).
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
-import { readEnv } from '../../../src/config/env.ts';
-import { hasTokenKey } from '../../../src/oauth/crypto.ts';
-import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from '../../../src/oauth/provider-configs.ts';
+import { hasTokenKey } from '../../../packages/oauth/crypto.ts';
 import {
   consumeFlowState,
   deleteFlowState,
@@ -27,7 +25,9 @@ import {
   purgeExpiredFlowStates,
   saveFlowState,
   storeSubscriptionToken,
-} from '../../../src/oauth/token-store.ts';
+} from '../../../packages/oauth/token-store.ts';
+import { readEnv } from '../../../src/config/env.ts';
+import { getOAuthProvider, isManualPasteProvider, resolveRedirectUri } from '../../../src/oauth/provider-configs.ts';
 import { getLogger } from '../../../src/observability/logger.ts';
 import { corsHeaders, htmlResponse, readBodyTextWithLimit } from '../../../src/protocol/http.ts';
 import { getProviderAdapter } from '../../../src/providers/registry.ts';
