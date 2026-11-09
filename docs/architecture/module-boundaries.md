@@ -443,6 +443,12 @@ OAuth 订阅管理的 `/oauth/start`、`/oauth/callback`、`/oauth/paste` 等实
 
 本批不迁移 `src/oauth/crypto.ts`、`token-store.ts`、`resolve.ts` 和 `provider-configs.ts`：令牌解密、D1 持久化和订阅刷新仍涉及私有推理中心与共享配置解析，必须按中心归属单独迁移。未变更加密密钥、访问控制、Token 存储结构、Cloudflare Secrets、Wrangler、D1 schema、Service Binding 或部署。
 
+## Gateway Tier 1 调度归属
+
+Tier 1 会话亲和 KV 缓存、短时熔断与 P2C 候选选择分别归属于 `apps/gateway/scheduling/tier1-affinity.ts` 和 `apps/gateway/scheduling/tier1-scheduler.ts`。旧 `src/scheduler/` 文件只保留兼容导出，避免两份缓存或调度状态。Gateway 请求入口、Tier 循环和对冲执行均直连真正 owner；评分实现 `src/scheduler/tier1-scoring.ts` 暂维持中央源码静态合同，后续单独迁移。
+
+本批不改变 KV 时限、熔断阈值、上游选择或失败回退，不涉及生产部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

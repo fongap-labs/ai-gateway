@@ -423,6 +423,35 @@ const gatewayAttemptSelector = readFileSync(join(root, 'apps/gateway/attempt/dis
 assert.ok(gatewayAttemptSelector.includes("from './inference-dispatch.ts'"));
 assert.ok(gatewayAttemptSelector.includes("from './generation-dispatch.ts'"));
 
+// Tier 1 KV affinity and P2C candidate selection are Gateway-owned.
+// Legacy imports share one cache, breaker, score and admission state.
+for (const [name, exported] of [
+  ['tier1-affinity', ['resolveTier1SessionId', 'readTier1Affinity', 'writeTier1Affinity', '__resetTier1AffinityForTests']],
+  ['tier1-scheduler', ['pickTier1Candidate', 'tier1ModelAvailability', 'tier1DeadlineTooSmall']],
+]) {
+  const old = readFileSync(join(root, `src/scheduler/${name}.ts`), 'utf8');
+  const actual = readFileSync(join(root, `apps/gateway/scheduling/${name}.ts`), 'utf8');
+  assert.ok(old.includes(`export * from '../../apps/gateway/scheduling/${name}.ts';`), `${name} legacy path must forward`);
+  assert.doesNotMatch(old, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+  for (const symbol of exported) {
+    assert.match(actual, new RegExp(`export (?:async )?function ${symbol}\\(`), `${name} must implement ${symbol}`);
+  }
+}
+const ownedTier1Affinity = readFileSync(join(root, 'apps/gateway/scheduling/tier1-affinity.ts'), 'utf8');
+const ownedTier1Selector = readFileSync(join(root, 'apps/gateway/scheduling/tier1-scheduler.ts'), 'utf8');
+assert.match(ownedTier1Affinity, /CACHE_MAX_ENTRIES = 500/, 'Session affinity cache must remain bounded');
+assert.match(ownedTier1Affinity, /BREAKER_TRIP_TIMEOUTS = 5/, 'Affinity KV breaker must remain fail-soft');
+assert.ok(ownedTier1Affinity.includes("from '../../../packages/contracts/runtime.ts'"), 'Affinity must use shared runtime types');
+assert.ok(ownedTier1Selector.includes("from './tier1-affinity.ts'"), 'Tier 1 P2C must share one affinity state');
+assert.ok(ownedTier1Selector.includes("from '../../../src/scheduler/tier1-scoring.ts'"), 'Tier 1 P2C must preserve existing scoring');
+const tier1GatewayRequest = readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8');
+const tier1GatewayLoop = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
+const tier1GatewayHedge = readFileSync(join(root, 'apps/gateway/attempt/hedge.ts'), 'utf8');
+assert.ok(tier1GatewayRequest.includes("from './scheduling/tier1-affinity.ts'"));
+assert.ok(tier1GatewayRequest.includes("from './scheduling/tier1-scheduler.ts'"));
+assert.ok(tier1GatewayLoop.includes("from './scheduling/tier1-affinity.ts'"));
+assert.ok(tier1GatewayHedge.includes("from '../scheduling/tier1-scheduler.ts'"));
+
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
 for (const [name, symbol] of [
