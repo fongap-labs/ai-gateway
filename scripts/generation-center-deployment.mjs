@@ -26,9 +26,7 @@ function privateBase() {
     config.name !== 'ai-generation-center' ||
     config.main !== 'src/generation/generation-center-entry.ts' ||
     config.workers_dev !== false ||
-    ['routes', 'route', 'custom_domains', 'triggers', 'services', 'd1_databases', 'kv_namespaces'].some((name) =>
-      Object.hasOwn(config, name),
-    )
+    ['routes', 'route', 'custom_domains', 'triggers', 'services', 'd1_databases', 'kv_namespaces'].some((name) => Object.hasOwn(config, name))
   ) {
     throw new Error('Generation deployment requires a private, unexposed Worker with no scheduled job.');
   }
@@ -36,10 +34,9 @@ function privateBase() {
 }
 
 export function buildGenerationCenterDeployment(env) {
-  const legacy = Object.keys(env).filter((name) =>
-    name.startsWith('AIG_TIER3_') ||
-    name.startsWith('AIG_OAUTH_') ||
-    ['AIG_IS_SUBSCRIPTION_ENABLED', 'AIG_TOKEN_ENCRYPTION_KEY'].includes(name),
+  const legacy = Object.keys(env).filter(
+    (name) =>
+      name.startsWith('AIG_TIER3_') || name.startsWith('AIG_OAUTH_') || ['AIG_IS_SUBSCRIPTION_ENABLED', 'AIG_TOKEN_ENCRYPTION_KEY'].includes(name),
   );
   if (legacy.length > 0) throw new Error(`Legacy Tier 3 or member subscription bindings require cleanup: ${legacy.sort().join(', ')}`);
   required(env, 'CLOUDFLARE_API_TOKEN');
@@ -73,16 +70,28 @@ export function buildGenerationCenterDeployment(env) {
     } catch {
       throw new Error(`Invalid node JSON in ${name}.`);
     }
-    if (!Array.isArray(nodes) || nodes.some((node) =>
-      !node || typeof node !== 'object' || Array.isArray(node) ||
-      typeof node.provider !== 'string' || !isImageGenerationProvider(node.provider) || Object.hasOwn(node, 'auth'),
-    )) {
+    if (
+      !Array.isArray(nodes) ||
+      nodes.some(
+        (node) =>
+          !node ||
+          typeof node !== 'object' ||
+          Array.isArray(node) ||
+          typeof node.provider !== 'string' ||
+          !isImageGenerationProvider(node.provider) ||
+          Object.hasOwn(node, 'auth'),
+      )
+    ) {
       throw new Error(`${name}: only static image-generation nodes are permitted in the private Generation Center.`);
     }
   }
   const validation = loadExecutionConfig({ ...vars, ...secrets });
-  if (!validation.ready || validation.hasConfigErrors || validation.nodesUsable === 0 ||
-      validation.nodes.some((node) => !node.surfaces.includes('images_generations'))) {
+  if (
+    !validation.ready ||
+    validation.hasConfigErrors ||
+    validation.nodesUsable === 0 ||
+    validation.nodes.some((node) => !node.surfaces.includes('images_generations'))
+  ) {
     throw new Error('Generation node/model execution configuration is not ready.');
   }
   const config = {
