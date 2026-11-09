@@ -9,7 +9,7 @@
 import { isSpeculativeRetryAfter } from '../../src/reliability/retry-budget.ts';
 import { dispatchWithHedge } from '../../src/request/attempt.ts';
 import { buildBudgetExhaustedResponse } from '../../src/request/errors.ts';
-import { TIER_ORDER } from '../../src/request/router.ts';
+import { TIER_ORDER } from './policy/router.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from '../../src/request/tier-loop.ts';
 import { recordTier1AffinityDecision } from '../../src/scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
