@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: Gateway、Inference、Generation 三应用独立打包纳入门禁。
+- 维护: 推理预检客户端迁归 Gateway 传输层，旧路径只作兼容导出。
 - 维护: Operations 新增无生产绑定的独立打包 dry-run 验收。
 - 维护: 独立打包门禁加入中央合并校验。
 - 维护: 将 D1 用量基础统计模块移入中立 Usage Store，定时聚合归属 Operations。
