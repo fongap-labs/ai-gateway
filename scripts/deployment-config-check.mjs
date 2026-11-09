@@ -247,10 +247,11 @@ assert.throws(
 const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
 assert.throws(
-  () => validateDeploymentInputs({
-    ...deployInputs,
-    AIG_TIER2_NODES_01: JSON.stringify([{ id: 'oauth-1', provider: 'anthropic', auth: 'oauth', models: { Chat: 'claude' } }]),
-  }),
+  () =>
+    validateDeploymentInputs({
+      ...deployInputs,
+      AIG_TIER2_NODES_01: JSON.stringify([{ id: 'oauth-1', provider: 'anthropic', auth: 'oauth', models: { Chat: 'claude' } }]),
+    }),
   /obsolete subscription auth node/,
 );
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_TIER3_NODES_01: '[]' }), /Legacy Tier 3/);
