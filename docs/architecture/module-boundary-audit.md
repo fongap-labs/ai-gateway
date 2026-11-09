@@ -15,7 +15,7 @@ All material P1/P2 ownership findings from the baseline audit are resolved. 当�
 
 - `src/request/attempt/success.ts` 是薄分发器；流和对象收尾分别属于 `success-stream.ts` 与 `success-object.ts`。
 - 跨层错误词汇表属于 `src/types/upstream-processing.ts`；可靠性层不得反向依赖 transport。
-- `src/providers/registry.ts` 是 provider wire、OAuth 默认值和订阅能力的单一归属；未知 provider 使用通用 OpenAI Chat 适配器。
+- `src/providers/registry.ts` 是 provider wire 和静态 Token 协议能力的单一归属；未知 provider 使用通用 OpenAI Chat 适配器。
 - `src/conversion/matrix/` 承担 Chat、Responses、Messages 的转换 IR；native 请求不经过矩阵。
 
 ## Automatic cooldown jitter
