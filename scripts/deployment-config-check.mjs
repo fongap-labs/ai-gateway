@@ -293,11 +293,7 @@ assert.throws(
   /AIG_ACCESS_KEY_<GROUP>/,
 );
 assert.throws(
-  () =>
-    validateRemoteSecretInventory(
-      [...remoteSecretNames, { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' }],
-      deployPrepared.config,
-    ),
+  () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
   /must not retain upstream Provider credential shards/,
 );
 assert.throws(
@@ -306,11 +302,19 @@ assert.throws(
 );
 const generationPrepared = validateDeploymentInputs(deployInputs);
 assert.throws(
-  () => validateRemoteSecretInventory(remoteSecretNames.filter((secret) => secret.name !== 'AIG_GENERATION_AUTH_KEY'), generationPrepared.config),
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_GENERATION_AUTH_KEY'),
+      generationPrepared.config,
+    ),
   /AIG_GENERATION_AUTH_KEY/,
 );
 assert.throws(
-  () => validateRemoteSecretInventory(remoteSecretNames.filter((secret) => secret.name !== 'AIG_INFERENCE_AUTH_KEY'), generationPrepared.config),
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_INFERENCE_AUTH_KEY'),
+      generationPrepared.config,
+    ),
   /AIG_INFERENCE_AUTH_KEY/,
 );
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, buildWranglerConfig({})), /Both private center Service Bindings/);
