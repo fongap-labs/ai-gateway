@@ -40,7 +40,12 @@ function inbound(overrides = {}) {
 }
 const usage = { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 };
 const chunks = [
-  { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }] },
+  {
+    id: 'cmpl-test',
+    object: 'chat.completion.chunk',
+    model: 'gpt-test-upstream',
+    choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }],
+  },
   { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
   { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage },
 ];
@@ -90,7 +95,13 @@ try {
   assert.equal(incompatible.headers.get('x-aig-contract-version'), '3');
   assert.equal(attempts, 1);
 
-  const native = { id: 'cmpl-test', object: 'chat.completion', model: 'gpt-test-upstream', choices: [{ index: 0, message: { role: 'assistant', content: 'JSON fallback' }, finish_reason: 'stop' }], usage };
+  const native = {
+    id: 'cmpl-test',
+    object: 'chat.completion',
+    model: 'gpt-test-upstream',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'JSON fallback' }, finish_reason: 'stop' }],
+    usage,
+  };
   providerText = JSON.stringify(native);
   providerType = 'application/json';
   const object = await handleInferenceCenterRequest(inbound(), env);
