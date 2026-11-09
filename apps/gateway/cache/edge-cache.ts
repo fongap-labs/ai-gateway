@@ -7,9 +7,9 @@
 // pipeline and stores the successful response non-blocking via waitUntil.
 //
 // Fail-closed: the cache key's credential fingerprint is an HMAC keyed from
-// AIG_TOKEN_ENCRYPTION_KEY. When that secret is not configured, callerCacheScope()
+// AIG_EDGE_CACHE_HMAC_KEY. When that secret is not configured, callerCacheScope()
 // returns null and the edge cache is disabled entirely (no lookup, no store),
-// even for requests that opt in. This matches the token store's no-key policy.
+// even for requests that opt in. This keeps cache replay isolated per caller, independent of retired subscription token storage.
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { readEnv } from '../../../src/config/env.ts';
@@ -50,12 +50,12 @@ export function edgeCacheEligible(route: string, request: Request): boolean {
 
 /**
  * Non-reversible fingerprint of the credential the caller presented, so rotating or replacing a key
- * never replays another key's cached answers. The HMAC key is derived from AIG_TOKEN_ENCRYPTION_KEY;
+ * never replays another key's cached answers. The HMAC key is derived from AIG_EDGE_CACHE_HMAC_KEY;
  * the fingerprint is never logged or returned. Returns null (fail-closed) when that secret is not
  * configured, because a fingerprint derived from a public constant would be forgeable.
  */
 export async function callerCacheScope(request: Request, env: GatewayEnv): Promise<string | null> {
-  const encryptionKey = readEnv(env, 'AIG_TOKEN_ENCRYPTION_KEY');
+  const encryptionKey = readEnv(env, 'AIG_EDGE_CACHE_HMAC_KEY');
   if (!encryptionKey) return null;
   const credentials = presentedCredentials(request).sort();
   if (credentials.length === 0) return '';
@@ -170,7 +170,7 @@ let hasLoggedMissingEncryptionKey = false;
 function logEdgeCacheDisabledOnce(env: GatewayEnv): void {
   if (hasLoggedMissingEncryptionKey) return;
   hasLoggedMissingEncryptionKey = true;
-  getLogger(env).debug('[edge-cache] disabled: AIG_TOKEN_ENCRYPTION_KEY is not configured (fail-closed; the cache key needs it).');
+  getLogger(env).debug('[edge-cache] disabled: AIG_EDGE_CACHE_HMAC_KEY is not configured (fail-closed; the cache key needs it).');
 }
 
 /**
