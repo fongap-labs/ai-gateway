@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
+import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
@@ -61,6 +62,28 @@ assert.equal(centerConfig.ready, true);
 assert.equal(publicConfig.tiers[1][0]?.credential, '', 'public Gateway must not own free Provider credentials');
 assert.equal(publicConfig.tiers[2][0]?.credential, '', 'public Gateway must not own paid Provider credentials');
 assert.equal(centerConfig.tiers[2][0]?.credential, 'paid-test-credential', 'private center resolves the API Token credential');
+
+const cacheKey = 'a'.repeat(32);
+const deploymentInput = {
+  vars: { AIG_TIER1_NODES_01: base.AIG_TIER1_NODES_01 },
+  secrets: {
+    AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'free-a': 'free-test-credential' }),
+    AIG_EDGE_CACHE_HMAC_KEY: cacheKey,
+  },
+};
+assert.equal(normalizeRuntimeConfig(deploymentInput).secrets.AIG_EDGE_CACHE_HMAC_KEY, cacheKey);
+assert.throws(
+  () =>
+    normalizeRuntimeConfig({
+      ...deploymentInput,
+      vars: { ...deploymentInput.vars, AIG_EDGE_CACHE_HMAC_KEY: cacheKey },
+    }),
+  /credentials belong in secrets/,
+  'edge cache HMAC keys must never be published as Worker vars',
+);
+assert.equal(collectVarsFromEnv({ ...base, AIG_EDGE_CACHE_HMAC_KEY: cacheKey }).vars.AIG_EDGE_CACHE_HMAC_KEY, undefined);
+assert.equal(collectSecretsFromEnv({ AIG_EDGE_CACHE_HMAC_KEY: cacheKey }).secrets.AIG_EDGE_CACHE_HMAC_KEY, cacheKey);
 assert.deepEqual(
   centerConfig.tiers[2].map((n) => n.id),
   ['token-a'],
