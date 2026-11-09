@@ -48,18 +48,18 @@
 //     answer is a 400 that names them, and the client can resend without them.
 
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
+import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
+import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
-import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../../src/conversion/result.ts';
-import { ConversionError } from '../../src/conversion/validation.ts';
-import { InferenceCenterUnavailable } from '../../src/inference/inference-client-request.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import type { ConversionContext, LoopContext } from '../../src/types/request.ts';
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from './response/errors.ts';
 import { computeTierCaps } from './scheduling/tier-policy.ts';
 import { checkInferenceConversion } from './transport/inference-preflight-client.ts';
+import { InferenceCenterUnavailable } from './transport/inference-client-request.ts';
 
 /** client route -> canonical IR protocol. */
 function routeToIrProtocol(route: string): IrProtocol | null {
@@ -138,21 +138,18 @@ export async function runFallbackChain({
       // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
       // stream flag so the provider may answer with one JSON body (streaming
       // clients still get the forced upstream stream).
-      // When the center is configured, do not execute the full translator in
-      // Gateway: ask the private center for metadata-only feasibility instead.
-      // Legacy unbound mode still needs the converted body for direct dispatch.
-      conversionResult =
-        'AIG_INFERENCE_SERVICE' in env
-          ? await checkInferenceConversion(env, {
-              request,
-              requestId,
-              from,
-              to,
-              body: bodyJson,
-              isNonstreamPreferred,
-              deadlineMs: requestStartMs + failoverBudgetMs,
-            })
-          : convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
+      // Never execute translation in the public Gateway: the private
+      // Inference Center alone owns conversion. A missing/invalid binding
+      // fails closed before any Provider attempt, without legacy fallback.
+      conversionResult = await checkInferenceConversion(env, {
+        request,
+        requestId,
+        from,
+        to,
+        body: bodyJson,
+        isNonstreamPreferred,
+        deadlineMs: requestStartMs + failoverBudgetMs,
+      });
     } catch (e) {
       if (e instanceof InferenceCenterUnavailable) {
         // A preflight RPC failure is not a Provider failure. Fail closed
