@@ -61,8 +61,8 @@ function streamFramingOptions(invocation: Invocation, clientProtocol: IrProtocol
   };
 }
 
-// v3 is an opt-in for buffered objects only. An absent marker always means
-// Gateway must run its existing conversion path, preserving stream ownership.
+// All successful v3/v6 object conversions must carry the private response
+// marker. Invalid native data must fail closed inside the center.
 function translatedObject(native: Record<string, unknown>, invocation: Invocation, headers: Headers, status: number): Response | null {
   if (!invocation.returnObject || !invocation.inputSurface) return null;
   const upstreamProtocol = protocolForSurface(invocation.surface);
@@ -167,7 +167,7 @@ async function executeAdmittedNative(
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
   // v6 is exclusively a non-streaming public reply, even if the physical
   // upstream is later forced into SSE by Matrix conversion.
-  if (invocation.returnObject && !invocation.preferNonstream && clientBody.stream === true) return problem(400, 'center_stream_invalid');
+  if (invocation.returnObject && clientBody.stream === true) return problem(400, 'center_stream_invalid');
   // v4 is solely for real streaming requests; never synthesize an object
   // protocol response under a private framed-stream ticket.
   if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
@@ -304,13 +304,26 @@ async function executeAdmittedNative(
       return dispatchedConversionProblem('center_converted_object_invalid');
     }
   }
-  if (invocation.returnObject && !invocation.preferNonstream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
-    // v6: only the private center may decode/collect the physical SSE into a
-    // client-protocol object. Gateway receives one tagged result, never SSE.
+  if (invocation.returnObject && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
+    // v3 (Provider ignored prefer-nonstream) and v6 both collect physical SSE
+    // inside Inference. Gateway receives one tagged object, never raw SSE.
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
     if (!from || !to) return dispatchedConversionProblem('center_conversion_route_invalid');
     let rawUsage: unknown = null;
+    const fallbackLimits = invocation.preferNonstream ? getLimits(env) : null;
+    const collectedBudget =
+      invocation.streamBudget ??
+      (fallbackLimits?.conversionBudget
+        ? {
+            mode: fallbackLimits.conversionBudgetMode,
+            cfg: {
+              ...fallbackLimits.conversionBudgetCfg,
+              maxOutputUnits: fallbackLimits.conversionNonstreamMaxUnits,
+              maxOutputTokens: fallbackLimits.conversionBudgetMaxTokens,
+            },
+          }
+        : undefined);
     try {
       const converted = await collectMatrixObject(upstream.body, from, to, invocation.requestId, request.signal, invocation.deadlineMs, {
         model: invocation.logicalModel,
@@ -318,7 +331,7 @@ async function executeAdmittedNative(
         onUpstreamUsage: (usage) => {
           rawUsage = usage;
         },
-        ...(invocation.streamBudget ? { budget: invocation.streamBudget } : {}),
+        ...(collectedBudget ? { budget: collectedBudget } : {}),
       });
       if (
         !converted.reply.parts.some((part) => part.type === 'text' && part.text) &&
@@ -342,8 +355,8 @@ async function executeAdmittedNative(
     }
   }
   if (invocation.returnObject && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
-    // Only explicit v3 buffered-object calls are inspected in the center.
-    // Raw SSE, native v1 and translated v2 keep their original passthrough.
+    // Translate v3/v6 native JSON inside Inference. Never return unmarked
+    // successful objects for Gateway to decode using its legacy Matrix path.
     let raw: string;
     try {
       raw = await readBufferedReplyText(upstream, invocation.deadlineMs);
@@ -360,11 +373,9 @@ async function executeAdmittedNative(
         if (translated) return translated;
       }
     } catch {
-      // Retain the raw response and let Gateway apply legacy post-header
-      // failure classification rather than claiming a successful translation.
+      return dispatchedConversionProblem('center_converted_object_invalid');
     }
-    if (!invocation.preferNonstream) return dispatchedConversionProblem('center_converted_object_invalid');
-    return new Response(raw, { status: upstream.status, headers: outgoing });
+    return dispatchedConversionProblem('center_converted_object_invalid');
   }
   // Raw body stream ownership transfers to the caller. No buffering, no
   // JSON inspection of model output, and no further provider retry here.

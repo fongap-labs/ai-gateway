@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: v3 Matrix 对象统一由私有中心转换，网关拒绝无标记回退；无部署变更。
+
 - 新增: Matrix JSON 回退由私有推理中心生成 SSE 帧，Gateway 仅验证和结算。
 
 - 新增: 私有推理中心 v6 非流式 Matrix SSE 对象收集与额度预算合同，Gateway 对未标记的响应拒绝回退本地转换；无部署变更。

@@ -69,8 +69,10 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && c.bodyJson.stream === true);
   // Default non-streaming Matrix calls use v6: the private center collects
   // upstream SSE into the client object; Gateway no longer decodes it locally.
-  // Existing explicit prefer-nonstream calls retain v3 object behavior.
-  const returnCollectedObject = Boolean(c.conversionContext && !c.clientWantsStream && !c.conversionContext.isNonstreamPreferred);
+  // Existing prefer-nonstream calls retain v3, but must also receive a
+  // center-tagged object rather than triggering Gateway's old Matrix fallback.
+  const returnTranslatedObject = Boolean(c.conversionContext && !c.clientWantsStream);
+  const returnCollectedObject = Boolean(returnTranslatedObject && !c.conversionContext?.isNonstreamPreferred);
   const streamBudget =
     (returnStream || returnCollectedObject) && limits.conversionBudget
       ? {
@@ -82,7 +84,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
           },
         }
       : undefined;
-  const hasBufferedResponse = (!c.conversionContext && !c.clientWantsStream && !c.fakeStream) || returnCollectedObject;
+  const hasBufferedResponse = (!c.conversionContext && !c.clientWantsStream && !c.fakeStream) || returnTranslatedObject;
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
   const attemptBudgetMs =
@@ -222,7 +224,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     if (signal) recordTier1QuotaReport(node.id, signal);
   }
 
-  if (returnCollectedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
+  if (returnTranslatedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     recordOutcome(state, node, classifyConversionBudget(), c, { latencyMs: c.headersMs, status: upstream.status });
@@ -255,12 +257,12 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   }
 
   if (
-    returnCollectedObject &&
+    returnTranslatedObject &&
     (upstream.headers.get('x-aig-response-format') !== INFERENCE_TRANSLATED_OBJECT_FORMAT ||
       !upstream.headers.get('content-type')?.toLowerCase().includes('application/json'))
   ) {
-    // Never treat an unframed upstream SSE or raw JSON as a successful public
-    // Matrix reply when the center was required to do the conversion.
+    // Neither v3 nor v6 may fall back to decoding Provider SSE/JSON in Gateway.
+    // Every successful non-stream Matrix reply must be tagged by Inference.
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     return stopForCenter(c, 502, 'gateway_inference_object_format_invalid');
