@@ -270,6 +270,11 @@ for (const obsolete of [
   'src/subscription/types.ts',
   'src/subscription/anthropic.ts',
   'src/subscription/google.ts',
+  'src/subscription/google-wire.ts',
+  'src/subscription/openai.ts',
+  'src/subscription/quota-hints.ts',
+  'src/subscription/anthropic.ts',
+  'src/subscription/google.ts',
   'src/subscription/openai.ts',
   'src/subscription/google-wire.ts',
   'src/subscription/quota-hints.ts',
@@ -293,6 +298,17 @@ for (const owned of [
     /(?:from\s+['"][^'"]*(?:\/oauth\/|\/subscription\/)|handleOAuthRoute|resolveSubscriptionCredential|SubscriptionAdapter|subscriptionEndpoint|AIG_IS_SUBSCRIPTION_ENABLED)/,
     `${owned} must not retain subscription routing, adapters, credentials or flags`,
   );
+}
+for (const subtree of ['src', 'apps', 'packages']) {
+  for (const filename of walk(join(root, subtree))) {
+    const owner = relative(root, filename);
+    const source = readFileSync(filename, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /from\s+['"][^'"]*(?:\/oauth\/|\/subscription\/)/,
+      `Retired subscriber module import remains in ${owner}`,
+    );
+  }
 }
 const gatewayPreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
 assert.ok(gatewayPreflight.includes("pathname.startsWith('/oauth/')"), 'Retired OAuth routes must fail closed, not fall through');
