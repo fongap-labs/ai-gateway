@@ -21,8 +21,8 @@ const node = {
 };
 const env = {
   AIG_GENERATION_AUTH_KEY: internalKey,
-  AIG_TIER3_NODES_01: JSON.stringify([node]),
-  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: secret }),
+  AIG_TIER2_NODES_01: JSON.stringify([node]),
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: secret }),
 };
 const validBody = { model: 'image-test', prompt: 'Draw a square', size: '1024x1024' };
 function request(body = validBody, overrides = {}) {
@@ -134,7 +134,7 @@ try {
     request: new Request('https://client.example/v1/images/generations', { method: 'POST' }),
     env,
     route: 'openai_images',
-    node: { ...node, tier: 'tier-3', protocol: 'openai', surfaces: ['images_generations'] },
+    node: { ...node, tier: 'tier-2', protocol: 'openai', surfaces: ['images_generations'] },
     reqDescriptor: { model: 'image-test', protocol: 'openai', surface: 'images_generations' },
     bodyJson: validBody,
     conversionContext: null,
@@ -183,7 +183,7 @@ try {
   // can route image-only nodes using metadata without retaining Provider keys.
   const imageGatewayEnv = {
     AIG_ACCESS_KEY_AGENT: 'center-image-test-client-key',
-    AIG_TIER3_NODES_01: env.AIG_TIER3_NODES_01,
+    AIG_TIER2_NODES_01: env.AIG_TIER2_NODES_01,
   };
   const imageGatewayConfig = loadGatewayConfig(imageGatewayEnv);
   assert.equal(imageGatewayConfig.ready, true);
@@ -191,7 +191,7 @@ try {
   assert.equal(loadExecutionConfig(imageGatewayEnv).ready, false, 'private generation center still requires a Provider key');
   const imageGatewayWithSecret = loadGatewayConfig({
     ...imageGatewayEnv,
-    AIG_TIER3_CREDENTIALS_01: env.AIG_TIER3_CREDENTIALS_01,
+    AIG_TIER2_CREDENTIALS_01: env.AIG_TIER2_CREDENTIALS_01,
   });
   assert.equal(imageGatewayWithSecret.nodes[0].credential, '', 'Gateway must not retain a center-owned image key');
   assert.equal(loadExecutionConfig(env).nodes[0].credential, secret, 'private Generation Center owns its Provider key');
