@@ -3,12 +3,10 @@
 仓库中，每一类工作都有唯一的持久所有者：Worker 运行时、测试、工具、配置示例、迁移与文档。物理布局应当让这种归属一目了然。
 
 ```text
-src/                         Cloudflare Worker 运行时
+src/                         共享的运行时契约与过渡入口（所有者见 apps/、packages/）
 ├── config/                  环境解析、节点、Model Registry、策略
-├── providers/               单一 provider 适配器注册表：线协议契约、
-│                            stream-usage 特例、OAuth 接入默认值，
-│                            以及各 provider 的订阅可 dispatch 性
-├── scheduler/               Tier 1 P2C/亲和，以及 Tier 2/3 候选选择
+├── providers/               provider → 协议/surface 映射与 stream-usage 特例
+├── scheduler/               Tier 1 免费池 P2C/亲和，以及 Tier 2 Token 健康/优先级选择
 ├── reliability/             失败分类、冷却、额度/热度/状态
 ├── transport/               上游路径、头部、原生 transport 行为
 ├── protocol/                客户端校验、CORS、协议特定的请求/错误行为
@@ -16,15 +14,15 @@ src/                         Cloudflare Worker 运行时
 ├── stream/                  首事件守卫、SSE 解析、流生命周期
 ├── request/                 请求编排、tier 循环、回退、attempt 边界
 │   └── attempt/             dispatch、hedge、成功处理、结果、attempt 可观测性
-├── oauth/                   Tier 2 订阅的 OAuth 接入/凭据解析
-├── subscription/            订阅请求语义适配器（anthropic/openai/google），
-│                            包括 google Code Assist 线协议转换器（google-wire.ts），
-│                            通过 provider 适配器组合并绑定到节点
 ├── observability/           日志、指标、D1/token 用量、安全诊断
 ├── runtime/                 运行时可用性与只读的公共模型状态
 └── dashboard/               公共/运营者展示层
 
-tests/                       （不存在）测试套件位于 action-worker：tests/packs/ai-gateway/
+apps/                        独立职责的 Gateway / Inference / Generation 运行时
+packages/                    不依赖具体应用的执行契约与传输原语
+operations/                  部署与运营边界
+
+tests/                       （不存在）受控测试套件位于 action-worker：tests/packs/ai-gateway/
 
 scripts/                     仓库/运营者/CI 工具
 ├── README.md                受支持的工具入口与边界
@@ -73,7 +71,7 @@ docs/                        长期有效的当前文档
 ## 运行时边界
 
 - `config` 从外部环境数据中构建受信任的内部配置。
-- `src/providers/registry.ts` 是 provider → 协议/surface 映射、stream-usage 特例、内置 OAuth 接入默认值以及订阅可 dispatch 性的唯一所有者；账号级节点 JSON 不携带这些字段。
+- `src/providers/registry.ts` 只维护 provider → 协议/surface 映射及 stream-usage 特例；不包含会员 OAuth 授权、订阅刷新或订阅能力判断。账号级节点 JSON 不携带协议/surface 字段。
 - `scheduler` 选择可用节点；它不直接调用 provider。
 - `reliability` 记录可用性/失败状态；它不负责协议转换。
 - `request` 编排各领域模块；它不应重复实现其逻辑。
@@ -88,7 +86,7 @@ docs/                        长期有效的当前文档
 - `src/reliability/tier1-state.ts`：isolate 本地的 in-flight、被动 TTFT、冷却、半开与自适应限流状态。
 - `src/reliability/tier1-heat.ts`：有界的 provider-model 热度与 hedge/剩余容量保护。
 
-Tier 1 的访问密钥分组仅用于授权，不拥有调度优先级路径。Tier 2/3 保留其独立的调度器/可靠性路径。
+Tier 1 的访问密钥分组仅用于授权，不拥有调度优先级路径。Tier 2 静态 API Token 池保留独立的健康/优先级候选选择与可靠性状态，不接入会员订阅 Token。
 
 ## 转换归属
 

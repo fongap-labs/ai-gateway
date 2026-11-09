@@ -11,8 +11,7 @@
 //
 // Current mapping (production behavior, unchanged):
 //   tier-1 -> p2c_ttft          (Tier 1 P2C + passive TTFT + affinity + heat)
-//   tier-2 -> priority_lru      (current Tier 2/3 health/latency selection)
-//   tier-3 -> priority_lru
+//   tier-2 -> priority_lru      (API Token capacity with health/latency selection)
 //
 // Future strategies (cost / quality / learned) are deliberately NOT
 // implemented without a concrete need; the contract is the extension point.
@@ -52,7 +51,7 @@ export const p2cTtftStrategy: RoutingStrategy = {
   pick: (tierNodes, req, attempted, opts) => pickTier1Candidate(tierNodes, req, attempted, opts),
 };
 
-/** Tier 2/3: current health/latency/availability single-best selection. Delegates
+/** Tier 2: API Token health/latency/availability single-best selection. Delegates
  *  to pickCandidate unchanged. */
 export const priorityLruStrategy: RoutingStrategy = {
   id: 'priority_lru',

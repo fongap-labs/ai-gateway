@@ -62,7 +62,7 @@ function _readOptionalJson(filePath, label) {
 
 function loadTiers(args) {
   const tiers = {};
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2]) {
     if (args[`tier${n}`]) {
       try {
         tiers[n] = parseJsonFile(args[`tier${n}`]);
@@ -94,7 +94,7 @@ function loadOptionalJSONMap(filePath) {
 
 function nodeById(tiers) {
   const map = new Map();
-  for (const tierNumber of [1, 2, 3]) {
+  for (const tierNumber of [1, 2]) {
     for (const node of tiers[tierNumber] || []) map.set(node.id, { node, tier: tierNumber });
   }
   return map;
@@ -118,14 +118,13 @@ function runCheck(args) {
   const schema = {
     tier1: { required: false },
     tier2: { required: false },
-    tier3: { required: false },
     secrets: { required: true },
     models: { required: false },
     policies: { required: false },
   };
   const a = parseArgs(args, schema);
   const tiers = loadTiers(a);
-  if (Object.keys(tiers).length === 0) fail('at least one of --tier1/--tier2/--tier3 is required');
+  if (Object.keys(tiers).length === 0) fail('at least one of --tier1/--tier2 is required');
   for (const [n, nodes] of Object.entries(tiers)) {
     try {
       assertNodesArray(nodes, `tier-${n}`, Number(n));
@@ -146,23 +145,16 @@ function runCheck(args) {
   if (policiesConfig && typeof policiesConfig !== 'object') fail('--policies must be a JSON object');
 
   // Cross-validation: a static-credential node without a credential is an
-  // error; an OAuth subscription node must never carry one (the token store
-  // is its single credential source); a credential without a node is a
-  // warning (orphan credentials are tolerated, never block deploy).
+  // error; a credential without a node is a warning (orphan credentials are
+  // tolerated, never block deploy).
   const nodeById = new Map();
-  for (const tierNumber of [1, 2, 3]) {
+  for (const tierNumber of [1, 2]) {
     for (const node of tiers[tierNumber] || []) nodeById.set(node.id, node);
   }
   for (const id of Object.keys(secrets || {})) {
     if (!nodeById.has(id)) warn(`credential "${id}" has no matching node in any tier config`);
   }
-  for (const [id, node] of nodeById) {
-    if (node.auth === 'oauth') {
-      if (id in (secrets || {})) {
-        fail(`node "${id}": auth:"oauth" nodes must not have a static credential; the OAuth token store is the single credential source`);
-      }
-      continue;
-    }
+  for (const [id] of nodeById) {
     if (!(id in (secrets || {}))) fail(`node "${id}" has no credential in the secrets file`);
   }
 
@@ -185,19 +177,13 @@ function runCheck(args) {
   const models = modelsFromConfig(modelsConfig);
   const policies = policiesFromConfig(policiesConfig);
   const lines = ['Configuration valid', ''];
-  for (const n of [1, 2, 3]) lines.push(`Tier ${n}: ${(tiers[n] || []).length} node(s)`);
+  for (const n of [1, 2]) lines.push(`Tier ${n}: ${(tiers[n] || []).length} node(s)`);
   lines.push('');
   if (models) lines.push(`Models: ${models}`);
   if (policies) lines.push(`Policies: ${policies}`);
   lines.push('');
   lines.push(`Node secret shards: ${Object.keys(plan.secrets).length}`);
-  // Only a fixed message is printed: the OAuth node count is derived from node config and is not logged.
-  const hasOauthNodes = [...nodeById.values()].some((node) => node.auth === 'oauth');
-  if (hasOauthNodes) {
-    lines.push('Static-credential nodes all have credentials; OAuth subscription nodes use the token store.');
-  } else {
-    lines.push('All configured nodes have credentials.');
-  }
+  lines.push('All configured nodes have static credentials.');
   console.log(lines.join('\n'));
 }
 
@@ -205,7 +191,6 @@ function runShow(args) {
   const schema = {
     tier1: { required: false },
     tier2: { required: false },
-    tier3: { required: false },
     secrets: { required: true },
   };
   const a = parseArgs(args, schema);
@@ -226,7 +211,7 @@ function runShow(args) {
   const map = nodeById(tiers);
   const sorted = [...map.values()].sort((a, b) => a.tier - b.tier || a.node.id.localeCompare(b.node.id));
   for (const { node, tier } of sorted) {
-    const credState = node.auth === 'oauth' ? 'oauth (token store)' : node.id in (secrets || {}) ? 'configured' : 'missing';
+    const credState = node.id in (secrets || {}) ? 'configured' : 'missing';
     const models = Object.keys(node.models || {}).join(', ') || '(wildcard)';
     const protocol = node.protocol || 'openai (implicit, deprecated)';
     const surfaces = Array.isArray(node.surfaces) ? node.surfaces.join(', ') : '(implicit default)';
@@ -252,10 +237,8 @@ function runDiff(args) {
   const schema = {
     'old-tier1': { required: false },
     'old-tier2': { required: false },
-    'old-tier3': { required: false },
     'new-tier1': { required: false },
     'new-tier2': { required: false },
-    'new-tier3': { required: false },
     'old-secrets': { required: false },
     'new-secrets': { required: false },
     'old-models': { required: false },
@@ -266,8 +249,8 @@ function runDiff(args) {
   const a = parseArgs(args, schema);
   if (!a['old-tier1'] && !a['new-tier1']) fail('provide at least --old-tier1 / --new-tier1');
 
-  const oldTiers = loadTiers({ tier1: a['old-tier1'], tier2: a['old-tier2'], tier3: a['old-tier3'] });
-  const newTiers = loadTiers({ tier1: a['new-tier1'], tier2: a['new-tier2'], tier3: a['new-tier3'] });
+  const oldTiers = loadTiers({ tier1: a['old-tier1'], tier2: a['old-tier2'] });
+  const newTiers = loadTiers({ tier1: a['new-tier1'], tier2: a['new-tier2'] });
   const oldSecrets = a['old-secrets'] ? parseJsonFile(a['old-secrets']) : {};
   const newSecrets = a['new-secrets'] ? parseJsonFile(a['new-secrets']) : {};
 
@@ -337,9 +320,9 @@ function runDiff(args) {
 
 const USAGE = `usage: config-cli.mjs <check|show|diff> [options]
 
-  check   --tier1 FILE [--tier2 FILE] [--tier3 FILE] --secrets FILE [--models FILE] [--policies FILE]
-  show    --tier1 FILE [--tier2 FILE] [--tier3 FILE] --secrets FILE
-  diff    --old-tier1 FILE --new-tier1 FILE [--old-tier2 FILE --new-tier2 FILE] [--old-tier3 FILE --new-tier3 FILE]
+  check   --tier1 FILE [--tier2 FILE] --secrets FILE [--models FILE] [--policies FILE]
+  show    --tier1 FILE [--tier2 FILE] --secrets FILE
+  diff    --old-tier1 FILE --new-tier1 FILE [--old-tier2 FILE --new-tier2 FILE]
           [--old-secrets FILE --new-secrets FILE]
           [--old-models FILE --new-models FILE] [--old-policies FILE --new-policies FILE]`;
 

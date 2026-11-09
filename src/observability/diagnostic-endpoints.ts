@@ -182,7 +182,6 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         tiers: {
           'tier-1': config.nodes.filter((n) => n.tier === 'tier-1').length,
           'tier-2': config.nodes.filter((n) => n.tier === 'tier-2').length,
-          'tier-3': config.nodes.filter((n) => n.tier === 'tier-3').length,
         },
         note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
         tier1_affinity: snapshotTier1Affinity(env),

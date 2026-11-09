@@ -9,7 +9,7 @@
 - [路由模型](architecture/routing-model.md)：Tier、亲和、尝试和对冲
 - [可靠性模型](architecture/reliability-model.md)：429、配额、冷却与恢复
 - [协议模型](architecture/protocol-model.md)：原生请求、转换和流
-- [订阅模型](architecture/subscription-model.md)：Tier 2 OAuth 与适配器
+- [两层迁移](architecture/two-tier-cutover.md)：免费 Tier 1 与 API Token Tier 2 的配置切换
 - [模块布局](architecture/repository-layout.md)：源码职责和依赖方向
 - [模块边界审计](architecture/module-boundary-audit.md)：已落实的模块归属与有意保留的差异
 - [推理中心部署](operations/inference-center-deployment.md)：私有服务的执行合同、命名与接入条件

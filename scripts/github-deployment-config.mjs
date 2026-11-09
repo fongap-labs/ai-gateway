@@ -10,26 +10,41 @@ import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
-const NODE_VAR = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
-const NODE_SECRET = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
+const NODE_VAR = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
+const NODE_SECRET = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const GROUP_KEY_PATTERN = `AIG_ACCESS_KEY_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_MODELS_PATTERN = `AIG_ACCESS_MODELS_(?:${KEY_GROUPS.join('|')})`;
 const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
 const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)$`,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
-  `^(AIG_TIER[123]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
+  `^(AIG_TIER[12]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
 );
 const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_GENERATION_TARGET']);
+function assertTwoTierBindingNames(names) {
+  const retired = [...names]
+    .filter((name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY')
+    .sort();
+  if (retired.length > 0) {
+    throw new Error(`Retired subscription bindings must be removed through controlled cutover: ${retired.join(', ')}`);
+  }
+  const legacy = [...names].filter((name) => name.startsWith('AIG_TIER3_')).sort();
+  if (legacy.length > 0) {
+    // Names only, never print any credential values.
+    throw new Error(`Legacy Tier 3 bindings must be explicitly migrated before deploying: ${legacy.join(', ')}`);
+  }
+}
+
 const CREDENTIAL_NAMES = new Set([
   'CLOUDFLARE_API_TOKEN',
   'AIG_INFERENCE_AUTH_KEY',
   'AIG_GENERATION_AUTH_KEY',
   'AIG_DEPLOY_HEALTH_KEY',
+  'AIG_EDGE_CACHE_HMAC_KEY',
   ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`),
 ]);
 
@@ -94,6 +109,7 @@ export function normalizeNodeConfigJsonText(text) {
 }
 
 export function normalizeRuntimeConfig(raw) {
+  assertTwoTierBindingNames([...Object.keys(raw.vars ?? {}), ...Object.keys(raw.secrets ?? {})]);
   const vars = {};
   const secrets = {};
   for (const [name, rawValue] of Object.entries(raw.vars)) {
@@ -101,7 +117,7 @@ export function normalizeRuntimeConfig(raw) {
     if (CREDENTIAL_NAMES.has(name) || NODE_SECRET.test(name)) {
       throw new Error(`vars.${name}: credentials belong in secrets, never vars`);
     }
-    const nodeVarMatch = /^AIG_TIER[123]_NODES_(\d{2})$/.exec(name);
+    const nodeVarMatch = /^AIG_TIER[12]_NODES_(\d{2})$/.exec(name);
     if (nodeVarMatch && Number(nodeVarMatch[1]) > 10) {
       throw new Error(`vars.${name}: shard index out of range (01..10); ignored`);
     }
@@ -128,10 +144,10 @@ export function normalizeRuntimeConfig(raw) {
     throw new Error(`secrets must contain at least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
   }
   if (!Object.keys(vars).some((name) => NODE_VAR.test(name))) {
-    throw new Error('vars must contain at least one AIG_TIER{1,2,3}_NODES_XX value');
+    throw new Error('vars must contain at least one AIG_TIER{1,2}_NODES_XX value');
   }
   if (!Object.keys(secrets).some((name) => NODE_SECRET.test(name))) {
-    throw new Error('secrets must contain at least one AIG_TIER[123]_CREDENTIALS_XX value');
+    throw new Error('secrets must contain at least one AIG_TIER[12]_CREDENTIALS_XX value');
   }
   return { vars, secrets };
 }
@@ -178,6 +194,7 @@ function countNodesInShards(vars, tierNumber) {
 }
 
 export function buildRuntimeFromEnv(env) {
+  assertTwoTierBindingNames(Object.keys(env));
   const v = collectVarsFromEnv(env);
   const s = collectSecretsFromEnv(env);
   return { runtime: normalizeRuntimeConfig({ vars: v.vars, secrets: s.secrets }) };
@@ -188,6 +205,10 @@ const REQUIRED_SECRETS = ['CLOUDFLARE_API_TOKEN'];
 
 export function preflight(env) {
   const errors = [];
+  const oldBindings = Object.keys(env)
+    .filter((name) => name.startsWith('AIG_TIER3_'))
+    .sort();
+  if (oldBindings.length > 0) errors.push(`Legacy Tier 3 bindings require explicit two-tier cutover: ${oldBindings.join(', ')}`);
   const warnings = [];
   for (const name of REQUIRED_VARS) {
     if (!env[name] || String(env[name]).trim() === '') errors.push(`${name} is missing from GitHub Repository Variables.`);
@@ -212,12 +233,12 @@ export function preflight(env) {
   }
   const totalManaged = Object.keys(v.vars).length + Object.keys(s.secrets).length;
   if (totalManaged > 80) warnings.push(`Worker variable + secret count is ${totalManaged} (threshold 80). Consolidate shards or reduce node count.`);
-  if (!tierShards) errors.push('No AIG_TIER{1,2,3}_NODES_XX GitHub Variable is configured.');
+  if (!tierShards) errors.push('No AIG_TIER{1,2}_NODES_XX GitHub Variable is configured.');
   if (tier1Shards && (!env.AIG_AFFINITY_KV_ID || String(env.AIG_AFFINITY_KV_ID).trim() === '')) {
     errors.push('AIG_AFFINITY_KV_ID is required when Tier 1 nodes are configured.');
   }
   if (!Object.keys(s.secrets).some((n) => NODE_SECRET.test(n))) {
-    errors.push('No AIG_TIER[123]_CREDENTIALS_XX Secret is configured.');
+    errors.push('No AIG_TIER[12]_CREDENTIALS_XX Secret is configured.');
   }
   if (tier1Shards && countNodesInShards(v.vars, 1) === 1) {
     warnings.push('Only one Tier 1 node is configured; there is no account-level failover if that key is rate-limited or unavailable.');
@@ -312,9 +333,11 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
 
 export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
   const out = { ...secrets };
+  // Never automatically remove old Tier 3 Secrets during a breaking cutover.
+  // The operator must explicitly authorize any destructive Secret cleanup.
   for (const entry of Array.isArray(existingSecrets) ? existingSecrets : []) {
     const name = typeof entry === 'string' ? entry : entry?.name;
-    if (typeof name === 'string' && /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/.test(name) && !(name in out)) out[name] = null;
+    if (typeof name === 'string' && /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/.test(name) && !(name in out)) out[name] = null;
   }
   return out;
 }

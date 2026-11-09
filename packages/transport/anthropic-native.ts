@@ -37,21 +37,10 @@ export function resolveAnthropicPath(surface: Surface): string {
 // current stable version. anthropic-beta: forwarded verbatim when the client
 // opted into a beta feature - dropping it would silently change behavior.
 //
-// Subscription nodes (auth:"oauth") authenticate with a Bearer token instead
-// of x-api-key; `extraHeaders` may carry deployment-owned subscription
-// headers (e.g. an OAuth beta header) resolved by the request layer.
-export function buildAnthropicHeaders(
-  request: Request,
-  credential: string,
-  requestId: string,
-  options?: { auth?: 'oauth'; extraHeaders?: Readonly<Record<string, string>> },
-): Headers {
+// Static API Token nodes authenticate with x-api-key.
+export function buildAnthropicHeaders(request: Request, credential: string, requestId: string): Headers {
   const headers = new Headers();
-  if (options?.auth === 'oauth') {
-    headers.set('Authorization', `Bearer ${credential}`);
-  } else {
-    headers.set('x-api-key', credential);
-  }
+  headers.set('x-api-key', credential);
   const clientVersion = request.headers.get('anthropic-version');
   headers.set('anthropic-version', clientVersion || '2023-06-01');
   const clientBeta = request.headers.get('anthropic-beta');
@@ -61,11 +50,6 @@ export function buildAnthropicHeaders(
   headers.set('User-Agent', 'ai-gateway');
   headers.set('Accept-Encoding', 'identity');
   headers.set('X-Request-ID', requestId);
-  if (options?.extraHeaders) {
-    for (const [name, value] of Object.entries(options.extraHeaders)) {
-      headers.set(name, value);
-    }
-  }
   return headers;
 }
 

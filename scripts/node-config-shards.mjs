@@ -3,30 +3,26 @@
 // Shared node-configuration sharding and planning module.
 //
 // Plain variables:
-//   AIG_TIER{1,2,3}_NODES_01..10   JSON arrays of current node configs
+//   AIG_TIER{1,2}_NODES_01..10   JSON arrays of current node configs
 // Secrets:
-//   AIG_TIER{1,2,3}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
+//   AIG_TIER{1,2}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
 //
 // Node config is account-level only. Protocol and surfaces are Provider wire
-// capabilities owned by src/providers/registry.ts, not repeated here. The
-// only credential-shape knowledge validated here is the Tier 2 subscription
-// marker auth:"oauth": such nodes carry no static credential, and their
-// base_url may be omitted to use the provider's built-in subscription
-// endpoint (anthropic / openai / google).
+// capabilities owned by src/providers/registry.ts, not repeated here. All nodes use static Provider credentials; legacy OAuth subscription markers
+// are rejected rather than silently becoming paid Token nodes.
 
 import fs from 'node:fs';
 
 export const SHARD_MAX_BYTES = 4500;
 export const MAX_SHARD_NUMBER = 10;
 
-export const MANAGED_VAR_PATTERN = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
-export const MANAGED_SECRET_PATTERN = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
+export const MANAGED_VAR_PATTERN = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
+export const MANAGED_SECRET_PATTERN = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const VALID_TIER_PATTERN = /^[123]$/;
+const VALID_TIER_PATTERN = /^[12]$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
 const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
-const TIER_2 = 2;
 
 function byteLength(value) {
   return Buffer.byteLength(value, 'utf8');
@@ -58,10 +54,12 @@ export function parseJsonFile(filePath) {
   }
 }
 
-// assertNodesArray validates one tier's node config. tierNumber must be the
-// real tier the array will shard into; omitting it is fail-closed (nodes that
-// declare auth:"oauth" are rejected because their tier cannot be proven).
+// assertNodesArray validates a tier's node config and rejects legacy Tier 3.
+// Nodes never declare OAuth subscriber authentication in the new two-tier form.
 export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
+  if (tierNumber !== undefined && tierNumber !== 1 && tierNumber !== 2) {
+    throw new Error(`${label}: unsupported Tier ${tierNumber}; run the two-tier cutover preflight`);
+  }
   if (!Array.isArray(nodes)) throw new Error(`${label} must be a JSON array`);
 
   const seen = new Set();
@@ -80,7 +78,7 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
     const forbidden = FORBIDDEN_NODE_FIELDS.filter((field) => field in node);
     if (forbidden.length > 0) {
       throw new Error(
-        `${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in AIG_TIER{1,2,3}_CREDENTIALS_*.`,
+        `${label}: node "${id}" contains forbidden credential field(s): ${forbidden.join(', ')}. Credentials belong in AIG_TIER{1,2}_CREDENTIALS_*.`,
       );
     }
     if ('tier' in node) {
@@ -96,16 +94,8 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
       throw new Error(`${label}: node "${id}" provider is required and must be a non-empty string`);
     }
 
-    const isOauth = node.auth === 'oauth';
-    if (node.auth !== undefined) {
-      if (typeof node.auth !== 'string' || node.auth !== 'oauth') {
-        throw new Error(`${label}: node "${id}" auth must be the string "oauth" when present`);
-      }
-      if (tierNumber !== TIER_2) {
-        throw new Error(
-          `${label}: node "${id}" auth:"oauth" is a Tier 2 subscription marker and is only allowed on tier-2 (got ${tierNumber ?? 'no explicit tier'})`,
-        );
-      }
+    if (Object.hasOwn(node, 'auth')) {
+      throw new Error(`${label}: node "${id}" has an obsolete subscription auth field; remove the OAuth node before two-tier cutover`);
     }
 
     if (node.base_url !== undefined && typeof node.base_url !== 'string') {
@@ -113,12 +103,9 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
     }
 
     const hasBaseUrl = typeof node.base_url === 'string' && !!node.base_url.trim();
-    if (!hasBaseUrl && !isOauth) {
+    if (!hasBaseUrl) {
       throw new Error(`${label}: node "${id}" base_url is required`);
     }
-    // Tier 2 subscription nodes without base_url dispatch through the
-    // provider adapter's built-in subscription endpoint (anthropic / openai /
-    // google), matching the runtime contract; static nodes must declare it.
     if (hasBaseUrl) {
       let parsedUrl;
       try {
@@ -195,9 +182,11 @@ function nodesToEntries(nodes) {
 }
 
 export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSecretNames = [], maxBytes = SHARD_MAX_BYTES }) {
+  if (tiers && (Object.hasOwn(tiers, '3') || Object.hasOwn(tiers, 'tier3'))) {
+    throw new Error('Old Tier 3 node configuration is not supported; run the explicit two-tier cutover plan');
+  }
   const globalNodeIds = new Map();
-  const globalNodes = new Map();
-  for (const tierNumber of [1, 2, 3]) {
+  for (const tierNumber of [1, 2]) {
     const nodes = tiers[tierNumber];
     if (!nodes) continue;
     assertNodesArray(nodes, `TIER${tierNumber} nodes config`, tierNumber);
@@ -206,7 +195,6 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
         throw new Error(`duplicate node id "${node.id}" across TIER${globalNodeIds.get(node.id)} and TIER${tierNumber}`);
       }
       globalNodeIds.set(node.id, tierNumber);
-      globalNodes.set(node.id, node);
     }
   }
   if (secretsMap !== undefined && secretsMap !== null) assertSecretsObject(secretsMap);
@@ -216,15 +204,6 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
       if (!globalNodeIds.has(id)) throw new Error(`credential "${id}" has no matching node in any tier config`);
     }
     for (const id of globalNodeIds.keys()) {
-      const node = globalNodes.get(id);
-      if (node.auth === 'oauth') {
-        if (id in secretsMap) {
-          throw new Error(
-            `node "${id}": auth:"oauth" nodes must not have a static credential in AIG_TIER{N}_CREDENTIALS_*; the OAuth token store is the single credential source`,
-          );
-        }
-        continue;
-      }
       if (!(id in secretsMap)) throw new Error(`node "${id}" has no credential in the node secrets file`);
     }
   }
@@ -235,7 +214,7 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
   const plannedSecrets = [];
   const tierSummary = {};
 
-  for (const tierNumber of [1, 2, 3]) {
+  for (const tierNumber of [1, 2]) {
     const nodes = tiers[tierNumber];
     if (!nodes || nodes.length === 0) continue;
     const shards = splitEntries(nodesToEntries(nodes), maxBytes);
@@ -248,7 +227,7 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
   }
 
   if (secretsMap && Object.keys(secretsMap).length > 0) {
-    for (const tierNumber of [1, 2, 3]) {
+    for (const tierNumber of [1, 2]) {
       const nodes = tiers[tierNumber];
       if (!nodes || nodes.length === 0) continue;
       const tierNodeIds = new Set(nodes.map((node) => node.id));

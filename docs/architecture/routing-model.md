@@ -5,22 +5,22 @@
 Tier 顺序是产品级不变式：
 
 ```text
-Tier 1 → Tier 2 → Tier 3
+Tier 1 → Tier 2
 ```
 
-Tier 1 是免费或实际上免费的容量，也是日常的主要层级。Tier 2 是订阅权益容量（通过 OAuth 接入的 Claude/Codex/Gemini 订阅）。Tier 3 是付费 API 容量，作为受保护的最终回退保留。
+Tier 1 是免费 API Key 容量，也是日常主要层级。Tier 2 是静态 API Token 额度池，是受保护的最终兜底；会员 OAuth 订阅层和原 Tier 3 已退役，旧配置只能通过显式预检迁移。
 
 OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽之后才会评估。OpenAI Responses 在候选耗尽后同样参与跨协议翻译（经规范化的 IR 矩阵，与 Chat/Messages 回退同预算）。
 
 ## 模型注册表、Provider Registry 与节点
 
-模型注册表（Model Registry）将逻辑模型的知识划分为两类不同的概念：目录事实（能力、推理强度、模态）与运行时策略（故障转移策略绑定、可见性、UI 分组）；扁平的 `AIG_MODELS_CONFIG` 运营者 schema 保持不变。`src/providers/registry.ts` 中的 provider 适配器注册表负责 protocol 与可路由 surface（以及 stream-usage 特例、OAuth 接入默认值和订阅可 dispatch 性）。账号级 Node Config 负责 provider 名称、base URL、逻辑→上游模型映射、可选的静态 priority 以及凭据绑定；运行时归一化会将这些事实合并为可路由的 `RuntimeNode`。
+模型注册表（Model Registry）将逻辑模型的知识划分为两类不同的概念：目录事实（能力、推理强度、模态）与运行时策略（故障转移策略绑定、可见性、UI 分组）；扁平的 `AIG_MODELS_CONFIG` 运营者 schema 保持不变。`src/providers/registry.ts` 中的 provider 适配器注册表负责 protocol 与可路由 surface（以及 stream-usage 特例）。账号级 Node Config 负责 provider 名称、base URL、逻辑→上游模型映射、可选的静态 priority 以及凭据绑定；运行时归一化会将这些事实合并为可路由的 `RuntimeNode`。
 
 节点的 `limits`、`protocol` 与 `surfaces` 均不属于账号 schema（Node `limits`, `protocol`, and `surfaces` are not part of the account schema）。Provider 的容量来自运行时观测到的信号，而非运营者提供的 RPM/并发数猜测值。
 
 凭据按 **Tier + node id** 绑定。Config 与 Secret 的分片后缀是相互独立（independent）的分区编号。
 
-静态节点 `priority` 对 Tier 2/3 有意义，而 Tier 1 的 P2C 会有意忽略它。网关访问分组（Gateway access groups）只授权逻辑模型（access groups only authorize logical models）；它们不会影响 Tier 1 的候选评分。
+静态节点 `priority` 对 Tier 2 有意义，而 Tier 1 的 P2C 会有意忽略它。网关访问分组（Gateway access groups）只授权逻辑模型（access groups only authorize logical models）；它们不会影响 Tier 1 的候选评分。
 
 ## 客户端模型拼写解析
 
@@ -55,7 +55,7 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
 
 `max_attempts` 是请求级的硬上限（`max_attempts` is the request-wide hard ceiling），家族规划绝不会提高它。第一轮家族分配先横向扩展、再纵向加深。兼容家族至多获得一轮有界的第二轮评估，且该轮只能使用同一请求中剩余的预算。
 
-每一轮模型评估都会先执行 Tier 1 → Tier 2 → Tier 3 的 native 路由，并在已配置的情况下，对同一有效模型执行受支持的跨协议回退。模型切换绝不会产生新的逻辑 attempt、dispatch、hedge 或墙钟预算。
+每一轮模型评估都会先执行 Tier 1 → Tier 2 的 native 路由，并在已配置的情况下，对同一有效模型执行受支持的跨协议回退。模型切换绝不会产生新的逻辑 attempt、dispatch、hedge 或墙钟预算。
 
 模型形态的 404 会隔离失败的节点/模型映射。经授权的兼容同级模型仍可能在同一请求预算内被尝试。
 
@@ -152,13 +152,13 @@ Tier 1 不会增加以下机制：
 - 额外的容量字段；
 - 硬性移除最后一个健康的主候选。
 
-## Tier 2 与 Tier 3
+## Tier 2 API Token 兜底
 
-Tier 2/3 使用独立的 `node-state.ts` 可靠性模型以及既有的选择器。它们可以考虑静态 priority、活动请求负载、健康/熔断状态、冷却与延迟偏好。
+Tier 2 使用独立的 `node-state.ts` 可靠性模型以及既有的选择器。它们可以考虑静态 priority、活动请求负载、健康/熔断状态、冷却与延迟偏好。
 
-Tier 2/3 不消费 Tier 1 的 TTFT、亲和或 provider-model 热度状态。
+Tier 2 不消费 Tier 1 的 TTFT、亲和或 provider-model 热度状态。
 
-它们的产品角色保持明确而狭窄：Tier 2 是订阅权益容量；Tier 3 是付费 API 兜底。在没有实测需求的情况下，不要把 Tier 1 的机制复制到它们之中。
+它的产品角色保持明确而狭窄：Tier 2 仅使用静态 API Token 付费兜底。在没有实测需求的情况下，不要把 Tier 1 的机制复制到它们之中。
 
 ## Attempt 分配
 
@@ -168,7 +168,7 @@ Tier 2/3 不消费 Tier 1 的 TTFT、亲和或 provider-model 热度状态。
 
 1. 没有可 dispatch 候选的 Tier 分配到零；
 2. 首先应用显式的 `tier_attempts` 上限；显式设为零即禁用该 Tier；
-3. 在预算允许的前提下，其余可 dispatch 的 Tier 按严格的 Tier 1 → Tier 2 → Tier 3 顺序，各分得一次 attempt 的基线；
+3. 在预算允许的前提下，其余可 dispatch 的 Tier 按严格的 Tier 1 → Tier 2 顺序，各分得一次 attempt 的基线；
 4. 其余所有剩余 attempt 分配给第一个可调整的、可 dispatch 的 Tier。
 
 候选数量只影响**Tier 内部**的选择，绝不会把请求预算从更高的 Tier 上重新分配走。

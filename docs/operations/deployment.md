@@ -81,7 +81,7 @@ AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `produc
 
 已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
 
-运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、OAuth 加密密钥、推理/生成中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
+运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、推理/生成中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
 
 ## 生产 Environment
 
@@ -109,13 +109,13 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 
 `CLOUDFLARE_ACCOUNT_ID` 是非敏感账号标识，由中央策略映射到 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`。由于 `resolve-secret-scope` 只对目标在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，三个名称必须与 `.github/deploy.secrets.required` 一致。
 
-Provider、访问分组、Tier 节点凭据、OAuth 加密密钥以及私有推理/生成中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。
+Provider、访问分组、Tier 节点凭据以及私有推理/生成中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。
 
 `AIG_DEPLOY_HEALTH_KEY` 不属于用户访问组。Worker 在运行时拒绝长度不足 32、包含非 URL 安全字符，或与任意 `AIG_ACCESS_KEY_<GROUP>` 完全相同的健康密钥；配置错误不会回退使用 AGENT 密钥。配置迁移时，必须先在 Cloudflare Worker Secrets 中写入独立同名 Secret，再将完全相同的值配置到 Action Worker `production` 与 `ai-gateway-ops` 的 Environment Secrets。旧业务组密钥保留在 Cloudflare Worker Secrets，不能作为健康密钥替代品。
 
 Worker 仅允许该密钥访问 `/health`、`/v1/models` 与 `/v1/messages/count_tokens` 健康探针；`/v1/models` 对该密钥返回空模型列表，其他模型调用仍必须使用对应的 `AIG_ACCESS_KEY_<GROUP>`。因此部署作业无需读取或暴露 `AIG_ACCESS_KEY_AGENT`。普通部署通过 `wrangler secret list` 读取名称和类型，验证必需密钥存在；不会读取密钥值、生成密钥载荷或传入 `--secrets-file`。Cloudflare 部署会保留未随本次部署上传的已有 Worker Secrets。缺少必需密钥时部署在代码发布前失败即关闭。
 
-部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚。OAuth 节点配置存在时，远端密钥盘点还会要求 `AIG_TOKEN_ENCRYPTION_KEY`；启用推理/生成 Service Binding 时分别要求对应的中心认证密钥。
+部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚。启用推理/生成 Service Binding 时分别要求对应的中心认证密钥。
 
 ## 跨 isolate 调用分析
 

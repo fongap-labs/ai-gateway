@@ -1,6 +1,6 @@
 # 两层 Tier 配置迁移预检
 
-本文件对应 [#310](https://github.com/fongap-labs/ai-gateway/issues/310)。**当前 main 仍按三层 Tier 运行**；本工具只做旧配置盘点和迁移阻断检查，不修改配置或运行时，更不执行生产部署。
+本文件对应 [#310](https://github.com/fongap-labs/ai-gateway/issues/310)。历史 PR #311 提供旧三层只读预检；后续两层运行时 PR 负责类型、配置及调度切换。**在该运行时 PR 完成中央合同验收并合并前，main 仍按三层运行**。任何阶段均不自动迁移生产凭据或部署。
 
 ## 目标映射
 

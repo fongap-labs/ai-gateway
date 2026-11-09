@@ -14,8 +14,8 @@ const node = {
 };
 const env = {
   AIG_INFERENCE_AUTH_KEY: key,
-  AIG_TIER3_NODES_01: JSON.stringify([node]),
-  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-only-provider-credential' }),
+  AIG_TIER2_NODES_01: JSON.stringify([node]),
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: 'test-only-provider-credential' }),
   AIG_INFERENCE_SERVICE: {
     fetch: async () => {
       throw new Error('test must not invoke a Service Binding');

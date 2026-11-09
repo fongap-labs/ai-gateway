@@ -13,6 +13,34 @@ const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const POLICY_NAME = /^[a-zA-Z0-9._-]{1,80}$/;
 const ALLOWED_OPTIONS = new Set(['tier1', 'tier2', 'tier3', 'credential-index', 'policies']);
 
+const LEGACY_OAUTH_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
+
+// This is an isolated historical input validator, not a runtime adapter.
+// Only the old Tier 2 may contain membership OAuth nodes. It never opens an
+// OAuth connection, decodes tokens, or publishes credential material.
+function assertLegacyOauthNodes(nodes, tier) {
+  if (tier !== 2 && nodes.length > 0) throw new Error('OAuth subscriptions were only supported in old Tier 2');
+  for (const node of nodes) {
+    if (
+      typeof node.id !== 'string' ||
+      !ID.test(node.id) ||
+      typeof node.provider !== 'string' ||
+      !node.provider.trim() ||
+      node.auth !== 'oauth' ||
+      !plainObject(node.models) ||
+      Object.keys(node).some((field) => !LEGACY_OAUTH_NODE_FIELDS.has(field))
+    ) {
+      throw new Error('Invalid historical OAuth node metadata');
+    }
+    if (node.base_url !== undefined && (typeof node.base_url !== 'string' || !node.base_url.trim())) {
+      throw new Error('Invalid historical OAuth base_url');
+    }
+    if (node.priority !== undefined && (!Number.isInteger(node.priority) || node.priority < 0)) {
+      throw new Error('Invalid historical OAuth priority');
+    }
+  }
+}
+
 function plainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -22,7 +50,7 @@ function safePolicyName(name) {
 }
 
 function tierNodes(tiers, tier) {
-  return tiers?.[tier] ?? tiers?.['tier' + tier] ?? [];
+  return tiers?.[tier] ?? tiers?.[`tier${tier}`] ?? [];
 }
 
 export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policies = null } = {}) {
@@ -36,30 +64,39 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
   const targetCounts = { tier1: 0, tier2: 0 };
 
   for (const tier of TIERS) {
-    if (!Object.hasOwn(tiers, tier) && !Object.hasOwn(tiers, 'tier' + tier)) {
-      blockers.push('tier' + tier + ': source inventory not supplied; provide [] explicitly when empty');
+    if (!Object.hasOwn(tiers, tier) && !Object.hasOwn(tiers, `tier${tier}`)) {
+      blockers.push(`tier${tier}: source inventory not supplied; provide [] explicitly when empty`);
     }
   }
 
   for (const tier of TIERS) {
-    const label = 'tier' + tier;
+    const label = `tier${tier}`;
     const nodes = tierNodes(tiers, tier);
     if (!Array.isArray(nodes)) {
-      blockers.push(label + ': expected an array of nodes');
+      blockers.push(`${label}: expected an array of nodes`);
       continue;
     }
     sourceCounts[label] = nodes.length;
     try {
-      assertNodesArray(nodes, 'tier-' + tier, tier);
+      const legacyOauthNodes = nodes.filter((node) => plainObject(node) && node.auth === 'oauth');
+      // Retired OAuth node metadata is inventoried, never sent through the new
+      // static-token node validator. Old Tier 3 static nodes are validated as
+      // target Tier 2 to ensure their eventual API Token shape is accepted.
+      assertNodesArray(
+        nodes.filter((node) => !plainObject(node) || node.auth !== 'oauth'),
+        `source-tier-${tier}`,
+        tier === 3 ? 2 : tier,
+      );
+      assertLegacyOauthNodes(legacyOauthNodes, tier);
     } catch {
-      // The original validation error may contain operator-supplied values.
-      blockers.push(label + ': invalid source node configuration; run config:check');
+      // Never print malformed source node values or raw credential material.
+      blockers.push(`${label}: invalid source node configuration; run config:check`);
       continue;
     }
     for (const node of nodes) {
       const previous = seen.get(node.id);
       if (previous !== undefined) {
-        blockers.push('Duplicate node ID ' + node.id + ' in tier' + previous + ' and ' + label);
+        blockers.push(`Duplicate node ID ${node.id} in tier${previous} and ${label}`);
         continue;
       }
       seen.set(node.id, tier);
@@ -68,14 +105,14 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
         continue;
       }
       const targetTier = tier === 1 ? 1 : 2;
-      targetCounts['tier' + targetTier] += 1;
+      targetCounts[`tier${targetTier}`] += 1;
       nodeMoves.push({
         node_id: node.id,
         source_tier: tier,
         target_tier: targetTier,
         action: tier === 1 ? 'retain_free' : tier === 2 ? 'retain_static_token' : 'promote_paid_token',
-        source_credential_prefix: 'AIG_TIER' + tier + '_CREDENTIALS_',
-        target_credential_prefix: 'AIG_TIER' + targetTier + '_CREDENTIALS_',
+        source_credential_prefix: `AIG_TIER${tier}_CREDENTIALS_`,
+        target_credential_prefix: `AIG_TIER${targetTier}_CREDENTIALS_`,
       });
     }
   }
@@ -84,25 +121,25 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
 
   if (credentialIndex === null) {
     blockers.push('Credential ID index not supplied; source and destination credential ownership cannot be verified');
-  } else if (!plainObject(credentialIndex) || Object.keys(credentialIndex).some((key) => !TIERS.some((t) => key === 'tier' + t))) {
+  } else if (!plainObject(credentialIndex) || Object.keys(credentialIndex).some((key) => !TIERS.some((t) => key === `tier${t}`))) {
     blockers.push('Credential index must be an object with only tier1, tier2 and tier3 ID arrays');
   } else {
     const credentialOwners = new Map();
     for (const tier of TIERS) {
-      const key = 'tier' + tier;
+      const key = `tier${tier}`;
       const ids = credentialIndex[key];
       if (!Array.isArray(ids)) {
-        blockers.push('Credential index ' + key + ' must be an array of node IDs');
+        blockers.push(`Credential index ${key} must be an array of node IDs`);
         continue;
       }
       for (const id of ids) {
         if (typeof id !== 'string' || !ID.test(id)) {
-          blockers.push(key + ': invalid credential node identifier');
+          blockers.push(`${key}: invalid credential node identifier`);
           continue;
         }
         const previous = credentialOwners.get(id);
         if (previous !== undefined) {
-          blockers.push('Credential node ID ' + id + ' has multiple source assignments');
+          blockers.push(`Credential node ID ${id} has multiple source assignments`);
           continue;
         }
         credentialOwners.set(id, tier);
@@ -111,16 +148,16 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
     for (const [id, tier] of credentialOwners) {
       const nodeTier = seen.get(id);
       if (nodeTier === undefined) {
-        blockers.push('Credential metadata for ' + id + ' has no matching configured node');
+        blockers.push(`Credential metadata for ${id} has no matching configured node`);
       } else if (tier !== nodeTier) {
-        blockers.push('Credential tier mismatch for ' + id + ': index tier' + tier + ', node tier' + nodeTier);
+        blockers.push(`Credential tier mismatch for ${id}: index tier${tier}, node tier${nodeTier}`);
       } else if (retiredOauth.some((node) => node.node_id === id)) {
-        blockers.push('OAuth node ' + id + ' unexpectedly has a static credential assignment');
+        blockers.push(`OAuth node ${id} unexpectedly has a static credential assignment`);
       }
     }
     for (const move of nodeMoves) {
       if (credentialOwners.get(move.node_id) !== move.source_tier) {
-        blockers.push('Static credential source for ' + move.node_id + ' has not been verified');
+        blockers.push(`Static credential source for ${move.node_id} has not been verified`);
       }
     }
   }
@@ -133,16 +170,16 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
       for (const [name, policy] of Object.entries(policies)) {
         const safe = safePolicyName(name);
         if (!plainObject(policy)) {
-          blockers.push('Policy ' + safe + ' must be an object');
+          blockers.push(`Policy ${safe} must be an object`);
           continue;
         }
         const attempts = policy.tier_attempts;
         const hedgeTiers = policy.hedge?.tiers;
         if (attempts !== undefined && attempts !== null && !plainObject(attempts)) {
-          blockers.push('Policy ' + safe + ' has malformed tier_attempts');
+          blockers.push(`Policy ${safe} has malformed tier_attempts`);
         }
         if (hedgeTiers !== undefined && !Array.isArray(hedgeTiers)) {
-          blockers.push('Policy ' + safe + ' has malformed hedge.tiers');
+          blockers.push(`Policy ${safe} has malformed hedge.tiers`);
         }
         const hasOldTwo = plainObject(attempts) && Object.hasOwn(attempts, 'tier2');
         const hasOldThree = plainObject(attempts) && Object.hasOwn(attempts, 'tier3');
@@ -154,7 +191,7 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
           if (hasOldTwo && hasOldThree) reasons.push('limits_cannot_be_merged_implicitly');
           if (affectedHedge) reasons.push('hedge_tiers_require_review');
           policyReviews.push({ policy: safe, reasons, action: 'review_and_rewrite_explicitly' });
-          blockers.push('Policy ' + safe + ' requires explicit two-tier budget/hedge review');
+          blockers.push(`Policy ${safe} requires explicit two-tier budget/hedge review`);
         }
       }
     }
@@ -187,7 +224,7 @@ function argumentsFrom(argv) {
     }
     args[key] = argv[i + 1];
   }
-  if (!TIERS.some((tier) => args['tier' + tier])) {
+  if (!TIERS.some((tier) => args[`tier${tier}`])) {
     throw new Error('Supply at least one --tier1/--tier2/--tier3 source file');
   }
   return args;
@@ -200,23 +237,23 @@ function readJson(file, label) {
     return JSON.parse(content);
   } catch {
     // Do not echo JSON parse errors: operators might pass confidential files.
-    throw new Error('Unable to read valid JSON from ' + label + ' file');
+    throw new Error(`Unable to read valid JSON from ${label} file`);
   }
 }
 
 async function main() {
   const args = argumentsFrom(process.argv.slice(2));
-  const tiers = Object.fromEntries(TIERS.filter((tier) => args['tier' + tier]).map((tier) => [tier, readJson(args['tier' + tier], 'tier' + tier)]));
+  const tiers = Object.fromEntries(TIERS.filter((tier) => args[`tier${tier}`]).map((tier) => [tier, readJson(args[`tier${tier}`], `tier${tier}`)]));
   const credentialIndex = args['credential-index'] ? readJson(args['credential-index'], 'credential-index') : null;
   const policies = args.policies ? readJson(args.policies, 'policies') : null;
   const result = planTwoTierCutover({ tiers, credentialIndex, policies });
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.preflight_passed) process.exitCode = 2;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error('Cutover preflight failed: ' + error.message);
+    console.error(`Cutover preflight failed: ${error.message}`);
     process.exitCode = 2;
   });
 }

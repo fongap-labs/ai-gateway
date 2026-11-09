@@ -201,15 +201,14 @@ export function buildExhaustedResponse(
     status = terminalStatus(state.failureKinds) ?? (last?.status === 429 ? 429 : 502);
     message = `All attempted nodes failed for model "${requestedModel}".`;
 
-    // Static routing can be feasible even when no subscription credential is
-    // usable at dispatch time. Keep this non-retryable and distinguish it from
-    // a temporary provider failure without exposing node/account identities.
+    // Credential admission can fail before dispatch. Keep the error
+    // non-retryable without exposing node identities.
     const failureKinds = Object.entries(state.failureKinds)
       .filter(([, count]) => (count ?? 0) > 0)
       .map(([kind]) => kind);
     if (state.dispatches === 0 && failureKinds.length === 1 && failureKinds[0] === FAILURE_KIND.AUTH) {
       gatewayCode = GATEWAY_ERROR_CODE.UPSTREAM_AUTH_UNAVAILABLE;
-      message = `No upstream credential was available before dispatch for model "${requestedModel}". Check subscription authorization and credential status.`;
+      message = `No upstream credential was available before dispatch for model "${requestedModel}". Check the static API Token binding in the private center.`;
     } else if (failureKinds.length === 1 && failureKinds[0] === FAILURE_KIND.MODEL_MISSING) {
       gatewayCode = GATEWAY_ERROR_CODE.UPSTREAM_MODEL_UNAVAILABLE;
       message = `Configured upstreams do not recognize the mapped model for "${requestedModel}". Check node model mapping.`;

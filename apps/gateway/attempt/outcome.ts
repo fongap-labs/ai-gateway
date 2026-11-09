@@ -208,14 +208,13 @@ export function recordOutcome(
     recordNeutralEnd(node.id);
   } else {
     applyHealthPenalty(node.id, classification.kind);
-    // The paid-API reserve (Tier 3) keeps the ordinary Retry-After ceiling; only
-    // Tier 1 learns long-lived allowances and Tier 2 subscription windows are
-    // extended by the adapter's own reset hint.
+    // Paid API Token nodes (new Tier 2) retain the ordinary Retry-After
+    // ceiling; only Tier 1 learns long-lived free allowance limits.
     const nodeCooldownMs = classification.cooldownMs || 0;
     recordFailure(node.id, {
       counted: classification.counted,
       cooldownMs:
-        node.tier === 'tier-3' && classification.kind === KIND.RATE_LIMIT && nodeCooldownMs > 0 ? clampRetryAfterMs(nodeCooldownMs) : nodeCooldownMs,
+        node.tier === 'tier-2' && classification.kind === KIND.RATE_LIMIT && nodeCooldownMs > 0 ? clampRetryAfterMs(nodeCooldownMs) : nodeCooldownMs,
       reason: classification.kind,
       explicitRetryAfter: classification.explicitRetryAfter,
     });

@@ -3,20 +3,12 @@
 //
 // Unified provider adapter contract.
 //
-// A ProviderAdapter is the single declaration point for everything the
-// gateway knows about ONE upstream provider family: its structural wire
-// contract (protocol + routable surfaces), narrow wire-format quirks,
-// built-in OAuth onboarding defaults, and subscription request semantics.
-// The router, scheduler, reliability and transport layers stay
-// provider-agnostic: they consume Protocol/Surface/credential facts and
-// never branch on provider names.
+// The adapter describes the upstream protocol, surfaces and native image support.
+// Tier 2 uses static API Tokens only; no subscriber OAuth integration.
 //
 // Adding a plain OpenAI-compatible provider needs no source change at all
-// (the generic-openai adapter is the registry fallback). Adding a provider
-// with its own wire contract, OAuth onboarding, or subscription backend
-// means adding one module in src/providers/ plus its registry line.
+// (the generic-openai adapter is the registry fallback).
 
-import type { SubscriptionAdapter } from '../subscription/types.ts';
 import type { Protocol, Surface } from '../types/protocol.ts';
 import type { ImageGenerationAdapter } from './image-generation.ts';
 
@@ -27,26 +19,6 @@ export type ProviderWire = Readonly<{
   protocol: Protocol;
   surfaces: ReadonlyArray<Surface>;
 }>;
-
-/** Built-in OAuth onboarding defaults for one provider (public constants
- *  from the provider's first-party CLI, not secrets). AIG_OAUTH_PROVIDERS
- *  entries replace these per-provider wholesale; the parse/merge/cache
- *  machinery stays in src/oauth/provider-configs.ts. */
-export type OAuthUpstreamHeaders = Readonly<Record<string, string>>;
-
-export type OAuthProviderConfig = {
-  authorizeUrl: string;
-  tokenUrl: string;
-  clientId: string;
-  scope: string;
-  clientSecret?: string;
-  /** When set, the authorize redirect goes to this URL (not the gateway
-   *  callback) and the operator must paste the code at /oauth/paste.
-   *  Required for providers whose OAuth client does not allow arbitrary
-   *  redirect URIs (e.g., Google). */
-  manualRedirectUrl?: string;
-  upstreamHeaders: OAuthUpstreamHeaders;
-};
 
 export type ProviderAdapter = Readonly<{
   /** Registry key: the provider name used in node configuration. */
@@ -59,17 +31,4 @@ export type ProviderAdapter = Readonly<{
   streamUsage: boolean;
   /** Native image-generation wire contract, absent for chat-only providers. */
   image?: ImageGenerationAdapter;
-  /** Built-in OAuth onboarding defaults; absent for providers without an
-   *  OAuth subscription onboarding story. */
-  oauth?: OAuthProviderConfig;
-  /** Built-in upstream endpoint for Tier 2 `auth:"oauth"` subscription
-   *  nodes. When an operator omits base_url on such a node, the config layer
-   *  resolves base_url from here so onboarding needs only {id, provider,
-   *  auth:"oauth", models}. Absent for providers whose subscription nodes
-   *  require an explicit base_url. */
-  subscriptionEndpoint?: string;
-  /** Subscription dispatch semantics for Tier 2 auth:"oauth" nodes.
-   *  Absent means the provider has no verified subscription backend and
-   *  subscription dispatch fails closed (pre-dispatch rotation). */
-  subscription?: SubscriptionAdapter;
 }>;

@@ -15,7 +15,6 @@
 | `AIG_TIER{N}_NODES_XX` | Variables | 推理中心使用与网关同一份经部署验证的节点配置 |
 | `AIG_TIER{N}_CREDENTIALS_XX` | Secrets | 上游静态凭据由中心读取；后续迁移时从入口移除 |
 | `AIG_MODELS_CONFIG` | Variable | 与网关保持一致的已授权逻辑模型目录 |
-| `AIG_TOKEN_ENCRYPTION_KEY` | Secret | Tier 2 订阅令牌加解密所需；缺失不得使用 OAuth |
 | `TOKEN_STATS_DB` | D1 Binding | 订阅 Token 状态所需，名称保持已部署数据库绑定的原样 |
 
 新增自有配置遵循三至四段命名规范。已有 `AIG_TIER*` 分片、`AIG_ACCESS_KEY_<GROUP>` 和平台标准绑定不在此 PR 中强行更名；密钥迁移应当先审查引用、生产环境和值的所有权，绝不将变量重命名等同于密钥复制。
@@ -42,7 +41,7 @@ content-type: application/json
 
 - 入口必须由 **Cloudflare Service Binding** 调用，目标 Worker 设置 `workers_dev:false`，不得配置公网 routes。
 - 服务端先验证内部 Key，再验证协议版本、节点 ID、模型、截止时间、请求大小和 surface；不匹配拒绝，且不发出上游请求。
-- 入站 `Authorization`、`Cookie`、`x-api-key` 和不在白名单内的头不进入上游。服务端从 Secret 及受控 OAuth 存储读取真实凭据。
+- 入站 `Authorization`、`Cookie`、`x-api-key` 和不在白名单内的头不进入上游。服务端从私有 Worker Secret 读取静态 Provider API Token。
 - 原生 Chat、Responses、Messages 的非专有成功流直接返回 ReadableStream；Google 订阅私有线协议转换为对应的原生回复后返回。
 - 中心不跨节点、不进行模型回退或 hedge。网关必须保留全局请求预算和首事件提交边界。
 - 中心只保留 `content-type`、`retry-after` 与受控内部诊断头；调用方在对客户端返回数据前，必须按客户端协议重新整形失败和过滤内部诊断。
@@ -58,7 +57,7 @@ npm run check:inference
 npm run validate:merge
 ```
 
-`check:inference` 是仅生成构建产物的 Wrangler dry-run，**不是部署**。生产环境只能经 Action Worker 受控部署。中央测试包后续增加：内部密钥缺失/伪造、未知节点、未授权模型、过期截止时间、OAuth 异常、上游流式透传、错误头剔除及网络失败分类。
+`check:inference` 是仅生成构建产物的 Wrangler dry-run，**不是部署**。生产环境只能经 Action Worker 受控部署。中央测试包后续增加：内部密钥缺失/伪造、未知节点、未授权模型、过期截止时间、上游流式透传、错误头剔除及网络失败分类。
 
 ## 部署清单调整（已实施）
 
@@ -86,7 +85,7 @@ Action Worker 规定：一个源码仓库只允许一套产品布局。AI Gatewa
 → Action Worker 先部署私有中心并验证
 → 主网关配置 AIG_INFERENCE_SERVICE 与内部认证密钥
 → 按独立执行节点与完整协议契约切换数据面
-→ 移除主网关上游凭据、OAuth 和大体积转换代码
+→ 移除主网关上游凭据和大体积转换代码
 → 经过对照验收再删除旧路径
 ```
 

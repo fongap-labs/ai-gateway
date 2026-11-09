@@ -10,11 +10,11 @@ ai-gateway 是一个面向家庭、个人运营者或小型可信团队的私有
 
 本产品应当保持易于部署、易于理解、易于运维。优先采用少量明确的概念，而不是泛化的框架、扩展层、兼容垫片或面向未来的抽象。
 
-## 三级容量
+## 两层容量
 
-### 免费容量
+### 免费容量 · Tier 1
 
-Tier 1 是长期的主要运行层，承载来自多个 provider/账号的免费或实际上免费的 token 容量。
+Tier 1 是长期主要运行层，承载来自多个 provider/账号的免费或实际上免费的 API Key / Token 容量。
 
 其首要目标是持续可用性。在配额不均、速率限制、延迟波动以及 provider 故障的情况下，Tier 1 必须保持稳定、高效、安全，并可持续使用。
 
@@ -30,17 +30,15 @@ Tier 1 的工程重点应放在：
 
 在没有生产证据表明更简单的本地设计已不足够之前，不要增加推测性的全局协调、猜测的 provider 限额，或复杂的优化机制。
 
-### 订阅容量
+### API Token 容量 · Tier 2
 
-Tier 2 面向那些通过运营者自有的会员或订阅权益获得的 AI 容量（Claude Pro/Max、ChatGPT/Codex、Google One AI Premium）。三个主流 provider 均提供内置的订阅适配器，并带有第一方的 OAuth 接入默认值。
+Tier 2 是最终的静态 API Key / API Token 额度池，承接原 Tier 3 付费 API 容量，同时保留原 Tier 2 中确实属于静态 Token 的节点。Tier 2 使用优先级、健康状态和负载的候选选择，**不使用会员订阅权益**。
 
-不要把 Tier 2 变成另一个通用的 API Key 池。除非有实测的生产证据表明需要，它不应引入 Tier 1 的自适应机制。
+Tier 2 不接入 Claude Pro/Max、ChatGPT/Codex 或 Google 会员 OAuth，不维护会员 Token 的授权、刷新、加密存储或订阅专用 Provider Adapter。全部 Provider Token 仅通过私有执行中心的 `AIG_TIER2_CREDENTIALS_XX` Secret 分片配置；公开 Gateway 只保留节点元数据。
 
-### 付费容量
+请求顺序固定为 **Tier 1 → Tier 2**，不允许新的隐式第三层。Tier 1 可用时优先使用免费额度；Tier 1 不可用或已达到请求预算时，Tier 2 在明确的重试/成本预算内作为最终兜底。不得动用 Tier 2 容量掩盖本可避免的 Tier 1 故障。
 
-Tier 3 保留给付费 API 容量，作为最终的受保护兜底层。
-
-不要动用 Tier 3 的容量去弥补本可避免的 Tier 1 不稳定。Tier 3 应保持可预测、有界且易于推理。
+旧 `AIG_TIER3_*` 以及会员 OAuth 节点必须先经只读迁移预检盘点，然后从新配置中删除或显式迁移。未迁移的配置必须失败关闭，不得通过兼容别名、隐藏开关或部分可用模式静默继续执行。历史 D1 迁移记录仍保持不可变；生产 Secrets 的清理由另行批准的受控操作完成。
 
 ## 干净替换策略
 
@@ -80,7 +78,7 @@ ai-gateway maintains one current contract（只维护一套当前的契约）。
 2. 安全性与协议正确性；
 3. 运维简单性；
 4. 有效利用免费容量；
-5. 清晰的 Tier 2 / Tier 3 兜底边界；
+5. Tier 1 免费池优先与 Tier 2 静态 API Token 的有界兜底；
 6. 仅在已存在具体使用场景时才考虑扩展性。
 
 优先删除而非保留已过时的过渡设计（Prefer deletion over preserving obsolete transitional design）。优先采用一套当前机制，而非新旧并行的机制。优先采用明确的适配器，而非通用插件框架。在没有生产证据要求之前，优先采用本地有界状态，而非分布式协调。

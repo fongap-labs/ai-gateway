@@ -10,7 +10,7 @@ import type { RuntimeNode } from './node.ts';
 import type { Protocol, Surface } from './protocol.ts';
 
 /** Numeric policy tier (distinct from the NodeTier label). */
-export type Tier = 1 | 2 | 3;
+export type Tier = 1 | 2;
 
 export type TierMap<T> = Record<Tier, T>;
 
@@ -32,7 +32,7 @@ export type RoutableRequest = {
 /**
  * A single decision returned by the scheduler when picking the next
  * candidate for a tier. The shape is shared by all tier pickers
- * (Tier 1 with affinity release token, Tier 2/3 with priority/LRU).
+ * (Tier 1 with affinity release token, Tier 2 with priority/LRU).
  */
 export type PickedCandidate = {
   node?: RuntimeNode;

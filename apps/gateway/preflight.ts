@@ -29,7 +29,6 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
-import { handleOAuthRoute } from './oauth/routes.ts';
 import {
   authorize,
   authorizeDeploymentHealth,
@@ -146,30 +145,10 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return { ok: false, response: await readmeStatusSvgResponse(env) };
   }
 
-  // OAuth onboarding routes. Handled before the access-key presence check so
-  // the browser redirect callback (which carries no gateway key) can complete.
-  // /oauth/start requires a gateway key (checked inside the handler); the
-  // callback and paste routes are authorized by their single-use D1 state.
-  if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
-    if (!getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true)) {
-      return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
-    }
-    const config = loadGatewayConfig(env);
-    const oauthResponse = await handleOAuthRoute(
-      request,
-      env,
-      {
-        tier2Nodes: (config.tiers[2] || []).map((node) => ({
-          id: node.id,
-          provider: node.provider,
-          auth: node.auth,
-        })),
-        // A closure, because Workers reject waitUntil called detached from its context.
-        waitUntil: ctx.waitUntil ? (promise) => ctx.waitUntil?.(promise) : undefined,
-      },
-      pathname,
-    );
-    return { ok: false, response: oauthResponse };
+  // Subscription OAuth routes are retired. Do not accept legacy callbacks or
+  // form submissions; all such paths remain unavailable without token exchange.
+  if (pathname.startsWith('/oauth/')) {
+    return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
   }
 
   const accessConfig = loadAccessKeysConfig(env);
@@ -442,7 +421,6 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       ? {
           1: config.tiers[1].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
           2: config.tiers[2].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
-          3: config.tiers[3].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
         }
       : config.tiers;
   const requestDescriptor: RequestDescriptor = {
@@ -534,7 +512,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
 
 // Eligibility for the image surface is narrower than a provider's general
 // wire capability. It requires explicit model mapping and a real API-key node;
-// a wildcard or a Codex/Code Assist subscription cannot claim image support.
+// a wildcard cannot claim image support.
 function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
   return canRouteImageGeneration(node, logical, body.size ?? '1024x1024');
 }

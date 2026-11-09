@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Fongap Labs
 //
 // Isolate-local adaptive state for Tier 1 only. Performance is learned from
-// real requests at (account, model) scope. Tier 2/3 continue to use
-// node-state.ts and never read this module.
+// real requests at (account, model) scope. Tier 2 static API Token capacity
+// continues to use node-state.ts and never reads this module.
 
 import { servesModel } from '../config/registry.ts';
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';

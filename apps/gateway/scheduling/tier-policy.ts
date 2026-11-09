@@ -2,8 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 //
 // Tier Execution Loop helpers. Tier order is a product invariant:
-// Tier 1 (free capacity) -> Tier 2 (subscription entitlement reserve)
-// -> Tier 3 (paid API reserve). Attempt allocation therefore has one explicit
+// Tier 1 (free API capacity) -> Tier 2 (API Token reserve). Attempt allocation therefore has one explicit
 // precedence model; lower-tier node counts never pull surplus budget away from
 // a higher tier.
 
@@ -70,7 +69,7 @@ export function pickForTier(
   // The tier loop resolves the ranking algorithm through one routing-strategy
   // dispatcher; it never branches on the algorithm by tier. Each strategy
   // delegates to its underlying picker unchanged (Tier 1 P2C+TTFT+affinity,
-  // Tier 2/3 health/latency selection).
+  // Tier 2 API Token health/latency selection).
   const r = routingStrategyFor(tierNumber).pick(tierNodes, req, attempted, opts);
   if (!r) return null;
   if (r.raceLost) return { raceLost: true, raceLostNodeId: r.raceLostNodeId };
@@ -109,9 +108,9 @@ export function makeTier1Rng(env: GatewayEnv): () => number {
 // - explicit tier_attempts values are hard caps and are reserved first;
 // - an explicit 0 disables that tier;
 // - each remaining dispatchable tier gets a one-attempt baseline while budget
-//   permits, in strict Tier 1 -> Tier 2 -> Tier 3 order;
+//   permits, in strict Tier 1 -> Tier 2 order;
 // - every remaining surplus attempt goes to the FIRST adjustable dispatchable
-//   tier, preserving the product's free -> subscription -> paid precedence.
+//   tier, preserving the product's free -> API Token precedence.
 //
 // There is deliberately no weighted/live-node cross-tier splitter. Candidate
 // count influences selection INSIDE a tier, never the tier hierarchy itself.
@@ -125,7 +124,7 @@ export function computeTierCaps(
   consumed?: Partial<Record<Tier, number>>,
 ): TierMap<number> {
   const now = Date.now();
-  const caps: TierMap<number> = { 1: 0, 2: 0, 3: 0 };
+  const caps: TierMap<number> = { 1: 0, 2: 0 };
 
   // Explicit tier attempts are a REQUEST-WIDE hard cap: a protocol fallback or
   // a later model round may only use what the earlier passes left. Without this

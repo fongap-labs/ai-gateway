@@ -3,7 +3,7 @@
 //
 // AIG_POLICIES_CONFIG: policy name -> request/failover policy. Optional.
 // `max_attempts` is the hard request-wide logical-attempt ceiling. Tier order
-// is fixed (tier-1 -> tier-2 -> tier-3); there is one allocation model and no
+// is fixed (tier-1 -> tier-2); there is one allocation model and no
 // configurable cross-tier budget splitter.
 
 import type { PolicyConfig } from '../types/policy.ts';
@@ -13,7 +13,7 @@ import { getLimits } from './timeouts.ts';
 
 const MIN_ATTEMPTS = 1;
 const MAX_ATTEMPTS = 8;
-const TIER_KEYS = ['tier1', 'tier2', 'tier3'];
+const TIER_KEYS = ['tier1', 'tier2'];
 const ALLOWED_FIELDS = new Set([
   'max_attempts',
   'tier_attempts',
@@ -24,8 +24,8 @@ const ALLOWED_FIELDS = new Set([
   'max_in_flight',
 ]);
 
-type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2' | 'tier3'> } | null;
-type TierAttempts = { tier1?: number; tier2?: number; tier3?: number } | null;
+type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } | null;
+type TierAttempts = { tier1?: number; tier2?: number } | null;
 
 const BUILTIN_POLICIES: Readonly<{
   default: PolicyConfig;
@@ -183,7 +183,7 @@ function parseHedge(value: unknown, policyName: string, errors: string[]): Hedge
     return null;
   }
   const rec = value as Record<string, unknown>;
-  const out: { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2' | 'tier3'> } = { enabled: true };
+  const out: { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } = { enabled: true };
   if (rec.enabled !== undefined) {
     if (typeof rec.enabled !== 'boolean') errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.enabled must be a boolean`);
     else out.enabled = rec.enabled;
@@ -197,7 +197,7 @@ function parseHedge(value: unknown, policyName: string, errors: string[]): Hedge
   }
   if (rec.tiers !== undefined) {
     if (!Array.isArray(rec.tiers) || !rec.tiers.every((t) => typeof t === 'string' && TIER_KEYS.includes(t))) {
-      errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.tiers must be an array of "tier1", "tier2", "tier3"`);
+      errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.tiers must be an array of "tier1", "tier2"`);
     } else {
       out.tiers = rec.tiers;
     }
@@ -208,10 +208,10 @@ function parseHedge(value: unknown, policyName: string, errors: string[]): Hedge
 function parseTierAttempts(value: unknown, policyName: string, errors: string[]): TierAttempts {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
-    errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts must be an object { tier1, tier2, tier3 }`);
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts must be an object { tier1, tier2 }`);
     return null;
   }
-  const out: { tier1?: number; tier2?: number; tier3?: number } = {};
+  const out: { tier1?: number; tier2?: number } = {};
   let hasAnyTierAttempt = false;
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     if (!TIER_KEYS.includes(key)) {
@@ -222,7 +222,7 @@ function parseTierAttempts(value: unknown, policyName: string, errors: string[])
       errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts.${key} must be an integer between 0 and ${MAX_ATTEMPTS}`);
       continue;
     }
-    out[key as 'tier1' | 'tier2' | 'tier3'] = val;
+    out[key as 'tier1' | 'tier2'] = val;
     hasAnyTierAttempt = true;
   }
   return hasAnyTierAttempt ? out : null;

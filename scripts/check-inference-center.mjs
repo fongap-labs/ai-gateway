@@ -18,8 +18,8 @@ const node = {
 };
 const env = {
   AIG_INFERENCE_AUTH_KEY: internalKey,
-  AIG_TIER3_NODES_01: JSON.stringify([node]),
-  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: providerSecret }),
+  AIG_TIER2_NODES_01: JSON.stringify([node]),
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: providerSecret }),
 };
 const validBody = { model: 'chat-test', messages: [{ role: 'user', content: 'Hello' }] };
 function request(body = validBody, overrides = {}) {
@@ -85,12 +85,11 @@ try {
   assert.equal(failed.headers.get('x-aig-result'), 'attempted');
   assert.equal(failed.headers.get('x-aig-error-kind'), 'center_upstream_network');
   assert.equal(attempts, 2, 'center executes one physical attempt and never retries');
-  // Pre-dispatch OAuth skips must be explicit; ordinary center problems never
-  // acquire a 'skipped' marker or become eligible for Gateway rotation.
-  const missingSubscription = preDispatchProblem(503, 'center_subscription_unavailable');
-  assert.equal(missingSubscription.headers.get('x-aig-result'), 'skipped');
-  assert.equal(missingSubscription.headers.get('x-aig-error-kind'), 'center_subscription_unavailable');
-  assert.equal((await missingSubscription.json()).error.retryable, false);
+  // Only a verified route-unavailable outcome may be marked pre-dispatch.
+  const invalidRoute = preDispatchProblem(404, 'center_route_unavailable');
+  assert.equal(invalidRoute.headers.get('x-aig-result'), 'skipped');
+  assert.equal(invalidRoute.headers.get('x-aig-error-kind'), 'center_route_unavailable');
+  assert.equal((await invalidRoute.json()).error.retryable, false);
 
   // Deployment intent must prevent a silent direct-Provider fallback even if
   // the private Service Binding is absent. No physical attempt is chargeable.
@@ -111,7 +110,7 @@ try {
     env: unboundEnv,
     node: {
       ...node,
-      tier: 'tier-3',
+      tier: 'tier-2',
       protocol: 'openai',
       surfaces: ['chat_completions'],
       baseUrl: node.base_url,
@@ -144,7 +143,7 @@ try {
   // is missing; the dispatch layer must fail closed rather than use Provider keys.
   const secretless = {
     AIG_ACCESS_KEY_AGENT: 'center-metadata-test-client-key',
-    AIG_TIER3_NODES_01: env.AIG_TIER3_NODES_01,
+    AIG_TIER2_NODES_01: env.AIG_TIER2_NODES_01,
   };
   const activeGateway = loadGatewayConfig({ ...secretless, AIG_INFERENCE_ACTIVE: 'true' });
   assert.equal(activeGateway.ready, true);
@@ -161,18 +160,18 @@ try {
   const redactedGateway = loadGatewayConfig({
     ...secretless,
     AIG_INFERENCE_ACTIVE: 'true',
-    AIG_TIER3_CREDENTIALS_01: env.AIG_TIER3_CREDENTIALS_01,
+    AIG_TIER2_CREDENTIALS_01: env.AIG_TIER2_CREDENTIALS_01,
   });
   assert.equal(redactedGateway.nodes[0].credential, '', 'Gateway must never retain an upstream key for center-owned nodes');
   const staleSecretGateway = loadGatewayConfig({
     ...secretless,
     AIG_INFERENCE_ACTIVE: 'true',
-    AIG_TIER3_CREDENTIALS_01: '{invalid-json:',
+    AIG_TIER2_CREDENTIALS_01: '{invalid-json:',
   });
   assert.equal(staleSecretGateway.ready, true, 'Gateway must ignore obsolete secret values when inference center is active');
   assert.equal(staleSecretGateway.hasConfigErrors, false, 'unused Provider secret values must not affect active Gateway config');
   const forbiddenSecretRead = { ...secretless, AIG_INFERENCE_ACTIVE: 'true' };
-  Object.defineProperty(forbiddenSecretRead, 'AIG_TIER3_CREDENTIALS_01', {
+  Object.defineProperty(forbiddenSecretRead, 'AIG_TIER2_CREDENTIALS_01', {
     enumerable: true,
     get() {
       throw new Error('Gateway must never read Provider credential shards when a private center is active');
@@ -181,9 +180,9 @@ try {
   const noSecretRead = loadGatewayConfig(forbiddenSecretRead);
   assert.equal(noSecretRead.ready, true);
   assert.equal(noSecretRead.nodes[0].credential, '');
-  assert.deepEqual(noSecretRead.bindings.secretShards, ['AIG_TIER3_CREDENTIALS_01']);
+  assert.deepEqual(noSecretRead.bindings.secretShards, ['AIG_TIER2_CREDENTIALS_01']);
   assert.equal(
-    loadExecutionConfig({ ...secretless, AIG_TIER3_CREDENTIALS_01: '{invalid-json:' }).ready,
+    loadExecutionConfig({ ...secretless, AIG_TIER2_CREDENTIALS_01: '{invalid-json:' }).ready,
     false,
     'private center must continue rejecting malformed credential shards',
   );

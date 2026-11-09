@@ -12,7 +12,6 @@ for (const name of ['openai', 'anthropic', 'google', 'openai-image', 'google-ima
   assert.deepEqual(profile.wire, providerWire(name), `${name}: wire capabilities drifted`);
   assert.deepEqual(profile.wire, adapter.wire, `${name}: native adapter drifted`);
   assert.equal(profile.streamUsage, adapter.streamUsage, `${name}: usage streaming capability drifted`);
-  assert.equal(profile.subscriptionEndpoint ?? null, adapter.subscriptionEndpoint ?? null, `${name}: subscription endpoint drifted`);
 }
 assert.deepEqual(getProviderProfile(' OPENAI '), getProviderProfile('openai'));
 assert.deepEqual(getProviderProfile('unknown-custom-provider'), getProviderProfile('generic-openai'));
