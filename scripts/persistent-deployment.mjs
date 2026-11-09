@@ -32,6 +32,8 @@ function deploymentVars(env) {
 
 export function validateDeploymentInputs(env) {
   const errors = [];
+  const retired = Object.keys(env).filter((key) => key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY');
+  if (retired.length > 0) errors.push('Retired subscription bindings require explicit cleanup: ' + retired.sort().join(', '));
   for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
   }
@@ -91,6 +93,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
 
   const missing = [];
   const legacySecrets = [...names].filter((name) => name.startsWith('AIG_TIER3_'));
+  if (names.has('AIG_TOKEN_ENCRYPTION_KEY')) missing.push('Retired AIG_TOKEN_ENCRYPTION_KEY is still installed');
   if (legacySecrets.length > 0) missing.push('Unmigrated legacy Tier 3 Secret names (' + legacySecrets.sort().join(', ') + ')');
   if (!names.has('AIG_DEPLOY_HEALTH_KEY')) missing.push('AIG_DEPLOY_HEALTH_KEY');
   if (![...names].some((name) => GROUP_SECRET.test(name))) missing.push('AIG_ACCESS_KEY_<GROUP> (at least one application access key)');
@@ -116,7 +119,6 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     accessKeyGroups: [...names].filter((name) => GROUP_SECRET.test(name)).length,
     credentialShards: [...names].filter((name) => NODE_SECRET.test(name)).length,
     deploymentHealthKey: names.has('AIG_DEPLOY_HEALTH_KEY'),
-    oauthEncryptionKey: names.has('AIG_TOKEN_ENCRYPTION_KEY'),
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
   };
