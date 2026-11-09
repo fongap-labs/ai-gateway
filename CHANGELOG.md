@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: v4/v5 私有推理中心将 Provider 忽略 stream:true 返回的 JSON 合成为带物理用量侧通道的私有 SSE 帧；公网网关禁止回退本地对象转码。
+
 - 新增: 私有推理中心 v6 非流式 Matrix SSE 对象收集与额度预算合同，Gateway 对未标记的响应拒绝回退本地转换；无部署变更。
 
 - 修复: Gateway 部署准入要求双私有中心绑定，禁止公网网关继续持有 Provider Token Secret 分片。
