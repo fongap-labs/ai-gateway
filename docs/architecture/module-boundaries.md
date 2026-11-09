@@ -435,7 +435,7 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 将原 `src/request/attempt/success-image.ts` 的完整运行实现迁至 `apps/gateway/attempt/success-image.ts`，旧路径仅作兼容导出；`src/request/attempt/success.ts` 统一分发器直接调用新归属。图像生成的非幂等终态、取消、响应格式及记账行为保持原合同。
 
-`success-stream.ts` 因中央测试包仍从旧路径直接检查首事件守卫与流生命周期而保留原实现。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。没有调整 Action Worker 测试。对象、对冲、dispatch、outcome 和物理尝试观测仍有剩余源码迁移。无生产配置或部署改动。
+原生 `success-stream.ts` 的首事件提交、流生命周期与中断处理均已归属 `apps/gateway/attempt/success-stream.ts`，原目录仅兼容导出；中央测试包已锁定升级版并保留原行为断言。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。没有调整 Action Worker 测试。对象与物理尝试观测已迁归 Gateway；对冲、dispatch、outcome 仍待后续归属迁移。无生产配置或部署改动。
 
 ## Gateway OAuth 管理路由归属
 
