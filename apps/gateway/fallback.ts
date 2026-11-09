@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Protocol Fallback Orchestration.
+// Protocol Fallback Orchestration; private preflight owns request translation.
 //
 // Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
 // for the single source of truth): every directed pair among OpenAI Chat
@@ -32,7 +32,7 @@
 //     reachable fallback steps is precomputed by route-feasibility.ts at
 //     preflight time and carried through loopCtx.feasibility; runFallbackChain
 //     iterates that set rather than re-implementing the feasibility check.
-//   * If conversion throws ConversionError, or would drop high-risk semantic
+//   * If private conversion preflight rejects with ConversionError, or would drop high-risk semantic
 //     state, that fallback target is skipped before any upstream dispatch.
 //     The client request is still legal; the target protocol is incompatible.
 //     No logical attempt, dispatch, hedge, active-request, cooldown or circuit
@@ -48,9 +48,9 @@
 //     answer is a 400 that names them, and the client can resend without them.
 
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
+import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import type { IrProtocol } from '../../src/conversion/matrix/ir.ts';
-import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/pipeline.ts';
 import type { ConversionResult } from '../../src/conversion/result.ts';
 import { ConversionError } from '../../src/conversion/validation.ts';
 import { InferenceCenterUnavailable } from '../../src/inference/inference-client-request.ts';
@@ -138,21 +138,17 @@ export async function runFallbackChain({
       // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
       // stream flag so the provider may answer with one JSON body (streaming
       // clients still get the forced upstream stream).
-      // When the center is configured, do not execute the full translator in
-      // Gateway: ask the private center for metadata-only feasibility instead.
-      // Legacy unbound mode still needs the converted body for direct dispatch.
-      conversionResult =
-        'AIG_INFERENCE_SERVICE' in env
-          ? await checkInferenceConversion(env, {
-              request,
-              requestId,
-              from,
-              to,
-              body: bodyJson,
-              isNonstreamPreferred,
-              deadlineMs: requestStartMs + failoverBudgetMs,
-            })
-          : convertMatrixRequest(from, to, bodyJson, { isNonstreamPreferred });
+      // The public Gateway is never allowed to run the private body translator.
+      // Missing/invalid center bindings reject before any physical attempt.
+      conversionResult = await checkInferenceConversion(env, {
+        request,
+        requestId,
+        from,
+        to,
+        body: bodyJson,
+        isNonstreamPreferred,
+        deadlineMs: requestStartMs + failoverBudgetMs,
+      });
     } catch (e) {
       if (e instanceof InferenceCenterUnavailable) {
         // A preflight RPC failure is not a Provider failure. Fail closed

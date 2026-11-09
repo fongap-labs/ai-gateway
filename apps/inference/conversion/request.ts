@@ -5,20 +5,14 @@
 // use a compatibility export; this module is the sole conversion implementation.
 import type { MatrixDiag } from '../../../packages/conversion-core/diag.ts';
 import type { IrProtocol, IrRequest } from '../../../packages/conversion-core/ir.ts';
+import { isMatrixPair } from '../../../packages/conversion-core/protocol-pairs.ts';
 import type { ConversionResult, StructuredOutputStrategy } from '../../../packages/conversion-core/result.ts';
 import { ConversionError } from '../../../packages/conversion-core/validation.ts';
 import { buildAnthropicRequest, parseAnthropicRequest } from './anthropic.ts';
 import { buildChatRequest, parseChatRequest } from './chat.ts';
 import { buildResponsesRequest, parseResponsesRequest } from './responses.ts';
 
-const MATRIX_PROTOCOLS: readonly IrProtocol[] = ['openai_chat', 'openai_responses', 'anthropic'];
-
-/** True for every directed pair the matrix owns (all distinct protocol pairs). */
-export function isMatrixPair(from: IrProtocol, to: IrProtocol): boolean {
-  if (from === to) return false;
-  if (!MATRIX_PROTOCOLS.includes(from) || !MATRIX_PROTOCOLS.includes(to)) return false;
-  return true;
-}
+export { isMatrixPair } from '../../../packages/conversion-core/protocol-pairs.ts';
 
 // ---- Request translation ----------------------------------------------------
 

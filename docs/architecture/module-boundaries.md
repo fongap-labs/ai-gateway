@@ -118,7 +118,7 @@ Gateway 的 `runFallbackChain` 继续进行独立转换可行性和高风险语�
 
 已绑定 `AIG_INFERENCE_SERVICE` 的 Gateway 在跨协议 fallback 前调用 `/internal/conversion/preflight`（独立版本 1、复用中心高熵认证、1.5s 上限，校验 UUID 和 Deadline）。中心只读解析客户端正文并运行 Matrix 请求转换，响应**仅包含固定的 fidelity/diagnostics/structuredOutput 或拒绝字段名**，不返回提示词、消息、工具参数、转换后的正文，也不接触 Provider 或任何 OAuth 凭据。
 
-Gateway 依据诊断继续拒绝高风险语义丢失并安排 Tier 选择；中心不拥有重试、Hedge、429、节点权重和物理尝试预算。中心拒绝或连线故障会返回明确的 503，**不能回退为 Gateway 本地转换或 Provider 直连**，且不计入物理尝试。此端点必须随中心先部署，再部署 Gateway 的委托调用。尚未绑定中心的兼容路径仍由 Gateway 本地执行转换并保留其原有行为，以便最后删除旧 Provider 路径时统一清理。
+Gateway 依据诊断继续拒绝高风险语义丢失并安排 Tier 选择；中心不拥有重试、Hedge、429、节点权重和物理尝试预算。中心拒绝或连线故障会返回明确的 503，**不能回退为 Gateway 本地转换或 Provider 直连**，且不计入物理尝试。此端点必须随中心先部署，再部署 Gateway 的委托调用。Gateway 跨协议 fallback 已不再本地执行请求正文转换；中心绑定缺失、凭据无效或预检不可用时直接失败关闭，不触发物理 Provider 请求。Gateway 的历史矩阵响应 SSE/IR 处理仍需独立下沉，不等于轻网关已全部完成。
 
 当前新增预检独立内网调用（仅跨协议 fallback 阶段），需后续观察其耗时和消耗；不作为生产部署验收或性能改进的证明。SSE 流式响应下沉与完整撤除旧直连仍未完成。
 
