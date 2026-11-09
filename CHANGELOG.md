@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: prefer-nonstream v3 在私有中心统一收集意外 SSE、拒绝无效 JSON；Gateway 对 v3/v6 未标记对象失败关闭并为中心缓冲保留请求预算；无部署变更。
+
 - 新增: 私有推理中心 v6 非流式 Matrix SSE 对象收集与额度预算合同，Gateway 对未标记的响应拒绝回退本地转换；无部署变更。
 
 - 修复: Gateway 部署准入要求双私有中心绑定，禁止公网网关继续持有 Provider Token Secret 分片。
