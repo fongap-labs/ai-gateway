@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
+import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
@@ -33,8 +34,11 @@ assert.deepEqual(
   'Token tier is terminal; no third tier can receive unused attempts',
 );
 
+const CUTOVER_MODEL = 'cutover-contract-model';
+const MOCK_UPSTREAM_MODEL = 'mock-upstream-model';
+
 function node(id, fields = {}) {
-  return { id, provider: 'openai', base_url: 'https://api.example.invalid/v1', models: { 'Code-Pro': 'upstream-model' }, ...fields };
+  return { id, provider: 'openai', base_url: 'https://api.example.invalid/v1', models: { [CUTOVER_MODEL]: MOCK_UPSTREAM_MODEL }, ...fields };
 }
 const base = {
   AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
@@ -164,4 +168,60 @@ const twoTierPolicy = {
 assert.deepEqual(getPoliciesConfigDiagnostics(twoTierPolicy), []);
 assert.equal(loadGatewayConfig(twoTierPolicy).ready, true);
 
-console.log('Two-Tier runtime contracts passed (routing, metadata, private credentials and fail-closed migration guards).');
+async function verifyTier1FailureFallsBack(status) {
+  const tier1Id = `free-${status}`;
+  const tier2Id = `token-${status}`;
+  const requestOrder = [];
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    AIG_TIER1_NODES_01: JSON.stringify([node(tier1Id)]),
+    AIG_TIER2_NODES_01: JSON.stringify([node(tier2Id)]),
+    AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({
+      default: { max_attempts: 2, tier_attempts: { tier1: 1, tier2: 1 }, hedge: { enabled: false } },
+    }),
+    AIG_INFERENCE_SERVICE: {
+      async fetch(request) {
+        const id = request.headers.get('x-aig-node-id');
+        requestOrder.push(id);
+        if (id === tier1Id) {
+          return new Response(JSON.stringify({ error: { message: 'mock transient failure' } }), {
+            status,
+            headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+          });
+        }
+        assert.equal(id, tier2Id, 'Only the configured Tier 2 Token may receive the fallback');
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-mock',
+            object: 'chat.completion',
+            created: 1,
+            model: CUTOVER_MODEL,
+            choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+        );
+      },
+    },
+  };
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
+  const responseText = await response.text();
+  assert.equal(response.status, 200, `Tier 2 must recover after Tier 1 returns ${status}: ${responseText}`);
+  assert.deepEqual(requestOrder, [tier1Id, tier2Id], `Tier 1 ${status} must be followed by one Tier 2 dispatch`);
+  assert.ok(responseText.includes('ok'));
+}
+
+await verifyTier1FailureFallsBack(429);
+await verifyTier1FailureFallsBack(503);
+
+console.log(
+  'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, routing, metadata, private credentials and fail-closed migration guards).',
+);

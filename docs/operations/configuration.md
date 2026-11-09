@@ -133,7 +133,7 @@ Tier 1 → Tier 2
 
 旧 Tier 2 的 Claude/Codex/Gemini 会员代理、OAuth、Token 刷新及专有适配器已删除。所有 `/oauth/*` 路由返回 404。旧 `AIG_OAUTH_*`、`AIG_TOKEN_ENCRYPTION_KEY` 和 `AIG_IS_SUBSCRIPTION_ENABLED` 配置被拒绝，不可重新启用。
 
-将原 Tier 3 静态 Token 迁移到新 Tier 2 之前，运行 `npm run config:cutover:plan` 进行脱敏清点；必须核对旧 Tier 2 静态 Key 是否仍需保留、节点 ID 是否冲突及策略预算。系统不会自动读取、复制或删除旧生产 Secret，也不会更改历史 D1 迁移记录。
+将原 Tier 3 静态 Token 迁移到新 Tier 2 之前，在受保护环境中给 `npm run config:cutover:plan` 提供旧 Tier 1/2/3 节点、节点 ID 凭据索引、`AIG_POLICIES_CONFIG` 和 `AIG_MODELS_CONFIG`（不存在时显式提供空对象）。报告核对 Tier 2 静态 Key 保留、OAuth 节点退役、ID/凭据引用冲突、模型映射指纹和策略额度改写；不输出上游模型名或凭据值。它无法验证不同节点是否引用了相同真实 Secret 值。系统不会自动读取、复制或删除旧生产 Secret，也不会更改历史 D1 迁移记录。
 
 ## 运行时变量
 

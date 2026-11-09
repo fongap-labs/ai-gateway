@@ -1,17 +1,21 @@
 #!/usr/bin/env node
+
 // SPDX-License-Identifier: MIT
 // Dry-run preflight for the one-time three-to-two Tier configuration cutover.
 // This tool does not fetch, decrypt, print, or write any Provider credentials.
 
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
+import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from '../src/config/policies.ts';
 import { assertNodesArray } from './node-config-shards.mjs';
 
 const TIERS = [1, 2, 3];
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const POLICY_NAME = /^[a-zA-Z0-9._-]{1,80}$/;
-const ALLOWED_OPTIONS = new Set(['tier1', 'tier2', 'tier3', 'credential-index', 'policies']);
+const ALLOWED_OPTIONS = new Set(['tier1', 'tier2', 'tier3', 'credential-index', 'policies', 'model-catalog']);
 
 const LEGACY_OAUTH_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
 
@@ -49,11 +53,101 @@ function safePolicyName(name) {
   return POLICY_NAME.test(name) ? name : '(invalid policy name)';
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (plainObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function fingerprint(value) {
+  return createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function auditModelMappings(models, catalogNames = []) {
+  if (!plainObject(models)) throw new Error('Model mappings must be an object.');
+  const canonicalNames = new Map();
+  for (const name of catalogNames) {
+    if (typeof name !== 'string' || !name.trim()) continue;
+    const key = name.trim().toLowerCase();
+    if (!canonicalNames.has(key)) canonicalNames.set(key, name.trim());
+  }
+  const normalized = new Map();
+  for (const [rawName, rawUpstream] of Object.entries(models)) {
+    const name = rawName.trim();
+    if (!name || typeof rawUpstream !== 'string' || !rawUpstream.trim()) {
+      throw new Error('Invalid logical-to-upstream model mapping.');
+    }
+    const canonical = canonicalNames.get(name.toLowerCase()) ?? name;
+    const upstream = rawUpstream.trim();
+    const previous = normalized.get(canonical);
+    if (previous !== undefined && previous !== upstream) {
+      throw new Error('Ambiguous logical-to-upstream model mapping.');
+    }
+    normalized.set(canonical, upstream);
+  }
+  const entries = [...normalized.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return {
+    source_entry_count: Object.keys(models).length,
+    logical_model_count: entries.length,
+    collapsed_case_alias_count: Object.keys(models).length - entries.length,
+    wildcard: entries.length === 0,
+    mapping_fingerprint_sha256: fingerprint(entries),
+  };
+}
+
+function auditModelCatalog(modelCatalog, policies, blockers) {
+  if (modelCatalog === null) {
+    blockers.push('Model catalog inventory not supplied; pass --model-catalog with {} when no explicit catalog exists');
+    return { supplied: false, valid: false, entry_count: 0, fingerprint_sha256: null };
+  }
+  if (!plainObject(modelCatalog)) {
+    blockers.push('Model catalog must be an object keyed by logical model name');
+    return { supplied: true, valid: false, entry_count: 0, fingerprint_sha256: null };
+  }
+
+  const env = {
+    AIG_MODELS_CONFIG: JSON.stringify(modelCatalog),
+    AIG_POLICIES_CONFIG: JSON.stringify(plainObject(policies) ? policies : {}),
+  };
+  const modelErrors = getModelsConfigDiagnostics(env);
+  const policyNames = loadPoliciesConfig(env);
+  const loadedModels = loadModelsConfig(env);
+  const canonicalCatalogNames = new Map();
+  let ambiguousCatalog = false;
+  let unresolvedPolicyCount = 0;
+  for (const name of Object.keys(loadedModels)) {
+    const key = name.trim().toLowerCase();
+    const previous = canonicalCatalogNames.get(key);
+    if (previous !== undefined && stableJson(modelCatalog[previous]) !== stableJson(modelCatalog[name])) ambiguousCatalog = true;
+    else if (previous === undefined) canonicalCatalogNames.set(key, name);
+    const policy = loadedModels[name]?.policy?.policy;
+    if (policy && !Object.hasOwn(policyNames, policy)) {
+      unresolvedPolicyCount += 1;
+      blockers.push(`Model ${safePolicyName(name)} references a policy missing from the supplied policy inventory`);
+    }
+  }
+  if (modelErrors.length > 0 || ambiguousCatalog) {
+    blockers.push('Model catalog failed runtime validation or has case-insensitive policy/capability conflicts');
+  }
+  return {
+    supplied: true,
+    valid: modelErrors.length === 0 && !ambiguousCatalog && unresolvedPolicyCount === 0,
+    entry_count: Object.keys(loadedModels).length,
+    unresolved_policy_reference_count: unresolvedPolicyCount,
+    fingerprint_sha256: fingerprint(modelCatalog),
+  };
+}
+
 function tierNodes(tiers, tier) {
   return tiers?.[tier] ?? tiers?.[`tier${tier}`] ?? [];
 }
 
-export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policies = null } = {}) {
+export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policies = null, modelCatalog = null } = {}) {
   const blockers = [];
   const warnings = [];
   const nodeMoves = [];
@@ -93,28 +187,52 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
       blockers.push(`${label}: invalid source node configuration; run config:check`);
       continue;
     }
+    const catalogNames = plainObject(modelCatalog) ? Object.keys(modelCatalog) : [];
     for (const node of nodes) {
-      const previous = seen.get(node.id);
-      if (previous !== undefined) {
-        blockers.push(`Duplicate node ID ${node.id} in tier${previous} and ${label}`);
+      let modelMapping;
+      try {
+        modelMapping = auditModelMappings(node.models, catalogNames);
+      } catch {
+        blockers.push(`${label}: node has ambiguous or invalid model mappings; review the source mapping explicitly`);
         continue;
       }
-      seen.set(node.id, tier);
+      const nodeId = node.id.trim();
+      const previous = seen.get(nodeId);
+      if (previous !== undefined) {
+        blockers.push(`Duplicate node ID ${nodeId} in tier${previous} and ${label}`);
+        continue;
+      }
+      seen.set(nodeId, tier);
       if (node.auth === 'oauth') {
-        retiredOauth.push({ node_id: node.id, source_tier: tier, action: 'retire_subscription_node' });
+        retiredOauth.push({
+          node_id: nodeId,
+          source_tier: tier,
+          action: 'retire_subscription_node',
+          retired_model_mapping: modelMapping,
+        });
         continue;
       }
       const targetTier = tier === 1 ? 1 : 2;
       targetCounts[`tier${targetTier}`] += 1;
       nodeMoves.push({
-        node_id: node.id,
+        node_id: nodeId,
         source_tier: tier,
         target_tier: targetTier,
         action: tier === 1 ? 'retain_free' : tier === 2 ? 'retain_static_token' : 'promote_paid_token',
         source_credential_prefix: `AIG_TIER${tier}_CREDENTIALS_`,
         target_credential_prefix: `AIG_TIER${targetTier}_CREDENTIALS_`,
+        model_mapping: modelMapping,
       });
     }
+  }
+
+  const classifiedNodeCount = nodeMoves.length + retiredOauth.length;
+  const sourceNodeCount = Object.values(sourceCounts).reduce((total, count) => total + count, 0);
+  const unclassifiedNodeCount = sourceNodeCount - classifiedNodeCount;
+  if (unclassifiedNodeCount > 0) {
+    blockers.push(
+      `${unclassifiedNodeCount} source node(s) have no safe migration action because their metadata is invalid or conflicts with another node`,
+    );
   }
 
   if (nodeMoves.length === 0) blockers.push('No static-credential nodes are available for the target configuration');
@@ -146,7 +264,7 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
       }
     }
     for (const [id, tier] of credentialOwners) {
-      const nodeTier = seen.get(id);
+      const nodeTier = seen.get(id.trim());
       if (nodeTier === undefined) {
         blockers.push(`Credential metadata for ${id} has no matching configured node`);
       } else if (tier !== nodeTier) {
@@ -163,6 +281,7 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
   }
 
   if (policies === null) blockers.push('Policy inventory not supplied; pass --policies with {} when no custom policies exist');
+  let policyDiagnostics = [];
   if (policies !== null) {
     if (!plainObject(policies)) {
       blockers.push('Policies must be an object keyed by policy name');
@@ -190,12 +309,26 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
           if (hasOldThree) reasons.push('old_tier3_attempt_limit');
           if (hasOldTwo && hasOldThree) reasons.push('limits_cannot_be_merged_implicitly');
           if (affectedHedge) reasons.push('hedge_tiers_require_review');
-          policyReviews.push({ policy: safe, reasons, action: 'review_and_rewrite_explicitly' });
+          policyReviews.push({
+            policy: safe,
+            reasons,
+            legacy_tier_attempts: {
+              ...(hasOldTwo ? { tier2: Number.isFinite(attempts.tier2) ? attempts.tier2 : null } : {}),
+              ...(hasOldThree ? { tier3: Number.isFinite(attempts.tier3) ? attempts.tier3 : null } : {}),
+            },
+            legacy_hedge_tiers: affectedHedge ? hedgeTiers.filter((value) => value === 'tier2' || value === 'tier3') : [],
+            action: 'review_and_rewrite_explicitly',
+          });
           blockers.push(`Policy ${safe} requires explicit two-tier budget/hedge review`);
         }
       }
     }
+    const policyEnv = { AIG_POLICIES_CONFIG: JSON.stringify(policies) };
+    policyDiagnostics = getPoliciesConfigDiagnostics(policyEnv);
+    if (policyDiagnostics.length > 0) blockers.push('Policy inventory failed the shared runtime policy validator; run config:check');
   }
+
+  const modelCatalogAudit = auditModelCatalog(modelCatalog, policies, blockers);
 
   warnings.push('Plan is a read-only preview; no environment variables, Secrets, policies, D1 data or deployments are changed');
   warnings.push('Credential index contains node IDs only; matching credential VALUES or duplicate secret material cannot be verified here');
@@ -206,10 +339,18 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
     mode: 'three_to_two_tier_preflight',
     preflight_passed: blockers.length === 0,
     source_counts: sourceCounts,
+    unclassified_source_node_count: unclassifiedNodeCount,
     target_counts: targetCounts,
     node_moves: nodeMoves,
     retired_oauth_nodes: retiredOauth,
     policy_reviews: policyReviews,
+    model_catalog: modelCatalogAudit,
+    policy_inventory: {
+      supplied: policies !== null,
+      valid: policies !== null && plainObject(policies) && policyDiagnostics.length === 0,
+      policy_count: plainObject(policies) ? Object.keys(policies).length : 0,
+      fingerprint_sha256: policies !== null ? fingerprint(policies) : null,
+    },
     blockers,
     warnings,
   };
@@ -220,7 +361,7 @@ function argumentsFrom(argv) {
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.replace(/^--/, '');
     if (!argv[i]?.startsWith('--') || !ALLOWED_OPTIONS.has(key) || !argv[i + 1] || argv[i + 1].startsWith('--') || Object.hasOwn(args, key)) {
-      throw new Error('Invalid or repeated option; see the documented --tier1/--tier2/--tier3/--credential-index/--policies flags');
+      throw new Error('Invalid or repeated option; see the documented --tier1/--tier2/--tier3/--credential-index/--policies/--model-catalog flags');
     }
     args[key] = argv[i + 1];
   }
@@ -246,7 +387,8 @@ async function main() {
   const tiers = Object.fromEntries(TIERS.filter((tier) => args[`tier${tier}`]).map((tier) => [tier, readJson(args[`tier${tier}`], `tier${tier}`)]));
   const credentialIndex = args['credential-index'] ? readJson(args['credential-index'], 'credential-index') : null;
   const policies = args.policies ? readJson(args.policies, 'policies') : null;
-  const result = planTwoTierCutover({ tiers, credentialIndex, policies });
+  const modelCatalog = args['model-catalog'] ? readJson(args['model-catalog'], 'model catalog') : null;
+  const result = planTwoTierCutover({ tiers, credentialIndex, policies, modelCatalog });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.preflight_passed) process.exitCode = 2;
 }
