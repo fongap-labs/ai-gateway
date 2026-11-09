@@ -151,6 +151,32 @@ for (const required of ['OPENAI_REMAINING_REQUESTS', 'ANTHROPIC_REMAINING_REQUES
   assert.ok(sharedQuotaSignal.includes(required), `Quota parsing must retain ${required}`);
 }
 
+// OpenAI/Anthropic native wire contracts are shared transport primitives;
+// legacy provider transport files must not duplicate executable semantics.
+for (const [legacy, owner, symbols] of [
+  ['src/transport/openai.ts', 'packages/transport/openai-native.ts', ['buildOpenAIHeaders', 'resolveOpenAIPath', 'isOpenAIChatRealOutput']],
+  [
+    'src/transport/anthropic.ts',
+    'packages/transport/anthropic-native.ts',
+    ['buildAnthropicHeaders', 'resolveAnthropicPath', 'isAnthropicNativeRealOutput'],
+  ],
+]) {
+  const shim = readFileSync(join(root, legacy), 'utf8');
+  const code = readFileSync(join(root, owner), 'utf8');
+  const relativeOwner = owner.replace(/^packages\//, '../../packages/');
+  assert.ok(shim.includes(`export * from '${relativeOwner}';`), `${legacy} must only re-export neutral wire owner`);
+  assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+  assert.ok(code.includes("from '../contracts/protocol.ts'"), `${owner} must consume shared protocol types`);
+  assert.doesNotMatch(code, /from ['"][^'"]*\/src\//);
+  for (const symbol of symbols) {
+    assert.ok(code.includes(`function ${symbol}(`), `${owner} must implement ${symbol}`);
+  }
+}
+const legacyTransportFacade = readFileSync(join(root, 'src/transport/index.ts'), 'utf8');
+assert.ok(legacyTransportFacade.includes("from '../../packages/transport/openai-native.ts'"));
+assert.ok(legacyTransportFacade.includes("from '../../packages/transport/anthropic-native.ts'"));
+assert.doesNotMatch(legacyTransportFacade, /from ['"]\.\/(?:openai|anthropic)\.ts['"]/);
+
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [
@@ -336,7 +362,7 @@ assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
 );
-// Buffered object success now has a single Gateway owner.
+// Buffered response completion must be Gateway-owned; old imports are shims.
 const legacyObjectSuccess = readFileSync(join(root, 'src/request/attempt/success-object.ts'), 'utf8');
 const ownedObjectSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-object.ts'), 'utf8');
 assert.ok(
