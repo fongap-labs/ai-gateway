@@ -35,7 +35,6 @@ import {
 } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
-import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import {
@@ -55,6 +54,7 @@ import {
   recordTokens,
   recordUndeliveredUpstreamAttempt,
 } from './observability.ts';
+import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 

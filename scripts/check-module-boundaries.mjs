@@ -368,7 +368,7 @@ for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUnde
 }
 assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Accounting must use Gateway body release');
 assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Accounting must reuse Gateway response helpers');
-for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts']) {
+for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts']) {
   const path = `src/request/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
   assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
@@ -379,6 +379,28 @@ for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts'
   const consumer = readFileSync(join(root, path), 'utf8');
   assert.ok(consumer.includes("from './observability.ts'"), `${path} must reuse local Gateway accounting`);
   assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/\.\.\/src\/request\/attempt\/observability\.ts['"]/);
+}
+
+// Failure, rotation and adaptive 429 state belong to one Gateway owner.
+const legacyOutcome = readFileSync(join(root, 'src/request/attempt/outcome.ts'), 'utf8');
+const ownedOutcome = readFileSync(join(root, 'apps/gateway/attempt/outcome.ts'), 'utf8');
+assert.ok(legacyOutcome.includes("export * from '../../../apps/gateway/attempt/outcome.ts';"), 'Old outcome path must forward');
+assert.doesNotMatch(legacyOutcome, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+for (const name of ['rotateWithNeutralEnd', 'noteFailure', 'hedgeLoserOutcome', 'recordOutcome']) {
+  assert.ok(ownedOutcome.includes(`export function ${name}(`), `Gateway must own ${name}`);
+}
+for (const invariant of ['nextAdaptive429CooldownMs(', 'snapshotAdaptive429State(', 'rate_limit_stage=']) {
+  assert.ok(ownedOutcome.includes(invariant), `Adaptive 429 outcome must preserve ${invariant}`);
+}
+assert.ok(ownedOutcome.includes("from './observability.ts'"), 'Outcome must share unique Gateway attempt accounting');
+assert.ok(ownedOutcome.includes("from '../response/response-helpers.ts'"), 'Outcome must reuse Gateway response helpers');
+for (const file of ['success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts']) {
+  const code = readFileSync(join(root, 'apps/gateway/attempt', file), 'utf8');
+  assert.ok(code.includes("from './outcome.ts'"), `${file} must call Gateway-owned outcome`);
+}
+for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
+  const code = readFileSync(join(root, 'src/request/attempt', file), 'utf8');
+  assert.ok(code.includes("from '../../../apps/gateway/attempt/outcome.ts'"), `${file} must call Gateway-owned outcome`);
 }
 
 // Gateway owns safe large-body release, buffered response decisions, and
@@ -449,12 +471,16 @@ for (const path of [
   'apps/gateway/request-handler.ts',
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
-  'src/request/attempt/outcome.ts',
+  'apps/gateway/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',
 ]) {
   const consumer = readFileSync(join(root, path), 'utf8');
-  const prefix = path.startsWith('apps/') ? './response/' : '../../../apps/gateway/response/';
+  const prefix = path.startsWith('apps/gateway/attempt/')
+    ? '../response/'
+    : path.startsWith('apps/')
+      ? './response/'
+      : '../../../apps/gateway/response/';
   assert.ok(
     consumer.includes(`from '${prefix}errors.ts'`) || consumer.includes(`from '${prefix}response-helpers.ts'`),
     `${path} must consume the Gateway-owned response implementation directly`,

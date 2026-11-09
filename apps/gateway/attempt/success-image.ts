@@ -8,11 +8,11 @@
 import { corsHeaders, readBodyTextBounded } from '../../../src/protocol/http.ts';
 import { getProviderAdapter } from '../../../src/providers/registry.ts';
 import { classifyClientAbort, classifyEmptyResponse, KIND } from '../../../src/reliability/classify.ts';
-import { recordOutcome, rotateWithNeutralEnd } from '../../../src/request/attempt/outcome.ts';
 import type { AttemptOutcome } from '../../../src/types/request.ts';
 import { gatewayError } from '../response/errors.ts';
 import { jsonResponse } from '../response/response-helpers.ts';
 import { recordNodeSuccess } from './observability.ts';
+import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 
 // Buffered native conversion is deliberately small: large image JSON
