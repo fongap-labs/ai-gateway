@@ -8,7 +8,6 @@ import { classifyClientAbort, classifyFirstEventFailure } from '../../../src/rel
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
-import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../../src/transport/index.ts';
@@ -16,6 +15,7 @@ import type { AttemptOutcome } from '../../../src/types/request.ts';
 import { gatewayError } from '../response/errors.ts';
 import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
 import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from './observability.ts';
+import type { SuccessArgs } from './success.ts';
 
 export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
