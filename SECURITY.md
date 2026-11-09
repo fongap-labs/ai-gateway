@@ -20,7 +20,7 @@
 
 ## 部署职责
 
-- 将已配置的 `AIG_ACCESS_KEY_AIR`、`AIG_ACCESS_KEY_PRO`、`AIG_ACCESS_KEY_MAX`、`AIG_ACCESS_KEY_ULTRA`、`AIG_ACCESS_KEY_AGENT` 值，以及所有 `AIG_TIER{1,2,3}_CREDENTIALS_*` 分片，存储为 Cloudflare Secret。将对应的 `AIG_ACCESS_MODELS_AIR`、`AIG_ACCESS_MODELS_PRO`、`AIG_ACCESS_MODELS_MAX`、`AIG_ACCESS_MODELS_ULTRA`、`AIG_ACCESS_MODELS_AGENT` 值，以及节点配置（`AIG_TIER{1,2,3}_NODES_*`），存储为非敏感变量。节点凭据按 **Tier + node id** 绑定；`01..10` 仅为分片编号，Config 与 Secret 的分片后缀相互独立（independent），无需一一对应；
+- 将已配置的 `AIG_ACCESS_KEY_AIR`、`AIG_ACCESS_KEY_PRO`、`AIG_ACCESS_KEY_MAX`、`AIG_ACCESS_KEY_ULTRA`、`AIG_ACCESS_KEY_AGENT` 值，以及所有 `AIG_TIER{1,2}_CREDENTIALS_*` 分片，存储为 Cloudflare Secret。将对应的 `AIG_ACCESS_MODELS_AIR`、`AIG_ACCESS_MODELS_PRO`、`AIG_ACCESS_MODELS_MAX`、`AIG_ACCESS_MODELS_ULTRA`、`AIG_ACCESS_MODELS_AGENT` 值，以及节点配置（`AIG_TIER{1,2}_NODES_*`），存储为非敏感变量。节点凭据按 **Tier + node id** 绑定；`01..10` 仅为分片编号，Config 与 Secret 的分片后缀相互独立（independent），无需一一对应；
 - 切勿提交 `.dev.vars`、`.env`、`secrets*.json` 或 `wrangler.user.jsonc`；生产环境的自定义域名应放在 `wrangler.user.jsonc`（已被 git 忽略）中，参见 `wrangler.user.jsonc.example`；
 - 切勿通过 URL 查询参数传递凭据；
 - 保持 `/health` 与 `/metrics` 受保护；
@@ -62,18 +62,8 @@
 
 公开仪表盘（`/`）与状态徽章（`/readme-status.svg`）由 `AIG_PUBLIC_DASHBOARD` 控制，**默认开启**（`true`）；设为 `false` 时两者均返回 404。匿名访客可以看到模型状态与用量聚合；仪表盘**不**列出访问密钥分组名（`AIR`、`PRO`、`MAX`、`ULTRA`、`AGENT` 等），分组名属于运营信息。
 
-## Google OAuth 客户端常量
+## 已退役的会员订阅执行层
 
-`src/providers/google.ts` 中的 Google OAuth `client_id` 与 `client_secret`，取自 Gemini CLI 的公开 OAuth 客户端（Apache-2.0 许可，参见 https://github.com/google-gemini/gemini-cli）。它们是为已安装应用设计的公开常量，**不**被视为机密。OAuth 接入流程仅将其用于 Tier 2 的 Gemini Code Assist 订阅；客户端提供的凭据绝不会到达上游 provider。
+旧 Tier 2 的 OAuth 会员代理、订阅专有适配器与 Token 刷新代码已从应用层和共享包中删除。新 Tier 2 只使用由私有执行中心读取的静态 API Token；旧 OAuth 节点配置及相关运行时变量会被拒绝，`/oauth/*` 返回 404。
 
-## 订阅代理与 provider 条款
-
-Tier 2 订阅节点（`auth: "oauth"`）以供应商自身的命令行客户端身份调用 Claude、Codex 与 Gemini 的订阅端点：适配器会发送第一方客户端头部与 user agent（例如 `claude-cli`、`codex-tui` 与 `GeminiCLI`），对于 Gemini，还会使用公开的 Gemini CLI OAuth 客户端。这些供应商的条款可能不允许通过第三方代理使用订阅；供应商可能会对此类账号实施限流、暂停或封禁。是否启用订阅节点，是运营者自身的决定并自行承担风险；请先审阅各 provider 的最新条款。
-
-设置 `AIG_IS_SUBSCRIPTION_ENABLED=false` 可移除该功能：不会加载任何 Tier 2 `oauth` 节点，且每个 `/oauth/*` 路由都会返回 404。默认值为 `true`，即保持当前行为。
-
-## OAuth 启动凭据处理
-
-`/oauth/start` 端点要求提供网关访问密钥以进行运营者鉴权。凭据仅可通过 `Authorization: Bearer` 或 `x-api-key` 头部提供，或通过 HTML 粘贴表单在请求体中提交密钥（绝不在 URL 查询参数中）。为防止凭据泄露到日志、浏览器历史与截图中，已不再接受查询字符串形式的凭据（`?key=...`）。
-
-接入页面是唯一提交表单的 HTML 页面，其 Content-Security-Policy 允许 `form-action 'self'`，以便将密钥回传到网关；其他所有 HTML 页面保持 `form-action 'none'`。表单提交之后，网关会通过一个刷新页面将浏览器导向 provider，因为跟随表单提交的重定向会受到 `form-action` 的限制。
+历史 D1 迁移不可改写；旧数据和远程 Cloudflare Secrets 必须通过另行审批的受控清理流程处理，不能由普通代码合并或部署自动销毁。
