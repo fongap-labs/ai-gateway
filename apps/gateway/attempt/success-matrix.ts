@@ -12,11 +12,7 @@ import type { BudgetStopReason } from '../../../src/conversion/matrix/budget.ts'
 import type { IrProtocol } from '../../../src/conversion/matrix/ir.ts';
 import { isRecord } from '../../../src/conversion/matrix/ir.ts';
 import { readBufferedReplyText } from '../../../src/protocol/http.ts';
-import {
-  classifyClientAbort,
-  classifyFirstEventFailure,
-  classifyPostHeadersFailure,
-} from '../../../src/reliability/classify.ts';
+import { classifyClientAbort, classifyFirstEventFailure, classifyPostHeadersFailure } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
@@ -123,7 +119,11 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     if (object.model !== undefined) object.model = requestedModel;
     return { response: jsonResponse(200, object, env, request, extraHeaders) };
   }
-  if (!s.centerFramedStreamExpected || responseFormat !== INFERENCE_FRAMED_STREAM_FORMAT || !contentType.includes(INFERENCE_FRAMED_STREAM_CONTENT_TYPE)) {
+  if (
+    !s.centerFramedStreamExpected ||
+    responseFormat !== INFERENCE_FRAMED_STREAM_FORMAT ||
+    !contentType.includes(INFERENCE_FRAMED_STREAM_CONTENT_TYPE)
+  ) {
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     return { response: gatewayError(request, env, route, 502, 'Private inference stream format mismatch.', requestId) };
@@ -302,5 +302,4 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   // No client-side object assembly is permitted in the Gateway.
   recordUndeliveredUpstreamAttempt(c, node);
   return { response: gatewayError(request, env, route, 502, 'Unexpected private inference response type.', requestId) };
-
 }
