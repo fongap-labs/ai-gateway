@@ -145,9 +145,7 @@ assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
-for (const [legacy, owner, symbol] of [
-  ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
-]) {
+for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess']]) {
   const shim = readFileSync(join(root, legacy), 'utf8');
   const impl = readFileSync(join(root, owner), 'utf8');
   assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must re-export the unique Gateway owner`);
