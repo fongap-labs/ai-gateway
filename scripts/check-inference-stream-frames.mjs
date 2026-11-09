@@ -10,7 +10,7 @@ import {
   INFERENCE_FRAMED_STREAM_FORMAT,
   unframeInferenceStream,
 } from '../packages/contracts/inference-stream-frames.ts';
-import { decodeFramedInferenceResponse } from '../src/inference/inference-stream-client.ts';
+import { decodeFramedInferenceResponse } from '../apps/gateway/transport/inference-stream-client.ts';
 
 const encoder = new TextEncoder();
 function source(bytes) {
