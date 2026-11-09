@@ -54,10 +54,12 @@ export function parseJsonFile(filePath) {
   }
 }
 
-// assertNodesArray validates one tier's node config. tierNumber must be the
-// real tier the array will shard into; omitting it is fail-closed (nodes that
-// declare auth:"oauth" are rejected because their tier cannot be proven).
+// assertNodesArray validates a tier's node config and rejects legacy Tier 3.
+// Nodes never declare OAuth subscriber authentication in the new two-tier form.
 export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
+  if (tierNumber !== undefined && tierNumber !== 1 && tierNumber !== 2) {
+    throw new Error(`${label}: unsupported Tier ${tierNumber}; run the two-tier cutover preflight`);
+  }
   if (!Array.isArray(nodes)) throw new Error(`${label} must be a JSON array`);
 
   const seen = new Set();
@@ -184,7 +186,6 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
     throw new Error('Old Tier 3 node configuration is not supported; run the explicit two-tier cutover plan');
   }
   const globalNodeIds = new Map();
-  const globalNodes = new Map();
   for (const tierNumber of [1, 2]) {
     const nodes = tiers[tierNumber];
     if (!nodes) continue;
@@ -194,7 +195,6 @@ export function buildPlan({ tiers, secretsMap, existingVarNames = [], existingSe
         throw new Error(`duplicate node id "${node.id}" across TIER${globalNodeIds.get(node.id)} and TIER${tierNumber}`);
       }
       globalNodeIds.set(node.id, tierNumber);
-      globalNodes.set(node.id, node);
     }
   }
   if (secretsMap !== undefined && secretsMap !== null) assertSecretsObject(secretsMap);
