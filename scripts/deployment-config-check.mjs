@@ -41,7 +41,7 @@ const accessGroupPattern = KEY_GROUPS.join('|');
 const pkg = JSON.parse(read('package.json'));
 const operationsBuild = JSON.parse(read('wrangler.operations-build.jsonc'));
 assert.equal(operationsBuild.name, 'ai-operations-build-check');
-assert.equal(operationsBuild.main, 'operations/index.ts');
+assert.equal(operationsBuild.main, 'operations/standalone.ts');
 assert.equal(operationsBuild.workers_dev, false);
 assert.equal(operationsBuild.compatibility_date, config.compatibility_date);
 for (const key of ['triggers', 'routes', 'route', 'custom_domains', 'services', 'vars', 'secrets', 'kv_namespaces', 'd1_databases', 'inherit']) {
