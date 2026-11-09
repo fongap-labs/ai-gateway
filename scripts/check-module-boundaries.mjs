@@ -157,6 +157,28 @@ for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 
 const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
 assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
 
+// Matrix reply handling belongs to Gateway; the original request module
+// only forwards its exports. Keep real transport, account, and finalization
+// assertions attached to the owned file rather than its compatibility shim.
+const legacyMatrixSuccess = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+const ownedMatrixSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
+assert.ok(
+  legacyMatrixSuccess.includes("export * from '../../../apps/gateway/attempt/success-matrix.ts';"),
+  'Old matrix response path must forward to its unique Gateway owner',
+);
+assert.doesNotMatch(legacyMatrixSuccess, /^(?:import|export (?:async )?(?:function|const|class)) /m);
+assert.match(ownedMatrixSuccess, /export function isMatrixConversion\(/);
+assert.match(ownedMatrixSuccess, /export async function handleMatrixSuccess\(/);
+assert.match(ownedMatrixSuccess, /from '\.\/oversize\.ts'/);
+assert.match(ownedMatrixSuccess, /from '\.\.\/response\/errors\.ts'/);
+assert.match(ownedMatrixSuccess, /from '\.\.\/response\/response-helpers\.ts'/);
+assert.match(ownedMatrixSuccess, /from '\.\.\/transport\/inference-stream-client\.ts'/);
+assert.match(
+  successDispatcher,
+  /from '\.\.\/\.\.\/\.\.\/apps\/gateway\/attempt\/success-matrix\.ts'/,
+  'Success dispatcher must use the Gateway-owned matrix response handler',
+);
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
@@ -178,7 +200,7 @@ assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
 );
-for (const path of ['src/request/attempt/success-matrix.ts', 'src/request/attempt/success-object.ts']) {
+for (const path of ['src/request/attempt/success-object.ts']) {
   const source = readFileSync(join(root, path), 'utf8');
   assert.ok(source.includes("from '../../../apps/gateway/attempt/oversize.ts'"), `${path} must call Gateway-owned oversized-reply handling directly`);
 }
@@ -208,7 +230,6 @@ for (const path of [
   'apps/gateway/request-handler.ts',
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
-  'src/request/attempt/success-matrix.ts',
   'src/request/attempt/success-stream.ts',
   'src/request/attempt/success-object.ts',
   'src/request/attempt/outcome.ts',
@@ -444,7 +465,7 @@ assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'I
 assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
 const responseCenter = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
-const responseGateway = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+const responseGateway = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 const responseContract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
 assert.match(responseCenter, /replyFromNativeObject\(upstreamProtocol, native\)/, 'Inference must decode native reply objects before forwarding');
 assert.match(responseCenter, /replyToObject\(reply, clientProtocol\)/, 'Inference must render the client protocol for v3 objects');
@@ -485,8 +506,8 @@ assert.match(frameContract, /export function unframeInferenceStream\(/, 'Private
 assert.match(frameProducer, /openMatrixStream\(/, 'Inference must execute real Matrix SSE conversion');
 assert.match(frameConsumer, /unframeInferenceStream\(/, 'Gateway decoder must strip private control frames');
 assert.match(
-  readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8'),
-  /apps\/gateway\/transport\/inference-stream-client\.ts/,
+  readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8'),
+  /from '\.\.\/transport\/inference-stream-client\.ts'/,
   'Gateway response handler must import its own private frame decoder',
 );
 assert.doesNotMatch(
@@ -499,7 +520,7 @@ assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame cont
 const inferenceV4Contract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
 const inferenceV4Executor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
 const inferenceV4Dispatcher = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
-const inferenceV4Success = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
 assert.match(inferenceV4Contract, /EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5'/, 'v5 must isolate budgeted streams from legacy v4');
@@ -508,7 +529,7 @@ assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway mus
 assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
 const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
 const budgetGateway = readFileSync(join(root, 'src/request/attempt/inference-dispatch.ts'), 'utf8');
-const budgetSettlement = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
+const budgetSettlement = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference must enforce v5 stream budgets');
 assert.match(budgetGateway, /streamBudget,/, 'Gateway must issue bounded v5 budgets');
 assert.match(budgetSettlement, /centerBudgetStop = reason/, 'Gateway must observe v5 private stop reasons');
