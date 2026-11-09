@@ -13,6 +13,17 @@ for (const unit of ['ir', 'budget', 'diag', 'result', 'validation']) {
   }
 }
 
+const { isMatrixPair } = await import('../packages/conversion-core/protocol-pairs.ts');
+const { isMatrixPair: inferencePair } = await import('../apps/inference/conversion/request.ts');
+const { isMatrixPair: compatibilityPair } = await import('../src/conversion/matrix/pipeline.ts');
+assert.equal(isMatrixPair, inferencePair, 'Inference must reuse the pure protocol-pair predicate');
+assert.equal(isMatrixPair, compatibilityPair, 'Legacy exports must retain function identity');
+for (const from of ['openai_chat', 'openai_responses', 'anthropic']) {
+  for (const to of ['openai_chat', 'openai_responses', 'anthropic']) {
+    assert.equal(isMatrixPair(from, to), from !== to, `Matrix pair ${from} -> ${to}`);
+  }
+}
+
 const { ConversionError, parseToolArguments } = await import('../packages/conversion-core/validation.ts');
 const { MatrixDiag } = await import('../packages/conversion-core/diag.ts');
 const { createMatrixBudget, ConversionBudgetStop } = await import('../packages/conversion-core/budget.ts');
