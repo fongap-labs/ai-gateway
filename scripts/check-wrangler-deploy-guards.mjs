@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Four-Worker production deployment guard regression (no Wrangler calls).
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
@@ -69,5 +70,10 @@ reject({ ...operations, custom_domains: ['public.example.invalid'] });
 const wrongDb = copy(operations);
 wrongDb.d1_databases[0].binding = 'DIFFERENT_DB';
 reject(wrongDb);
+
+
+const wrapper = readFileSync(new URL('./cloudflare-wrangler.mjs', import.meta.url), 'utf8');
+assert.match(wrapper, /classifyDeployTarget\(config, root\)/, 'Production Wrangler wrapper must enforce the target allowlist');
+assert.match(wrapper, /target !== 'operations'/, 'Operations preparation must never rerun Gateway D1 schema migrations');
 
 console.log('Four-Worker Wrangler deploy allowlist passed: Gateway, private centers, staging Operations and negative guards.');
