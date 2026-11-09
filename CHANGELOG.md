@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: Gateway 鉴权、路由和模型授权实现迁入自身策略模块。
+- 维护: 边缘缓存与路由可行性实现迁归 Gateway，旧路径只保留兼容导出。
 - 维护: 私有推理流帧解码器迁入 Gateway 传输层。
 - 维护: 原流解码路径只保留兼容导出。
 - 维护: Gateway、Inference、Generation 三应用独立打包纳入门禁。
