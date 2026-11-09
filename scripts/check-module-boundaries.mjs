@@ -927,7 +927,7 @@ const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
 assert.match(inferenceV4Contract, /EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5'/, 'v5 must isolate budgeted streams from legacy v4');
-assert.match(inferenceV4Dispatcher, /returnStream && limits\.conversionBudget/, 'Budgeted center streams must use v5, not local conversion');
+assert.match(inferenceV4Dispatcher, /returnStream \\|\\| returnCollectedObject/, 'Matrix conversion budgets must be issued to private center v5/v6');
 assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
 assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
 const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
@@ -937,6 +937,11 @@ assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference 
 assert.match(budgetGateway, /streamBudget,/, 'Gateway must issue bounded v5 budgets');
 assert.match(budgetSettlement, /centerBudgetStop = reason/, 'Gateway must observe v5 private stop reasons');
 assert.match(budgetSettlement, /budgetExceeded: \(\) => centerBudgetStop/, 'Gateway must settle v5 budget event once');
+assert.match(responseContract, /EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION = '6'/, 'v6 must isolate center-owned nonstream SSE collection');
+assert.match(centerDispatch, /returnCollectedObject = Boolean\(/, 'Gateway must request v6 for default nonstream Matrix calls');
+assert.match(centerDispatch, /gateway_inference_object_format_invalid/, 'Gateway must reject untagged v6 objects and SSE');
+assert.match(inferenceExecutor, /await collectMatrixObject\(/, 'Only private center may collect v6 SSE into a reply object');
+assert.match(inferenceExecutor, /center_conversion_budget_exceeded/, 'Center must signal v6 budget stop before returning a public object');
 // Scheduled maintenance is an application boundary. The D1 primitives
 // shared with request-time accounting belong to the neutral usage-store package.
 for (const [legacy, owner] of [
