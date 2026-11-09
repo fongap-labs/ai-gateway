@@ -54,7 +54,7 @@ import { convertMatrixRequest, isMatrixPair } from '../../src/conversion/matrix/
 import type { ConversionResult } from '../../src/conversion/result.ts';
 import { ConversionError } from '../../src/conversion/validation.ts';
 import { InferenceCenterUnavailable } from '../../src/inference/inference-client-request.ts';
-import { checkInferenceConversion } from '../../src/inference/inference-preflight-client.ts';
+import { checkInferenceConversion } from './transport/inference-preflight-client.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from '../../src/request/errors.ts';
 import { computeTierCaps } from '../../src/request/tier-loop.ts';
