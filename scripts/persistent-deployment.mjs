@@ -49,6 +49,12 @@ export function validateDeploymentInputs(env) {
   if (Object.keys(env).some((name) => name.startsWith('AIG_TIER3_'))) {
     errors.push('Legacy Tier 3 node and credential bindings must be migrated before deploying');
   }
+  for (const [name, expected] of [
+    ['AIG_INFERENCE_TARGET', 'ai-inference-center'],
+    ['AIG_GENERATION_TARGET', 'ai-generation-center'],
+  ]) {
+    if (String(env[name] || '').trim() !== expected) errors.push(`${name} must reference the approved private Worker before Gateway deployment.`);
+  }
   const vars = deploymentVars(env);
   const nodeConfigNames = Object.keys(vars).filter((name) => NODE_VAR.test(name));
   if (nodeConfigNames.length === 0) errors.push('At least one AIG_TIER{1,2}_NODES_XX variable is required.');
@@ -94,20 +100,27 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   }
 
   const missing = [];
-  const legacySecrets = [...names].filter((name) => name.startsWith('AIG_TIER3_'));
-  if (names.has('AIG_TOKEN_ENCRYPTION_KEY')) missing.push('Retired AIG_TOKEN_ENCRYPTION_KEY is still installed');
-  if (legacySecrets.length > 0) missing.push(`Unmigrated legacy Tier 3 Secret names (${legacySecrets.sort().join(', ')})`);
+  const retiredNames = [...names].filter(
+    (name) =>
+      name.startsWith('AIG_TIER3_') ||
+      name.startsWith('AIG_OAUTH_') ||
+      name === 'AIG_TOKEN_ENCRYPTION_KEY' ||
+      name === 'AIG_IS_SUBSCRIPTION_ENABLED',
+  );
+  if (retiredNames.length > 0) missing.push(`Retired Tier 3 or subscriber Secret bindings remain (${retiredNames.sort().join(', ')})`);
+  const upstreamSecrets = [...names].filter((name) => NODE_SECRET.test(name));
+  if (upstreamSecrets.length > 0) missing.push('Gateway must not retain upstream Provider credential shards; move them to private centers');
   if (!names.has('AIG_DEPLOY_HEALTH_KEY')) missing.push('AIG_DEPLOY_HEALTH_KEY');
   if (![...names].some((name) => GROUP_SECRET.test(name))) missing.push('AIG_ACCESS_KEY_<GROUP> (at least one application access key)');
-  if (![...names].some((name) => NODE_SECRET.test(name))) missing.push('AIG_TIER[12]_CREDENTIALS_XX (at least one shard)');
 
   const services = Array.isArray(wranglerConfig?.services) ? wranglerConfig.services : [];
-  if (services.some((service) => service?.binding === 'AIG_INFERENCE_SERVICE') && !names.has('AIG_INFERENCE_AUTH_KEY')) {
-    missing.push('AIG_INFERENCE_AUTH_KEY');
-  }
-  if (services.some((service) => service?.binding === 'AIG_GENERATION_SERVICE') && !names.has('AIG_GENERATION_AUTH_KEY')) {
-    missing.push('AIG_GENERATION_AUTH_KEY');
-  }
+  const expectedServices = [
+    { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+    { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
+  ];
+  if (JSON.stringify(services) !== JSON.stringify(expectedServices)) missing.push('Both private center Service Bindings are required');
+  if (!names.has('AIG_INFERENCE_AUTH_KEY')) missing.push('AIG_INFERENCE_AUTH_KEY');
+  if (!names.has('AIG_GENERATION_AUTH_KEY')) missing.push('AIG_GENERATION_AUTH_KEY');
 
   if (missing.length) {
     throw new Error(
@@ -118,7 +131,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   return {
     total: names.size,
     accessKeyGroups: [...names].filter((name) => GROUP_SECRET.test(name)).length,
-    credentialShards: [...names].filter((name) => NODE_SECRET.test(name)).length,
+    credentialShards: 0,
     deploymentHealthKey: names.has('AIG_DEPLOY_HEALTH_KEY'),
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
