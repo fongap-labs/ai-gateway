@@ -3,9 +3,9 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
+import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
-import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 
@@ -21,15 +21,24 @@ const publicConfig = loadGatewayConfig({ ...base });
 assert.equal(publicConfig.ready, true);
 assert.equal(publicConfig.hasConfigErrors, false);
 assert.deepEqual(Object.keys(publicConfig.tiers).sort(), ['1', '2']);
-assert.deepEqual(publicConfig.tiers[1].map((n) => n.id), ['free-a']);
-assert.deepEqual(publicConfig.tiers[2].map((n) => n.id), ['token-a']);
+assert.deepEqual(
+  publicConfig.tiers[1].map((n) => n.id),
+  ['free-a'],
+);
+assert.deepEqual(
+  publicConfig.tiers[2].map((n) => n.id),
+  ['token-a'],
+);
 const centerConfig = loadExecutionConfig({
   ...base,
   AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'free-a': 'free-test-credential' }),
   AIG_TIER2_CREDENTIALS_01: JSON.stringify({ 'token-a': 'paid-test-credential' }),
 });
 assert.equal(centerConfig.ready, true);
-assert.deepEqual(centerConfig.tiers[2].map((n) => n.id), ['token-a']);
+assert.deepEqual(
+  centerConfig.tiers[2].map((n) => n.id),
+  ['token-a'],
+);
 
 for (const oldBinding of ['AIG_TIER3_NODES_01', 'AIG_TIER3_CREDENTIALS_01']) {
   const env = { ...base, [oldBinding]: oldBinding.includes('NODES') ? '[]' : '{}' };
