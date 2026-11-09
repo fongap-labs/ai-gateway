@@ -200,7 +200,7 @@ function readJson(file, label) {
     return JSON.parse(content);
   } catch {
     // Do not echo JSON parse errors: operators might pass confidential files.
-    throw new Error('Unable to read valid JSON from ' + label + ' file');
+    throw new Error(`Unable to read valid JSON from ${label} file`);
   }
 }
 
@@ -216,7 +216,7 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error('Cutover preflight failed: ' + error.message);
+    console.error(`Cutover preflight failed: ${error.message}`);
     process.exitCode = 2;
   });
 }
