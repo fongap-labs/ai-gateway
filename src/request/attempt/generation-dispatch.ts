@@ -13,7 +13,7 @@ import { safeReadErrorBody } from '../../protocol/http.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
 
