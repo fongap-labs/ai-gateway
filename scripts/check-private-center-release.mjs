@@ -12,9 +12,13 @@ const SHA = /^[a-f0-9]{40}$/;
 const NODE_SECRET = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const LEGACY = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
 const PUBLIC_SECRET = /^(?:AIG_TIER[12]_CREDENTIALS_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$)/;
+const GATEWAY_SECRET = /^(?:AIG_ACCESS_KEY_[A-Z0-9_]+|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$/;
 
 function record(o) {
   return o !== null && typeof o === 'object' && !Array.isArray(o);
+}
+function normalizedEntry(value) {
+  return typeof value === 'string' ? value.replaceAll('\\', '/') : '';
 }
 function requireRecord(o, label) {
   assert.ok(record(o), `${label} must be an object`);
@@ -59,12 +63,16 @@ function checkCenter(config, label, expectedName, expectedEntry, authName, sourc
   requireRecord(config, label);
   noPublicExposure(config, label);
   assert.equal(config.name, expectedName, `${label} worker identity mismatch`);
-  assert.ok(typeof config.main === 'string' && config.main.endsWith(expectedEntry), `${label} entrypoint mismatch`);
+  assert.ok(normalizedEntry(config.main).endsWith(expectedEntry), `${label} entrypoint mismatch`);
   assert.equal(Object.hasOwn(config, 'triggers'), false, `${label} must never own cron`);
   assert.equal(Object.hasOwn(config, 'services'), false, `${label} must not route to another Worker`);
   secretVars(config, label);
   assert.equal(config.vars.AIG_BUILD_SHA, sourceSha, `${label} build SHA differs from Gateway`);
   assert.ok(namesSet.has(authName), `${label} internal auth Secret is absent`);
+  assert.ok(
+    [...namesSet].every((name) => name === authName || NODE_SECRET.test(name)),
+    `${label} Secret inventory contains a credential owned by another Worker`,
+  );
   assert.ok(
     [...namesSet].some((n) => NODE_SECRET.test(n)),
     `${label} has no static Token Secret shards`,
@@ -89,10 +97,12 @@ export function assertReleaseTopology(plan) {
   const gNames = names(inventory.gateway, 'Gateway');
   const iNames = names(inventory.inference, 'Inference');
   const pNames = names(inventory.generation, 'Generation');
+  const oNames = names(inventory.operations, 'Operations');
   assert.ok(
-    [...gNames].every((n) => !NODE_SECRET.test(n)),
-    'Gateway must not own upstream Provider Token shards',
+    [...gNames].every((name) => GATEWAY_SECRET.test(name)),
+    'Gateway Secret inventory contains a name outside its public-edge ownership allowlist',
   );
+  assert.equal(oNames.size, 0, 'Operations must not own Provider or runtime Secrets');
   assert.ok(gNames.has('AIG_INFERENCE_AUTH_KEY') && gNames.has('AIG_GENERATION_AUTH_KEY'), 'Gateway must hold both private center auth bindings');
   noPublicExposure(gateway, 'Gateway');
   assert.equal(gateway.name, 'ai-gateway');
@@ -115,9 +125,12 @@ export function assertReleaseTopology(plan) {
   noPublicExposure(operations, 'Operations');
   assert.equal(operations.name, 'ai-gateway-operations');
   assert.ok(typeof operations.main === 'string' && operations.main.endsWith('operations/standalone.ts'), 'Operations must use standalone handler');
+  requireRecord(operations.vars, 'Operations vars');
+  assert.deepEqual(Object.keys(operations.vars), ['AIG_BUILD_SHA'], 'Operations may carry only immutable build identity');
+  assert.equal(operations.vars.AIG_BUILD_SHA, sha, 'Operations build SHA differs from the shared release SHA');
+  secretVars(operations, 'Operations');
   assert.equal(Object.hasOwn(operations, 'fetch'), false, 'Operations must have no public fetch handler');
   assert.equal(Object.hasOwn(operations, 'services'), false, 'Operations must not inherit Gateway Services');
-  assert.equal(Object.hasOwn(operations, 'vars'), false, 'Operations must not inherit Gateway vars');
   assert.equal(oneD1(operations, 'Operations'), gatewayDb, 'Operations D1 must equal Gateway D1');
   const oldCron = stage === 'prepare' ? [CRON] : [];
   const newCron = stage === 'activate' ? [CRON] : [];
@@ -133,7 +146,7 @@ export function assertReleaseTopology(plan) {
     ready: true,
     stage,
     workers: 4,
-    gates: ['private-centers', 'static-token-ownership', 'immutable-build', 'cron-single-owner', 'd1-equality'],
+    gates: ['private-centers', 'provider-secret-ownership', 'immutable-build', 'cron-single-owner', 'd1-equality'],
   };
 }
 

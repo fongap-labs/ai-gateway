@@ -28,7 +28,7 @@ assert.equal(Object.hasOwn(operations, 'fetch'), false, 'Operations must not ser
 await assert.rejects(scheduled({}, {}), /requires private TOKEN_STATS_DB D1 binding/);
 const deploymentGateway = {
   ...gateway,
-  vars: { AIG_TIER1_NODES_01: '[]' },
+  vars: { AIG_BUILD_SHA: 'a'.repeat(40), AIG_TIER1_NODES_01: '[]' },
   d1_databases: [
     {
       binding: 'TOKEN_STATS_DB',
@@ -46,12 +46,17 @@ assert.deepEqual(phases.activate.gateway.triggers.crons, []);
 assert.deepEqual(phases.activate.operations.triggers.crons, [USAGE_MAINTENANCE_CRON]);
 assert.equal(phases.detach.gateway.main, 'apps/gateway/index.ts');
 assert.equal(phases.activate.operations.d1_databases[0].database_id, deploymentGateway.d1_databases[0].database_id);
-assert.equal(Object.hasOwn(phases.activate.operations, 'vars'), false, 'Operations must never inherit Gateway runtime variables');
+assert.deepEqual(
+  phases.activate.operations.vars,
+  { AIG_BUILD_SHA: deploymentGateway.vars.AIG_BUILD_SHA },
+  'Operations must receive only the immutable release SHA, never Gateway runtime variables',
+);
 assert.equal(Object.hasOwn(phases.activate.operations, 'services'), false, 'Operations must never inherit Provider Service Bindings');
 assert.equal(Object.hasOwn(phases.activate.operations, 'secrets'), false, 'Operations must never inherit upstream Provider secrets');
 assert.deepEqual(gateway.triggers.crons, [USAGE_MAINTENANCE_CRON], 'The planner cannot mutate live Gateway config');
 assert.deepEqual(candidate.triggers.crons, [], 'The planner cannot activate the staged Operations manifest');
 assert.throws(() => buildOperationsCutoverPhases({ ...deploymentGateway, d1_databases: [] }, candidate), /Exactly one existing Gateway D1 database/);
+assert.throws(() => buildOperationsCutoverPhases({ ...deploymentGateway, vars: { AIG_BUILD_SHA: 'main' } }, candidate), /immutable AIG_BUILD_SHA/);
 assert.throws(
   () => buildOperationsCutoverPhases(deploymentGateway, { ...candidate, triggers: { crons: [USAGE_MAINTENANCE_CRON] } }),
   /Candidate Operations cron must initially be disabled/,

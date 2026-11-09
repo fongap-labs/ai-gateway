@@ -17,6 +17,11 @@ function noFields(config, fields) {
   return fields.every((field) => !Object.hasOwn(config, field));
 }
 
+function matchesEntrypoint(configured, root, relative) {
+  if (typeof configured !== 'string') return false;
+  return path.resolve(root, configured) === path.resolve(root, relative);
+}
+
 function privateBase(config) {
   return (
     record(config) &&
@@ -38,11 +43,16 @@ function safeCenterVars(config) {
   );
 }
 
+function safeOperationsVars(config) {
+  const vars = config.vars;
+  return record(vars) && Object.keys(vars).length === 1 && typeof vars.AIG_BUILD_SHA === 'string' && SHA.test(vars.AIG_BUILD_SHA);
+}
+
 function isPrivateInference(config, root) {
   return (
     privateBase(config) &&
     config.name === 'ai-inference-center' &&
-    config.main === path.join(root, 'src/inference/inference-center-entry.ts') &&
+    matchesEntrypoint(config.main, root, 'src/inference/inference-center-entry.ts') &&
     config.keep_vars === false &&
     noFields(config, ['triggers', 'kv_namespaces']) &&
     safeCenterVars(config)
@@ -53,7 +63,7 @@ function isPrivateGeneration(config, root) {
   return (
     privateBase(config) &&
     config.name === 'ai-generation-center' &&
-    config.main === path.join(root, 'src/generation/generation-center-entry.ts') &&
+    matchesEntrypoint(config.main, root, 'src/generation/generation-center-entry.ts') &&
     config.keep_vars === false &&
     noFields(config, ['triggers', 'kv_namespaces', 'd1_databases']) &&
     safeCenterVars(config)
@@ -66,7 +76,8 @@ function isPrivateOperations(config) {
     privateBase(config) &&
     config.name === 'ai-gateway-operations' &&
     config.main === 'operations/standalone.ts' &&
-    noFields(config, ['vars', 'kv_namespaces']) &&
+    noFields(config, ['kv_namespaces']) &&
+    safeOperationsVars(config) &&
     Array.isArray(config.triggers?.crons) &&
     config.triggers.crons.length === 0 &&
     Array.isArray(bindings) &&

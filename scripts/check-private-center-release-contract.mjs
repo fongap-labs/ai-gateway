@@ -6,8 +6,10 @@ import { assertReleaseTopology } from './check-private-center-release.mjs';
 
 const sha = 'a'.repeat(40);
 const db = { binding: 'TOKEN_STATS_DB', database_name: 'test-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' };
-const inferenceNodes = JSON.stringify([{ id: 'test-text', provider: 'openai', models: { Chat: 'gpt-4o' } }]);
-const imageNodes = JSON.stringify([{ id: 'test-image', provider: 'openai-image', models: { Image: 'gpt-image-1' } }]);
+const TEST_LOGICAL_MODEL = 'release-contract-model';
+const TEST_UPSTREAM_MODEL = 'mock-upstream-model';
+const inferenceNodes = JSON.stringify([{ id: 'test-text', provider: 'mock-provider', models: { [TEST_LOGICAL_MODEL]: TEST_UPSTREAM_MODEL } }]);
+const imageNodes = JSON.stringify([{ id: 'test-image', provider: 'mock-image-provider', models: { [TEST_LOGICAL_MODEL]: TEST_UPSTREAM_MODEL } }]);
 const config = {
   source_sha: sha,
   approved_for_production: false,
@@ -40,6 +42,7 @@ const config = {
     name: 'ai-gateway-operations',
     main: 'operations/standalone.ts',
     workers_dev: false,
+    vars: { AIG_BUILD_SHA: sha },
     triggers: { crons: [] },
     d1_databases: [{ ...db }],
   },
@@ -47,6 +50,7 @@ const config = {
     gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
     inference: ['AIG_INFERENCE_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
     generation: ['AIG_GENERATION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
+    operations: [],
   },
 };
 const copy = () => structuredClone(config);
@@ -75,10 +79,14 @@ reject((p) => p.secret_names.gateway.push('AIG_TIER1_CREDENTIALS_01'));
 reject((p) => p.secret_names.inference.push('AIG_TIER3_CREDENTIALS_01'));
 reject((p) => (p.secret_names.generation = []));
 reject((p) => (p.inference.vars.AIG_BUILD_SHA = 'b'.repeat(40)));
+reject((p) => (p.operations.vars.AIG_BUILD_SHA = 'b'.repeat(40)));
 reject((p) => (p.generation.vars.AIG_GENERATION_AUTH_KEY = 'never-public'));
 reject((p) => (p.generation.routes = [{ pattern: 'public.example.invalid' }]));
 reject((p) => (p.inference.workers_dev = true));
 reject((p) => (p.operations.vars = { AIG_ACCESS_KEY_AIR: 'forbidden' }));
+reject((p) => p.secret_names.gateway.push('OPENAI_API_KEY'));
+reject((p) => p.secret_names.inference.push('OPENAI_API_KEY'));
+reject((p) => p.secret_names.operations.push('AIG_TIER1_CREDENTIALS_01'));
 reject((p) => (p.operations.d1_databases[0].database_id = '00000000-0000-0000-0000-000000000000'));
 reject((p) => (p.operations.triggers.crons = ['0 3 * * *']));
 reject((p) => (p.gateway.triggers.crons = []));

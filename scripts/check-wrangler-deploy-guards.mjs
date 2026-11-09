@@ -34,6 +34,7 @@ const operations = {
   ...base,
   name: 'ai-gateway-operations',
   main: 'operations/standalone.ts',
+  vars: { AIG_BUILD_SHA: sha },
   triggers: { crons: [] },
   d1_databases: [{ binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' }],
 };
@@ -65,6 +66,8 @@ assert.equal(classifyDeployTarget(detachedGateway, root), 'gateway', 'Detached G
 for (const [name, config] of Object.entries({ gateway, inference, generation, operations })) {
   assert.equal(classifyDeployTarget(config, root), name, `${name} should be a recognized deployment target`);
 }
+assert.equal(classifyDeployTarget({ ...inference, main: 'src/inference/inference-center-entry.ts' }, root), 'inference');
+assert.equal(classifyDeployTarget({ ...generation, main: 'src/generation/generation-center-entry.ts' }, root), 'generation');
 
 function reject(config) {
   assert.equal(classifyDeployTarget(config, root), null, 'Unsafe Worker deployment must fail closed');
@@ -99,10 +102,13 @@ reject({ ...inference, vars: { ...vars, AIG_TIER2_CREDENTIALS_01: 'provider-secr
 reject({ ...inference, vars: { ...vars, AIG_INFERENCE_AUTH_KEY: 'private-secret' } });
 reject({ ...inference, keep_vars: true });
 reject({ ...inference, services: [] });
-reject({ ...inference, main: 'src/inference/inference-center-entry.ts' });
+reject({ ...inference, main: 'src/inference/unapproved-entry.ts' });
 reject({ ...operations, triggers: { crons: ['0 3 * * *'] } });
 reject({ ...operations, d1_databases: [] });
 reject({ ...operations, vars: {} });
+reject({ ...operations, vars: { AIG_BUILD_SHA: 'main' } });
+reject({ ...operations, vars: { ...operations.vars, AIG_TIER1_NODES_01: '[]' } });
+reject({ ...operations, vars: { ...operations.vars, AIG_TIER1_CREDENTIALS_01: 'provider-secret' } });
 reject({ ...operations, services: [] });
 reject({ ...operations, custom_domains: ['public.example.invalid'] });
 const wrongDb = copy(operations);
