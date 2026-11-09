@@ -258,6 +258,8 @@ const deployInputs = {
     { id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } },
   ]),
   AIG_AFFINITY_KV_ID: 'affinity-kv-id',
+  AIG_INFERENCE_TARGET: 'ai-inference-center',
+  AIG_GENERATION_TARGET: 'ai-generation-center',
 };
 const deployPrepared = validateDeploymentInputs(deployInputs);
 assert.equal(deployPrepared.config.name, 'ai-gateway');
@@ -270,9 +272,10 @@ assert.throws(
 const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
-  { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
+  { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
+  { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
 ];
-assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 1);
+assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 0);
 assert.throws(
   () =>
     validateRemoteSecretInventory(
@@ -290,19 +293,33 @@ assert.throws(
   /AIG_ACCESS_KEY_<GROUP>/,
 );
 assert.throws(
-  () =>
-    validateRemoteSecretInventory(
-      remoteSecretNames.filter((secret) => secret.name !== 'AIG_TIER1_CREDENTIALS_01'),
-      deployPrepared.config,
-    ),
-  /AIG_TIER\[12\]_CREDENTIALS_XX/,
+  () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
+  /must not retain upstream Provider credential shards/,
 );
 assert.throws(
   () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_ACCESS_KEY_MAX', type: 'plain_text' }], deployPrepared.config),
   /invalid entry/,
 );
-const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
-assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
+const generationPrepared = validateDeploymentInputs(deployInputs);
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_GENERATION_AUTH_KEY'),
+      generationPrepared.config,
+    ),
+  /AIG_GENERATION_AUTH_KEY/,
+);
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_INFERENCE_AUTH_KEY'),
+      generationPrepared.config,
+    ),
+  /AIG_INFERENCE_AUTH_KEY/,
+);
+assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, buildWranglerConfig({})), /Both private center Service Bindings/);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_INFERENCE_TARGET: '' }), /AIG_INFERENCE_TARGET/);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: '' }), /AIG_GENERATION_TARGET/);
 assert.throws(
   () =>
     validateDeploymentInputs({
@@ -314,7 +331,7 @@ assert.throws(
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_TIER3_NODES_01: '[]' }), /Legacy Tier 3/);
 assert.throws(
   () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TIER3_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
-  /Unmigrated legacy Tier 3 Secret/,
+  /Retired Tier 3 or subscriber Secret bindings/,
 );
 
 const deploymentHealthKey = 'deployment-health-key-0123456789abcdef0123456789abcdef';
