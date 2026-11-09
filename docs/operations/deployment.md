@@ -50,7 +50,7 @@ Cloudflare Worker 部署
 
 清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
-**两层架构切换保护**：AG #312 已合并，仓库的 `automatic: true` 仍然有效。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过而实际部署作业当时为 `waiting`，目标是 `main` 的 `56adb64e`。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得批准该等待作业。后续状态需重新核查，不能因本文记录为 waiting 就推定它始终未执行。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
+**两层架构切换保护**：AG #312 已合并，仓库的 `automatic: true` 仍然有效。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
 
 ## 自动部署
 
