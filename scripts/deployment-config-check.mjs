@@ -82,8 +82,7 @@ for (const [app, name] of [
   );
 }
 assert.ok(
-  (pkg.scripts['validate:merge'] || '').includes('npm run check:apps') &&
-    (pkg.scripts['validate:deploy'] || '').includes('npm run check:apps'),
+  (pkg.scripts['validate:merge'] || '').includes('npm run check:apps') && (pkg.scripts['validate:deploy'] || '').includes('npm run check:apps'),
   'All independent app bundles must be validated on every change',
 );
 for (const scriptName of ['deploy', 'tail', 'cf:login', 'cf:whoami']) {
