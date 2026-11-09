@@ -29,7 +29,6 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
-import { handleOAuthRoute } from './oauth/routes.ts';
 import {
   authorize,
   authorizeDeploymentHealth,
@@ -146,30 +145,10 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return { ok: false, response: await readmeStatusSvgResponse(env) };
   }
 
-  // OAuth onboarding routes. Handled before the access-key presence check so
-  // the browser redirect callback (which carries no gateway key) can complete.
-  // /oauth/start requires a gateway key (checked inside the handler); the
-  // callback and paste routes are authorized by their single-use D1 state.
-  if ((request.method === 'GET' || request.method === 'POST') && pathname.startsWith('/oauth/')) {
-    if (!getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true)) {
-      return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
-    }
-    const config = loadGatewayConfig(env);
-    const oauthResponse = await handleOAuthRoute(
-      request,
-      env,
-      {
-        tier2Nodes: (config.tiers[2] || []).map((node) => ({
-          id: node.id,
-          provider: node.provider,
-          auth: node.auth,
-        })),
-        // A closure, because Workers reject waitUntil called detached from its context.
-        waitUntil: ctx.waitUntil ? (promise) => ctx.waitUntil?.(promise) : undefined,
-      },
-      pathname,
-    );
-    return { ok: false, response: oauthResponse };
+  // Subscription OAuth routes are retired. Do not accept legacy callbacks or
+  // form submissions; all such paths remain unavailable without token exchange.
+  if (pathname.startsWith('/oauth/')) {
+    return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
   }
 
   const accessConfig = loadAccessKeysConfig(env);
