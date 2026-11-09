@@ -417,6 +417,14 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 本项仅完成模型家族回退和 Tier 选择策略的源码归属；`src/request/attempt/` 的响应结算和结果处理、错误响应、统计与 OAuth 兼容依赖还未全部迁移，不得报告整体架构已完成。生产部署、Secrets、Cron 与 Service Binding 均不变。
 
+## Gateway 终止错误与响应处理源码归属
+
+`apps/gateway/response/errors.ts` 统一负责客户端错误体（OpenAI Chat / Responses、Anthropic Messages）、错误码、拓扑保护与 `Retry-After` 等失败语义；`apps/gateway/response/response-helpers.ts` 统一负责 CORS、上游响应头过滤、流中断片段和映射后的模型名。原 `src/request/errors.ts` 与 `src/request/response-helpers.ts` 仅保留兼容导出，**不再拥有实际运行实现**。
+
+`apps/gateway/` 的请求预检、请求处理、回退与 Tier 循环，以及仍在 `src/request/attempt/` 的推理、生成、流式结果处理逻辑，直接引用 Gateway-owned 响应实现。模块边界门禁锁定此依赖方向、唯一代码所有权、协议格式和上游拓扑隐私，避免迁移产生重复错误码路径。请求状态码、重试窗口、计费和密钥管理均保持原有语义。
+
+此项是 Gateway 旧请求目录清理的一部分，**不代表 `src/request/attempt/` 执行归属迁移已经完成**；后续仍需继续收敛尝试处理与观测边界。无生产配置、部署或 Service Binding 更改。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

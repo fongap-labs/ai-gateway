@@ -5,12 +5,12 @@
 // retry a provider that has already returned a 2xx with malformed output:
 // it may have charged for the image even if we cannot decode its response.
 
+import { gatewayError } from '../../../apps/gateway/response/errors.ts';
+import { jsonResponse } from '../../../apps/gateway/response/response-helpers.ts';
 import { corsHeaders, readBodyTextBounded } from '../../protocol/http.ts';
 import { getProviderAdapter } from '../../providers/registry.ts';
 import { classifyClientAbort, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { gatewayError } from '../errors.ts';
-import { jsonResponse } from '../response-helpers.ts';
 import { recordNodeSuccess } from './observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
+import { gatewayError } from '../../../apps/gateway/response/errors.ts';
+import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../../../apps/gateway/response/response-helpers.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { classifyClientAbort, classifyFirstEventFailure } from '../../reliability/classify.ts';
@@ -10,8 +12,6 @@ import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '..
 import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { gatewayError } from '../errors.ts';
-import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../response-helpers.ts';
 import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';

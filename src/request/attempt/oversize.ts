@@ -4,11 +4,11 @@
 // oversize.ts - terminal outcome for an upstream reply larger than the gateway
 // buffers. Rotating would only regenerate the same oversized answer elsewhere.
 
+import { gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { classifyOversizedReply } from '../../reliability/classify.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingErrorCode } from '../../types/upstream-processing.ts';
-import { gatewayError } from '../errors.ts';
 import { recordOutcome } from './outcome.ts';
 
 export function isOversizedReplyError(error: unknown): boolean {

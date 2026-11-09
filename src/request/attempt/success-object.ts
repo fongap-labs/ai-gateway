@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
+import { buildClientErrorResponse, gatewayError } from '../../../apps/gateway/response/errors.ts';
+import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../../../apps/gateway/response/response-helpers.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
 import { corsHeaders, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, readBufferedReplyText, trimDiagnostic } from '../../protocol/http.ts';
 import { synthesizeSseFromCompletion } from '../../protocol/openai.ts';
@@ -17,8 +19,6 @@ import { collectOpenAIStreamObject } from '../../stream/assemble.ts';
 import { trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenAIResponsesObjectMeaningful } from '../../transport/index.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { buildClientErrorResponse, gatewayError } from '../errors.ts';
-import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response-helpers.ts';
 import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
