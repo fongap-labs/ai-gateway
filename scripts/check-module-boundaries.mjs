@@ -405,13 +405,13 @@ for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
 
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
-for (const [name, symbol] of [['dispatch', 'attemptNode'], ['hedge', 'dispatchWithHedge']]) {
+for (const [name, symbol] of [
+  ['dispatch', 'attemptNode'],
+  ['hedge', 'dispatchWithHedge'],
+]) {
   const legacy = readFileSync(join(root, `src/request/attempt/${name}.ts`), 'utf8');
   const owner = readFileSync(join(root, `apps/gateway/attempt/${name}.ts`), 'utf8');
-  assert.ok(
-    legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`),
-    `Old ${name} module must forward to its Gateway owner`,
-  );
+  assert.ok(legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`), `Old ${name} module must forward to its Gateway owner`);
   assert.doesNotMatch(legacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
   assert.ok(owner.includes(`export async function ${symbol}(`), `Gateway must implement ${symbol}`);
 }
