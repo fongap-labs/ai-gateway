@@ -163,4 +163,29 @@ const v4WithBudget = new Headers(streamedHeaders);
 v4WithBudget.set('x-aig-stream-budget', budgetHeaders.get('x-aig-stream-budget'));
 assert.equal(parseExecutionInvocation(makeRequest(v4WithBudget), allowed, now), null);
 
-console.log('Execution contracts v1-v5: strict budgets, isolation, version and authorization validation passed.');
+const collected = { ...invocation, inputSurface: 'messages', returnObject: true };
+const collectedHeaders = buildExecutionHeaders(collected, 'x-aig-inference-auth', key);
+assert.equal(collectedHeaders.get('x-aig-contract-version'), '6');
+assert.deepEqual(parseExecutionInvocation(makeRequest(collectedHeaders), allowed, now), collected);
+const budgetedCollected = { ...collected, streamBudget: { mode: 'error', cfg } };
+const budgetedCollectedHeaders = buildExecutionHeaders(budgetedCollected, 'x-aig-inference-auth', key);
+assert.equal(budgetedCollectedHeaders.get('x-aig-contract-version'), '6');
+assert.deepEqual(parseExecutionInvocation(makeRequest(budgetedCollectedHeaders), allowed, now), budgetedCollected);
+for (const [name, value] of [
+  ['x-aig-contract-version', '3'],
+  ['x-aig-contract-version', '5'],
+  ['x-aig-return-object', 'false'],
+  ['x-aig-conversion-prefer-nonstream', 'true'],
+  ['x-aig-return-stream', 'true'],
+  ['x-aig-display-model', 'forged-model'],
+  ['x-aig-stream-budget', '{'],
+]) {
+  const invalid = new Headers(budgetedCollectedHeaders);
+  invalid.set(name, value);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `v6 ${name}`);
+}
+const v6WithoutObject = new Headers(collectedHeaders);
+v6WithoutObject.delete('x-aig-return-object');
+assert.equal(parseExecutionInvocation(makeRequest(v6WithoutObject), allowed, now), null);
+
+console.log('Execution contracts v1-v6: strict budgets, isolation, version and authorization validation passed.');

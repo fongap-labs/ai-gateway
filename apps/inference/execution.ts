@@ -7,6 +7,7 @@
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
@@ -15,6 +16,7 @@ import { createBodyAdmissionPool } from '../../packages/transport/body-admission
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
+import { estimateAnthropicInputTokens } from '../../src/protocol/anthropic.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
 import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { streamUsageEnabled } from '../../src/providers/registry.ts';
@@ -23,7 +25,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
-import type { MatrixStreamBudget } from './conversion/stream.ts';
+import { collectMatrixObject, type MatrixStreamBudget } from './conversion/stream.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 // The physical center uses the same clamped maximum as Gateway preflight.
@@ -163,6 +165,9 @@ async function executeAdmittedNative(
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
+  // v6 is exclusively a non-streaming public reply, even if the physical
+  // upstream is later forced into SSE by Matrix conversion.
+  if (invocation.returnObject && !invocation.preferNonstream && clientBody.stream === true) return problem(400, 'center_stream_invalid');
   // v4 is solely for real streaming requests; never synthesize an object
   // protocol response under a private framed-stream ticket.
   if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
@@ -260,6 +265,12 @@ async function executeAdmittedNative(
     );
   }
 
+  const dispatchedConversionProblem = (code: string): Response => {
+    const response = problem(502, code);
+    response.headers.set('x-aig-result', 'dispatched');
+    response.headers.set('x-aig-upstream-status', String(upstream.status));
+    return response;
+  };
   if (invocation.returnStream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
@@ -268,6 +279,43 @@ async function executeAdmittedNative(
     outgoing.set('content-type', framed.headers.get('content-type') ?? '');
     outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
     return new Response(framed.body, { status: upstream.status, headers: outgoing });
+  }
+  if (invocation.returnObject && !invocation.preferNonstream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
+    // v6: only the private center may decode/collect the physical SSE into a
+    // client-protocol object. Gateway receives one tagged result, never SSE.
+    const from = protocolForSurface(invocation.surface);
+    const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
+    if (!from || !to) return dispatchedConversionProblem('center_conversion_route_invalid');
+    let rawUsage: unknown = null;
+    try {
+      const converted = await collectMatrixObject(upstream.body, from, to, invocation.requestId, request.signal, invocation.deadlineMs, {
+        model: invocation.logicalModel,
+        seedInputTokens: from === 'anthropic' ? estimateAnthropicInputTokens(clientBody) : 0,
+        onUpstreamUsage: (usage) => {
+          rawUsage = usage;
+        },
+        ...(invocation.streamBudget ? { budget: invocation.streamBudget } : {}),
+      });
+      if (
+        !converted.reply.parts.some((part) => part.type === 'text' && part.text) &&
+        !converted.reply.parts.some((part) => part.type === 'tool_call')
+      ) {
+        return dispatchedConversionProblem('center_conversion_empty');
+      }
+      outgoing.set('content-type', 'application/json');
+      outgoing.set('x-aig-response-format', INFERENCE_TRANSLATED_OBJECT_FORMAT);
+      return new Response(
+        JSON.stringify({
+          kind: INFERENCE_TRANSLATED_OBJECT_FORMAT,
+          response: converted.object,
+          upstreamUsage: converted.reply.rawUsage ?? rawUsage,
+        }),
+        { status: upstream.status, headers: outgoing },
+      );
+    } catch (error) {
+      if (error instanceof ConversionBudgetStop) return dispatchedConversionProblem('center_conversion_budget_exceeded');
+      return dispatchedConversionProblem('center_conversion_invalid');
+    }
   }
   if (invocation.returnObject && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
     // Only explicit v3 buffered-object calls are inspected in the center.
@@ -291,6 +339,7 @@ async function executeAdmittedNative(
       // Retain the raw response and let Gateway apply legacy post-header
       // failure classification rather than claiming a successful translation.
     }
+    if (!invocation.preferNonstream) return dispatchedConversionProblem('center_converted_object_invalid');
     return new Response(raw, { status: upstream.status, headers: outgoing });
   }
   // Raw body stream ownership transfers to the caller. No buffering, no

@@ -5,13 +5,19 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
-import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
+import { type ExecutionInputSurface, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../../src/protocol/openai.ts';
-import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../../src/reliability/classify.ts';
+import {
+  classifyClientAbort,
+  classifyConversionBudget,
+  classifyNetworkError,
+  classifyUpstreamStatus,
+  KIND,
+} from '../../../src/reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../../src/reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { quotaFromCenter } from '../reliability/center-quota.ts';
@@ -61,14 +67,22 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   // v4 handles ordinary streams; authenticated v5 carries bounded budgets
   // so Inference executes the same IR budget before producing public SSE.
   const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && c.bodyJson.stream === true);
+  // Default non-streaming Matrix calls use v6: the private center collects
+  // upstream SSE into the client object; Gateway no longer decodes it locally.
+  // Existing explicit prefer-nonstream calls retain v3 object behavior.
+  const returnCollectedObject = Boolean(c.conversionContext && !c.clientWantsStream && !c.conversionContext.isNonstreamPreferred);
   const streamBudget =
-    returnStream && limits.conversionBudget
+    (returnStream || returnCollectedObject) && limits.conversionBudget
       ? {
           mode: limits.conversionBudgetMode,
-          cfg: { ...limits.conversionBudgetCfg, maxOutputTokens: limits.conversionBudgetMaxTokens },
+          cfg: {
+            ...limits.conversionBudgetCfg,
+            maxOutputUnits: returnCollectedObject ? limits.conversionNonstreamMaxUnits : limits.conversionBudgetCfg.maxOutputUnits,
+            maxOutputTokens: limits.conversionBudgetMaxTokens,
+          },
         }
       : undefined;
-  const hasBufferedResponse = !c.conversionContext && !c.clientWantsStream && !c.fakeStream;
+  const hasBufferedResponse = (!c.conversionContext && !c.clientWantsStream && !c.fakeStream) || returnCollectedObject;
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
   const attemptBudgetMs =
@@ -114,7 +128,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       surface: c.surface ?? reqDescriptor.surface,
       inputSurface: inputSurface ?? undefined,
       preferNonstream: c.conversionContext?.isNonstreamPreferred ? true : undefined,
-      returnObject: c.conversionContext?.isNonstreamPreferred && !c.clientWantsStream && !c.fakeStream ? true : undefined,
+      returnObject: c.conversionContext && !c.clientWantsStream ? true : undefined,
       returnStream: returnStream ? true : undefined,
       streamBudget,
       displayModel: returnStream ? requestedModel : undefined,
@@ -208,6 +222,24 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     if (signal) recordTier1QuotaReport(node.id, signal);
   }
 
+  if (returnCollectedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
+    detach();
+    recordUndeliveredUpstreamAttempt(c, node);
+    recordOutcome(state, node, classifyConversionBudget(), c, { latencyMs: c.headersMs, status: upstream.status });
+    return {
+      response: gatewayError(
+        request,
+        env,
+        route,
+        502,
+        'The translated reply exceeds the gateway conversion output budget. Retry with a smaller request.',
+        c.requestId,
+        undefined,
+        undefined,
+        'conversion_budget_exceeded',
+      ),
+    };
+  }
   if (!upstream.ok) {
     detach();
     const errorText = await safeReadErrorBody(upstream, 4096, c.attemptDeadlineMs);
@@ -220,6 +252,18 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       };
     }
     return { rotate: true, kind: classified.kind };
+  }
+
+  if (
+    returnCollectedObject &&
+    (upstream.headers.get('x-aig-response-format') !== INFERENCE_TRANSLATED_OBJECT_FORMAT ||
+      !upstream.headers.get('content-type')?.toLowerCase().includes('application/json'))
+  ) {
+    // Never treat an unframed upstream SSE or raw JSON as a successful public
+    // Matrix reply when the center was required to do the conversion.
+    detach();
+    recordUndeliveredUpstreamAttempt(c, node);
+    return stopForCenter(c, 502, 'gateway_inference_object_format_invalid');
   }
 
   const physicalModel = node.models[effectiveModel] || effectiveModel;
