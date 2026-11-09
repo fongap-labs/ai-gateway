@@ -14,7 +14,6 @@ import { collectKnownModels } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';
 import type { ImageSize, PreparedImageRequest } from '../../src/providers/image-generation.ts';
 import { getProviderAdapter } from '../../src/providers/registry.ts';
-import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import { buildUpstreamHeadersFor } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import { problem } from './response.ts';
@@ -27,7 +26,7 @@ type Invocation = ExecutionInvocation;
 
 function generationNode(nodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
   const node = nodes.find((candidate) => candidate.id === invocation.nodeId);
-  if (!node || !isImageGenerationProvider(node.provider) || isSubscriptionNode(node)) return null;
+  if (!node || !isImageGenerationProvider(node.provider)) return null;
   if (!node.surfaces.includes('images_generations')) return null;
   if (!collectKnownModels(nodes, env).has(invocation.logicalModel)) return null;
   if (Object.keys(node.models).length > 0 && !Object.hasOwn(node.models, invocation.logicalModel)) return null;
