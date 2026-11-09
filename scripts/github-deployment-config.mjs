@@ -18,7 +18,7 @@ const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
 const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_TOKEN_ENCRYPTION_KEY|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)$`,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
@@ -26,6 +26,12 @@ const RUNTIME_VAR_PATTERN = new RegExp(
 );
 const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_GENERATION_TARGET']);
 function assertTwoTierBindingNames(names) {
+  const retired = [...names].filter((name) =>
+    name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY'
+  ).sort();
+  if (retired.length > 0) {
+    throw new Error('Retired subscription bindings must be removed through controlled cutover: ' + retired.join(', '));
+  }
   const legacy = [...names].filter((name) => name.startsWith('AIG_TIER3_')).sort();
   if (legacy.length > 0) {
     // Names only, never print any credential values.
