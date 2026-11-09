@@ -7,12 +7,12 @@
 // assembly / conversion / synthesis. Keep protocol-specific behavior visible
 // in those modules rather than rebuilding a generic result engine here.
 
+import { commitTier1RecoveryProbe } from '../../../src/reliability/tier1-state.ts';
+import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { handleImageSuccess } from './success-image.ts';
 import { handleMatrixSuccess, isMatrixConversion } from './success-matrix.ts';
 import { handleObjectSuccess } from './success-object.ts';
 import { handleStreamingSuccess } from './success-stream.ts';
-import { commitTier1RecoveryProbe } from '../../../src/reliability/tier1-state.ts';
-import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 
 export type SuccessArgs = {
   upstream: Response;

@@ -343,11 +343,7 @@ assert.match(ownedMatrixSuccess, /from '\.\/oversize\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/response\/errors\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/response\/response-helpers\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/transport\/inference-stream-client\.ts'/);
-assert.match(
-  successDispatcher,
-  /from '\.\/success-matrix\.ts'/,
-  'Success dispatcher must use the Gateway-owned matrix response handler',
-);
+assert.match(successDispatcher, /from '\.\/success-matrix\.ts'/, 'Success dispatcher must use the Gateway-owned matrix response handler');
 
 for (const file of ['success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts']) {
   const source = readFileSync(join(root, 'apps/gateway/attempt', file), 'utf8');
@@ -416,10 +412,7 @@ assert.ok(ownedObjectSuccess.includes("from './oversize.ts'"), 'Gateway object r
 assert.ok(ownedObjectSuccess.includes("from '../response/errors.ts'"), 'Gateway object reply must use owned errors');
 assert.ok(ownedObjectSuccess.includes("from '../response/response-helpers.ts'"), 'Gateway object reply must use owned response helpers');
 assert.ok(ownedObjectSuccess.includes("from './observability.ts'"), 'Object completion must preserve physical attempt usage accounting');
-assert.ok(
-  successDispatcher.includes("from './success-object.ts'"),
-  'Success dispatcher must call Gateway-owned object handler',
-);
+assert.ok(successDispatcher.includes("from './success-object.ts'"), 'Success dispatcher must call Gateway-owned object handler');
 
 const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
 assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
