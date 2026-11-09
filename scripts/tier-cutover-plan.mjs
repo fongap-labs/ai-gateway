@@ -22,7 +22,7 @@ function safePolicyName(name) {
 }
 
 function tierNodes(tiers, tier) {
-  return tiers?.[tier] ?? tiers?.['tier' + tier] ?? [];
+  return tiers?.[tier] ?? tiers?.[`tier${tier}`] ?? [];
 }
 
 export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policies = null } = {}) {
