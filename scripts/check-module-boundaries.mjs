@@ -948,7 +948,11 @@ assert.match(inferenceExecutor, /center_conversion_budget_exceeded/, 'Center mus
 assert.match(centerDispatch, /returnTranslatedObject = Boolean\(/, 'Gateway must verify tagged objects for both v3 and v6');
 assert.match(centerDispatch, /returnTranslatedObject &&\s*\(upstream.headers.get/, 'Gateway must reject untagged v3/v6 responses');
 assert.match(inferenceExecutor, /if \(invocation.returnObject && upstream.ok && content\?\.toLowerCase/, 'Inference must collect unexpected v3 SSE');
-assert.doesNotMatch(inferenceExecutor, /if \(!invocation.preferNonstream\) return dispatchedConversionProblem/, 'v3 cannot pass raw successful JSON back to Gateway');
+assert.doesNotMatch(
+  inferenceExecutor,
+  /if \(!invocation.preferNonstream\) return dispatchedConversionProblem/,
+  'v3 cannot pass raw successful JSON back to Gateway',
+);
 // Scheduled maintenance is an application boundary. The D1 primitives
 // shared with request-time accounting belong to the neutral usage-store package.
 for (const [legacy, owner] of [
