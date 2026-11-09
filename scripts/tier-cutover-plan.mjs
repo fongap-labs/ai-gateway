@@ -13,6 +13,34 @@ const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const POLICY_NAME = /^[a-zA-Z0-9._-]{1,80}$/;
 const ALLOWED_OPTIONS = new Set(['tier1', 'tier2', 'tier3', 'credential-index', 'policies']);
 
+const LEGACY_OAUTH_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
+
+// This is an isolated historical input validator, not a runtime adapter.
+// Only the old Tier 2 may contain membership OAuth nodes. It never opens an
+// OAuth connection, decodes tokens, or publishes credential material.
+function assertLegacyOauthNodes(nodes, tier) {
+  if (tier !== 2 && nodes.length > 0) throw new Error('OAuth subscriptions were only supported in old Tier 2');
+  for (const node of nodes) {
+    if (
+      typeof node.id !== 'string' ||
+      !ID.test(node.id) ||
+      typeof node.provider !== 'string' ||
+      !node.provider.trim() ||
+      node.auth !== 'oauth' ||
+      !plainObject(node.models) ||
+      Object.keys(node).some((field) => !LEGACY_OAUTH_NODE_FIELDS.has(field))
+    ) {
+      throw new Error('Invalid historical OAuth node metadata');
+    }
+    if (node.base_url !== undefined && (typeof node.base_url !== 'string' || !node.base_url.trim())) {
+      throw new Error('Invalid historical OAuth base_url');
+    }
+    if (node.priority !== undefined && (!Number.isInteger(node.priority) || node.priority < 0)) {
+      throw new Error('Invalid historical OAuth priority');
+    }
+  }
+}
+
 function plainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -50,9 +78,18 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
     }
     sourceCounts[label] = nodes.length;
     try {
-      assertNodesArray(nodes, `tier-${tier}`, tier);
+      const legacyOauthNodes = nodes.filter((node) => plainObject(node) && node.auth === 'oauth');
+      // Retired OAuth node metadata is inventoried, never sent through the new
+      // static-token node validator. Old Tier 3 static nodes are validated as
+      // target Tier 2 to ensure their eventual API Token shape is accepted.
+      assertNodesArray(
+        nodes.filter((node) => !plainObject(node) || node.auth !== 'oauth'),
+        `source-tier-${tier}`,
+        tier === 3 ? 2 : tier,
+      );
+      assertLegacyOauthNodes(legacyOauthNodes, tier);
     } catch {
-      // The original validation error may contain operator-supplied values.
+      // Never print malformed source node values or raw credential material.
       blockers.push(`${label}: invalid source node configuration; run config:check`);
       continue;
     }
