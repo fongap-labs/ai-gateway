@@ -477,7 +477,7 @@ assert.ok(
   readFileSync(join(root, 'apps/gateway/attempt/hedge.ts'), 'utf8').includes("from '../scheduling/scheduler.ts'"),
   'Gateway hedge must call its owned Tier 2/3 picker',
 );
-assert.doesNotMatch(tier23Owner, /dispatchLegacyProvider|fetch\\(/, 'Scheduler must not execute physical Provider requests');
+assert.doesNotMatch(tier23Owner, /dispatchLegacyProvider|fetch\(/, 'Scheduler must not execute physical Provider requests');
 
 // The hedge race and private-center selector are Gateway-owned. Old entry
 // points are compatibility only, and all live callers reach the same code.
