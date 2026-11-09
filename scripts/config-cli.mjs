@@ -249,8 +249,8 @@ function runDiff(args) {
   const a = parseArgs(args, schema);
   if (!a['old-tier1'] && !a['new-tier1']) fail('provide at least --old-tier1 / --new-tier1');
 
-  const oldTiers = loadTiers({ tier1: a['old-tier1'], tier2: a['old-tier2'],  });
-  const newTiers = loadTiers({ tier1: a['new-tier1'], tier2: a['new-tier2'],  });
+  const oldTiers = loadTiers({ tier1: a['old-tier1'], tier2: a['old-tier2'] });
+  const newTiers = loadTiers({ tier1: a['new-tier1'], tier2: a['new-tier2'] });
   const oldSecrets = a['old-secrets'] ? parseJsonFile(a['old-secrets']) : {};
   const newSecrets = a['new-secrets'] ? parseJsonFile(a['new-secrets']) : {};
 
