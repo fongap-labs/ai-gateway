@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 维护: Tier 调度收敛为免费池与 API Token 池；旧三层配置必须先迁移。
+- 新增: Tier 调度收敛为免费池与 API Token 池；旧三层配置必须先迁移。
 - 维护: 私有中心及部署规划拒绝旧 Tier 3；不自动删除 Secrets。
 
 - 新增: 两层 Tier 的只读配置迁移预检，保留静态 Token、隔离会员 OAuth 并阻断凭据与重试策略歧义；未修改实际路由、Secrets 或部署。
