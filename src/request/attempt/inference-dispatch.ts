@@ -19,7 +19,7 @@ import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
 import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from '../../../apps/gateway/attempt/outcome.ts';
 
 const INTERNAL_TARGET = 'https://inference.internal/internal/execute';
 

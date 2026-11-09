@@ -15,7 +15,7 @@ import { safeReadErrorBody } from '../../protocol/http.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { recordOutcome, rotateWithNeutralEnd } from '../../../apps/gateway/attempt/outcome.ts';
 
 function terminate(c: AttemptContext, status: number, code: string, message: string, hasAttemptedProvider = false): AttemptOutcome {
   const { request, env, route, node, state, requestId } = c;
