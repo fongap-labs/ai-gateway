@@ -37,7 +37,7 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
 
   for (const tier of TIERS) {
     if (!Object.hasOwn(tiers, tier) && !Object.hasOwn(tiers, `tier${tier}`)) {
-      blockers.push(`tier${tier}` + ': source inventory not supplied; provide [] explicitly when empty');
+      blockers.push(`tier${tier}: source inventory not supplied; provide [] explicitly when empty`);
     }
   }
 
@@ -210,7 +210,7 @@ async function main() {
   const credentialIndex = args['credential-index'] ? readJson(args['credential-index'], 'credential-index') : null;
   const policies = args.policies ? readJson(args.policies, 'policies') : null;
   const result = planTwoTierCutover({ tiers, credentialIndex, policies });
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.preflight_passed) process.exitCode = 2;
 }
 
