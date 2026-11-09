@@ -34,6 +34,8 @@
 
 仓库在 `scripts/` 下使用一组聚焦的可执行检查，包括语法、部署配置、迁移、文档、链接与密钥扫描。这些工具的测试位于中央测试包（`action-worker:tests/packs/ai-gateway/`）中。
 
+`production-release-preflight.mjs --plan FILE` 离线串联四 Worker 拓扑、Wrangler 发布白名单和 Operations 三阶段/Cron 合同；要求拓扑清单只放在受保护目录，检查通过也不会授权或触发生产部署。
+
 ## 运营者探针
 
 `health-check.*`、`models-check.*` 与 `metrics-check.*` 是刻意保持精简的、平台原生的 Shell/PowerShell 探针。它们保持独立，是为了让凭据可以通过交互方式输入，而不引入跨平台的交互式依赖，也不为三个简单端点引入大型抽象。

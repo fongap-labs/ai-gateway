@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const USAGE_MAINTENANCE_CRON = '0 3 * * *';
+const SOURCE_SHA = /^[0-9a-f]{40}$/;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -49,6 +50,10 @@ export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate)
     throw new Error('Gateway and Operations compatibility dates differ.');
   }
   const gatewayMain = gatewayOnlyMain(gatewayConfig.main);
+  const sourceSha = gatewayConfig.vars?.AIG_BUILD_SHA;
+  if (typeof sourceSha !== 'string' || !SOURCE_SHA.test(sourceSha)) {
+    throw new Error('Gateway release config must provide its immutable AIG_BUILD_SHA.');
+  }
   if (operationsCandidate.main !== 'operations/standalone.ts') {
     throw new Error('Operations must use the fail-closed standalone entry.');
   }
@@ -97,6 +102,8 @@ export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate)
   // Do not export/print the actual D1 id; every phase uses the existing id.
   const operationsWithD1 = {
     ...operationsCandidate,
+    // Carry only immutable build identity; never inherit Gateway runtime vars.
+    vars: { AIG_BUILD_SHA: sourceSha },
     d1_databases: [
       {
         binding: 'TOKEN_STATS_DB',
