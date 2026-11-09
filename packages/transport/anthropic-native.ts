@@ -38,11 +38,7 @@ export function resolveAnthropicPath(surface: Surface): string {
 // opted into a beta feature - dropping it would silently change behavior.
 //
 // Static API Token nodes authenticate with x-api-key.
-export function buildAnthropicHeaders(
-  request: Request,
-  credential: string,
-  requestId: string,
-): Headers {
+export function buildAnthropicHeaders(request: Request, credential: string, requestId: string): Headers {
   const headers = new Headers();
   headers.set('x-api-key', credential);
   const clientVersion = request.headers.get('anthropic-version');
