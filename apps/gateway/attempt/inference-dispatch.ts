@@ -7,7 +7,7 @@
 
 import type { ExecutionInputSurface } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
-import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, QUOTA_RETRY_AFTER_MAX_MS, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../../src/protocol/openai.ts';
