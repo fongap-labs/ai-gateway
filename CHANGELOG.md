@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 独立 Generation/Operations Worker 部署准入及单 Cron 防护；不发布生产。
+
 - 修复: Gateway Matrix 仅接受私有中心对象与封装流，删除本地响应转换；不部署。
 
 - 新增: 旧会员订阅执行源码防回流校验，纳入合并与部署门禁；无生产变更。
