@@ -35,14 +35,6 @@ import {
 } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
-import {
-  makeNodeStreamTrack,
-  observeUpstreamAttemptUsage,
-  recordNodeBudgetStop,
-  recordNodeSuccess,
-  recordTokens,
-  recordUndeliveredUpstreamAttempt,
-} from '../../../src/request/attempt/observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
 import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
@@ -56,6 +48,14 @@ import type { AttemptOutcome, ConversionContext } from '../../../src/types/reque
 import { gatewayError } from '../response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../response/response-helpers.ts';
 import { decodeFramedInferenceResponse } from '../transport/inference-stream-client.ts';
+import {
+  makeNodeStreamTrack,
+  observeUpstreamAttemptUsage,
+  recordNodeBudgetStop,
+  recordNodeSuccess,
+  recordTokens,
+  recordUndeliveredUpstreamAttempt,
+} from './observability.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 
 /** True when this conversion context is owned by the IR matrix (any pair). */

@@ -341,6 +341,33 @@ assert.match(
   'Success dispatcher must use the Gateway-owned matrix response handler',
 );
 
+// Every physical upstream attempt must settle once through the unique
+// Gateway owner; old request modules cannot maintain parallel mutable state.
+const attemptObservationOwner = readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8');
+const attemptObservationLegacy = readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8');
+assert.ok(
+  attemptObservationLegacy.includes("export * from '../../../apps/gateway/attempt/observability.ts';"),
+  'Legacy attempt observation must re-export its Gateway owner',
+);
+assert.doesNotMatch(attemptObservationLegacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUndeliveredUpstreamAttempt']) {
+  assert.ok(attemptObservationOwner.includes(`export function ${symbol}(`), `Gateway must own ${symbol}`);
+}
+assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Accounting must use Gateway body release');
+assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Accounting must reuse Gateway response helpers');
+for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts', 'success-stream.ts']) {
+  const path = `src/request/attempt/${name}`;
+  const consumer = readFileSync(join(root, path), 'utf8');
+  assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
+  assert.doesNotMatch(consumer, /from ['"]\.\/observability\.ts['"]/);
+}
+for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts']) {
+  const path = `apps/gateway/attempt/${name}`;
+  const consumer = readFileSync(join(root, path), 'utf8');
+  assert.ok(consumer.includes("from './observability.ts'"), `${path} must reuse local Gateway accounting`);
+  assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/\.\.\/src\/request\/attempt\/observability\.ts['"]/);
+}
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
@@ -354,10 +381,7 @@ for (const [legacy, owner, symbol] of [
   assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
   assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
 }
-assert.ok(
-  readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/body-release.ts'"),
-  'Attempt observation must use Gateway-owned body release directly',
-);
+assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Attempt observation must use Gateway-owned body release directly');
 assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
@@ -374,10 +398,7 @@ assert.match(ownedObjectSuccess, /export async function handleObjectSuccess\(/);
 assert.ok(ownedObjectSuccess.includes("from './oversize.ts'"), 'Gateway object reply must use Gateway oversized handling');
 assert.ok(ownedObjectSuccess.includes("from '../response/errors.ts'"), 'Gateway object reply must use owned errors');
 assert.ok(ownedObjectSuccess.includes("from '../response/response-helpers.ts'"), 'Gateway object reply must use owned response helpers');
-assert.ok(
-  ownedObjectSuccess.includes("from '../../../src/request/attempt/observability.ts'"),
-  'Object completion must preserve physical attempt usage accounting',
-);
+assert.ok(ownedObjectSuccess.includes("from './observability.ts'"), 'Object completion must preserve physical attempt usage accounting');
 assert.ok(
   successDispatcher.includes("from '../../../apps/gateway/attempt/success-object.ts'"),
   'Success dispatcher must call Gateway-owned object handler',

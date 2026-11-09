@@ -5,6 +5,7 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
+import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { quotaFromCenter } from '../../../apps/gateway/reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { invokeInferenceNode } from '../../../apps/gateway/transport/inference-client-request.ts';
@@ -17,7 +18,6 @@ import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
 import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
 

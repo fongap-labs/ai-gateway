@@ -5,6 +5,7 @@
 // Unknown outcomes and center faults are terminal; never retry behind the
 // user's back or silently use the legacy direct-provider path.
 
+import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { quotaFromCenter } from '../../../apps/gateway/reliability/center-quota.ts';
 import { gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { GenerationCenterUnavailable, invokeGenerationNode } from '../../../apps/gateway/transport/generation-client-request.ts';
@@ -13,7 +14,6 @@ import { safeReadErrorBody } from '../../protocol/http.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
 
