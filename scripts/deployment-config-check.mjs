@@ -128,7 +128,7 @@ const deployManifest = JSON.parse(read('.github/deploy.json'));
 assert.deepEqual(deployManifest, {
   schema_version: '1',
   adapter: 'source-script',
-  automatic: true,
+  automatic: false,
   ignore_docs_only: true,
   runner_profile: 'production-deploy',
   environment: 'production',

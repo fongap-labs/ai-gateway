@@ -40,7 +40,7 @@ Cloudflare Worker 部署
 {
   "schema_version": "1",
   "adapter": "source-script",
-  "automatic": true,
+  "automatic": false,
   "ignore_docs_only": true,
   "runner_profile": "production-deploy",
   "environment": "production",
@@ -50,7 +50,9 @@ Cloudflare Worker 部署
 
 清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
-## 自动部署
+**两层架构切换保护**：AG #312 已合并；在生产凭据和双中心未验收前，`.github/deploy.json` 的 `automatic` 暂时设为 `false`，停止合并后自动派发生产部署。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
+
+## 自动部署（切换期间已禁用）
 
 在中央 CI 对当前默认分支 HEAD 运行成功之后，Action Worker 会解析源码所有的部署清单。只有同时满足以下条件，才会进行自动部署：
 
@@ -62,7 +64,7 @@ Cloudflare Worker 部署
 - 所选的 runner profile 解析到特权信任域；
 - 当 `ignore_docs_only: true` 时，本次变更不仅限于文档。
 
-Pull Request 的 CI 不会触发生产部署。
+Pull Request 的 CI 不会触发生产部署。仅修改 `docs/` 的合并应由 `ignore_docs_only: true` 排除自动部署；仍需在合并后核对中央调度日志，确认没有将其错误归类为可部署的代码变更。
 
 ## 中央手动部署
 
@@ -94,7 +96,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 可选的 `AIG_IS_DEPLOY_ENABLED=false` 紧急开关（kill switch）；
 - `CLOUDFLARE_ACCOUNT_ID`；
 - `AIG_PUBLIC_URL`；
-- 至少一个 `AIG_TIER{1,2,3}_NODES_XX` 分片；
+- 至少一个 `AIG_TIER{1,2}_NODES_XX` 分片；旧 `AIG_TIER3_*` 不得出现在新运行时；
 - 配置 Tier 1 节点时所需的 `AIG_AFFINITY_KV_ID`（GitHub 部署预检强制要求；运行时缺失时亲和自动禁用，主链路仍可用）；
 - 可选的 `AIG_ALLOW_DEGRADED=true`：显式允许带着被排除的节点继续部署（默认拒绝）；
 - 可选的 `AIG_USAGE_D1_ID`；
