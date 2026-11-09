@@ -44,7 +44,7 @@ import {
   recordNodeSuccess,
   recordTokens,
   recordUndeliveredUpstreamAttempt,
-} from './observability.ts';
+} from '../../../apps/gateway/attempt/observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';

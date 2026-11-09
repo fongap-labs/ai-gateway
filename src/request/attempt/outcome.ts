@@ -34,7 +34,7 @@ import {
 } from '../../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome, LoopState } from '../../types/request.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 
 // Failures that say nothing about the next request to the same Tier 1 key. When
 // the request plan runs out, the most recent one of these may be retried once.

@@ -11,7 +11,7 @@ import { corsHeaders, readBodyTextBounded } from '../../protocol/http.ts';
 import { getProviderAdapter } from '../../providers/registry.ts';
 import { classifyClientAbort, classifyEmptyResponse, KIND } from '../../reliability/classify.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { recordNodeSuccess } from './observability.ts';
+import { recordNodeSuccess } from '../../../apps/gateway/attempt/observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 

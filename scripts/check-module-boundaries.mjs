@@ -143,6 +143,34 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// Gateway alone owns physical-attempt usage settlement and large-body release.
+// Legacy paths may not hold duplicate accounting state or business logic.
+for (const [legacy, owner, symbol] of [
+  ['src/request/attempt/observability.ts', 'apps/gateway/attempt/observability.ts', 'recordUndeliveredUpstreamAttempt'],
+  ['src/request/attempt/body-release.ts', 'apps/gateway/attempt/body-release.ts', 'releaseLargeRequestBody'],
+]) {
+  const shim = readFileSync(join(root, legacy), 'utf8');
+  const impl = readFileSync(join(root, owner), 'utf8');
+  assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must be a pure compatibility export`);
+  assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
+  assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
+}
+assert.ok(readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from './body-release.ts'"),
+  'Owned attempt observation must use Gateway-owned body release');
+assert.ok(readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from '../response/response-helpers.ts'"),
+  'Owned attempt observation must use Gateway-owned response helper');
+for (const name of [
+  'dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts',
+  'success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts',
+]) {
+  const path = `src/request/attempt/${name}`;
+  const source = readFileSync(join(root, path), 'utf8');
+  assert.ok(source.includes("from '../../../apps/gateway/attempt/observability.ts'"),
+    `${path} must call Gateway-owned physical-attempt accounting directly`);
+  assert.doesNotMatch(source, /from ['"]\.\/observability\.ts['"]/,
+    `${path} must not import legacy observation`);
+}
+
 // Gateway alone owns client-facing error shaping, Retry-After policy and
 // response headers. The former src/request paths must never implement them.
 for (const [legacy, owner, symbol] of [

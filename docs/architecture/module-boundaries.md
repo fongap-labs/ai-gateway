@@ -425,6 +425,12 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 此项是 Gateway 旧请求目录清理的一部分，**不代表 `src/request/attempt/` 执行归属迁移已经完成**；后续仍需继续收敛尝试处理与观测边界。无生产配置、部署或 Service Binding 更改。
 
+## Gateway 物理尝试统计与正文释放归属
+
+`apps/gateway/attempt/observability.ts` 负责上游请求用量合并、一次性结算、D1 异步写入、流完成与节点成功记录；`apps/gateway/attempt/body-release.ts` 负责流式响应提交后释放大请求正文。八个仍在 `src/request/attempt/` 的执行与结果处理调用方直接引用 Gateway-owned 实现，原路径只保留兼容导出。
+
+这次不修改一次性计费判定、失败或取消结算时机、节点健康更新、429 冷却、流统计、内存释放阈值、D1 结构或生产配置。仍需迁移其他 attempt 调度和响应源码，不能视作整项完成。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

@@ -12,7 +12,7 @@ import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '..
 import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from './observability.ts';
+import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from '../../../apps/gateway/attempt/observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 

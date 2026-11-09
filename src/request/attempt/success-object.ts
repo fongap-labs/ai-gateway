@@ -19,7 +19,7 @@ import { collectOpenAIStreamObject } from '../../stream/assemble.ts';
 import { trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenAIResponsesObjectMeaningful } from '../../transport/index.ts';
 import type { AttemptOutcome } from '../../types/request.ts';
-import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
