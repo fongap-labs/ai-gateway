@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: OAuth 管理端授权、回调与粘贴码 HTTP 路由迁归 Gateway 自有模块，预检入口直连新实现。
+- 维护: 旧 `src/oauth/routes.ts` 仅兼容导出；令牌加密、D1 存储、刷新、授权码和鉴权规则保持不变。
+
 - 维护: 矩阵协议转换的 Gateway 侧成功响应终结处理迁入 `apps/gateway/attempt/success-matrix.ts`，旧路径仅兼容导出。
 - 维护: 统一的成功响应分发直接调用新模块，迁移源文件断言至真实源码，保持已交付 Token、帧流解码和预算终止原合同。
 
