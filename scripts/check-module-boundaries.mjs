@@ -907,6 +907,7 @@ assert.doesNotMatch(frameConsumerShim, /export function /, 'Legacy frame decoder
 assert.match(frameContract, /export function frameInferenceStream\(/, 'Private stream must have one framed encoder');
 assert.match(frameContract, /export function unframeInferenceStream\(/, 'Private stream must require explicit Gateway decoding');
 assert.match(frameProducer, /openMatrixStream\(/, 'Inference must execute real Matrix SSE conversion');
+assert.match(frameProducer, /buildFramedMatrixObjectFallback\(/, 'Inference must own native JSON to framed SSE fallback');
 assert.match(frameConsumer, /unframeInferenceStream\(/, 'Gateway decoder must strip private control frames');
 assert.match(
   readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8'),
@@ -926,6 +927,8 @@ const inferenceV4Dispatcher = readFileSync(join(root, 'apps/gateway/attempt/infe
 const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
+assert.match(inferenceV4Executor, /buildFramedMatrixObjectFallback\(/, 'Inference must synthesize JSON fallback behind private frames');
+assert.match(inferenceV4Dispatcher, /INFERENCE_FRAMED_STREAM_CONTENT_TYPE/, 'Gateway must reject unframed v4/v5 JSON fallback');
 assert.match(inferenceV4Contract, /EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5'/, 'v5 must isolate budgeted streams from legacy v4');
 assert.ok(
   inferenceV4Dispatcher.includes('(returnStream || returnCollectedObject) && limits.conversionBudget'),
