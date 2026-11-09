@@ -5,8 +5,8 @@
 // use a compatibility export; this module is the sole conversion implementation.
 import type { MatrixDiag } from '../../../packages/conversion-core/diag.ts';
 import type { IrProtocol, IrRequest } from '../../../packages/conversion-core/ir.ts';
-import type { ConversionResult, StructuredOutputStrategy } from '../../../packages/conversion-core/result.ts';
 import { isMatrixPair } from '../../../packages/conversion-core/protocol-pairs.ts';
+import type { ConversionResult, StructuredOutputStrategy } from '../../../packages/conversion-core/result.ts';
 import { ConversionError } from '../../../packages/conversion-core/validation.ts';
 import { buildAnthropicRequest, parseAnthropicRequest } from './anthropic.ts';
 import { buildChatRequest, parseChatRequest } from './chat.ts';
