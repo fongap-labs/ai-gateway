@@ -3,11 +3,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  MAINTENANCE_CRON,
   activateOperationsCron,
   classifyCronOwnership,
   createCloudflareCronClient,
   deactivateOperationsCron,
+  MAINTENANCE_CRON,
   readCronSnapshot,
 } from './operations-cron-control.mjs';
 
@@ -92,8 +92,8 @@ assert.deepEqual(await api.read('ai-gateway'), []);
 assert.deepEqual(await api.writeOperations(cron), cron);
 assert.deepEqual(await api.writeOperations([]), []);
 assert.equal(calls.length, 3);
-assert.ok(calls.every((c) => c.url.includes('/accounts/' + accountId + '/workers/scripts/')));
-assert.ok(calls.every((c) => c.auth === 'Bearer ' + token));
+assert.ok(calls.every((c) => c.url.includes(`/accounts/${accountId}/workers/scripts/`)));
+assert.ok(calls.every((c) => c.auth === `Bearer ${token}`));
 assert.deepEqual(JSON.parse(calls[1].body), [{ cron: MAINTENANCE_CRON }]);
 await assert.rejects(api.writeOperations(['* * * * *']), /approved Operations schedule/);
 await assert.rejects(api.read('other-worker'), /Unknown Worker/);
