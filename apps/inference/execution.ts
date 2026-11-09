@@ -7,8 +7,8 @@
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
+import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
@@ -16,8 +16,8 @@ import { createBodyAdmissionPool } from '../../packages/transport/body-admission
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
-import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
 import { estimateAnthropicInputTokens } from '../../src/protocol/anthropic.ts';
+import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
 import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { streamUsageEnabled } from '../../src/providers/registry.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
@@ -296,17 +296,22 @@ async function executeAdmittedNative(
         },
         ...(invocation.streamBudget ? { budget: invocation.streamBudget } : {}),
       });
-      if (!converted.reply.parts.some((part) => part.type === 'text' && part.text) &&
-          !converted.reply.parts.some((part) => part.type === 'tool_call')) {
+      if (
+        !converted.reply.parts.some((part) => part.type === 'text' && part.text) &&
+        !converted.reply.parts.some((part) => part.type === 'tool_call')
+      ) {
         return dispatchedConversionProblem('center_conversion_empty');
       }
       outgoing.set('content-type', 'application/json');
       outgoing.set('x-aig-response-format', INFERENCE_TRANSLATED_OBJECT_FORMAT);
-      return new Response(JSON.stringify({
-        kind: INFERENCE_TRANSLATED_OBJECT_FORMAT,
-        response: converted.object,
-        upstreamUsage: converted.reply.rawUsage ?? rawUsage,
-      }), { status: upstream.status, headers: outgoing });
+      return new Response(
+        JSON.stringify({
+          kind: INFERENCE_TRANSLATED_OBJECT_FORMAT,
+          response: converted.object,
+          upstreamUsage: converted.reply.rawUsage ?? rawUsage,
+        }),
+        { status: upstream.status, headers: outgoing },
+      );
     } catch (error) {
       if (error instanceof ConversionBudgetStop) return dispatchedConversionProblem('center_conversion_budget_exceeded');
       return dispatchedConversionProblem('center_conversion_invalid');
