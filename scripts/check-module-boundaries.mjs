@@ -321,10 +321,7 @@ for (const [legacy, owner, symbol] of [
 }
 const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
 assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
-assert.ok(
-  successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"),
-  'Native stream finalizer must be Gateway-owned',
-);
+assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
 
 // Matrix reply handling belongs to Gateway; the original request module
 // only forwards its exports. Keep real transport, account, and finalization
