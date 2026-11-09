@@ -11,7 +11,13 @@ import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs 
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../../src/protocol/openai.ts';
-import { classifyClientAbort, classifyConversionBudget, classifyNetworkError, classifyUpstreamStatus, KIND } from '../../../src/reliability/classify.ts';
+import {
+  classifyClientAbort,
+  classifyConversionBudget,
+  classifyNetworkError,
+  classifyUpstreamStatus,
+  KIND,
+} from '../../../src/reliability/classify.ts';
 import { recordTier1QuotaReport } from '../../../src/reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { quotaFromCenter } from '../reliability/center-quota.ts';
@@ -248,9 +254,11 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     return { rotate: true, kind: classified.kind };
   }
 
-  if (returnCollectedObject &&
-      (upstream.headers.get('x-aig-response-format') !== INFERENCE_TRANSLATED_OBJECT_FORMAT ||
-        !upstream.headers.get('content-type')?.toLowerCase().includes('application/json'))) {
+  if (
+    returnCollectedObject &&
+    (upstream.headers.get('x-aig-response-format') !== INFERENCE_TRANSLATED_OBJECT_FORMAT ||
+      !upstream.headers.get('content-type')?.toLowerCase().includes('application/json'))
+  ) {
     // Never treat an unframed upstream SSE or raw JSON as a successful public
     // Matrix reply when the center was required to do the conversion.
     detach();
