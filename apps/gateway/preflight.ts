@@ -442,7 +442,6 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       ? {
           1: config.tiers[1].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
           2: config.tiers[2].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
-          3: config.tiers[3].filter((node) => imageNodeCanGenerate(node, requestedModel, bodyJson)),
         }
       : config.tiers;
   const requestDescriptor: RequestDescriptor = {
