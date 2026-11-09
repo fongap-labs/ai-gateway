@@ -3,8 +3,8 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
-import { preflight } from '../apps/gateway/preflight.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
+import { preflight } from '../apps/gateway/preflight.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
@@ -117,7 +117,15 @@ assert.equal(oldPrivateSecrets.nodesUsable, 0);
 for (const method of ['GET', 'POST']) {
   for (const uri of ['/oauth/start', '/oauth/callback', '/oauth/refresh']) {
     const request = new Request(`https://gateway.example.invalid${uri}`, { method });
-    const terminal = await preflight(request, { ...base, AIG_OAUTH_PROVIDERS: '{}' }, { waitUntil() { throw new Error('Legacy OAuth must not schedule work'); } });
+    const terminal = await preflight(
+      request,
+      { ...base, AIG_OAUTH_PROVIDERS: '{}' },
+      {
+        waitUntil() {
+          throw new Error('Legacy OAuth must not schedule work');
+        },
+      },
+    );
     assert.equal(terminal.ok, false, `${method} ${uri} must terminate in Gateway`);
     assert.equal(terminal.response.status, 404, `${method} ${uri} must remain unavailable`);
     assert.equal(terminal.response.headers.get('set-cookie'), null, 'OAuth cookies must not be created');
