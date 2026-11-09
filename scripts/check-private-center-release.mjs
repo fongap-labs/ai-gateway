@@ -26,9 +26,15 @@ function noPublicExposure(worker, label) {
   }
 }
 function names(names, label) {
-  assert.ok(Array.isArray(names) && names.every((n) => typeof n === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(n)), `${label} must contain Secret names only`);
+  assert.ok(
+    Array.isArray(names) && names.every((n) => typeof n === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(n)),
+    `${label} must contain Secret names only`,
+  );
   assert.equal(new Set(names).size, names.length, `${label} contains duplicate Secret names`);
-  assert.ok(names.every((n) => !LEGACY.test(n)), `${label} contains retired Tier3 or OAuth bindings`);
+  assert.ok(
+    names.every((n) => !LEGACY.test(n)),
+    `${label} contains retired Tier3 or OAuth bindings`,
+  );
   return new Set(names);
 }
 function oneD1(worker, label) {
@@ -42,8 +48,11 @@ function oneD1(worker, label) {
 function secretVars(config, label) {
   requireRecord(config.vars, `${label} vars`);
   for (const key of Object.keys(config.vars)) {
-    assert.equal(PUBLIC_SECRET.test(key) || LEGACY.test(key) || /(?:^|_)SECRET(?:_|$)/.test(key) || /(?:^|_)AUTH_KEY$/.test(key), false,
-      `${label} exposes a credential variable name`);
+    assert.equal(
+      PUBLIC_SECRET.test(key) || LEGACY.test(key) || /(?:^|_)SECRET(?:_|$)/.test(key) || /(?:^|_)AUTH_KEY$/.test(key),
+      false,
+      `${label} exposes a credential variable name`,
+    );
   }
 }
 function checkCenter(config, label, expectedName, expectedEntry, authName, sourceSha, namesSet) {
@@ -56,8 +65,14 @@ function checkCenter(config, label, expectedName, expectedEntry, authName, sourc
   secretVars(config, label);
   assert.equal(config.vars.AIG_BUILD_SHA, sourceSha, `${label} build SHA differs from Gateway`);
   assert.ok(namesSet.has(authName), `${label} internal auth Secret is absent`);
-  assert.ok([...namesSet].some((n) => NODE_SECRET.test(n)), `${label} has no static Token Secret shards`);
-  assert.ok(Object.keys(config.vars).some((n) => /^AIG_TIER[12]_NODES_(0[1-9]|10)$/.test(n)), `${label} has no declared node shards`);
+  assert.ok(
+    [...namesSet].some((n) => NODE_SECRET.test(n)),
+    `${label} has no static Token Secret shards`,
+  );
+  assert.ok(
+    Object.keys(config.vars).some((n) => /^AIG_TIER[12]_NODES_(0[1-9]|10)$/.test(n)),
+    `${label} has no declared node shards`,
+  );
 }
 /**
  * Verify FINAL cutover topology or its explicit cron handoff stages.
@@ -74,7 +89,10 @@ export function assertReleaseTopology(plan) {
   const gNames = names(inventory.gateway, 'Gateway');
   const iNames = names(inventory.inference, 'Inference');
   const pNames = names(inventory.generation, 'Generation');
-  assert.ok([...gNames].every((n) => !NODE_SECRET.test(n)), 'Gateway must not own upstream Provider Token shards');
+  assert.ok(
+    [...gNames].every((n) => !NODE_SECRET.test(n)),
+    'Gateway must not own upstream Provider Token shards',
+  );
   assert.ok(gNames.has('AIG_INFERENCE_AUTH_KEY') && gNames.has('AIG_GENERATION_AUTH_KEY'), 'Gateway must hold both private center auth bindings');
   noPublicExposure(gateway, 'Gateway');
   assert.equal(gateway.name, 'ai-gateway');
@@ -111,7 +129,12 @@ export function assertReleaseTopology(plan) {
     'Gateway entrypoint must match cron handoff stage',
   );
   assert.equal(plan.approved_for_production, false, 'Offline readiness is never a production deployment approval');
-  return { ready: true, stage, workers: 4, gates: ['private-centers', 'static-token-ownership', 'immutable-build', 'cron-single-owner', 'd1-equality'] };
+  return {
+    ready: true,
+    stage,
+    workers: 4,
+    gates: ['private-centers', 'static-token-ownership', 'immutable-build', 'cron-single-owner', 'd1-equality'],
+  };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
