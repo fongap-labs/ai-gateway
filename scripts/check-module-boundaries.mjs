@@ -273,11 +273,6 @@ for (const obsolete of [
   'src/subscription/google-wire.ts',
   'src/subscription/openai.ts',
   'src/subscription/quota-hints.ts',
-  'src/subscription/anthropic.ts',
-  'src/subscription/google.ts',
-  'src/subscription/openai.ts',
-  'src/subscription/google-wire.ts',
-  'src/subscription/quota-hints.ts',
   'packages/oauth/crypto.ts',
   'packages/oauth/token-store.ts',
 ]) {
