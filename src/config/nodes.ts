@@ -131,13 +131,13 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
 
   // Old Tier 3 must never disappear silently when the 2-Tier matcher is used.
   // Check names only: the public Gateway must not read Provider secret values.
-  let legacyPolicyTier3 = false;
+  let hasLegacyTier3Policy = false;
   const rawPolicies = readEnv(env, 'AIG_POLICIES_CONFIG');
   if (rawPolicies) {
     try {
       const parsedPolicies: unknown = JSON.parse(rawPolicies);
       if (parsedPolicies && typeof parsedPolicies === 'object' && !Array.isArray(parsedPolicies)) {
-        legacyPolicyTier3 = Object.values(parsedPolicies).some((policy) => {
+        hasLegacyTier3Policy = Object.values(parsedPolicies).some((policy) => {
           if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return false;
           const p = policy as Record<string, unknown>;
           const attempts = p.tier_attempts;
@@ -158,11 +158,11 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const legacySubscriptionKeys = Object.keys(env).filter((key) =>
     key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
   );
-  if (legacyTierKeys.length > 0 || legacyPolicyTier3 || legacySubscriptionKeys.length > 0) {
+  if (legacyTierKeys.length > 0 || hasLegacyTier3Policy || legacySubscriptionKeys.length > 0) {
     if (legacyTierKeys.length > 0) {
       diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
     }
-    if (legacyPolicyTier3) diagnostics.push('two-tier cutover required: deprecated tier3 policy budget or hedge references remain');
+    if (hasLegacyTier3Policy) diagnostics.push('two-tier cutover required: deprecated tier3 policy budget or hedge references remain');
     if (legacySubscriptionKeys.length > 0) {
       diagnostics.push('retired subscription settings are forbidden (' + legacySubscriptionKeys.sort().join(', ') + ')');
     }
@@ -246,7 +246,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   // The private centers still require their own Provider credential shards.
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
-  let legacySubscriptionAuthSeen = false;
+  let hasLegacySubscriptionAuth = false;
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedTierShards) {
     const tier = `tier-${shard.tierNumber}` as NodeTier;
@@ -261,7 +261,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       // into new Tier 2 or silently omit it from an otherwise healthy pool.
       if (rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && Object.hasOwn(rawNode, 'auth')) {
         diagnostics.push(shard.key + ': deprecated subscription auth marker; remove the node through the two-tier cutover plan');
-        legacySubscriptionAuthSeen = true;
+        hasLegacySubscriptionAuth = true;
         hasConfigErrors = true;
         continue;
       }
@@ -311,7 +311,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   // Only a configuration with no usable node stops the gateway. Anything else
   // that was rejected degrades it: the usable nodes keep serving and /health lists
   // the diagnostics, while the deploy check refuses it until it is fixed.
-  if (legacySubscriptionAuthSeen) {
+  if (hasLegacySubscriptionAuth) {
     // A mixed legacy subscription/Token configuration must not partially
     // deploy: removing a subscriber tier is a deliberate, audited cutover.
     return {
