@@ -6,6 +6,7 @@
 // user's back or silently use the legacy direct-provider path.
 
 import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
+import { handleSuccess } from '../../../apps/gateway/attempt/success.ts';
 import { quotaFromCenter } from '../../../apps/gateway/reliability/center-quota.ts';
 import { gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { GenerationCenterUnavailable, invokeGenerationNode } from '../../../apps/gateway/transport/generation-client-request.ts';
@@ -15,7 +16,6 @@ import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../reliabi
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
-import { handleSuccess } from './success.ts';
 
 function terminate(c: AttemptContext, status: number, code: string, message: string, hasAttemptedProvider = false): AttemptOutcome {
   const { request, env, route, node, state, requestId } = c;

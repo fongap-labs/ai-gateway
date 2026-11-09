@@ -6,6 +6,7 @@
 // Once the binding exists there is NO automatic direct-provider fallback.
 
 import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
+import { handleSuccess } from '../../../apps/gateway/attempt/success.ts';
 import { quotaFromCenter } from '../../../apps/gateway/reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { invokeInferenceNode } from '../../../apps/gateway/transport/inference-client-request.ts';
@@ -19,7 +20,6 @@ import { classifyClientAbort, classifyNetworkError, classifyUpstreamStatus, KIND
 import { recordTier1QuotaReport } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
-import { handleSuccess } from './success.ts';
 
 const INTERNAL_TARGET = 'https://inference.internal/internal/execute';
 
