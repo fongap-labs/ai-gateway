@@ -411,10 +411,7 @@ for (const [name, functionName] of [
 ]) {
   const legacy = readFileSync(join(root, `src/request/attempt/${name}.ts`), 'utf8');
   const owner = readFileSync(join(root, `apps/gateway/attempt/${name}.ts`), 'utf8');
-  assert.ok(
-    legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`),
-    `Old ${name} path must forward to Gateway owner`,
-  );
+  assert.ok(legacy.includes(`export * from '../../../apps/gateway/attempt/${name}.ts';`), `Old ${name} path must forward to Gateway owner`);
   assert.doesNotMatch(legacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
   assert.ok(owner.includes(`export async function ${functionName}(`), `Gateway must implement ${functionName}`);
   assert.ok(owner.includes("from '../transport/"), `${name} must delegate only through the private center client`);
