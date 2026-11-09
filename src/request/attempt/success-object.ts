@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
+import { isOversizedReplyError, stopOnOversizedReply } from '../../../apps/gateway/attempt/oversize.ts';
 import { buildClientErrorResponse, gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../../../apps/gateway/response/response-helpers.ts';
 import { reportedUsageFromPayload } from '../../observability/reported-usage.ts';
@@ -21,7 +22,6 @@ import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenA
 import type { AttemptOutcome } from '../../types/request.ts';
 import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
-import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
 /**

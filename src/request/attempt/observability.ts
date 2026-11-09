@@ -9,6 +9,7 @@
 // successful model-status evidence, but it still belongs in upstream cost
 // accounting when usage is reported.
 
+import { releaseLargeRequestBody } from '../../../apps/gateway/attempt/body-release.ts';
 import { gatewayStats, recordStreamCompleted, recordStreamInterrupted, recordStreamStart } from '../../observability/gateway-stats.ts';
 import { mergeReportedUsage, normalizeTokenUsage, recordTokenUsage } from '../../observability/token-usage.ts';
 import { persistTokenUsage, persistUpstreamAttemptUsage } from '../../observability/token-usage-store.ts';
@@ -32,7 +33,6 @@ import { writeTier1Affinity } from '../../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptSettlement } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
-import { releaseLargeRequestBody } from './body-release.ts';
 
 // One settlement holder per physical upstream dispatch. The holder travels by
 // reference with the attempt context, so a context copy (a model-family

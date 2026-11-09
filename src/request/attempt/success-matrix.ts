@@ -10,6 +10,7 @@
 // cross-protocol pair is matrix-owned; native passes carry no conversion
 // context and never land here.
 
+import { isOversizedReplyError, stopOnOversizedReply } from '../../../apps/gateway/attempt/oversize.ts';
 import { gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../../../apps/gateway/response/response-helpers.ts';
 import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
@@ -46,7 +47,6 @@ import {
   recordUndeliveredUpstreamAttempt,
 } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
-import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
 /** True when this conversion context is owned by the IR matrix (any pair). */

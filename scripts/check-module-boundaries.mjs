@@ -143,6 +143,35 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// Gateway owns safe large-body release, buffered response decisions, and
+// terminal oversized-reply handling; legacy modules are compatibility-only.
+for (const [legacy, owner, symbol] of [
+  ['src/request/attempt/body-release.ts', 'apps/gateway/attempt/body-release.ts', 'releaseLargeRequestBody'],
+  ['src/request/attempt/attempt-mode.ts', 'apps/gateway/attempt/attempt-mode.ts', 'isBufferedUpstreamReply'],
+  ['src/request/attempt/oversize.ts', 'apps/gateway/attempt/oversize.ts', 'stopOnOversizedReply'],
+]) {
+  const shim = readFileSync(join(root, legacy), 'utf8');
+  const impl = readFileSync(join(root, owner), 'utf8');
+  assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must be a pure compatibility export`);
+  assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
+  assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
+}
+assert.ok(
+  readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/body-release.ts'"),
+  'Attempt observation must use Gateway-owned body release directly',
+);
+assert.ok(
+  readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
+  'Attempt dispatch must export Gateway-owned buffering decision directly',
+);
+for (const path of ['src/request/attempt/success-matrix.ts', 'src/request/attempt/success-object.ts']) {
+  const source = readFileSync(join(root, path), 'utf8');
+  assert.ok(source.includes("from '../../../apps/gateway/attempt/oversize.ts'"), `${path} must call Gateway-owned oversized-reply handling directly`);
+}
+
+const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
+assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
+
 // Gateway alone owns client-facing error shaping, Retry-After policy and
 // response headers. The former src/request paths must never implement them.
 for (const [legacy, owner, symbol] of [
@@ -169,7 +198,6 @@ for (const path of [
   'src/request/attempt/success-object.ts',
   'src/request/attempt/success-stream.ts',
   'src/request/attempt/success-image.ts',
-  'src/request/attempt/oversize.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',
