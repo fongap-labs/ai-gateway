@@ -18,7 +18,6 @@ import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
-import { RetrySlot } from './reliability/retry-budget.ts';
 import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import { supportsRequest } from '../../src/scheduler/scheduler.ts';
@@ -33,6 +32,7 @@ import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, remembe
 import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './policy/router.ts';
 import { preflight as runPreflight } from './preflight.ts';
+import { RetrySlot } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './response/errors.ts';
 import { makeTier1Rng } from './scheduling/tier-policy.ts';
 import { runTierLoop } from './tier-loop.ts';
