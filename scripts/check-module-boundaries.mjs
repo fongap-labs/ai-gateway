@@ -126,6 +126,31 @@ for (const caller of [retryBudgetRequest, retryBudgetLoop]) {
   assert.doesNotMatch(caller, /from ['"]\.\.\/\.\.\/src\/reliability\/retry-budget\.ts['"]/);
 }
 
+// Provider quota observations and protocol/surface vocabulary are shared
+// runtime-neutral contracts consumed directly by the private centers.
+const legacyProtocolTypes = readFileSync(join(root, 'src/types/protocol.ts'), 'utf8');
+const sharedProtocolTypes = readFileSync(join(root, 'packages/contracts/protocol.ts'), 'utf8');
+const legacyQuotaSignal = readFileSync(join(root, 'src/reliability/quota-signal.ts'), 'utf8');
+const sharedQuotaSignal = readFileSync(join(root, 'packages/contracts/quota-signal.ts'), 'utf8');
+assert.ok(legacyProtocolTypes.includes("export type { Protocol, Surface } from '../../packages/contracts/protocol.ts';"));
+assert.ok(legacyQuotaSignal.includes("export * from '../../packages/contracts/quota-signal.ts';"));
+assert.doesNotMatch(legacyProtocolTypes, /^(?:import|export type (?:Protocol|Surface)\s*=) /m);
+assert.doesNotMatch(legacyQuotaSignal, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.match(sharedProtocolTypes, /export type Protocol = 'openai' \| 'anthropic'/);
+assert.match(sharedProtocolTypes, /export type Surface = import\('\.\/execution\.ts'\)\.ExecutionSurface/);
+assert.match(sharedQuotaSignal, /export function extractQuotaSignal\(/);
+assert.ok(sharedQuotaSignal.includes("from './protocol.ts'"));
+for (const center of ['apps/inference/execution.ts', 'apps/generation/execution.ts']) {
+  const source = readFileSync(join(root, center), 'utf8');
+  assert.ok(source.includes("from '../../packages/contracts/quota-signal.ts'"), `${center} must use shared quota parser`);
+  assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/src\/reliability\/quota-signal\.ts['"]/);
+}
+const gatewayCenterQuota = readFileSync(join(root, 'apps/gateway/reliability/center-quota.ts'), 'utf8');
+assert.ok(gatewayCenterQuota.includes("from '../../../packages/contracts/quota-signal.ts'"), 'Gateway quota decoder must share neutral quota type');
+for (const required of ['OPENAI_REMAINING_REQUESTS', 'ANTHROPIC_REMAINING_REQUESTS', 'parseCompoundDurationMs', 'parseResetToMs']) {
+  assert.ok(sharedQuotaSignal.includes(required), `Quota parsing must retain ${required}`);
+}
+
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [

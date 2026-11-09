@@ -5,6 +5,7 @@
 // model family retries, Tier scheduling or public routing in this module.
 
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
@@ -18,7 +19,6 @@ import { getOAuthProvider } from '../../src/oauth/provider-configs.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText, safeReadErrorBody } from '../../src/protocol/http.ts';
 import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../src/providers/registry.ts';
-import { extractQuotaSignal } from '../../src/reliability/quota-signal.ts';
 import { isSubscriptionNode } from '../../src/subscription/index.ts';
 import type { SubscriptionWire } from '../../src/subscription/types.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
