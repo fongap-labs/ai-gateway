@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
-import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
-import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
 import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
 import { corsHeaders, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, readBufferedReplyText, trimDiagnostic } from '../../../src/protocol/http.ts';
 import { synthesizeSseFromCompletion } from '../../../src/protocol/openai.ts';
@@ -15,14 +12,23 @@ import {
   classifyPostHeadersFailure,
   classifyUpstreamStatus,
 } from '../../../src/reliability/classify.ts';
+import {
+  makeNodeStreamTrack,
+  recordNodeSuccess,
+  recordTier1NonStreamTtft,
+  recordTokens,
+  recordUndeliveredUpstreamAttempt,
+} from '../../../src/request/attempt/observability.ts';
+import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
+import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { collectAnthropicMessageObject, synthesizeAnthropicFromMessage } from '../../../src/stream/anthropic-native.ts';
 import { collectOpenAIStreamObject } from '../../../src/stream/assemble.ts';
 import { trackStreamResponse } from '../../../src/stream/track.ts';
 import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenAIResponsesObjectMeaningful } from '../../../src/transport/index.ts';
 import type { AttemptOutcome } from '../../../src/types/request.ts';
-import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from '../../../src/request/attempt/observability.ts';
-import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
-import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
+import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
+import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
+import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 
 /**
  * Status for an Anthropic error body delivered inside HTTP 200. Anthropic

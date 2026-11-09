@@ -348,8 +348,14 @@ assert.match(ownedObjectSuccess, /export async function handleObjectSuccess\(/);
 assert.ok(ownedObjectSuccess.includes("from './oversize.ts'"), 'Gateway object reply must use Gateway oversized handling');
 assert.ok(ownedObjectSuccess.includes("from '../response/errors.ts'"), 'Gateway object reply must use owned errors');
 assert.ok(ownedObjectSuccess.includes("from '../response/response-helpers.ts'"), 'Gateway object reply must use owned response helpers');
-assert.ok(ownedObjectSuccess.includes("from '../../../src/request/attempt/observability.ts'"), 'Object completion must preserve physical attempt usage accounting');
-assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-object.ts'"), 'Success dispatcher must call Gateway-owned object handler');
+assert.ok(
+  ownedObjectSuccess.includes("from '../../../src/request/attempt/observability.ts'"),
+  'Object completion must preserve physical attempt usage accounting',
+);
+assert.ok(
+  successDispatcher.includes("from '../../../apps/gateway/attempt/success-object.ts'"),
+  'Success dispatcher must call Gateway-owned object handler',
+);
 
 const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
 assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
