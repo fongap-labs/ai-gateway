@@ -30,12 +30,12 @@ function assertTwoTierBindingNames(names) {
     name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY'
   ).sort();
   if (retired.length > 0) {
-    throw new Error('Retired subscription bindings must be removed through controlled cutover: ' + retired.join(', '));
+    throw new Error(`Retired subscription bindings must be removed through controlled cutover: ${retired.join(', ')}`);
   }
   const legacy = [...names].filter((name) => name.startsWith('AIG_TIER3_')).sort();
   if (legacy.length > 0) {
     // Names only, never print any credential values.
-    throw new Error('Legacy Tier 3 bindings must be explicitly migrated before deploying: ' + legacy.join(', '));
+    throw new Error(`Legacy Tier 3 bindings must be explicitly migrated before deploying: ${legacy.join(', ')}`);
   }
 }
 
@@ -205,7 +205,7 @@ const REQUIRED_SECRETS = ['CLOUDFLARE_API_TOKEN'];
 export function preflight(env) {
   const errors = [];
   const oldBindings = Object.keys(env).filter((name) => name.startsWith('AIG_TIER3_')).sort();
-  if (oldBindings.length > 0) errors.push('Legacy Tier 3 bindings require explicit two-tier cutover: ' + oldBindings.join(', '));
+  if (oldBindings.length > 0) errors.push(`Legacy Tier 3 bindings require explicit two-tier cutover: ${oldBindings.join(', ')}`);
   const warnings = [];
   for (const name of REQUIRED_VARS) {
     if (!env[name] || String(env[name]).trim() === '') errors.push(`${name} is missing from GitHub Repository Variables.`);
