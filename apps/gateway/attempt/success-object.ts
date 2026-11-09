@@ -13,7 +13,6 @@ import {
   classifyUpstreamStatus,
 } from '../../../src/reliability/classify.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
-import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { collectAnthropicMessageObject, synthesizeAnthropicFromMessage } from '../../../src/stream/anthropic-native.ts';
 import { collectOpenAIStreamObject } from '../../../src/stream/assemble.ts';
 import { trackStreamResponse } from '../../../src/stream/track.ts';
@@ -23,6 +22,7 @@ import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
 import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
+import type { SuccessArgs } from './success.ts';
 
 /**
  * Status for an Anthropic error body delivered inside HTTP 200. Anthropic

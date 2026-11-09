@@ -319,9 +319,13 @@ for (const [legacy, owner, symbol] of [
   assert.ok(impl.includes("from '../response/errors.ts'"), `${owner} must use Gateway error handling`);
   assert.ok(impl.includes("from '../response/response-helpers.ts'"), `${owner} must use Gateway response helpers`);
 }
-const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
-assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
-assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
+const successDispatcher = readFileSync(join(root, 'apps/gateway/attempt/success.ts'), 'utf8');
+const legacySuccessDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
+assert.ok(legacySuccessDispatcher.includes("export * from '../../../apps/gateway/attempt/success.ts';"), 'Old success dispatcher must only forward');
+assert.doesNotMatch(legacySuccessDispatcher, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.match(successDispatcher, /export async function handleSuccess\(/, 'Gateway must own the success dispatcher');
+assert.ok(successDispatcher.includes("from './success-image.ts'"), 'Image handler must be Gateway-owned');
+assert.ok(successDispatcher.includes("from './success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
 
 // Matrix reply handling belongs to Gateway; the original request module
 // only forwards its exports. Keep real transport, account, and finalization
@@ -339,11 +343,16 @@ assert.match(ownedMatrixSuccess, /from '\.\/oversize\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/response\/errors\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/response\/response-helpers\.ts'/);
 assert.match(ownedMatrixSuccess, /from '\.\.\/transport\/inference-stream-client\.ts'/);
-assert.match(
-  successDispatcher,
-  /from '\.\.\/\.\.\/\.\.\/apps\/gateway\/attempt\/success-matrix\.ts'/,
-  'Success dispatcher must use the Gateway-owned matrix response handler',
-);
+assert.match(successDispatcher, /from '\.\/success-matrix\.ts'/, 'Success dispatcher must use the Gateway-owned matrix response handler');
+
+for (const file of ['success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts']) {
+  const source = readFileSync(join(root, 'apps/gateway/attempt', file), 'utf8');
+  assert.ok(source.includes("from './success.ts'"), `${file} must use the Gateway-owned SuccessArgs type`);
+}
+for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
+  const source = readFileSync(join(root, 'src/request/attempt', file), 'utf8');
+  assert.ok(source.includes("from '../../../apps/gateway/attempt/success.ts'"), `${file} must call the Gateway-owned success finalizer`);
+}
 
 // Every physical upstream attempt must settle once through the unique
 // Gateway owner; old request modules cannot maintain parallel mutable state.
@@ -403,10 +412,7 @@ assert.ok(ownedObjectSuccess.includes("from './oversize.ts'"), 'Gateway object r
 assert.ok(ownedObjectSuccess.includes("from '../response/errors.ts'"), 'Gateway object reply must use owned errors');
 assert.ok(ownedObjectSuccess.includes("from '../response/response-helpers.ts'"), 'Gateway object reply must use owned response helpers');
 assert.ok(ownedObjectSuccess.includes("from './observability.ts'"), 'Object completion must preserve physical attempt usage accounting');
-assert.ok(
-  successDispatcher.includes("from '../../../apps/gateway/attempt/success-object.ts'"),
-  'Success dispatcher must call Gateway-owned object handler',
-);
+assert.ok(successDispatcher.includes("from './success-object.ts'"), 'Success dispatcher must call Gateway-owned object handler');
 
 const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
 assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');

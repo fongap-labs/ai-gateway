@@ -36,7 +36,6 @@ import {
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
 import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
-import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import {
@@ -57,6 +56,7 @@ import {
   recordUndeliveredUpstreamAttempt,
 } from './observability.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
+import type { SuccessArgs } from './success.ts';
 
 /** True when this conversion context is owned by the IR matrix (any pair). */
 export function isMatrixConversion(conversionContext: ConversionContext | null | undefined): boolean {
