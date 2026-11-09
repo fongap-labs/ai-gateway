@@ -9,8 +9,8 @@
 //
 //   dispatch.ts        request accounting, center selection, and strict legacy seam
 //   legacy-provider-dispatch.ts  transitional direct-Provider transport; delete after parity
-//   attempt-mode.ts    shared buffered reply decision
-//   body-release.ts    compatibility export to Gateway-owned large-body release
+//   attempt-mode.ts    compatibility re-export of Gateway-owned buffered reply decision
+//   body-release.ts    compatibility export for Gateway-owned body release
 //                      commits, so the prompt tree is not retained
 //   hedge.ts           hedge delay race, twin selection, shared deadline,
 //                      winner/loser lifecycle + abort
@@ -21,7 +21,7 @@
 //                      embedded-error and post-header result handling
 //   outcome.ts         AttemptOutcome construction, failure/rotate/stop,
 //                      logical attempt vs dispatch accounting
-//   observability.ts   compatibility export to Gateway-owned token accounting,
+//   observability.ts   token accounting, D1 persistence scheduling, stream
 //                      metrics, node success/TTFT recording (never affects
 //                      scheduling decisions)
 //

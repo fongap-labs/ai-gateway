@@ -4,14 +4,14 @@
 // Request-level attempt accounting; all execution is private-center owned.
 // An unavailable center always fails closed, never to a direct Provider.
 
-import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { recordAttemptEvent } from '../../observability/gateway-events.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { upstreamModelOf } from '../response-helpers.ts';
 import { dispatchGenerationAttempt } from './generation-dispatch.ts';
 import { dispatchInferenceAttempt } from './inference-dispatch.ts';
+import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 
-export { isBufferedUpstreamReply } from './attempt-mode.ts';
+export { isBufferedUpstreamReply } from '../../../apps/gateway/attempt/attempt-mode.ts';
 
 // Every Provider call is charged once, including hedge losers. The Gateway
 // owns the request-level attempt/hedge budget; centers execute one attempt.
