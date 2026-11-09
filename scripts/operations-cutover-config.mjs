@@ -55,6 +55,17 @@ export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate)
   if (gatewayConfig.workers_dev !== false || operationsCandidate.workers_dev !== false) {
     throw new Error('Neither worker may expose workers.dev.');
   }
+  if (Object.hasOwn(gatewayConfig, 'secrets')) {
+    throw new Error('Source Gateway config must not embed Secret values.');
+  }
+  if (
+    isRecord(gatewayConfig.vars) &&
+    Object.keys(gatewayConfig.vars).some(
+      (name) => /_CREDENTIALS_/.test(name) || name === 'AIG_EDGE_CACHE_HMAC_KEY' || name === 'AIG_TOKEN_ENCRYPTION_KEY',
+    )
+  ) {
+    throw new Error('Source Gateway vars contain a prohibited Secret binding.');
+  }
   if (JSON.stringify(crons(gatewayConfig)) !== JSON.stringify([USAGE_MAINTENANCE_CRON])) {
     throw new Error('Existing Gateway maintenance cron is not the expected single owner.');
   }
@@ -77,7 +88,7 @@ export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate)
   }
   if (
     typeof currentDb.database_id !== 'string' ||
-    !/^[a-f0-9-]{32,36}$/i.test(currentDb.database_id) ||
+    !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(currentDb.database_id) ||
     typeof currentDb.database_name !== 'string' ||
     !currentDb.database_name.trim()
   ) {
