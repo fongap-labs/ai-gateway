@@ -22,8 +22,8 @@ const env = {
     },
   },
   AIG_INFERENCE_AUTH_KEY: key,
-  AIG_TIER3_NODES_01: JSON.stringify([node]),
-  AIG_TIER3_CREDENTIALS_01: JSON.stringify({ [node.id]: 'fake-only-credential' }),
+  AIG_TIER2_NODES_01: JSON.stringify([node]),
+  AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: 'fake-only-credential' }),
 };
 const client = new Request('https://gateway.invalid/v1/messages', { method: 'POST' });
 const body = { model: 'chat-test', max_tokens: 50, stream: true, messages: [{ role: 'user', content: 'Hi' }] };
