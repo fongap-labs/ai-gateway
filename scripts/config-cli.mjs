@@ -154,7 +154,7 @@ function runCheck(args) {
   for (const id of Object.keys(secrets || {})) {
     if (!nodeById.has(id)) warn(`credential "${id}" has no matching node in any tier config`);
   }
-  for (const [id, node] of nodeById) {
+  for (const [id] of nodeById) {
     if (!(id in (secrets || {}))) fail(`node "${id}" has no credential in the secrets file`);
   }
 
