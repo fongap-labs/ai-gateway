@@ -40,7 +40,7 @@ Cloudflare Worker 部署
 {
   "schema_version": "1",
   "adapter": "source-script",
-  "automatic": true,
+  "automatic": false,
   "ignore_docs_only": true,
   "runner_profile": "production-deploy",
   "environment": "production",
@@ -50,9 +50,9 @@ Cloudflare Worker 部署
 
 清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
-**两层架构切换保护**：AG #312 已合并，仓库的 `automatic: true` 仍然有效。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
+**两层架构切换保护**：AG #312 已合并；在生产凭据和双中心未验收前，`.github/deploy.json` 的 `automatic` 暂时设为 `false`，停止合并后自动派发生产部署。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
 
-## 自动部署
+## 自动部署（切换期间已禁用）
 
 在中央 CI 对当前默认分支 HEAD 运行成功之后，Action Worker 会解析源码所有的部署清单。只有同时满足以下条件，才会进行自动部署：
 
