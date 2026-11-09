@@ -86,6 +86,25 @@ for (const rule of ['ALLOWED', 'prompt.length > 2048', 'value.n !== 1', "value.r
   assert.ok(sharedImageRequestContract.includes(rule), `Image request validation must preserve ${rule}`);
 }
 
+// Only the public Gateway may consume and validate quota hints from private
+// execution centers. No copy of the parsing rule may remain in legacy src.
+const privateCenterQuotaShim = readFileSync(join(root, 'src/reliability/center-quota.ts'), 'utf8');
+const gatewayCenterQuotaOwner = readFileSync(join(root, 'apps/gateway/reliability/center-quota.ts'), 'utf8');
+assert.ok(
+  privateCenterQuotaShim.includes("export * from '../../apps/gateway/reliability/center-quota.ts';"),
+  'Legacy center quota path must re-export Gateway owner',
+);
+assert.doesNotMatch(privateCenterQuotaShim, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.match(gatewayCenterQuotaOwner, /export function quotaFromCenter\(/);
+assert.match(gatewayCenterQuotaOwner, /encoded.length > 512/, 'Center quota must reject oversized hints');
+assert.match(gatewayCenterQuotaOwner, /Number.isSafeInteger/, 'Center quota must reject noninteger reports');
+assert.match(gatewayCenterQuotaOwner, /source: 'private-center'/, 'Center quota must only trust private signals');
+for (const entry of ['src/request/attempt/inference-dispatch.ts', 'src/request/attempt/generation-dispatch.ts']) {
+  const consumer = readFileSync(join(root, entry), 'utf8');
+  assert.ok(consumer.includes("from '../../../apps/gateway/reliability/center-quota.ts'"), `${entry} must call Gateway-owned quota parser`);
+  assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/reliability\/center-quota\.ts['"]/);
+}
+
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [
