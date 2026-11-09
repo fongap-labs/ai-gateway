@@ -57,7 +57,9 @@ try {
     attempts++;
     assert.equal(JSON.parse(options.body).stream, undefined);
     assert.equal(new Headers(options.headers).has('x-aig-return-object'), false);
-    return answer.clone();
+    // Avoid a dangling tee branch: cancellation after SSE terminal events
+    // would otherwise wait forever for the unconsumed original Response.
+    return new Response(await answer.clone().text(), { status: answer.status, headers: answer.headers });
   };
 
   const request = inbound();
