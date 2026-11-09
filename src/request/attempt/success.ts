@@ -11,9 +11,9 @@
 import { handleImageSuccess } from '../../../apps/gateway/attempt/success-image.ts';
 import { handleMatrixSuccess, isMatrixConversion } from '../../../apps/gateway/attempt/success-matrix.ts';
 import { handleObjectSuccess } from '../../../apps/gateway/attempt/success-object.ts';
+import { handleStreamingSuccess } from '../../../apps/gateway/attempt/success-stream.ts';
 import { commitTier1RecoveryProbe } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
-import { handleStreamingSuccess } from './success-stream.ts';
 
 export type SuccessArgs = {
   upstream: Response;

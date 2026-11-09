@@ -307,7 +307,10 @@ assert.doesNotMatch(inferenceCredentialExecutor, /from ['"]\.\.\/\.\.\/src\/oaut
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
-for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess']]) {
+for (const [legacy, owner, symbol] of [
+  ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
+  ['src/request/attempt/success-stream.ts', 'apps/gateway/attempt/success-stream.ts', 'handleStreamingSuccess'],
+]) {
   const shim = readFileSync(join(root, legacy), 'utf8');
   const impl = readFileSync(join(root, owner), 'utf8');
   assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must re-export the unique Gateway owner`);
@@ -318,6 +321,7 @@ for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 
 }
 const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
 assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
+assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
 
 // Matrix reply handling belongs to Gateway; the original request module
 // only forwards its exports. Keep real transport, account, and finalization
@@ -355,13 +359,13 @@ for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUnde
 }
 assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Accounting must use Gateway body release');
 assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Accounting must reuse Gateway response helpers');
-for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts', 'success-stream.ts']) {
+for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts']) {
   const path = `src/request/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
   assert.ok(consumer.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must use Gateway-owned accounting`);
   assert.doesNotMatch(consumer, /from ['"]\.\/observability\.ts['"]/);
 }
-for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts']) {
+for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts']) {
   const path = `apps/gateway/attempt/${name}`;
   const consumer = readFileSync(join(root, path), 'utf8');
   assert.ok(consumer.includes("from './observability.ts'"), `${path} must reuse local Gateway accounting`);
@@ -407,6 +411,16 @@ assert.ok(
 const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
 assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
 
+// Native stream finalization uses Gateway response helpers and keeps the
+// first-event guard in its one real owner, not the compatibility facade.
+const ownedStreamSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-stream.ts'), 'utf8');
+assert.match(ownedStreamSuccess, /export async function handleStreamingSuccess\(/);
+assert.match(ownedStreamSuccess, /ensureFirstSseEvent\(/);
+assert.match(ownedStreamSuccess, /trackStreamResponse\(/);
+assert.ok(ownedStreamSuccess.includes("from '../response/errors.ts'"));
+assert.ok(ownedStreamSuccess.includes("from '../response/response-helpers.ts'"));
+assert.ok(ownedStreamSuccess.includes("from './observability.ts'"));
+
 // Gateway alone owns client-facing error shaping, Retry-After policy and
 // response headers. The former src/request paths must never implement them.
 for (const [legacy, owner, symbol] of [
@@ -429,7 +443,6 @@ for (const path of [
   'apps/gateway/request-handler.ts',
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
-  'src/request/attempt/success-stream.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',
