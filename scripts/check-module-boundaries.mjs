@@ -155,20 +155,31 @@ for (const [legacy, owner, symbol] of [
   assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
   assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
 }
-assert.ok(readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from './body-release.ts'"),
-  'Owned attempt observation must use Gateway-owned body release');
-assert.ok(readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from '../response/response-helpers.ts'"),
-  'Owned attempt observation must use Gateway-owned response helper');
+assert.ok(
+  readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from './body-release.ts'"),
+  'Owned attempt observation must use Gateway-owned body release',
+);
+assert.ok(
+  readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8').includes("from '../response/response-helpers.ts'"),
+  'Owned attempt observation must use Gateway-owned response helper',
+);
 for (const name of [
-  'dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts',
-  'success-image.ts', 'success-matrix.ts', 'success-object.ts', 'success-stream.ts',
+  'dispatch.ts',
+  'generation-dispatch.ts',
+  'inference-dispatch.ts',
+  'outcome.ts',
+  'success-image.ts',
+  'success-matrix.ts',
+  'success-object.ts',
+  'success-stream.ts',
 ]) {
   const path = `src/request/attempt/${name}`;
   const source = readFileSync(join(root, path), 'utf8');
-  assert.ok(source.includes("from '../../../apps/gateway/attempt/observability.ts'"),
-    `${path} must call Gateway-owned physical-attempt accounting directly`);
-  assert.doesNotMatch(source, /from ['"]\.\/observability\.ts['"]/,
-    `${path} must not import legacy observation`);
+  assert.ok(
+    source.includes("from '../../../apps/gateway/attempt/observability.ts'"),
+    `${path} must call Gateway-owned physical-attempt accounting directly`,
+  );
+  assert.doesNotMatch(source, /from ['"]\.\/observability\.ts['"]/, `${path} must not import legacy observation`);
 }
 
 // Gateway alone owns client-facing error shaping, Retry-After policy and

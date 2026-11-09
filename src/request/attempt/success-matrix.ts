@@ -10,6 +10,14 @@
 // cross-protocol pair is matrix-owned; native passes carry no conversion
 // context and never land here.
 
+import {
+  makeNodeStreamTrack,
+  observeUpstreamAttemptUsage,
+  recordNodeBudgetStop,
+  recordNodeSuccess,
+  recordTokens,
+  recordUndeliveredUpstreamAttempt,
+} from '../../../apps/gateway/attempt/observability.ts';
 import { gatewayError } from '../../../apps/gateway/response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../../../apps/gateway/response/response-helpers.ts';
 import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
@@ -37,14 +45,6 @@ import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '..
 import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutputForConversion, isOpenAIChatRealOutputForConversion, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome, ConversionContext } from '../../types/request.ts';
-import {
-  makeNodeStreamTrack,
-  observeUpstreamAttemptUsage,
-  recordNodeBudgetStop,
-  recordNodeSuccess,
-  recordTokens,
-  recordUndeliveredUpstreamAttempt,
-} from '../../../apps/gateway/attempt/observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
