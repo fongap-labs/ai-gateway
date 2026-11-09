@@ -143,6 +143,24 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// Gateway-owned streaming and image success handlers are the only
+// implementations; old request/attempt modules are compatibility-only.
+for (const [legacy, owner, symbol] of [
+  ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
+  ['src/request/attempt/success-stream.ts', 'apps/gateway/attempt/success-stream.ts', 'handleStreamingSuccess'],
+]) {
+  const shim = readFileSync(join(root, legacy), 'utf8');
+  const impl = readFileSync(join(root, owner), 'utf8');
+  assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must re-export the unique Gateway owner`);
+  assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not retain execution code`);
+  assert.ok(impl.includes(`export async function ${symbol}(`), `${owner} must implement ${symbol}`);
+  assert.ok(impl.includes("from '../response/errors.ts'"), `${owner} must use Gateway error handling`);
+  assert.ok(impl.includes("from '../response/response-helpers.ts'"), `${owner} must use Gateway response helpers`);
+}
+const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
+assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
+assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Stream handler must be Gateway-owned');
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
@@ -196,8 +214,6 @@ for (const path of [
   'apps/gateway/tier-loop.ts',
   'src/request/attempt/success-matrix.ts',
   'src/request/attempt/success-object.ts',
-  'src/request/attempt/success-stream.ts',
-  'src/request/attempt/success-image.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',

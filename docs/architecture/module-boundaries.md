@@ -431,6 +431,12 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 物理尝试用量结算仍保留在 `src/request/attempt/observability.ts`，因为中央回归测试当前直接读取该实现文件；未经单独授权不修改 Action Worker 测试。其他 attempt 调度、执行与可观测源码尚未全部迁移。无生产 Secret、Wrangler、Cron、D1、Service Binding、部署或发布改动。
 
+## Gateway 成功响应处理实现归属
+
+将原 `src/request/attempt/success-image.ts`、`success-stream.ts` 的完整运行实现迁至 `apps/gateway/attempt/`，旧路径仅作兼容导出。`src/request/attempt/success.ts` 统一选择器直接调用新归属；流首事件确认、取消/中断、已交付 Token 记账、图像生成非幂等终态及响应模型映射行为均保持原合同。
+
+本批不改物理尝试观测、计费实现位置及中央 Action Worker 测试，不新增 Provider 执行；旧请求尝试中的对象、矩阵、对冲、dispatch、outcome 仍需继续清理。生产配置与部署不变。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
