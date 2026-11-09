@@ -13,7 +13,7 @@ import { handleMatrixSuccess, isMatrixConversion } from '../../../apps/gateway/a
 import { commitTier1RecoveryProbe } from '../../reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../types/request.ts';
 import { handleObjectSuccess } from './success-object.ts';
-import { handleStreamingSuccess } from './success-stream.ts';
+import { handleStreamingSuccess } from '../../../apps/gateway/attempt/success-stream.ts';
 
 export type SuccessArgs = {
   upstream: Response;

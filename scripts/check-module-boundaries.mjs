@@ -160,7 +160,10 @@ assert.ok(gatewayOAuthPreflight.includes("from './oauth/routes.ts'"), 'Gateway p
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
-for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess']]) {
+for (const [legacy, owner, symbol] of [
+  ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
+  ['src/request/attempt/success-stream.ts', 'apps/gateway/attempt/success-stream.ts', 'handleStreamingSuccess'],
+]) {
   const shim = readFileSync(join(root, legacy), 'utf8');
   const impl = readFileSync(join(root, owner), 'utf8');
   assert.ok(shim.includes(`export * from '../../../${owner}';`), `${legacy} must re-export the unique Gateway owner`);
@@ -170,6 +173,11 @@ for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 
   assert.ok(impl.includes("from '../response/response-helpers.ts'"), `${owner} must use Gateway response helpers`);
 }
 const successDispatcher = readFileSync(join(root, 'src/request/attempt/success.ts'), 'utf8');
+assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
+const ownedStreamSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-stream.ts'), 'utf8');
+for (const guard of ['ensureFirstSseEvent(', 'observeUpstreamAttemptUsage(', 'makeNodeStreamTrack(', 'recordTokens(', 'recordOutcome(']) {
+  assert.ok(ownedStreamSuccess.includes(guard), `Gateway-native stream must preserve ${guard}`);
+}
 assert.ok(successDispatcher.includes("from '../../../apps/gateway/attempt/success-image.ts'"), 'Image handler must be Gateway-owned');
 
 // Matrix reply handling belongs to Gateway; the original request module
@@ -245,14 +253,14 @@ for (const path of [
   'apps/gateway/request-handler.ts',
   'apps/gateway/fallback.ts',
   'apps/gateway/tier-loop.ts',
-  'src/request/attempt/success-stream.ts',
+  'apps/gateway/attempt/success-stream.ts',
   'src/request/attempt/success-object.ts',
   'src/request/attempt/outcome.ts',
   'src/request/attempt/inference-dispatch.ts',
   'src/request/attempt/generation-dispatch.ts',
 ]) {
   const consumer = readFileSync(join(root, path), 'utf8');
-  const prefix = path.startsWith('apps/') ? './response/' : '../../../apps/gateway/response/';
+  const prefix = path.startsWith('apps/gateway/attempt/') ? '../response/' : path.startsWith('apps/') ? './response/' : '../../../apps/gateway/response/';
   assert.ok(
     consumer.includes(`from '${prefix}errors.ts'`) || consumer.includes(`from '${prefix}response-helpers.ts'`),
     `${path} must consume the Gateway-owned response implementation directly`,
