@@ -156,10 +156,7 @@ for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUnde
   assert.ok(ownedAttemptObservation.includes(`export function ${symbol}(`), `Gateway must own ${symbol}`);
 }
 assert.ok(ownedAttemptObservation.includes("from './body-release.ts'"), 'Attempt observation must use owned body release');
-assert.ok(
-  ownedAttemptObservation.includes("from '../response/response-helpers.ts'"),
-  'Attempt observation must use the Gateway response helper',
-);
+assert.ok(ownedAttemptObservation.includes("from '../response/response-helpers.ts'"), 'Attempt observation must use the Gateway response helper');
 for (const name of [
   'dispatch.ts',
   'generation-dispatch.ts',
