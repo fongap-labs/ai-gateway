@@ -27,7 +27,6 @@ import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';
 import { gatewayError } from '../../src/request/errors.ts';
-import { modelFallbackCandidates } from './policy/model-fallback.ts';
 import { jsonResponse } from '../../src/request/response-helpers.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
@@ -41,6 +40,7 @@ import {
   presentedCredentials,
 } from './policy/auth.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from './policy/model-authz.ts';
+import { modelFallbackCandidates } from './policy/model-fallback.ts';
 import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
 import { acceptsHtml, detectRoute, normalizePath } from './policy/router.ts';
 
