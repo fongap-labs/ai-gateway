@@ -7,9 +7,9 @@ import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeNodeConfigJsonText } from './github-deployment-config.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const nodeVar = /^AIG_TIER[123]_NODES_(0[1-9]|10)$/;
-const nodeSecret = /^AIG_TIER[123]_CREDENTIALS_(0[1-9]|10)$/;
-const centerVars = new Set(['AIG_MODELS_CONFIG', 'AIG_POLICIES_CONFIG', 'AIG_OAUTH_PROVIDERS', 'AIG_PROTOCOL_FALLBACKS']);
+const nodeVar = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
+const nodeSecret = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
+const centerVars = new Set(['AIG_MODELS_CONFIG', 'AIG_POLICIES_CONFIG', 'AIG_PROTOCOL_FALLBACKS']);
 
 function required(env, name) {
   const value = env[name];
@@ -53,30 +53,21 @@ export function buildInferenceCenterDeployment(env) {
   }
   const secrets = { AIG_INFERENCE_AUTH_KEY: key };
   for (const [name, value] of Object.entries(collectSecretsFromEnv(env).secrets)) {
-    if (nodeSecret.test(name) || name === 'AIG_TOKEN_ENCRYPTION_KEY') secrets[name] = value;
+    if (nodeSecret.test(name)) secrets[name] = value;
   }
   if (!Object.keys(secrets).some((name) => nodeSecret.test(name))) {
     throw new Error('Missing inference upstream credential shards.');
   }
-  let hasOAuth = false;
   for (const [name, value] of Object.entries(vars)) {
     if (!nodeVar.test(name)) continue;
     let nodes;
-    try {
-      nodes = JSON.parse(value);
-    } catch {
-      throw new Error(`Invalid JSON in ${name}.`);
-    }
+    try { nodes = JSON.parse(value); } catch { throw new Error(`Invalid JSON in ${name}.`); }
     if (!Array.isArray(nodes)) throw new Error(`Invalid nodes in ${name}.`);
-    if (nodes.some((node) => node?.auth === 'oauth')) hasOAuth = true;
-  }
-  if (hasOAuth && !secrets.AIG_TOKEN_ENCRYPTION_KEY) {
-    throw new Error('Subscription inference nodes require AIG_TOKEN_ENCRYPTION_KEY.');
+    if (nodes.some((node) => node && typeof node === 'object' && Object.hasOwn(node, 'auth'))) {
+      throw new Error(`Legacy subscriber auth nodes must be removed from ${name} before deploying.`);
+    }
   }
   const databaseId = String(env.AIG_USAGE_D1_ID || '').trim();
-  if (hasOAuth && !databaseId) {
-    throw new Error('Subscription inference nodes require AIG_USAGE_D1_ID.');
-  }
   const validation = loadExecutionConfig({ ...vars, ...secrets });
   if (!validation.ready || validation.hasConfigErrors) {
     throw new Error('Inference node/model execution configuration is not ready.');
