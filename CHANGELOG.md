@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: 离线生成 Operations 三阶段切换配置，确保 Cron 不重叠且共用 D1。
+- 维护: 切换前保持 Gateway 原 Cron，Operations 只读取非敏感部署配置。
+
 - 新增: Operations 独立 Worker 的预备入口及禁止双 Cron 的切换门禁。
 - 维护: 未绑定独立 D1 时定时维护拒绝执行，生产 Cron 暂不切换。
 

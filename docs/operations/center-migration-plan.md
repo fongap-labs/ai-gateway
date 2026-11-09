@@ -27,6 +27,18 @@ Cloudflare Service Binding 仅是**当前传输适配器**，业务执行接口�
 
 生产切换必须另行完成以下原子化验收步骤：
 
+提供无部署动作的离线规划器：准备好由既有受控部署预检生成的 Gateway Wrangler JSON（包含唯一现有 `TOKEN_STATS_DB` D1 绑定），以及仓库的 `wrangler.operations.jsonc` 后，可用以下指令生成六份严格权限的私有 Wrangler 配置：
+
+```bash
+node scripts/operations-cutover-config.mjs \
+  --gateway ./private-gateway-generated.json \
+  --operations ./wrangler.operations.jsonc \
+  --outdir ./private-operations-cutover
+```
+
+`prepare` 阶段保留 Gateway Cron 并部署关闭 Cron 的 Operations；`detach` 阶段停用 Gateway Cron；`activate` 阶段才启用独立 Operations Cron。所有阶段禁止双 Cron 且使用相同数据库 ID；工具只写本地 `0600` 配置文件，**不部署、不修改 Cloudflare、不读取 Provider Secrets、不批准变更**。输出涉及运行时元数据，必须存储在受保护目录，不提交 GitHub。实际执行顺序、环境密钥、延迟与回滚仍须另外审批。
+
+
 1. 在受控、隔离环境部署新 Operations Worker，提供与当前 Gateway **同一 D1 数据库**的 `TOKEN_STATS_DB` 绑定；检查实际 D1 schema、保留策略、预算与每次维护执行日志。不要给 Operations 配置任何 Provider Token 或 Gateway 公开域名。
 2. 在受控变更窗口核实上一次 Gateway Cron 已终止、没有正在运行的维护事务；准备一份包含 Gateway/Operations 版本、Cron 和 D1 绑定的回滚记录。
 3. 先验证独立 Operations 的一次受控维护执行和只读结果；然后撤销 Gateway Cron，并启用新 Worker 的 `0 3 * * *`，在每个变更步骤前后检查**最多一个有效维护触发器**，避免重复保留期删除或遗漏维护。
