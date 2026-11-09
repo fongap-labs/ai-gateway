@@ -4,10 +4,32 @@
 
 import assert from 'node:assert/strict';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
+import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
+import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
+assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
+assert.equal(routingStrategyFor(2).id, 'priority_lru', 'the API Token tier uses the health-aware scheduler');
+
+const originalCaps = { 1: 3, 2: 1 };
+const flexiblePolicy = { maxAttempts: 5, tierAttempts: null };
+assert.deepEqual(
+  redistributeUnusedTierAttempts({ ...originalCaps }, 1, 2, flexiblePolicy),
+  { 1: 3, 2: 3 },
+  'unused free-tier attempts transfer to the paid API Token reserve',
+);
+assert.deepEqual(
+  redistributeUnusedTierAttempts({ ...originalCaps }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }),
+  originalCaps,
+  'explicit Token tier attempt caps are never relaxed',
+);
+assert.deepEqual(
+  redistributeUnusedTierAttempts({ ...originalCaps }, 2, 2, flexiblePolicy),
+  originalCaps,
+  'Token tier is terminal; no third tier can receive unused attempts',
+);
 
 function node(id, fields = {}) {
   return { id, provider: 'openai', base_url: 'https://api.example.invalid/v1', models: { 'Code-Pro': 'upstream-model' }, ...fields };
@@ -35,6 +57,9 @@ const centerConfig = loadExecutionConfig({
   AIG_TIER2_CREDENTIALS_01: JSON.stringify({ 'token-a': 'paid-test-credential' }),
 });
 assert.equal(centerConfig.ready, true);
+assert.equal(publicConfig.tiers[1][0]?.credential, '', 'public Gateway must not own free Provider credentials');
+assert.equal(publicConfig.tiers[2][0]?.credential, '', 'public Gateway must not own paid Provider credentials');
+assert.equal(centerConfig.tiers[2][0]?.credential, 'paid-test-credential', 'private center resolves the API Token credential');
 assert.deepEqual(
   centerConfig.tiers[2].map((n) => n.id),
   ['token-a'],
@@ -66,6 +91,9 @@ assert.equal(oldOAuth.ready, false, 'old subscriber capacity must not be silentl
 assert.equal(oldOAuth.status, 'invalid');
 assert.equal(oldOAuth.nodesUsable, 0);
 assert.ok(oldOAuth.diagnostics.some((line) => line.includes('subscription auth marker')));
+const oldSubscriptionSecret = loadGatewayConfig({ ...base, AIG_OAUTH_PROVIDERS: '{}' });
+assert.equal(oldSubscriptionSecret.status, 'invalid', 'old membership OAuth provider config must fail closed');
+assert.equal(oldSubscriptionSecret.nodesUsable, 0, 'retired member settings cannot leave partial static capacity serving');
 
 const twoTierPolicy = {
   ...base,
