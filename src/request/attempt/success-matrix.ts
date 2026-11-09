@@ -10,6 +10,8 @@
 // cross-protocol pair is matrix-owned; native passes carry no conversion
 // context and never land here.
 
+import { gatewayError } from '../../../apps/gateway/response/errors.ts';
+import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../../../apps/gateway/response/response-helpers.ts';
 import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
@@ -35,8 +37,6 @@ import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '..
 import { relayStreamResponse, trackStreamResponse } from '../../stream/track.ts';
 import { isAnthropicNativeRealOutputForConversion, isOpenAIChatRealOutputForConversion, isResponsesRealOutput } from '../../transport/index.ts';
 import type { AttemptOutcome, ConversionContext } from '../../types/request.ts';
-import { gatewayError } from '../errors.ts';
-import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../response-helpers.ts';
 import {
   makeNodeStreamTrack,
   observeUpstreamAttemptUsage,
