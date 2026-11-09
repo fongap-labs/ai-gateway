@@ -180,7 +180,7 @@ assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/crypto.ts'"
 assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/token-store.ts'"), 'Gateway OAuth routes must call shared persistence owner');
 const oauthResolveShim = readFileSync(join(root, 'src/oauth/resolve.ts'), 'utf8');
 const inferenceOAuthResolver = readFileSync(join(root, 'apps/inference/credentials/resolve.ts'), 'utf8');
-const inferenceExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const inferenceCredentialExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
 assert.ok(
   oauthResolveShim.includes("export * from '../../apps/inference/credentials/resolve.ts';"),
   'Legacy OAuth credential resolver must only re-export Inference Center owner',
@@ -191,8 +191,8 @@ assert.match(inferenceOAuthResolver, /export function resolveSubscriptionCredent
 assert.match(inferenceOAuthResolver, /inFlightResolutions/, 'Credential refresh must preserve singleflight cache');
 assert.match(inferenceOAuthResolver, /persistRefreshedToken\(/, 'Credential refresh must preserve CAS');
 assert.match(inferenceOAuthResolver, /REFRESH_MARGIN_MS/, 'Credential resolution must preserve expiry window');
-assert.ok(inferenceExecutor.includes("from './credentials/resolve.ts'"), 'Physical Provider execution must call owned credential resolver');
-assert.doesNotMatch(inferenceExecutor, /from ['"]\.\.\/\.\.\/src\/oauth\/resolve\.ts['"]/);
+assert.ok(inferenceCredentialExecutor.includes("from './credentials/resolve.ts'"), 'Physical Provider execution must call owned credential resolver');
+assert.doesNotMatch(inferenceCredentialExecutor, /from ['"]\.\.\/\.\.\/src\/oauth\/resolve\.ts['"]/);
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.

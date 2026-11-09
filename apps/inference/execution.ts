@@ -26,8 +26,8 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
-import { resolveSubscriptionCredential } from './credentials/resolve.ts';
 import type { MatrixStreamBudget } from './conversion/stream.ts';
+import { resolveSubscriptionCredential } from './credentials/resolve.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 // The physical center uses the same clamped maximum as Gateway preflight.
