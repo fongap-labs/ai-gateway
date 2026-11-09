@@ -143,6 +143,54 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// Gateway alone owns client-facing error shaping, Retry-After policy and
+// response headers. The former src/request paths must never implement them.
+for (const [legacy, owner, symbol] of [
+  ['src/request/errors.ts', 'apps/gateway/response/errors.ts', 'gatewayError'],
+  ['src/request/response-helpers.ts', 'apps/gateway/response/response-helpers.ts', 'finalHeaders'],
+]) {
+  const shim = readFileSync(join(root, legacy), 'utf8');
+  const actual = readFileSync(join(root, owner), 'utf8');
+  const relativeOwner = owner.replace(/^apps\/gateway\//, '../../apps/gateway/');
+  assert.ok(shim.includes(`export * from '${relativeOwner}';`), `${legacy} must be a pure compatibility export`);
+  assert.doesNotMatch(
+    shim,
+    /^(?:import|export (?:async )?(?:function|const|class)) /m,
+    `${legacy} must not own a second Gateway error/response implementation`,
+  );
+  assert.ok(actual.includes(`export function ${symbol}(`), `${owner} must implement ${symbol}`);
+}
+for (const path of [
+  'apps/gateway/preflight.ts',
+  'apps/gateway/request-handler.ts',
+  'apps/gateway/fallback.ts',
+  'apps/gateway/tier-loop.ts',
+  'src/request/attempt/success-matrix.ts',
+  'src/request/attempt/success-object.ts',
+  'src/request/attempt/success-stream.ts',
+  'src/request/attempt/success-image.ts',
+  'src/request/attempt/oversize.ts',
+  'src/request/attempt/outcome.ts',
+  'src/request/attempt/inference-dispatch.ts',
+  'src/request/attempt/generation-dispatch.ts',
+]) {
+  const consumer = readFileSync(join(root, path), 'utf8');
+  const prefix = path.startsWith('apps/') ? './response/' : '../../../apps/gateway/response/';
+  assert.ok(
+    consumer.includes(`from '${prefix}errors.ts'`) || consumer.includes(`from '${prefix}response-helpers.ts'`),
+    `${path} must consume the Gateway-owned response implementation directly`,
+  );
+  assert.doesNotMatch(
+    consumer,
+    /from ['"][^'"]*\/src\/request\/(?:errors|response-helpers)\.ts['"]|from ['"]\.\.\/(?:errors|response-helpers)\.ts['"]/,
+    `${path} must not depend on old request response paths`,
+  );
+}
+const gatewayErrors = readFileSync(join(root, 'apps/gateway/response/errors.ts'), 'utf8');
+assert.match(gatewayErrors, /shouldNotRetryHeaders/, 'Gateway error handler must preserve x-should-retry behavior');
+assert.match(gatewayErrors, /responsesErrorResponse/, 'Gateway errors must preserve the OpenAI Responses error shape');
+assert.match(gatewayErrors, /exposeUpstreamInfo|shouldExposeUpstreamInfo/, 'Gateway errors must preserve upstream topology privacy');
+
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');
