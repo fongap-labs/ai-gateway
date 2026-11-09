@@ -36,8 +36,8 @@ function privateBase() {
 export function buildInferenceCenterDeployment(env) {
   const legacy = Object.keys(env).filter((name) => name.startsWith('AIG_TIER3_')).sort();
   const retired = Object.keys(env).filter((name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY');
-  if (retired.length > 0) throw new Error('Retired subscription settings still configured: ' + retired.sort().join(', '));
-  if (legacy.length > 0) throw new Error('Legacy Tier 3 bindings must be explicitly migrated: ' + legacy.join(', '));
+  if (retired.length > 0) throw new Error(`Retired subscription settings still configured: ${retired.sort().join(', ')}`);
+  if (legacy.length > 0) throw new Error(`Legacy Tier 3 bindings must be explicitly migrated: ${legacy.join(', ')}`);
   required(env, 'CLOUDFLARE_API_TOKEN');
   required(env, 'CLOUDFLARE_ACCOUNT_ID');
   const key = required(env, 'AIG_INFERENCE_AUTH_KEY');
