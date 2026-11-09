@@ -2,7 +2,7 @@
 
 本页对应 [AG #310](https://github.com/fongap-labs/ai-gateway/issues/310)。**源码阶段已完成**：两层运行时 [#312](https://github.com/fongap-labs/ai-gateway/pull/312) 于 2026-11-09 合并到 `main`（`56adb64e16c3f436094280975d62af7e3ce9fbe0`）；中央受控测试包固定于 Action Worker `f0501774a1049fa75088b161fd895a7930fba4c3`。这不代表生产配置或部署已经切换。
 
-**严禁以“源码已合并”作为生产放行依据**。仓库的 `.github/deploy.json` 仍配置 `automatic: true`。2026-11-09 核查发现由该主分支提交触发的 [Action Worker 部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其 `Execute source-script deploy` 当时为 `waiting`，目标环境 `production`。部署执行状态必须重新核实；**在以下所有门禁通过及独立批准前，不得批准等待中的生产部署作业**。本文件和下述工具不会调用 Cloudflare 或修改生产环境。
+**严禁以“源码已合并”作为生产放行依据**。仓库的 `.github/deploy.json` 仍配置 `automatic: true`。2026-11-09 核查发现由该主分支提交触发的 [Action Worker 部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其 `Execute source-script deploy` 首先为 `waiting`，随后于 `Resolve deploy Secret plan` 阶段失败（缺少 `CLOUDFLARE_ACCOUNT_ID` 的来源配置 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`），**没有进入 `scripts/deploy.sh` 或 Cloudflare 发布步骤**。不应因只修复该环境变量就重试生产部署；**在以下所有门禁通过及独立批准前，不得执行任何新的生产部署请求**。本文件和下述工具不会调用 Cloudflare 或修改生产环境。
 
 ## 目标与数据边界
 
