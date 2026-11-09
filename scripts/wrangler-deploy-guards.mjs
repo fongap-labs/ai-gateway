@@ -83,9 +83,7 @@ function isGateway(config) {
   return (
     record(config) &&
     config.name === 'ai-gateway' &&
-    config.kv_namespaces?.some(
-      (entry) => entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0,
-    ) === true
+    config.kv_namespaces?.some((entry) => entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0) === true
   );
 }
 
