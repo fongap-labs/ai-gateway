@@ -401,6 +401,14 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 生产配置及服务调用方式保持不变；私有流帧必须经共享合同 `unframeInferenceStream` 解码后才能进入 Gateway 的首事件保护与客户端流输出，物理 Provider 用量继续按现有结算边界处理。
 
+## Gateway 公开请求策略与边缘缓存归属
+
+`apps/gateway/policy/` 独占鉴权、路径检测、模型授权和路由可行性判断实现；`apps/gateway/cache/edge-cache.ts` 独占公开请求的边缘缓存实现。Gateway 的 `index.ts`、`preflight.ts`、`request-handler.ts`、`tier-loop.ts` 直接导入这些应用内部模块，缓存直接使用应用内鉴权函数，避免不经意引入第二份鉴权或缓存状态。
+
+原 `src/request/{auth,router,model-authz,route-feasibility,edge-cache}.ts` 仅作 `export *` 兼容层。架构门禁检查单一代码所有权、入口直接依赖和无重复实现。现有客户端鉴权与模型授权、路由、缓存键隔离、流式缓存失败关闭合同均保持不变。
+
+本次完成 Gateway 主请求路径一批实质源码迁移，**不意味着 `src/request/` 全部清空**：后续还有模型回退、错误处理、尝试/执行与观测模块；OAuth 管理路径归属也仍需收敛。生产 Wrangler、Secrets、配额、Service Binding、路由和部署均保持不变。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

@@ -66,6 +66,50 @@ for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/g
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
 
+// Public request policy and cache implementations are Gateway-owned. The
+// former src/request modules may only re-export their owned implementations.
+for (const [legacy, owner, exportedSymbol] of [
+  ['src/request/auth.ts', 'apps/gateway/policy/auth.ts', 'authorize'],
+  ['src/request/router.ts', 'apps/gateway/policy/router.ts', 'detectRoute'],
+  ['src/request/model-authz.ts', 'apps/gateway/policy/model-authz.ts', 'authorizeModel'],
+  ['src/request/route-feasibility.ts', 'apps/gateway/policy/route-feasibility.ts', 'evaluateRouteFeasibility'],
+  ['src/request/edge-cache.ts', 'apps/gateway/cache/edge-cache.ts', 'matchEdgeCache'],
+]) {
+  const compatibility = readFileSync(join(root, legacy), 'utf8');
+  const owned = readFileSync(join(root, owner), 'utf8');
+  const fromParts = legacy.split('/').slice(0, -1);
+  const targetParts = owner.split('/');
+  while (fromParts.length && targetParts.length && fromParts[0] === targetParts[0]) {
+    fromParts.shift();
+    targetParts.shift();
+  }
+  const specifier = [...fromParts.map(() => '..'), ...targetParts].join('/');
+  assert.ok(compatibility.includes(`export * from '${specifier}';`), `${legacy} must re-export its unique Gateway owner`);
+  assert.doesNotMatch(compatibility, /^import |^export (?:async )?(?:function|const|class) /m, `${legacy} must contain no implementation`);
+  assert.ok(
+    owned.includes(`function ${exportedSymbol}(`) || owned.includes(`async function ${exportedSymbol}(`),
+    `${owner} must implement ${exportedSymbol}`,
+  );
+}
+for (const [entry, expectedImports] of [
+  ['apps/gateway/index.ts', ['./policy/router.ts']],
+  ['apps/gateway/preflight.ts', ['./policy/auth.ts', './policy/model-authz.ts', './policy/route-feasibility.ts', './policy/router.ts']],
+  ['apps/gateway/request-handler.ts', ['./cache/edge-cache.ts', './policy/route-feasibility.ts', './policy/router.ts']],
+  ['apps/gateway/tier-loop.ts', ['./policy/router.ts']],
+  ['apps/gateway/cache/edge-cache.ts', ['../policy/auth.ts']],
+  ['apps/gateway/policy/route-feasibility.ts', ['./router.ts']],
+]) {
+  const source = readFileSync(join(root, entry), 'utf8');
+  for (const specifier of expectedImports) {
+    assert.ok(source.includes(`from '${specifier}'`), `${entry} must directly use Gateway policy/cache: ${specifier}`);
+  }
+  assert.doesNotMatch(
+    source,
+    /from ['"][^'"]*\/src\/request\/(auth|router|model-authz|route-feasibility|edge-cache)\.ts['"]/,
+    `${entry} must not depend on a legacy request policy/cache implementation`,
+  );
+}
+
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');
