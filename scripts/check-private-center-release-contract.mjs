@@ -22,7 +22,7 @@ const config = {
       { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
     ],
     triggers: { crons: ['0 3 * * *'] },
-    d1_databases: [db],
+    d1_databases: [{ ...db }],
   },
   inference: {
     name: 'ai-inference-center',
@@ -41,7 +41,7 @@ const config = {
     main: 'operations/standalone.ts',
     workers_dev: false,
     triggers: { crons: [] },
-    d1_databases: [db],
+    d1_databases: [{ ...db }],
   },
   secret_names: {
     gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
