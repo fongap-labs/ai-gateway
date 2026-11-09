@@ -11,13 +11,13 @@
 // returns null and the edge cache is disabled entirely (no lookup, no store),
 // even for requests that opt in. This matches the token store's no-key policy.
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { readEnv } from '../../../src/config/env.ts';
 import { getLimits } from '../../../src/config/timeouts.ts';
 import { getLogger } from '../../../src/observability/logger.ts';
 import { corsHeaders } from '../../../src/protocol/http.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../../../src/stream/client-lifecycle.ts';
 import { SseLifecycleObserver, type SseProtocol } from '../../../src/stream/sse-lifecycle.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { presentedCredentials } from '../policy/auth.ts';
 
 // The Cloudflare Cache API default cache. Typed defensively because the
