@@ -96,15 +96,18 @@ try {
   // An unbound Gateway must fail closed rather than perform an old
   // in-process conversion or a direct Provider attempt.
   await assert.rejects(
-    checkInferenceConversion({ AIG_INFERENCE_AUTH_KEY: key }, {
-      request: client,
-      requestId,
-      from: 'openai_chat',
-      to: 'anthropic',
-      body: bodyByProtocol.openai_chat,
-      isNonstreamPreferred: false,
-      deadlineMs: Date.now() + 15_000,
-    }),
+    checkInferenceConversion(
+      { AIG_INFERENCE_AUTH_KEY: key },
+      {
+        request: client,
+        requestId,
+        from: 'openai_chat',
+        to: 'anthropic',
+        body: bodyByProtocol.openai_chat,
+        isNonstreamPreferred: false,
+        deadlineMs: Date.now() + 15_000,
+      },
+    ),
     InferenceCenterUnavailable,
   );
   assert.equal(upstreamAttempts, 0);
