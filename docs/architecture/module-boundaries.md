@@ -455,6 +455,12 @@ Tier 2/3 的协议及 surface 硬门禁、模型资格、即时可用性、候�
 
 此次仅变更源码所有权，不改变 Tier 2/3 优先级、活跃请求排序、健康/TTFT 与 LRU 比较、冷却/熔断、模型/协议支持和 hedge 候选行为。节点可靠性状态暂仍复用 `src/reliability/node-state.ts`，后续逐步收口；不涉及中心私有执行、生产配置和部署。
 
+## Gateway 跨隔离区 Tier 1 冷却共享归属
+
+`apps/gateway/reliability/tier1-shared-cooldowns.ts` 持有 Tier 1 长期冷却的唯一 KV 同步实现，包括隔离区内已知记录、五分钟刷新、50ms 读取超时、单写者合并与完成后的脏数据续刷。`src/reliability/tier1-shared-cooldowns.ts` 仅作为原测试和调用方的兼容导出，Gateway 请求入口与失败终态直接调用真正 owner，避免生成第二份缓存、冷却状态或 KV 写入竞争。底层模型熔断/配额仍沿用 `src/reliability/tier1-state.ts` 的同一实现，此次未改变任何冷却判定。
+
+同时修复 Tier 2/3 迁移 #308 的遗漏：`apps/gateway/scheduling/tier-policy.ts` 直接从本地 `scheduler.ts` 读取选点和候选数量，不再经旧 `src/scheduler/scheduler.ts` 转发。架构门禁验证唯一实现、旧路径无状态、KV 时间预算与实际调用方向；现有中央 Tier 1 容量/冷却测试仍通过原 re-export 检查同一对象。未修改 Action Worker 测试包、门禁、pin、Secrets、D1、Wrangler 或生产部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
