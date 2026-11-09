@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Operations Cron 远程所有权核验与独立审批激活、撤销入口；无生产执行。
+
 - 修复: Gateway 部署准入收紧双中心绑定、D1/KV 与 Cron 归属，阻断明文密钥变量。
 
 - 修复: 独立 Generation/Operations Worker 部署准入及单 Cron 防护；不发布生产。
