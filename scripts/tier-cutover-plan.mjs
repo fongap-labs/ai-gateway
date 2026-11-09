@@ -126,10 +126,10 @@ function auditModelCatalog(modelCatalog, policies, blockers) {
     if (previous !== undefined && stableJson(modelCatalog[previous]) !== stableJson(modelCatalog[name])) ambiguousCatalog = true;
     else if (previous === undefined) canonicalCatalogNames.set(key, name);
     const policy = loadedModels[name]?.policy?.policy;
-    if (policy && !Object.hasOwn(policyNames, policy)) {
-      unresolvedPolicyCount += 1;
-      blockers.push(`Model ${safePolicyName(name)} references a policy missing from the supplied policy inventory`);
-    }
+    if (policy && !Object.hasOwn(policyNames, policy)) unresolvedPolicyCount += 1;
+  }
+  if (unresolvedPolicyCount > 0) {
+    blockers.push(`Model catalog has ${unresolvedPolicyCount} unresolved policy reference(s)`);
   }
   if (modelErrors.length > 0 || ambiguousCatalog) {
     blockers.push('Model catalog failed runtime validation or has case-insensitive policy/capability conflicts');

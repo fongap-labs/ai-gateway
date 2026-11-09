@@ -91,9 +91,10 @@ const malformedPolicy = plan({ policies: { default: { hedge: 'malformed' } } });
 assert.ok(malformedPolicy.blockers.some((item) => item.includes('shared runtime policy validator')));
 
 const unknownModelPolicy = plan({ modelCatalog: { [CUTOVER_MODEL]: { policy: 'missing-policy' } } });
-assert.ok(unknownModelPolicy.blockers.some((item) => item.includes('references a policy missing')));
+assert.ok(unknownModelPolicy.blockers.some((item) => item.includes('unresolved policy reference')));
 assert.equal(unknownModelPolicy.model_catalog.valid, false);
 assert.equal(unknownModelPolicy.model_catalog.unresolved_policy_reference_count, 1);
+assert.ok(!JSON.stringify(unknownModelPolicy).includes(CUTOVER_MODEL), 'logical model names must not enter diagnostics');
 
 const invalidNode = plan({
   tiers: { 1: [node('free-a', { models: { [CUTOVER_MODEL]: '' } })], 2: [], 3: [] },
