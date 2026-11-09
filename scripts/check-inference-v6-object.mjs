@@ -15,6 +15,7 @@ const node = {
 };
 const env = {
   AIG_INFERENCE_AUTH_KEY: key,
+  AIG_INFERENCE_SERVICE: { fetch: async () => { throw new Error('Gateway Service Binding mock is never used by center'); } },
   AIG_TIER2_NODES_01: JSON.stringify([node]),
   AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: 'mock-physical-credential' }),
 };
@@ -49,7 +50,7 @@ const chunks = [
   { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
   { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage },
 ];
-const sse = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n';
+const sse = `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`;
 const originalFetch = globalThis.fetch;
 let attempts = 0;
 let providerText = sse;
