@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Node-configuration deployment planner.
 //
-//   validate --tier1 FILE [--tier2 FILE] [--tier3 FILE] [--secrets FILE]
+//   validate --tier1 FILE [--tier2 FILE] [--secrets FILE]
 //       Validate node config files and (optionally) cross-check credentials.
-//   plan --tier1 FILE [--tier2 FILE] [--tier3 FILE] --secrets FILE --out PLAN
+//   plan --tier1 FILE [--tier2 FILE] --secrets FILE --out PLAN
 //        [--existing-vars FILE|-] [--existing-secrets FILE|-]
 //       Generate the deployment plan:
 //         { vars, secrets, deleteVars, deleteSecrets, tierSummary }
@@ -22,11 +22,15 @@ function parseArgs(argv) {
     const token = argv[i];
     if (!token.startsWith('--')) fail(`unknown argument: ${token}`);
     const key = token.slice(2);
+    if (!['tier1', 'tier2', 'secrets', 'out', 'existing-vars', 'existing-secrets'].includes(key)) {
+      fail(`unsupported option --${key}; Tier 3 must be migrated before using the two-tier planner`);
+    }
     if (['existing-vars', 'existing-secrets'].includes(key) && argv[i + 1] === '-') {
       args[key] = '-';
       i++;
       continue;
     }
+    if (!argv[i + 1] || argv[i + 1].startsWith('--')) fail(`--${key} requires a file path`);
     args[key] = argv[i + 1];
     i++;
   }
@@ -55,7 +59,7 @@ const [command, ...rest] = process.argv.slice(2);
 if (command === 'validate') {
   const args = parseArgs(rest);
   const tiers = {};
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2]) {
     if (!args[`tier${n}`]) continue;
     tiers[n] = parseJsonFile(args[`tier${n}`]);
   }
@@ -73,7 +77,7 @@ if (command === 'validate') {
   if (!args.secrets) fail('plan requires --secrets');
   if (!args.out) fail('plan requires --out');
   const tiers = {};
-  for (const n of [1, 2, 3]) {
+  for (const n of [1, 2]) {
     if (!args[`tier${n}`]) continue;
     tiers[n] = parseJsonFile(args[`tier${n}`]);
   }
