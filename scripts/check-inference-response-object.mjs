@@ -98,7 +98,12 @@ try {
   // A Provider may stream despite the v3 prefer-nonstream flag. The center
   // must collect it into a tagged client object rather than leaking raw SSE.
   const chunks = [
-    { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: { role: 'assistant', content: 'streamed' }, finish_reason: null }] },
+    {
+      id: 'cmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'gpt-test-upstream',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'streamed' }, finish_reason: null }],
+    },
     { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
     { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage: upstream.usage },
   ];
