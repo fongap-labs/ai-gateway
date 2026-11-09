@@ -3,9 +3,9 @@
 //
 // Config Layer: environment shards -> Runtime Node list.
 //
-//   AIG_TIER{1,2,3}_NODES_01..10   plain variables, JSON arrays of node
+//   AIG_TIER{1,2}_NODES_01..10   plain variables, JSON arrays of node
 //                                     configs WITHOUT credential material.
-//   AIG_TIER{1,2,3}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
+//   AIG_TIER{1,2}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
 //
 // Current Node JSON schema is deliberately small. Required fields:
 //   id, provider, base_url, models
@@ -32,8 +32,8 @@ import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
 import type { RegistryEntry } from './registry.ts';
 import { canonicalLogicalNames, loadModelRegistry } from './registry.ts';
 
-export const TIER_SHARD_PATTERN = /^AIG_TIER([123])_NODES_(\d{2})$/;
-export const SECRET_SHARD_PATTERN = /^AIG_TIER([123])_CREDENTIALS_(\d{2})$/;
+export const TIER_SHARD_PATTERN = /^AIG_TIER([12])_NODES_(\d{2})$/;
+export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
@@ -137,6 +137,28 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   const isGatewayInferenceCenterOwned = shouldRequireClientKey;
   const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
   const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
+
+  // Old Tier 3 must never disappear silently when the 2-Tier matcher is used.
+  // Check names only: the public Gateway must not read Provider secret values.
+  const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
+  if (legacyTierKeys.length > 0) {
+    diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
+    return {
+      status: 'invalid',
+      ready: false,
+      hasConfigErrors: true,
+      accessKeyBound,
+      nodes: [],
+      tiers: { 1: [], 2: [] },
+      bindings: {
+        tierShards: tierShards.map((shard) => shard.key).sort(),
+        secretShards: secretShards.map((shard) => shard.key).sort(),
+      },
+      nodesTotal: 0,
+      nodesUsable: 0,
+      diagnostics,
+    };
+  }
   let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
@@ -147,7 +169,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       hasConfigErrors: auxDiagnostics.length > 0,
       accessKeyBound,
       nodes: [],
-      tiers: { 1: [], 2: [], 3: [] },
+      tiers: { 1: [], 2: [] },
       bindings: {
         tierShards: tierShards.map((s) => s.key).sort(),
         secretShards: secretShards.map((s) => s.key).sort(),
@@ -197,11 +219,11 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   }
 
   const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
-  const isSubscriptionEnabled = getBool(env, 'AIG_IS_SUBSCRIPTION_ENABLED', true);
   // Gateway schedules center-owned attempts using public node metadata only.
   // The private centers still require their own Provider credential shards.
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
+  let legacySubscriptionAuthSeen = false;
   const sortedTierShards = [...tierShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
   for (const shard of sortedTierShards) {
     const tier = `tier-${shard.tierNumber}` as NodeTier;
@@ -212,6 +234,14 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       continue;
     }
     for (const rawNode of parsed) {
+      // OAuth subscriber capacity is not an API Token tier. Do not route it
+      // into new Tier 2 or silently omit it from an otherwise healthy pool.
+      if (rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && Object.hasOwn(rawNode, 'auth')) {
+        diagnostics.push(shard.key + ': deprecated subscription auth marker; remove the node through the two-tier cutover plan');
+        legacySubscriptionAuthSeen = true;
+        hasConfigErrors = true;
+        continue;
+      }
       const rawId =
         rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && typeof (rawNode as Record<string, unknown>).id === 'string'
           ? ((rawNode as Record<string, unknown>).id as string).trim()
@@ -235,11 +265,6 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
         isGatewayInferenceCenterOwned,
       );
       if (!node) continue;
-      if (node.auth === 'oauth' && !isSubscriptionEnabled) {
-        // Disabled subscription nodes are not part of the configuration at all.
-        nodesDeclared -= 1;
-        continue;
-      }
       if (seenIds.has(node.id)) {
         diagnostics.push(`duplicate node id "${node.id}" (${seenIds.get(node.id)} and ${shard.key}); node excluded`);
         conflictedIds.add(node.id);
@@ -263,14 +288,33 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   // Only a configuration with no usable node stops the gateway. Anything else
   // that was rejected degrades it: the usable nodes keep serving and /health lists
   // the diagnostics, while the deploy check refuses it until it is fixed.
+  if (legacySubscriptionAuthSeen) {
+    // A mixed legacy subscription/Token configuration must not partially
+    // deploy: removing a subscriber tier is a deliberate, audited cutover.
+    return {
+      status: 'invalid',
+      ready: false,
+      hasConfigErrors: true,
+      accessKeyBound,
+      nodes: [],
+      tiers: { 1: [], 2: [] },
+      bindings: {
+        tierShards: tierShards.map((shard) => shard.key).sort(),
+        secretShards: secretShards.map((shard) => shard.key).sort(),
+      },
+      nodesTotal: nodesDeclared,
+      nodesUsable: 0,
+      diagnostics,
+    };
+  }
   if (nodes.length === 0) status = 'invalid';
   else if (hasConfigErrors || nodes.length < nodesDeclared) status = 'degraded';
   else status = 'ready';
   const ready = status === 'ready' || status === 'degraded';
 
-  const tiers: TierMap<RuntimeNode[]> = { 1: [], 2: [], 3: [] };
+  const tiers: TierMap<RuntimeNode[]> = { 1: [], 2: [] };
   for (const node of nodes) {
-    const tierNumber: Tier = node.tier === 'tier-1' ? 1 : node.tier === 'tier-2' ? 2 : 3;
+    const tierNumber: Tier = node.tier === 'tier-1' ? 1 : 2;
     tiers[tierNumber].push(node);
   }
   for (const list of Object.values(tiers)) list.sort((a, b) => a.priority - b.priority);
