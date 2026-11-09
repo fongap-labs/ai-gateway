@@ -110,6 +110,40 @@ for (const [entry, expectedImports] of [
   );
 }
 
+// Logical-model fallback and per-tier retry admission are Gateway policy,
+// not independent execution center schedulers. Legacy sources only re-export.
+for (const [legacy, owner, symbol] of [
+  ['src/request/model-fallback.ts', 'apps/gateway/policy/model-fallback.ts', 'buildModelFallbackPlan'],
+  ['src/request/tier-loop.ts', 'apps/gateway/scheduling/tier-policy.ts', 'computeTierCaps'],
+]) {
+  const legacyCode = readFileSync(join(root, legacy), 'utf8');
+  const ownerCode = readFileSync(join(root, owner), 'utf8');
+  const expected = legacy === 'src/request/model-fallback.ts'
+    ? "../../apps/gateway/policy/model-fallback.ts"
+    : "../../apps/gateway/scheduling/tier-policy.ts";
+  assert.ok(legacyCode.includes(`export * from '${expected}';`), `${legacy} must be a compatibility-only export`);
+  assert.doesNotMatch(legacyCode, /export (?:async )?function /, `${legacy} must not keep a competing scheduler implementation`);
+  assert.ok(ownerCode.includes(`function ${symbol}(`), `${owner} must own ${symbol}`);
+}
+for (const [entry, specifier] of [
+  ['apps/gateway/preflight.ts', './policy/model-fallback.ts'],
+  ['apps/gateway/request-handler.ts', './policy/model-fallback.ts'],
+  ['apps/gateway/request-handler.ts', './scheduling/tier-policy.ts'],
+  ['apps/gateway/fallback.ts', './scheduling/tier-policy.ts'],
+  ['apps/gateway/tier-loop.ts', './scheduling/tier-policy.ts'],
+]) {
+  const source = readFileSync(join(root, entry), 'utf8');
+  assert.ok(source.includes(`from '${specifier}'`), `${entry} must use Gateway-owned model/tier policy`);
+  assert.doesNotMatch(
+    source,
+    /from ['"][^'"]*\/src\/request\/(model-fallback|tier-loop)\.ts['"]/,
+    `${entry} cannot use the old scheduling implementations`,
+  );
+}
+const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-policy.ts'), 'utf8');
+assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
+assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
+
 const handlerSource = readFileSync(join(root, 'src/request/handler.ts'), 'utf8');
 const tierLoopSource = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 const fallbackShim = readFileSync(join(root, 'src/request/fallback.ts'), 'utf8');
