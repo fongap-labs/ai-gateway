@@ -166,7 +166,10 @@ assert.ok(
 );
 for (const path of ['src/request/attempt/success-matrix.ts', 'src/request/attempt/success-object.ts']) {
   const source = readFileSync(join(root, path), 'utf8');
-  assert.ok(source.includes("from '../../../apps/gateway/attempt/oversize.ts'"), `${path} must call Gateway-owned oversized-reply handling directly`);
+  assert.ok(
+    source.includes("from '../../../apps/gateway/attempt/oversize.ts'"),
+    `${path} must call Gateway-owned oversized-reply handling directly`,
+  );
 }
 
 // Gateway alone owns client-facing error shaping, Retry-After policy and
