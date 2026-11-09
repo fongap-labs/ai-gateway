@@ -175,11 +175,12 @@ assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')
 
 assert.throws(() => buildGenerationCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
 assert.throws(
-  () => buildGenerationCenterDeployment({
-    CLOUDFLARE_API_TOKEN: 'test-deploy-key',
-    CLOUDFLARE_ACCOUNT_ID: 'test-account',
-    AIG_GENERATION_AUTH_KEY: 'short',
-  }),
+  () =>
+    buildGenerationCenterDeployment({
+      CLOUDFLARE_API_TOKEN: 'test-deploy-key',
+      CLOUDFLARE_ACCOUNT_ID: 'test-account',
+      AIG_GENERATION_AUTH_KEY: 'short',
+    }),
   /at least 32/,
 );
 const generationImage = {
@@ -227,7 +228,6 @@ assert.throws(
   /only static image-generation nodes/,
 );
 assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-generation-center.sh')), false, 'Generation prepare must not imply an automatic deploy');
-
 
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);
