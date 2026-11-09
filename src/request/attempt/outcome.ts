@@ -7,6 +7,7 @@
 // rotate / stop outcomes, the logical-attempt vs dispatch charge rules,
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
+import { recordUndeliveredUpstreamAttempt } from '../../../apps/gateway/attempt/observability.ts';
 import { upstreamModelOf } from '../../../apps/gateway/response/response-helpers.ts';
 import { clampRetryAfterMs } from '../../config/timeouts.ts';
 import { trimDiagnostic } from '../../protocol/http.ts';
@@ -34,7 +35,6 @@ import {
 } from '../../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../types/node.ts';
 import type { AttemptContext, AttemptOutcome, LoopState } from '../../types/request.ts';
-import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 
 // Failures that say nothing about the next request to the same Tier 1 key. When
 // the request plan runs out, the most recent one of these may be retried once.

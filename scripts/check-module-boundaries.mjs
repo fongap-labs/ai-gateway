@@ -315,6 +315,33 @@ assert.match(
   'Success dispatcher must use the Gateway-owned matrix response handler',
 );
 
+// Every physical attempt settles usage exactly once in the Gateway-owned
+// implementation. Legacy imports must forward without duplicating state.
+const attemptObservationOwner = readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8');
+const attemptObservationLegacy = readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8');
+assert.ok(
+  attemptObservationLegacy.includes("export * from '../../../apps/gateway/attempt/observability.ts';"),
+  'Legacy attempt observation must only re-export the Gateway owner',
+);
+assert.doesNotMatch(attemptObservationLegacy, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUndeliveredUpstreamAttempt']) {
+  assert.ok(attemptObservationOwner.includes(`export function ${symbol}(`), `Gateway must own ${symbol}`);
+}
+assert.ok(attemptObservationOwner.includes("from './body-release.ts'"), 'Attempt observation must reuse Gateway body release');
+assert.ok(attemptObservationOwner.includes("from '../response/response-helpers.ts'"), 'Attempt observation must reuse Gateway response helpers');
+for (const name of ['dispatch.ts', 'generation-dispatch.ts', 'inference-dispatch.ts', 'outcome.ts', 'success-object.ts', 'success-stream.ts']) {
+  const path = `src/request/attempt/${name}`;
+  const source = readFileSync(join(root, path), 'utf8');
+  assert.ok(source.includes("from '../../../apps/gateway/attempt/observability.ts'"), `${path} must call Gateway-owned attempt settlement`);
+  assert.doesNotMatch(source, /from ['"]\.\/observability\.ts['"]/);
+}
+for (const name of ['success-image.ts', 'success-matrix.ts']) {
+  const path = `apps/gateway/attempt/${name}`;
+  const source = readFileSync(join(root, path), 'utf8');
+  assert.ok(source.includes("from './observability.ts'"), `${path} must call local Gateway attempt settlement`);
+  assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/src\/request\/attempt\/observability\.ts['"]/);
+}
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
@@ -328,10 +355,6 @@ for (const [legacy, owner, symbol] of [
   assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class)) /m, `${legacy} must not duplicate implementation`);
   assert.ok(impl.includes(`export function ${symbol}(`), `${owner} must own ${symbol}`);
 }
-assert.ok(
-  readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/body-release.ts'"),
-  'Attempt observation must use Gateway-owned body release directly',
-);
 assert.ok(
   readFileSync(join(root, 'src/request/attempt/dispatch.ts'), 'utf8').includes("from '../../../apps/gateway/attempt/attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
