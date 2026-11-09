@@ -6,7 +6,8 @@ const SHA = /^[0-9a-f]{40}$/;
 const D1 = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 const NODE_VAR = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
 const RETIRED = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
-const SECRET_VAR = /(?:^|_)SECRET(?:_|$)|(?:^|_)AUTH_KEY$|_CREDENTIALS_|^AIG_ACCESS_KEY_|^AIG_DEPLOY_HEALTH_KEY$|^AIG_EDGE_CACHE_HMAC_KEY$|^CLOUDFLARE_/;
+const SECRET_VAR =
+  /(?:^|_)SECRET(?:_|$)|(?:^|_)AUTH_KEY$|_CREDENTIALS_|^AIG_ACCESS_KEY_|^AIG_DEPLOY_HEALTH_KEY$|^AIG_EDGE_CACHE_HMAC_KEY$|^CLOUDFLARE_/;
 
 function record(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -106,13 +107,7 @@ function isGateway(config, root) {
   }
   if (!hasUsageD1(config)) return false;
   const kv = config.kv_namespaces;
-  if (
-    !Array.isArray(kv) ||
-    kv.length !== 1 ||
-    kv[0]?.binding !== 'TIER1_AFFINITY' ||
-    typeof kv[0]?.id !== 'string' ||
-    kv[0].id.length === 0
-  ) {
+  if (!Array.isArray(kv) || kv.length !== 1 || kv[0]?.binding !== 'TIER1_AFFINITY' || typeof kv[0]?.id !== 'string' || kv[0].id.length === 0) {
     return false;
   }
   const vars = config.vars;
