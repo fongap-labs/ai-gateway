@@ -170,7 +170,10 @@ assert.throws(
     }),
   /at least 32/,
 );
-assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
+assert.match(read('scripts/cloudflare-wrangler.mjs'), /classifyDeployTarget/);
+assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateInference/);
+assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateGeneration/);
+assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateOperations/);
 assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')), false);
 
 assert.throws(() => buildGenerationCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
