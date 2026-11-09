@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Private Center v3: physical response object translation, usage and fallback.
+// Private Center v3: center-owned JSON/SSE translation and failure-closed usage accounting.
 import assert from 'node:assert/strict';
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../packages/contracts/execution.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
@@ -57,7 +57,9 @@ try {
     attempts++;
     assert.equal(JSON.parse(options.body).stream, undefined);
     assert.equal(new Headers(options.headers).has('x-aig-return-object'), false);
-    return answer.clone();
+    // Avoid a dangling tee branch: cancellation after SSE terminal events
+    // would otherwise wait forever for the unconsumed original Response.
+    return new Response(await answer.clone().text(), { status: answer.status, headers: answer.headers });
   };
 
   const request = inbound();
@@ -90,22 +92,45 @@ try {
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
   const empty = await handleInferenceCenterRequest(inbound(), env);
+  assert.equal(empty.status, 502);
+  assert.equal(empty.headers.get('x-aig-error-kind'), 'center_converted_object_invalid');
   assert.equal(empty.headers.has('x-aig-response-format'), false);
-  assert.equal((await empty.json()).object, 'chat.completion');
   assert.equal(attempts, 3);
 
-  answer = new Response('data: {"text":"hello"}\n\ndata: [DONE]\n\n', {
+  // A Provider may stream despite the v3 prefer-nonstream flag. The center
+  // must collect it into a tagged client object rather than leaking raw SSE.
+  const chunks = [
+    {
+      id: 'cmpl-test',
+      object: 'chat.completion.chunk',
+      model: 'gpt-test-upstream',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'streamed' }, finish_reason: null }],
+    },
+    { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+    { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage: upstream.usage },
+  ];
+  answer = new Response(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   });
   const streamed = await handleInferenceCenterRequest(inbound(), env);
-  assert.equal(streamed.headers.has('x-aig-response-format'), false);
-  assert.match(await streamed.text(), /data: \[DONE\]/);
+  assert.equal(streamed.status, 200);
+  assert.equal(streamed.headers.get('x-aig-response-format'), INFERENCE_TRANSLATED_OBJECT_FORMAT);
+  const streamedObject = await streamed.json();
+  assert.equal(isTranslatedObjectEnvelope(streamedObject), true);
+  assert.equal(streamedObject.response.content[0].text, 'streamed');
+  assert.deepEqual(streamedObject.upstreamUsage, upstream.usage);
   assert.equal(attempts, 4);
+
+  answer = new Response('{malformed-json', { status: 200, headers: { 'content-type': 'application/json' } });
+  const malformed = await handleInferenceCenterRequest(inbound(), env);
+  assert.equal(malformed.status, 502);
+  assert.equal(malformed.headers.get('x-aig-error-kind'), 'center_converted_object_invalid');
+  assert.equal(attempts, 5);
 
   assert.equal(isTranslatedObjectEnvelope({ kind: INFERENCE_TRANSLATED_OBJECT_FORMAT, response: [], upstreamUsage: null }), false);
   assert.equal(isTranslatedObjectEnvelope({ kind: INFERENCE_TRANSLATED_OBJECT_FORMAT, response: {} }), false);
-  console.log('Inference v3 converts buffered objects, preserves raw usage, rejects downgrade, and passes SSE through unchanged.');
+  console.log('Inference v3 translates native objects and unexpected SSE in-center, preserves physical usage and fails closed on invalid output.');
 } finally {
   globalThis.fetch = originalFetch;
 }
