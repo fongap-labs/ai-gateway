@@ -43,11 +43,7 @@ export function resolveOpenAIPath(surface: Surface): string {
 }
 
 // Strict native header allowlist; caller-supplied Authorization is never forwarded.
-export function buildOpenAIHeaders(
-  request: Request,
-  credential: string,
-  requestId: string,
-): Headers {
+export function buildOpenAIHeaders(request: Request, credential: string, requestId: string): Headers {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${credential}`);
   headers.set('Content-Type', request.headers.get('content-type') || 'application/json');
