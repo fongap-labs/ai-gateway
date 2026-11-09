@@ -331,7 +331,7 @@ assert.throws(
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_TIER3_NODES_01: '[]' }), /Legacy Tier 3/);
 assert.throws(
   () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TIER3_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
-  /Unmigrated legacy Tier 3 Secret/,
+  /Retired Tier 3 or subscriber Secret bindings/,
 );
 
 const deploymentHealthKey = 'deployment-health-key-0123456789abcdef0123456789abcdef';
