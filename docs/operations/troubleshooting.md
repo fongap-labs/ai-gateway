@@ -10,21 +10,21 @@
 
 - 至少配置了一个 `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` Secret；
 - 与之对应的 `AIG_ACCESS_MODELS_<GROUP>` Variable 存在且非空；
-- 至少存在一个 `AIG_TIER{1,2,3}_NODES_XX` Variable；
-- 可用的节点在同一 Tier 的 `AIG_TIER{1,2,3}_CREDENTIALS_XX` Secret 中拥有凭据。
+- 至少存在一个 `AIG_TIER{1,2}_NODES_XX` Variable；
+- 可用的节点在同一 Tier 的 `AIG_TIER{1,2}_CREDENTIALS_XX` Secret 中拥有凭据。
 
 分组的 key 若其模型允许列表为空，则会有意地授予零个模型。
 
 ### 网关处于 `degraded` 或 `invalid` 状态
 
-配置里出错的部分只会让出错的部分失效，不会让整个网关停摆：
+配置错误分为允许局部降级和必须整体失败关闭的两类：
 
-- **`degraded`（仍在服务）**：至少还有一个可用节点，但有内容被拒绝。例如某个节点缺少凭据，或其凭据定义在另一个 Tier 的分片中、node id 重复（该 id 的所有副本都会被排除）、某个分片不是合法 JSON，或 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG`、`AIG_PROTOCOL_FALLBACKS`、`AIG_OAUTH_PROVIDERS` 有错误（相应设置回落到内置默认值）。`/health` 返回 200，并在 `diagnostics` 中逐条列出原因。
-- **`invalid`（停止服务）**：没有任何可用节点。`/health` 返回 503，推理请求返回 500。
+- **`degraded`（容量缩减，仍在服务）**：存在可用节点，但部分节点因凭据缺失、跨 Tier 错误分片、重复 ID、无效 JSON 或不支持的模型/协议被排除。诊断应逐项记录；部署预检仍须按照既有受控规则判断，不把运行中的降级视为部署验收成功。
+- **`invalid`（停止服务）**：没有任何可用节点，**或者存在尚未迁移的旧 `AIG_TIER3_*`、会员 OAuth 节点/变量或 `tier3` 策略预算/对冲配置**。这些迁移错误必须整体失败关闭，不能只剔除错误节点后继续使用其余容量。`/health` 返回 503，推理请求不得向上游发送。
 
 `/health` 中的 `diagnostics` 就是排查清单。只要存在配置错误，部署预检就会拒绝上线，即使设置了 `AIG_ALLOW_DEGRADED=true` 也一样（该变量只放行"节点被排除、容量减少"这一种情况）。
 
-### `No AIG_TIER{1,2,3}_NODES_XX GitHub Variable is configured.`
+### `No AIG_TIER{1,2}_NODES_XX GitHub Variable is configured.`
 
 请添加至少一个有效的 Tier 配置分片，其内容为包含节点的 JSON 数组。后缀仅是分片编号。
 
