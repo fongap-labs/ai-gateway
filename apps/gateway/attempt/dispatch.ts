@@ -5,8 +5,8 @@
 // An unavailable center always fails closed, never to a direct Provider.
 
 import { recordAttemptEvent } from '../../../src/observability/gateway-events.ts';
-import { dispatchGenerationAttempt } from '../../../src/request/attempt/generation-dispatch.ts';
-import { dispatchInferenceAttempt } from '../../../src/request/attempt/inference-dispatch.ts';
+import { dispatchGenerationAttempt } from './generation-dispatch.ts';
+import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { upstreamModelOf } from '../response/response-helpers.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
