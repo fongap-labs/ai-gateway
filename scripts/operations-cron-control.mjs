@@ -44,7 +44,7 @@ export function createCloudflareCronClient({ accountId, token, fetchImpl = fetch
     const response = await fetchImpl(url, {
       method,
       headers: {
-        authorization: 'Bearer ' + token,
+        authorization: `Bearer ${token}`,
         ...(method === 'PUT' ? { 'content-type': 'application/json' } : {}),
       },
       ...(method === 'PUT' ? { body: JSON.stringify(schedules.map((cron) => ({ cron }))) } : {}),
@@ -148,7 +148,7 @@ async function main(argv, env) {
       : action === 'activate'
         ? await activateOperationsCron(client)
         : await deactivateOperationsCron(client);
-  console.log('Operations Cron control passed: ' + result + '.');
+  console.log(`Operations Cron control passed: ${result}.`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
