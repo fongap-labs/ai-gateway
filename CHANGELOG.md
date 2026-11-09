@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: Provider 配额信号解析和协议类型迁入中立 Contracts。
+- 维护: Inference、Generation 直接使用共享实现，旧路径仅保留兼容导出。
+
 - 维护: 请求级推测重试预算迁归 Gateway；旧路径仅保留兼容导出。
 - 维护: 统一请求入口与 Tier 循环的重试槽计数，保持原有阈值和回退合同。
 

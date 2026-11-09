@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-import type { QuotaSignal } from '../../../src/reliability/quota-signal.ts';
+import type { QuotaSignal } from '../../../packages/contracts/quota-signal.ts';
 
 // Quota signals are hints supplied by a trusted private center, never client
 // headers. Reject oversized or malformed data; unknown remains unknown.
