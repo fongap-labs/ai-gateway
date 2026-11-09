@@ -6,10 +6,10 @@ import assert from 'node:assert/strict';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
-import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
+import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
