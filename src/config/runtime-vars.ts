@@ -7,7 +7,7 @@
 // (timeouts.ts) derives its clamp limits from the int entries; docs and
 // example configs reference the same names.
 //
-// Sensitive values (AIG_ACCESS_KEY_<GROUP>, TIER*_CREDENTIALS_*, AIG_TOKEN_ENCRYPTION_KEY,
+// Sensitive values (AIG_ACCESS_KEY_<GROUP>, TIER*_CREDENTIALS_* ,
 // CLOUDFLARE_API_TOKEN) are NOT listed here - they are Secrets, never plain Worker variables.
 //
 // CLOUDFLARE_ACCOUNT_ID and AIG_USAGE_D1_ID are deployment identifiers.
@@ -161,17 +161,6 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   // (a 5-hour coding plan, a daily cap): "300000,600000,1200000,1800000".
   // Empty keeps the built-in ladder (5m ... 30m).
   { name: 'AIG_RATE_LIMIT_QUOTA_STEPS_MS', def: '' },
-  // Tier 2 subscription OAuth provider registry: JSON object keyed by
-  // provider name -> { authorize_url, token_url, client_id, scope,
-  // upstream_headers? }. Unset disables all subscription onboarding and
-  // resolution (fail-closed). See docs/operations/configuration.md.
-  { name: 'AIG_OAUTH_PROVIDERS', def: '' },
-  // Access-key groups allowed to start Tier 2 subscription onboarding, comma
-  // separated ("ULTRA" or "ULTRA,AGENT"). Unset disables onboarding
-  // (fail-closed); already linked subscriptions keep working.
-  { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
-  // AIG_OAUTH_ADMIN_GROUPS listing...
-  { name: 'AIG_OAUTH_ADMIN_GROUPS', def: '' },
   // What the translation matrix does when a reply exceeds the AIG_CONVERSION_*
   // budget (AIG_CONVERSION_BUDGET must be on). "error" (default) ends the
   // stream with a gateway error frame (or 502 for object collection); "truncate"
@@ -191,9 +180,6 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // Serve the public dashboard at / and the README status badge. false answers both with 404.
   // The dashboard never lists access-key group names.
   { name: 'AIG_PUBLIC_DASHBOARD', def: true },
-  // Tier 2 subscription proxying (auth:"oauth" nodes and /oauth/* onboarding). false loads no
-  // subscription node and answers /oauth/* with 404. See SECURITY.md before enabling.
-  { name: 'AIG_IS_SUBSCRIPTION_ENABLED', def: true },
   // v2 Tier 1 rate-limit recovery gate. false keeps the legacy behavior: a
   // 15s account-wide (or model-wide) hard gate after each 429 cooldown expires,
   // with the recovery probe committed only at stream end. true replaces the
