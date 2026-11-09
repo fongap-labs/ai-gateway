@@ -123,7 +123,11 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
 
   // ---- OpenAI chat (non-stream, NATIVE) ----
   if (route === 'openai_chat') {
-    if (fakeStream || (upstreamWasStreaming && !clientWantsStream)) {
+    // fakeStream asks the Provider to stream so the Gateway can observe TTFT,
+    // but some Providers ignore stream:true and return a normal JSON object.
+    // Only assemble SSE when the response actually has a streaming content type;
+    // otherwise the bounded JSON path below is the safe fallback.
+    if (upstreamWasStreaming && (!clientWantsStream || fakeStream)) {
       try {
         const data = await collectOpenAIStreamObject(upstream, request.signal, c.attemptDeadlineMs);
         if (!isOpenAIChatCompletionMeaningful(data)) {

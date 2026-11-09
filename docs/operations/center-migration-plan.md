@@ -73,12 +73,27 @@ node scripts/operations-cutover-config.mjs \
 
 ## 回滚
 
+回滚目标必须是已通过发布预检、四 Worker 同源且互相兼容的不可变 SHA 与配置快照。先停住生产流量切换和后续发布，并记录四 Worker 当前及目标 SHA、健康状态、Service Binding、D1 身份、Secret **名称**和 Cron 所有权；不记录 Secret 值。若无法证明目标版本与同一组配置兼容，停止回滚并保持流量隔离，不能猜测版本组合。
+
+执行顺序：
+
+1. 停止放量并隔离 Gateway 流量，禁止新的发布或配置变更。先用只读 Cron 盘点确认 Gateway 与 Operations 当前所有权。若 Operations 有 Cron，使用已单独批准的 `deactivate --plan` 受控撤销它；核对两端读回结果。读回失败、出现未知 schedule 或双 Cron 时立即停止后续恢复，保持维护触发器关闭并人工处置。
+2. 在 Gateway 流量仍隔离且两端 Cron 都关闭时，按记录的兼容目标恢复 Inference Center、Generation Center 和 Operations Worker。三者须使用同一目标 SHA；Operations 保持 Cron 关闭、继续绑定原有共享 `TOKEN_STATS_DB`。保留各私有中心自己的 Provider Secret 所有权，不把凭据复制回 Gateway。D1 数据与 schema 不回滚、不清空。
+3. 对三个私有 Worker 分别核验线上 `health.build`、内部健康、Service Binding 可达性、D1 绑定身份和 Secret 名称归属。任一项与记录不符就保持 Gateway 流量隔离，停止切换。
+4. 恢复与这些私有 Worker 同 SHA、同配置快照的 Gateway；确认两个私有 Service Binding、Tier 1 KV、额度策略和模型映射均与该快照一致，且 Gateway 没有 Provider 凭据。通过健康及 Mock/受控探测后才恢复 Gateway 流量。
+5. Cron 最后恢复，并严格使用回滚记录中的唯一所有者。Operations 为所有者时，先 GET 确认 Gateway Cron 为空，再通过独立批准的 `activate --plan` 激活 Operations；Gateway 为所有者时，部署其已批准且含唯一 Cron 的配置，并 GET 确认 Operations Cron 为空。任何时刻最多一个 Cron 所有者。随后观察至少两个预定调度周期，并分别留存 Cloudflare 实际运行日志、D1 聚合结果及无重复维护证据。Cron API 配置读回不代表全球调度传播完成。
+
+停止条件包括：Worker SHA/健康检查不一致、服务绑定或私有访问失效、D1 身份改变、任意 Provider Secret 出现在 Gateway、Cron 读回含糊或重复执行、缺少独立调度运行证据、聚合失败、保留期误删风险或与回滚前基线不一致。遇到任一条件，保持流量隔离；Cron 维持关闭，除非能确认唯一且已运行的所有者；修复并重新完成整套验收后再继续。
+
+下面的简表用于故障当下的决策提示；必须结合上面的完整顺序和已批准的回滚记录执行：
+
 ```text
 检查核心成功率 / CPU 1102 / 首事件与额度异常
 → 立即停止放量
-→ Action Worker 使用经过验证的旧构建与匹配配置回滚
-→ 检查 health.build 与真实生产 SHA 一致
-→ 独立分析失败中心，避免影响其他中心
+→ 停止 Gateway 流量并确认单一 Cron 所有权，必要时先关闭 Operations Cron
+→ 流量隔离期间恢复三个私有 Worker 到已验证兼容 SHA 和配置
+→ 恢复同 SHA 的 Gateway；通过检查后再恢复流量
+→ 最后恢复唯一 Cron 所有者，观察两个实际调度周期
 ```
 
-不得自动创建项目版本号或未经审批直接触发发布；回滚的可信来源是已通过中央门禁的不可变 SHA。
+不得自动创建项目版本号或未经审批直接触发发布；回滚的可信来源是已通过中央门禁的不可变 SHA。D1 迁移不是事务性回滚；遇到 schema 不兼容时应另行制定向前修复，不得通过删除生产数据来配合 Worker 回滚。
