@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Gateway fallback 仅经私有 Inference 预检，缺少中心不执行本地转换。
+
 - 新增: Tier 调度收敛为免费池与 API Token 池；旧三层配置必须先迁移。
 - 维护: 私有中心及部署规划拒绝旧 Tier 3；不自动删除 Secrets。
 
