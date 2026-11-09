@@ -145,8 +145,8 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
           return (
             (attempts !== null && typeof attempts === 'object' && !Array.isArray(attempts) && Object.hasOwn(attempts, 'tier3')) ||
             (hedge !== null &&
-                typeof hedge === 'object' &&
-                !Array.isArray(hedge) &&
+              typeof hedge === 'object' &&
+              !Array.isArray(hedge) &&
               Array.isArray((hedge as Record<string, unknown>).tiers) &&
               ((hedge as Record<string, unknown>).tiers as unknown[]).includes('tier3'))
           );
