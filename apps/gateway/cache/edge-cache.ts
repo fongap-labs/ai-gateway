@@ -7,7 +7,7 @@
 // pipeline and stores the successful response non-blocking via waitUntil.
 //
 // Fail-closed: the cache key's credential fingerprint is an HMAC keyed from
-// AIG_EDGE_CACHE_HMAC_KEY. When that secret is not configured, callerCacheScope()
+// AIG_EDGE_CACHE_HMAC_KEY. When that secret is absent or shorter than 32 characters, callerCacheScope()
 // returns null and the edge cache is disabled entirely (no lookup, no store),
 // even for requests that opt in. This keeps cache replay isolated per caller, independent of retired subscription token storage.
 
@@ -55,12 +55,12 @@ export function edgeCacheEligible(route: string, request: Request): boolean {
  * configured, because a fingerprint derived from a public constant would be forgeable.
  */
 export async function callerCacheScope(request: Request, env: GatewayEnv): Promise<string | null> {
-  const encryptionKey = readEnv(env, 'AIG_EDGE_CACHE_HMAC_KEY');
-  if (!encryptionKey) return null;
+  const hmacKey = readEnv(env, 'AIG_EDGE_CACHE_HMAC_KEY');
+  if (!hmacKey || hmacKey.length < 32) return null;
   const credentials = presentedCredentials(request).sort();
   if (credentials.length === 0) return '';
   const encoder = new TextEncoder();
-  const keyMaterial = encoder.encode(`aig-edge-cache-v1:${encryptionKey}`);
+  const keyMaterial = encoder.encode(`aig-edge-cache-v1:${hmacKey}`);
   const key = await crypto.subtle.importKey('raw', keyMaterial, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(credentials.join('\0'))));
   return Array.from(mac.slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -165,12 +165,12 @@ export type EdgeCachePlan = {
 
 // Logged once per isolate: an operator who opted in but left the key unset
 // should see why the cache stays off, without a line per request.
-let hasLoggedMissingEncryptionKey = false;
+let hasLoggedMissingCacheHmacKey = false;
 
 function logEdgeCacheDisabledOnce(env: GatewayEnv): void {
-  if (hasLoggedMissingEncryptionKey) return;
-  hasLoggedMissingEncryptionKey = true;
-  getLogger(env).debug('[edge-cache] disabled: AIG_EDGE_CACHE_HMAC_KEY is not configured (fail-closed; the cache key needs it).');
+  if (hasLoggedMissingCacheHmacKey) return;
+  hasLoggedMissingCacheHmacKey = true;
+  getLogger(env).debug('[edge-cache] disabled: AIG_EDGE_CACHE_HMAC_KEY is absent or shorter than 32 characters (cache replay disabled).');
 }
 
 /**
