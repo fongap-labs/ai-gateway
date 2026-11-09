@@ -32,7 +32,9 @@ function deploymentVars(env) {
 
 export function validateDeploymentInputs(env) {
   const errors = [];
-  const retired = Object.keys(env).filter((key) => key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY');
+  const retired = Object.keys(env).filter(
+    (key) => key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
+  );
   if (retired.length > 0) errors.push(`Retired subscription bindings require explicit cleanup: ${retired.sort().join(', ')}`);
   for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
@@ -106,7 +108,6 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   if (services.some((service) => service?.binding === 'AIG_GENERATION_SERVICE') && !names.has('AIG_GENERATION_AUTH_KEY')) {
     missing.push('AIG_GENERATION_AUTH_KEY');
   }
-
 
   if (missing.length) {
     throw new Error(
