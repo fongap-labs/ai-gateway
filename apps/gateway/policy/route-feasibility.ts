@@ -18,12 +18,12 @@
 // for the lifetime of a single request and may be computed once and carried
 // through the pipeline.
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { getFallbackChain } from '../../../src/config/protocol-fallbacks.ts';
 import { supportsRequest } from '../../../src/scheduler/scheduler.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { Protocol, Surface } from '../../../src/types/protocol.ts';
 import type { RequestDescriptor, RouteFeasibilityResult } from '../../../src/types/request.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import type { TierMap } from '../../../src/types/scheduler.ts';
 import { TIER_ORDER } from './router.ts';
 
