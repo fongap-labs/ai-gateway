@@ -57,6 +57,34 @@ assert.ok(
     (pkg.scripts['validate:deploy'] || '').includes('npm run check:operations'),
   'Independent Operations build must be validated on every change',
 );
+// Build-only application configs must never become deployable production
+// manifests. Each build uses its actual apps/*/index.ts entrypoint.
+for (const [app, name] of [
+  ['gateway', 'ai-gateway-app-build-check'],
+  ['inference', 'ai-inference-app-build-check'],
+  ['generation', 'ai-generation-app-build-check'],
+]) {
+  const buildConfig = JSON.parse(read(`wrangler.${app}-build.jsonc`));
+  assert.equal(buildConfig.name, name);
+  assert.equal(buildConfig.main, `apps/${app}/index.ts`);
+  assert.equal(buildConfig.workers_dev, false);
+  assert.equal(buildConfig.compatibility_date, config.compatibility_date);
+  for (const key of ['triggers', 'routes', 'route', 'custom_domains', 'services', 'vars', 'secrets', 'kv_namespaces', 'd1_databases', 'inherit']) {
+    assert.equal(Object.hasOwn(buildConfig, key), false, `Build-only ${app} cannot declare ${key}`);
+  }
+  assert.ok(
+    Object.keys(buildConfig).every((key) => ['name', 'main', 'workers_dev', 'compatibility_date', 'compatibility_flags'].includes(key)),
+    `Build-only ${app} config cannot gain deployment properties`,
+  );
+  assert.ok(
+    (pkg.scripts['check:apps'] || '').includes(`deploy --dry-run --config wrangler.${app}-build.jsonc`),
+    `Missing independent dry-run for apps/${app}/index.ts`,
+  );
+}
+assert.ok(
+  (pkg.scripts['validate:merge'] || '').includes('npm run check:apps') && (pkg.scripts['validate:deploy'] || '').includes('npm run check:apps'),
+  'All independent app bundles must be validated on every change',
+);
 for (const scriptName of ['deploy', 'tail', 'cf:login', 'cf:whoami']) {
   assert.match(pkg.scripts?.[scriptName] || '', /cloudflare-wrangler\.mjs/);
 }
