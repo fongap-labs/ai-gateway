@@ -15,7 +15,11 @@ const node = {
 };
 const env = {
   AIG_INFERENCE_AUTH_KEY: key,
-  AIG_INFERENCE_SERVICE: { fetch: async () => { throw new Error('Gateway Service Binding mock is never used by center'); } },
+  AIG_INFERENCE_SERVICE: {
+    fetch: async () => {
+      throw new Error('Gateway Service Binding mock is never used by center');
+    },
+  },
   AIG_TIER2_NODES_01: JSON.stringify([node]),
   AIG_TIER2_CREDENTIALS_01: JSON.stringify({ [node.id]: 'mock-physical-credential' }),
 };
