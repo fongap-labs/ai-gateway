@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 新增: v4/v5 私有推理中心将 Provider 忽略 stream:true 返回的 JSON 合成为带物理用量侧通道的私有 SSE 帧；公网网关禁止回退本地对象转码。
+- 新增: Matrix JSON 回退由私有推理中心生成 SSE 帧，Gateway 仅验证和结算。
 
 - 新增: 私有推理中心 v6 非流式 Matrix SSE 对象收集与额度预算合同，Gateway 对未标记的响应拒绝回退本地转换；无部署变更。
 
