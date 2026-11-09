@@ -11,6 +11,7 @@
 // details stay hidden. Both are exposed only when the caller passes
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { parseRetryAfterMs } from '../../../src/config/timeouts.ts';
 import { anthropicErrorTypeForStatus } from '../../../src/protocol/anthropic.ts';
 import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../../../src/protocol/http.ts';
@@ -22,7 +23,6 @@ import { tier1BlockingWaitMs } from '../../../src/reliability/tier1-state.ts';
 import { supportsRequest } from '../../../src/scheduler/scheduler.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { LoopState, RequestDescriptor } from '../../../src/types/request.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import type { TierMap } from '../../../src/types/scheduler.ts';
 import { modelFallbackCandidates } from '../policy/model-fallback.ts';
 import { TIER_ORDER } from '../policy/router.ts';
