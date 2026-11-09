@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+
+import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
+import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
+import { finalHeaders, jsonResponse, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
+import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
+import { corsHeaders, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, readBufferedReplyText, trimDiagnostic } from '../../../src/protocol/http.ts';
+import { synthesizeSseFromCompletion } from '../../../src/protocol/openai.ts';
+import { collectResponsesObject, synthesizeResponsesFromObject } from '../../../src/protocol/responses/index.ts';
+import {
+  classifyClientAbort,
+  classifyEmptyResponse,
+  classifyNonJsonBody,
+  classifyPostHeadersFailure,
+  classifyUpstreamStatus,
+} from '../../../src/reliability/classify.ts';
+import { collectAnthropicMessageObject, synthesizeAnthropicFromMessage } from '../../../src/stream/anthropic-native.ts';
+import { collectOpenAIStreamObject } from '../../../src/stream/assemble.ts';
+import { trackStreamResponse } from '../../../src/stream/track.ts';
+import { isAnthropicMessageMeaningful, isOpenAIChatCompletionMeaningful, isOpenAIResponsesObjectMeaningful } from '../../../src/transport/index.ts';
+import type { AttemptOutcome } from '../../../src/types/request.ts';
+import { makeNodeStreamTrack, recordNodeSuccess, recordTier1NonStreamTtft, recordTokens, recordUndeliveredUpstreamAttempt } from '../../../src/request/attempt/observability.ts';
+import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
+import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
+
+/**
+ * Status for an Anthropic error body delivered inside HTTP 200. Anthropic
+ * states the class of the failure in `error.type`; without a mapping every
+ * such body would look like a server failure and would be rotated.
+ */
+function anthropicEmbeddedErrorStatus(data: Record<string, unknown>): number {
+  const error = data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>) : {};
+  const numeric = Number(error.status);
+  if (Number.isFinite(numeric) && numeric >= 400 && numeric < 600) return Math.trunc(numeric);
+  const type = String(error.type || '').toLowerCase();
+  if (type.includes('invalid_request')) return 400;
+  if (type.includes('authentication')) return 401;
+  if (type.includes('permission')) return 403;
+  if (type.includes('not_found')) return 404;
+  if (type.includes('request_too_large')) return 413;
+  if (type.includes('rate_limit')) return 429;
+  return 502;
+}
+
+export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
+  const { upstream, c, latencyMs, detach, upstreamWasStreaming } = s;
+  const { request, env, requestId, route, node, requestedModel, clientWantsStream, fakeStream, limits, exposeUpstreamInfo, state } = c;
+  const elapsedSinceStart = () => Date.now() - (c.attemptStartMs as number);
+  const extraHeaders = {
+    'x-request-id': requestId,
+    ...(exposeUpstreamInfo ? { 'x-gateway-node': node.id, 'x-gateway-tier': node.tier } : {}),
+  };
+  const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
+
+  detach();
+
+  // ---- OpenAI Responses (non-stream, NATIVE) ----
+  if (route === 'openai_responses') {
+    try {
+      let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
+      if (upstreamWasStreaming) data = await collectResponsesObject(upstream, request.signal, c.attemptDeadlineMs);
+      else data = JSON.parse(await readBufferedReplyText(upstream, c.attemptDeadlineMs));
+      if (data && typeof data === 'object' && data.error) {
+        const status = Number(data.error?.status) >= 400 && Number(data.error?.status) < 600 ? Math.trunc(Number(data.error?.status)) : 502;
+        const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, data.error?.message || '');
+        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+        recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(data.error.message || 'embedded error', 200) });
+        if (classification.action === 'stop') {
+          return {
+            response: buildClientErrorResponse(
+              request,
+              env,
+              route,
+              requestId,
+              requestedModel,
+              status,
+              JSON.stringify(data),
+              state,
+              exposeUpstreamInfo,
+            ),
+          };
+        }
+        return { rotate: true, kind: classification.kind };
+      }
+      if (!isOpenAIResponsesObjectMeaningful(data)) {
+        const classification = classifyEmptyResponse();
+        recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+        recordOutcome(state, node, classification, c, {
+          latencyMs,
+          status: upstream.status,
+          diagnostic: 'Responses object carried no meaningful output',
+        });
+        return { rotate: true, kind: classification.kind };
+      }
+      recordTier1NonStreamTtft(c, node, data, isOpenAIResponsesObjectMeaningful);
+      recordTokens(c, node, data?.usage);
+      if (!clientWantsStream) {
+        recordNodeSuccess(c, node, latencyMs);
+        if (data && typeof data === 'object') data.model = requestedModel;
+        return { response: jsonResponse(200, data, env, request, extraHeaders) };
+      }
+      recordNodeSuccess(c, node, latencyMs);
+      return { response: synthesizeResponsesFromObject(data, requestedModel, { ...extraHeaders, ...corsHeaders(request, env) }) };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (request.signal?.aborted) {
+        recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
+        return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
+      }
+      if (c.hedgeAbort?.signal.aborted) {
+        // A peer committed while this attempt was assembling its body. The
+        // abort must stay a neutral reliability end — never a classified
+        // failure that pollutes node health or the retry flow.
+        return hedgeLoserOutcome(c, node, 'object', latencyMs);
+      }
+      if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+      const classification = classifyPostHeadersFailure(error);
+      recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
+      return { rotate: true, kind: classification.kind };
+    }
+  }
+
+  // ---- OpenAI chat (non-stream, NATIVE) ----
+  if (route === 'openai_chat') {
+    if (fakeStream || (upstreamWasStreaming && !clientWantsStream)) {
+      try {
+        const data = await collectOpenAIStreamObject(upstream, request.signal, c.attemptDeadlineMs);
+        if (!isOpenAIChatCompletionMeaningful(data)) {
+          const classification = classifyEmptyResponse();
+          recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+          recordOutcome(state, node, classification, c, {
+            latencyMs,
+            status: upstream.status,
+            diagnostic: 'assembled chat completion carried no meaningful output',
+          });
+          return { rotate: true, kind: classification.kind };
+        }
+        recordTier1NonStreamTtft(c, node, data, isOpenAIChatCompletionMeaningful);
+        recordTokens(c, node, data?.usage);
+        recordNodeSuccess(c, node, latencyMs);
+        data.model = requestedModel;
+        return { response: jsonResponse(200, data, env, request, extraHeaders) };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (request.signal?.aborted) {
+          recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: elapsedSinceStart(), status: upstream.status });
+          return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
+        }
+        if (c.hedgeAbort?.signal.aborted) {
+          return hedgeLoserOutcome(c, node, 'object', latencyMs);
+        }
+        if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+        const classification = classifyPostHeadersFailure(error);
+        recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
+        return { rotate: true, kind: classification.kind };
+      }
+    }
+    if (upstreamWasStreaming) {
+      const tracked = trackStreamResponse(
+        new Response(upstream.body, { status: 200, headers: finalHeaders(env, request, upstream.headers, extraHeaders) }),
+        {
+          idleTimeoutMs: limits.streamIdleTimeoutMs,
+          protocol: 'openai_chat',
+          ...(needsModelRewrite ? { rewriteModel: requestedModel } : {}),
+          onUsage: (u: unknown) => recordTokens(c, node, u),
+          interruptionChunk: (reason: string | null) => streamInterruptionChunk(route, requestId, reason),
+          ...makeNodeStreamTrack(c, node, latencyMs),
+        },
+      );
+      return { response: tracked };
+    }
+    const read = await readBodyTextBounded(upstream, MAX_BUFFERED_REPLY_BYTES, c.attemptDeadlineMs);
+    if (read.isTruncated) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+    const text = read.text;
+    let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      const classification = classifyNonJsonBody();
+      recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: text });
+      return { rotate: true, kind: classification.kind };
+    }
+    if (data && typeof data === 'object' && data.error) {
+      const status = Number(data.error?.status) >= 400 && Number(data.error?.status) < 600 ? Math.trunc(Number(data.error?.status)) : 502;
+      const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, data.error?.message || '');
+      recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+      recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(data.error.message || 'embedded error', 200) });
+      if (classification.action === 'stop') {
+        return { response: buildClientErrorResponse(request, env, route, requestId, requestedModel, status, text, state, exposeUpstreamInfo) };
+      }
+      return { rotate: true, kind: classification.kind };
+    }
+    if (!isOpenAIChatCompletionMeaningful(data)) {
+      const classification = classifyEmptyResponse();
+      recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+      recordOutcome(state, node, classification, c, {
+        latencyMs,
+        status: upstream.status,
+        diagnostic: 'chat completion carried no meaningful output',
+      });
+      return { rotate: true, kind: classification.kind };
+    }
+    recordTier1NonStreamTtft(c, node, data, isOpenAIChatCompletionMeaningful);
+    recordTokens(c, node, data?.usage);
+    if (!clientWantsStream) {
+      recordNodeSuccess(c, node, latencyMs);
+      if (data && typeof data === 'object') data.model = requestedModel;
+      return { response: jsonResponse(200, data, env, request, extraHeaders) };
+    }
+    recordNodeSuccess(c, node, latencyMs);
+    if (data && typeof data === 'object') data.model = requestedModel;
+    return { response: synthesizeSseFromCompletion(data, env, request, extraHeaders) };
+  }
+
+  // ---- Anthropic messages (non-stream, NATIVE) ----
+  try {
+    let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
+    if (upstreamWasStreaming) data = await collectAnthropicMessageObject(upstream, request.signal, c.attemptDeadlineMs);
+    else data = JSON.parse(await readBufferedReplyText(upstream, c.attemptDeadlineMs));
+    if (data && typeof data === 'object' && (data.type === 'error' || data.error)) {
+      const message = data.error?.message || 'Upstream returned an embedded error.';
+      // An Anthropic error body carries its class in `error.type`, not in a
+      // status field. Mapping it keeps a client-side rejection out of the
+      // server-failure class, so the request is not rotated and the node is
+      // not penalized for the client's mistake.
+      const status = anthropicEmbeddedErrorStatus(data);
+      const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, message);
+      recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+      recordOutcome(state, node, classification, c, { latencyMs, status, diagnostic: trimDiagnostic(message, 200) });
+      if (classification.action === 'stop') {
+        return {
+          response: buildClientErrorResponse(request, env, route, requestId, requestedModel, status, JSON.stringify(data), state, exposeUpstreamInfo),
+        };
+      }
+      return { rotate: true, kind: classification.kind };
+    }
+    if (!isAnthropicMessageMeaningful(data)) {
+      const classification = classifyEmptyResponse();
+      recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));
+      recordOutcome(state, node, classification, c, {
+        latencyMs,
+        status: upstream.status,
+        diagnostic: 'Anthropic message carried no meaningful output',
+      });
+      return { rotate: true, kind: classification.kind };
+    }
+    recordTier1NonStreamTtft(c, node, data, isAnthropicMessageMeaningful);
+    recordTokens(c, node, data?.usage);
+    recordNodeSuccess(c, node, latencyMs);
+    if (clientWantsStream) return { response: synthesizeAnthropicFromMessage(data, { ...extraHeaders, ...corsHeaders(request, env) }) };
+    if (data && typeof data === 'object') data.model = requestedModel;
+    return { response: jsonResponse(200, data, env, request, extraHeaders) };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (request.signal?.aborted) {
+      recordOutcome(state, node, classifyClientAbort(), c, { latencyMs, status: upstream.status });
+      return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
+    }
+    if (c.hedgeAbort?.signal.aborted) {
+      return hedgeLoserOutcome(c, node, 'object', latencyMs);
+    }
+    if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
+    const classification = classifyPostHeadersFailure(error);
+    recordOutcome(state, node, classification, c, { latencyMs, status: upstream.status, diagnostic: errorMessage });
+    return { rotate: true, kind: classification.kind };
+  }
+}

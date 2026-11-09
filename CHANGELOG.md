@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: 非流式响应组装迁归 Gateway，旧路径仅保留兼容导出。
+- 维护: 成功响应分发直连新实现，保留计费、错误分类及终态合同。
+
 - 维护: Provider 配额信号解析和协议类型迁入中立 Contracts。
 - 维护: Inference、Generation 直接使用共享实现，旧路径仅保留兼容导出。
 
