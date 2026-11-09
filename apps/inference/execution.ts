@@ -165,6 +165,9 @@ async function executeAdmittedNative(
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
+  // v6 is exclusively a non-streaming public reply, even if the physical
+  // upstream is later forced into SSE by Matrix conversion.
+  if (invocation.returnObject && !invocation.preferNonstream && clientBody.stream === true) return problem(400, 'center_stream_invalid');
   // v4 is solely for real streaming requests; never synthesize an object
   // protocol response under a private framed-stream ticket.
   if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
