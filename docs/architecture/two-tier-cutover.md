@@ -19,7 +19,7 @@
 
 ## 第一道门禁：历史配置只读预检
 
-运营者在受控环境中分别导出*旧版* Tier 1/2/3 节点 JSON 数组，旧 `AIG_POLICIES_CONFIG` 对象（没有时也必须显式提供 `{}`），以及三个旧凭据分片的**节点 ID 索引**。不要导出或粘贴 Secret 值、OAuth Token、客户端密钥或上游授权头。
+运营者在受控环境中分别导出*旧版* Tier 1/2/3 节点 JSON 数组、旧 `AIG_MODELS_CONFIG` 模型目录、旧 `AIG_POLICIES_CONFIG` 对象（没有时也必须显式提供 `{}`），以及三个旧凭据分片的**节点 ID 索引**。模型目录没有显式配置时也必须显式提供 `{}`。不要导出或粘贴 Secret 值、OAuth Token、客户端密钥或上游授权头。
 
 凭据索引示例（数组内仅为占位 ID）：
 
@@ -37,12 +37,13 @@ npm run config:cutover:plan -- \
   --tier2 ./old-tier2.json \
   --tier3 ./old-tier3.json \
   --credential-index ./credential-ids.json \
-  --policies ./old-policies.json
+  --policies ./old-policies.json \
+  --model-catalog ./old-model-catalog.json
 ```
 
-`scripts/tier-cutover-plan.mjs` 只读运行，产生脱敏的 `node_moves`、`retired_oauth_nodes`、`policy_reviews`、`blockers`。退出码 2 表示存在阻断；即使 `preflight_passed=true`，也只代表**结构及凭据节点 ID 归属**可迁移，**不是部署批准**。必须逐项解决重复 ID、静态凭据缺失、会员节点混入、跨 Tier 凭据、`tier_attempts.tier2/tier3` 和 `hedge.tiers` 的预算冲突；不得自动把旧预算相加。
+`scripts/tier-cutover-plan.mjs` 只读运行，产生明确 `preflight_passed` 结论及脱敏的 `node_moves`、会员节点退役记录、模型映射 SHA-256 指纹、模型目录/策略摘要、`policy_reviews` 和 `blockers`。指纹证明映射输入被盘点，但不把真实上游模型名或凭据值写入报告。退出码 2 表示存在阻断；即使 `preflight_passed=true`，也只代表配置结构、模型目录、节点到凭据分片的 ID 归属及策略格式可继续人工审查，**不是部署批准**。必须逐项解决重复/空 ID、静态凭据缺失、会员节点退役、跨 Tier/重复凭据引用、逻辑模型大小写冲突、模型到策略的悬空引用、`tier_attempts.tier2/tier3` 和 `hedge.tiers` 的预算冲突；不得自动把旧预算相加。云端同一个 Secret 值是否被多个节点重复引用不能从节点 ID 索引推断，报告会明确标注为未验证。
 
-用 `npm run check:cutover-plan` 和 `npm run check:two-tier-runtime` 复核本地只读迁移合同。不要把清单、任何真实上游 URL 或生产节点元数据作为公开 issue / PR 附件。
+用 `npm run check:cutover-plan` 和 `npm run check:two-tier-runtime` 复核两层映射、Tier1→Tier2 额度回退及遗留配置失败关闭；再运行 `npm run check:private-center-release`、`npm run check:wrangler-deploy-guards`、`npm run check:operations-cutover` 和 `npm run check:cloudflare-inventory`，核对私有 Service Bindings、Gateway Provider Secret 隔离、Tier1 KV、Gateway/Operations 同一 D1 及 Cron 合同。以上属于离线/Mock 合同，不代表真实 Cloudflare 资源或运行时已核验。不要把清单、任何真实上游 URL 或生产节点元数据作为公开 issue / PR 附件。
 
 ## 第二道门禁：目标生产资源核对
 
