@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 新增: Operations 独立 Worker 的预备入口及禁止双 Cron 的切换门禁。
+- 安全: 未绑定独立 D1 时定时维护拒绝执行，生产 Cron 暂不切换。
+
 - 新增: Tier 调度收敛为免费池与 API Token 池；旧三层配置必须先迁移。
 - 维护: 私有中心及部署规划拒绝旧 Tier 3；不自动删除 Secrets。
 
