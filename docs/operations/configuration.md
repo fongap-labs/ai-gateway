@@ -17,7 +17,7 @@
 
 `src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。
 
-**生产切换状态**：2026-11-09 新两层源码已合并，但不代表线上配置已切换。当前仓库配置了自动部署清单，生产 Environment 可能存在等待中的部署请求。发布前请按[两层 Tier 生产切换门禁](../architecture/two-tier-cutover.md)确认旧版凭据与中心绑定；不要直接批准等待中的自动部署。边缘缓存只能使用独立的 `AIG_EDGE_CACHE_HMAC_KEY` Secret（至少 32 字符），不得恢复旧会员 Token 密钥。
+**生产切换状态**：2026-11-09 新两层源码已合并，但不代表线上配置已切换。当前仓库仍保留部署清单，但 `automatic: false` 暂时冻结自动生产派发；历史 Environment 部署请求需独立核实。发布前请按[两层 Tier 生产切换门禁](../architecture/two-tier-cutover.md)确认旧版凭据与中心绑定；不要直接批准等待中的自动部署。边缘缓存只能使用独立的 `AIG_EDGE_CACHE_HMAC_KEY` Secret（至少 32 字符），不得恢复旧会员 Token 密钥。
 
 ## 访问分组
 
