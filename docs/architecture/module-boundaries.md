@@ -387,6 +387,14 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 这让 Operations 从独立源码目录进入**可单独打包**的验收阶段。由于未配置生产环境绑定，不能把成功 dry-run 视作已完成生产部署、D1 绑定或 Cron 迁移。当前部署仍由 `wrangler.jsonc` 和旧组合入口承载；不得在本阶段启用独立生产定时任务。
 
+## 三应用独立构建与预检客户端归属
+
+`wrangler.gateway-build.jsonc`、`wrangler.inference-build.jsonc`、`wrangler.generation-build.jsonc` 分别从 `apps/gateway/index.ts`、`apps/inference/index.ts`、`apps/generation/index.ts` 进行独立 Wrangler dry-run。它们不包含路由、Service Binding、Cron、D1、KV、密钥和生产环境继承，不代替现有部署清单。`npm run check:apps` 纳入合并、部署前和本地构建验收。
+
+私有转换预检客户端实现从 `src/inference/inference-preflight-client.ts` 迁入 `apps/gateway/transport/inference-preflight-client.ts`，Gateway 回退逻辑直接依赖自有模块；旧路径只负责兼容导出。转换行为、私有鉴权、超时、取消与失败关闭语义不变，中心实际转换仍由 Inference 执行。
+
+本阶段确认**三套应用可作为独立打包入口**，不等于模块依赖已全部清除，尤其 `src/request/`、OAuth 与可观测性仍待进一步迁移。生产 `wrangler*.jsonc`、Cloudflare Secrets、Cron、路由、Service Binding 均不变，也不执行部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
