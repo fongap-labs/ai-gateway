@@ -40,9 +40,17 @@ export function buildFramedMatrixResponse(
 /** Provider ignored stream:true and returned one native JSON object.
  *  Only Inference decodes it, then frames client-facing synthetic SSE with
  *  physical usage in the private control channel (never public output). */
-export function buildFramedMatrixObjectFallback(native: Record<string, unknown>, from: IrProtocol, to: IrProtocol, displayModel: string): Response {
+export function buildFramedMatrixObjectFallback(
+  native: Record<string, unknown>,
+  from: IrProtocol,
+  to: IrProtocol,
+  displayModel: string,
+): Response {
   const { reply } = replyFromNativeObject(from, native);
-  if (!reply.parts.some((part) => part.type === 'text' && part.text) && !reply.parts.some((part) => part.type === 'tool_call')) {
+  if (
+    !reply.parts.some((part) => part.type === 'text' && part.text) &&
+    !reply.parts.some((part) => part.type === 'tool_call')
+  ) {
     throw new Error('no meaningful native output to synthesize');
   }
   const synthetic = synthesizeMatrixStreamFromObject({ ...reply, model: displayModel }, to);
