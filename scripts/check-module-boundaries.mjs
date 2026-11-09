@@ -927,7 +927,10 @@ const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
 assert.match(inferenceV4Executor, /buildFramedMatrixResponse\(/, 'Inference must execute real private streaming conversion');
 assert.match(inferenceV4Contract, /EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5'/, 'v5 must isolate budgeted streams from legacy v4');
-assert.ok(inferenceV4Dispatcher.includes('(returnStream || returnCollectedObject) && limits.conversionBudget'), 'Matrix conversion budgets must be issued to private center v5/v6');
+assert.ok(
+  inferenceV4Dispatcher.includes('(returnStream || returnCollectedObject) && limits.conversionBudget'),
+  'Matrix conversion budgets must be issued to private center v5/v6',
+);
 assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
 assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
 const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
