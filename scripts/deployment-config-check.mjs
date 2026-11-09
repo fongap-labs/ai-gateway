@@ -238,7 +238,7 @@ assert.throws(
       remoteSecretNames.filter((secret) => secret.name !== 'AIG_TIER1_CREDENTIALS_01'),
       deployPrepared.config,
     ),
-  /AIG_TIER\[123\]_CREDENTIALS_XX/,
+  /AIG_TIER\[12\]_CREDENTIALS_XX/,
 );
 assert.throws(
   () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_ACCESS_KEY_MAX', type: 'plain_text' }], deployPrepared.config),
@@ -246,13 +246,17 @@ assert.throws(
 );
 const generationPrepared = validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, generationPrepared.config), /AIG_GENERATION_AUTH_KEY/);
-const oauthPrepared = validateDeploymentInputs({
-  ...deployInputs,
-  AIG_TIER2_NODES_01: JSON.stringify([{ id: 'oauth-1', provider: 'anthropic', auth: 'oauth', models: { Chat: 'claude' } }]),
-});
-assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, oauthPrepared.config), /AIG_TOKEN_ENCRYPTION_KEY/);
-assert.doesNotThrow(() =>
-  validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TOKEN_ENCRYPTION_KEY', type: 'secret_text' }], oauthPrepared.config),
+assert.throws(
+  () => validateDeploymentInputs({
+    ...deployInputs,
+    AIG_TIER2_NODES_01: JSON.stringify([{ id: 'oauth-1', provider: 'anthropic', auth: 'oauth', models: { Chat: 'claude' } }]),
+  }),
+  /obsolete subscription auth node/,
+);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_TIER3_NODES_01: '[]' }), /Legacy Tier 3/);
+assert.throws(
+  () => validateRemoteSecretInventory([...remoteSecretNames, { name: 'AIG_TIER3_CREDENTIALS_01', type: 'secret_text' }], deployPrepared.config),
+  /Unmigrated legacy Tier 3 Secret/,
 );
 
 const deploymentHealthKey = 'deployment-health-key-0123456789abcdef0123456789abcdef';
@@ -331,7 +335,7 @@ const modelDiscoverySecretScope = read('projects/model-discovery/.secrets.allowe
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
 assert.ok(modelDiscoverySecretScope.length > 0);
-assert.ok(modelDiscoverySecretScope.every((name) => /^AIG_TIER[123]_CREDENTIALS_\d{2}$/.test(name)));
+assert.ok(modelDiscoverySecretScope.every((name) => /^AIG_TIER[12]_CREDENTIALS_\d{2}$/.test(name)));
 for (const forbidden of ['AIG_ACCESS_KEY_AGENT', 'AW_CONTROL_TOKEN', 'AW_ADMIN_TOKEN', 'AW_DISPATCH_TOKEN']) {
   assert.equal(modelDiscoverySecretScope.includes(forbidden), false, `model discovery secret scope must not expose ${forbidden}`);
 }
@@ -418,14 +422,10 @@ assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '3');
 
 // A free tier that runs out of selectable nodes must not strand attempts.
 const policy = { maxAttempts: 5, tierAttempts: null };
-assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, policy), { 1: 3, 2: 3, 3: 1 });
-assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 2, 2, policy), { 1: 3, 2: 1, 3: 3 });
-assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }), { 1: 3, 2: 1, 3: 3 });
-assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1, tier3: 1 } }), {
-  1: 3,
-  2: 1,
-  3: 1,
-});
-assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1, 3: 1 }, 1, 0, policy), { 1: 3, 2: 1, 3: 1 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 2, policy), { 1: 3, 2: 3 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 2, 2, policy), { 1: 3, 2: 1 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }), { 1: 3, 2: 1 });
+assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 0, policy), { 1: 3, 2: 1 });
+assert.throws(() => assertNodesArray([{ id: 'sub', provider: 'anthropic', auth: 'oauth', models: {} }], 'tier-2', 2), /obsolete subscription auth/);
 
 console.log('Deployment configuration check passed.');
