@@ -1,0 +1,9 @@
+{
+  "name": "ai-gateway-operations",
+  "main": "operations/standalone.ts",
+  "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["enable_request_signal"],
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "triggers": { "crons": [] }
+}
