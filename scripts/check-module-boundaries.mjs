@@ -476,7 +476,11 @@ for (const path of [
   'src/request/attempt/generation-dispatch.ts',
 ]) {
   const consumer = readFileSync(join(root, path), 'utf8');
-  const prefix = path.startsWith('apps/gateway/attempt/') ? '../response/' : path.startsWith('apps/') ? './response/' : '../../../apps/gateway/response/';
+  const prefix = path.startsWith('apps/gateway/attempt/')
+    ? '../response/'
+    : path.startsWith('apps/')
+      ? './response/'
+      : '../../../apps/gateway/response/';
   assert.ok(
     consumer.includes(`from '${prefix}errors.ts'`) || consumer.includes(`from '${prefix}response-helpers.ts'`),
     `${path} must consume the Gateway-owned response implementation directly`,
