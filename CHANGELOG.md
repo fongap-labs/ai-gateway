@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 私有图片生成中心离线部署配置准备与失败关闭合同，不包含生产部署。
+
 - 新增: 离线生成 Operations 三阶段切换配置，确保 Cron 不重叠且共用 D1。
 - 维护: 切换前保持 Gateway 原 Cron，Operations 只读取非敏感部署配置。
 

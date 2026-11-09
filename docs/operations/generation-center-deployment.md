@@ -42,6 +42,12 @@ content-type: application/json
 
 有效图片响应在中心被标准化为 OpenAI `images/generations` 的 `data[].b64_json` 结构，网关不再扫描或解码 Base64。原生 OpenAI 图片 JSON 继续流式转发；Google/Cloudflare 使用原本的有界转换上限。元数据保留 `x-aig-generation-normalized` 内部标志，仅由网关消费后剔除。上游真实 Token 用量未知时不推算。
 
+## 离线受控配置准备
+
+新增 `scripts/generation-center-deployment.mjs` 可在受保护的本地/Runner 环境以 `prepare --config PATH --secrets PATH` 方式生成候选 `wrangler` 配置和 Secret 文件，只允许在 `RUNNER_TEMP` 下写入权限为 `0600` 的临时文件；**不执行 Cloudflare 发布，也不上传 Secret**。所需环境包括明确的 `DEPLOY_SOURCE_SHA`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、独立高熵 `AIG_GENERATION_AUTH_KEY`、两层图片节点分片、私有凭据分片、模型注册与策略配置。任何 Tier 3、旧会员 OAuth 或非图片 Provider 节点一律拒绝。
+
+当前不存在自动调用该准备器的生产部署脚本，也未给独立生成中心添加部署触发。正式发布必须分别验证 Worker 的无公网访问、Service Binding、实际 Provider Secret、模型映射、小额请求及回滚组合，并获取独立生产批准。
+
 ## 验收顺序
 
 ```text
