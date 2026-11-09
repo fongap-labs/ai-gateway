@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: Tier 2 订阅凭据解析、刷新 Singleflight 与 CAS 调用归属推理中心，旧 `src/oauth/resolve.ts` 仅兼容导出。
+- 维护: 推理中心物理执行入口直连自有凭据解析，不更改 OAuth Token Store、D1、Token 轮换、Provider 配置与请求行为。
+
 - 维护: OAuth AES-GCM 凭据加解密与 D1 Token Store 实际源码移入 `packages/oauth/`，旧导入仅兼容导出。
 - 维护: Gateway OAuth 管理路由及 Token 刷新解析改为直接调用共享唯一所有者；保持 AAD、CAS、失败关闭和原有数据合同。
 

@@ -178,8 +178,21 @@ assert.match(oauthTokenOwner, /export async function persistRefreshedToken\(/, '
 assert.ok(oauthTokenOwner.includes("from './crypto.ts'"), 'Shared token store must call shared crypto directly');
 assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/crypto.ts'"), 'Gateway OAuth routes must call shared encryption owner');
 assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/token-store.ts'"), 'Gateway OAuth routes must call shared persistence owner');
-const oauthResolve = readFileSync(join(root, 'src/oauth/resolve.ts'), 'utf8');
-assert.ok(oauthResolve.includes("from '../../packages/oauth/token-store.ts'"), 'OAuth resolver must use shared token store directly');
+const oauthResolveShim = readFileSync(join(root, 'src/oauth/resolve.ts'), 'utf8');
+const inferenceOAuthResolver = readFileSync(join(root, 'apps/inference/credentials/resolve.ts'), 'utf8');
+const inferenceExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+assert.ok(
+  oauthResolveShim.includes("export * from '../../apps/inference/credentials/resolve.ts';"),
+  'Legacy OAuth credential resolver must only re-export Inference Center owner',
+);
+assert.doesNotMatch(oauthResolveShim, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.ok(inferenceOAuthResolver.includes("from '../../../packages/oauth/token-store.ts'"), 'Inference Center must use shared token store');
+assert.match(inferenceOAuthResolver, /export function resolveSubscriptionCredential\(/);
+assert.match(inferenceOAuthResolver, /inFlightResolutions/, 'Credential refresh must preserve singleflight cache');
+assert.match(inferenceOAuthResolver, /persistRefreshedToken\(/, 'Credential refresh must preserve CAS');
+assert.match(inferenceOAuthResolver, /REFRESH_MARGIN_MS/, 'Credential resolution must preserve expiry window');
+assert.ok(inferenceExecutor.includes("from './credentials/resolve.ts'"), 'Physical Provider execution must call owned credential resolver');
+assert.doesNotMatch(inferenceExecutor, /from ['"]\.\.\/\.\.\/src\/oauth\/resolve\.ts['"]/);
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.

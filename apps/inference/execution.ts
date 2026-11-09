@@ -15,7 +15,6 @@ import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { getLimits, QUOTA_RETRY_AFTER_MAX_MS } from '../../src/config/timeouts.ts';
 import { getOAuthProvider } from '../../src/oauth/provider-configs.ts';
-import { resolveSubscriptionCredential } from '../../src/oauth/resolve.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText, safeReadErrorBody } from '../../src/protocol/http.ts';
 import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { getProviderAdapter, streamUsageEnabled } from '../../src/providers/registry.ts';
@@ -27,6 +26,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
+import { resolveSubscriptionCredential } from './credentials/resolve.ts';
 import type { MatrixStreamBudget } from './conversion/stream.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
