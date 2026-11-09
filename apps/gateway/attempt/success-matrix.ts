@@ -12,13 +12,13 @@
 
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { isMatrixPair } from '../../../packages/conversion-core/protocol-pairs.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { type BudgetStopReason, ConversionBudgetStop } from '../../../src/conversion/matrix/budget.ts';
 import type { IrProtocol } from '../../../src/conversion/matrix/ir.ts';
 import { isRecord } from '../../../src/conversion/matrix/ir.ts';
 import {
   collectMatrixObject,
-  isMatrixPair,
   openMatrixStream,
   replyFromNativeObject,
   replyToObject,

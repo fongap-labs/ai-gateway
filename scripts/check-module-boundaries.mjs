@@ -309,6 +309,19 @@ assert.doesNotMatch(
   'New Tier 2 nodes must be static Token credentials only',
 );
 
+// Gateway protocol fallback is an orchestration-only control surface.
+// It must use the private Inference Center's bounded preflight and never
+// import the private request converter or execute a local translator.
+const gatewayFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
+assert.ok(gatewayFallback.includes("from './transport/inference-preflight-client.ts'"));
+assert.ok(gatewayFallback.includes("from '../../packages/conversion-core/protocol-pairs.ts'"));
+assert.match(gatewayFallback, /await checkInferenceConversion\(/);
+assert.doesNotMatch(gatewayFallback, /\bconvertMatrixRequest\s*\(/);
+assert.doesNotMatch(gatewayFallback, /from ['"][^'"]*\/conversion\/matrix\/pipeline\.ts['"]/);
+const pairContract = readFileSync(join(root, 'packages/conversion-core/protocol-pairs.ts'), 'utf8');
+assert.doesNotMatch(pairContract, /from ['"][^'"]*(?:apps\/|src\/|providers\/)/);
+assert.match(pairContract, /export function isMatrixPair\(/);
+
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
