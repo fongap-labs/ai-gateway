@@ -66,6 +66,26 @@ for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/g
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
 
+// One neutral image request validator is shared by Gateway admission and the
+// private Generation Center. Legacy paths are only compatibility exports.
+const legacyImageRequestContract = readFileSync(join(root, 'src/protocol/image.ts'), 'utf8');
+const sharedImageRequestContract = readFileSync(join(root, 'packages/contracts/image-request.ts'), 'utf8');
+assert.ok(
+  legacyImageRequestContract.includes("export * from '../../packages/contracts/image-request.ts';"),
+  'Legacy image request contract must only re-export neutral owner',
+);
+assert.doesNotMatch(legacyImageRequestContract, /^(?:import|export (?:async )?(?:function|const|class|type)) /m);
+assert.match(sharedImageRequestContract, /export function validateImageGenerationRequest\(/);
+assert.ok(sharedImageRequestContract.includes("from './image-capabilities.ts'"), 'Image size must reuse shared capability type');
+for (const entry of ['apps/gateway/preflight.ts', 'apps/generation/execution.ts']) {
+  const caller = readFileSync(join(root, entry), 'utf8');
+  assert.ok(caller.includes("from '../../packages/contracts/image-request.ts'"), `${entry} must use the shared image input contract`);
+  assert.doesNotMatch(caller, /from ['"]\.\.\/\.\.\/src\/protocol\/image\.ts['"]/);
+}
+for (const rule of ['ALLOWED', 'prompt.length > 2048', 'value.n !== 1', "value.response_format !== 'b64_json'"]) {
+  assert.ok(sharedImageRequestContract.includes(rule), `Image request validation must preserve ${rule}`);
+}
+
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [

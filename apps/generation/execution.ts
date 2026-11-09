@@ -6,11 +6,11 @@
 
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
+import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';
-import { validateImageGenerationRequest } from '../../src/protocol/image.ts';
 import type { ImageSize, PreparedImageRequest } from '../../src/providers/image-generation.ts';
 import { getProviderAdapter } from '../../src/providers/registry.ts';
 import { extractQuotaSignal } from '../../src/reliability/quota-signal.ts';

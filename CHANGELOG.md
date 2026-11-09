@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: 图像输入校验迁入共享 Contracts，供 Gateway 与 Generation Center 复用。
+- 维护: 旧图像校验路径只作兼容导出，保留输入限制与错误合同。
+
 - 维护: Tier 2 订阅凭据解析、刷新 Singleflight 与 CAS 调用归属推理中心，旧 `src/oauth/resolve.ts` 仅兼容导出。
 - 维护: 推理中心物理执行入口直连自有凭据解析，不更改 OAuth Token Store、D1、Token 轮换、Provider 配置与请求行为。
 
