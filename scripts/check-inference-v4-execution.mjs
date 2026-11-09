@@ -126,9 +126,7 @@ try {
   assert.equal(jsonFallback.status, 200);
   assert.equal(jsonFallback.headers.get('x-aig-response-format'), INFERENCE_FRAMED_STREAM_FORMAT);
   const fallbackUsage = [];
-  const fallbackSse = await new Response(
-    decodeFramedInferenceResponse(jsonFallback, { onUsage: (event) => fallbackUsage.push(event) }),
-  ).text();
+  const fallbackSse = await new Response(decodeFramedInferenceResponse(jsonFallback, { onUsage: (event) => fallbackUsage.push(event) })).text();
   assert.match(fallbackSse, /JSON fallback/);
   assert.match(fallbackSse, /message_stop/);
   assert.match(fallbackSse, /public-model/);
