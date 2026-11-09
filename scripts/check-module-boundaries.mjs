@@ -82,7 +82,7 @@ for (const entry of ['apps/gateway/preflight.ts', 'apps/generation/execution.ts'
   assert.ok(caller.includes("from '../../packages/contracts/image-request.ts'"), `${entry} must use the shared image input contract`);
   assert.doesNotMatch(caller, /from ['"]\.\.\/\.\.\/src\/protocol\/image\.ts['"]/);
 }
-for (const rule of ['ALLOWED', 'prompt.length > 2048', "value.n !== 1", "value.response_format !== 'b64_json'"]) {
+for (const rule of ['ALLOWED', 'prompt.length > 2048', 'value.n !== 1', "value.response_format !== 'b64_json'"]) {
   assert.ok(sharedImageRequestContract.includes(rule), `Image request validation must preserve ${rule}`);
 }
 
