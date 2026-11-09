@@ -51,10 +51,7 @@ assert.equal(Object.hasOwn(phases.activate.operations, 'services'), false, 'Oper
 assert.equal(Object.hasOwn(phases.activate.operations, 'secrets'), false, 'Operations must never inherit upstream Provider secrets');
 assert.deepEqual(gateway.triggers.crons, [USAGE_MAINTENANCE_CRON], 'The planner cannot mutate live Gateway config');
 assert.deepEqual(candidate.triggers.crons, [], 'The planner cannot activate the staged Operations manifest');
-assert.throws(
-  () => buildOperationsCutoverPhases({ ...deploymentGateway, d1_databases: [] }, candidate),
-  /Exactly one existing Gateway D1 database/,
-);
+assert.throws(() => buildOperationsCutoverPhases({ ...deploymentGateway, d1_databases: [] }, candidate), /Exactly one existing Gateway D1 database/);
 assert.throws(
   () => buildOperationsCutoverPhases(deploymentGateway, { ...candidate, triggers: { crons: [USAGE_MAINTENANCE_CRON] } }),
   /Candidate Operations cron must initially be disabled/,
@@ -64,7 +61,8 @@ assert.throws(
   /Unsafe field in the staged Operations config: routes/,
 );
 assert.throws(
-  () => buildOperationsCutoverPhases({ ...deploymentGateway, d1_databases: [{ ...deploymentGateway.d1_databases[0], binding: 'OTHER_DB' }] }, candidate),
+  () =>
+    buildOperationsCutoverPhases({ ...deploymentGateway, d1_databases: [{ ...deploymentGateway.d1_databases[0], binding: 'OTHER_DB' }] }, candidate),
   /TOKEN_STATS_DB/,
 );
 console.log('Standalone Operations: isolation, D1 ownership, staged three-phase cutover and zero double-Cron conditions passed.');
