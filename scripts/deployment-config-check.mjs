@@ -33,6 +33,8 @@ const tooling = [
   'scripts/github-deployment-config.mjs',
   'scripts/persistent-deployment.mjs',
   'scripts/deploy.sh',
+  'scripts/cloudflare-live-inventory.mjs',
+  'scripts/check-cloudflare-live-inventory.mjs',
 ];
 for (const file of tooling) assert.ok(fs.existsSync(path.join(root, file)), `Missing deployment/tooling file: ${file}`);
 assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider adapter registry must be single-sourced');
@@ -40,6 +42,10 @@ assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider
 const accessGroupPattern = KEY_GROUPS.join('|');
 
 const pkg = JSON.parse(read('package.json'));
+assert.match(pkg.scripts['check:cloudflare-inventory'] || '', /check-cloudflare-live-inventory\.mjs/);
+for (const gate of ['validate:merge', 'validate:deploy']) {
+  assert.ok((pkg.scripts[gate] || '').includes('npm run check:cloudflare-inventory'), `${gate} must include the read-only inventory contract`);
+}
 const operationsBuild = JSON.parse(read('wrangler.operations-build.jsonc'));
 assert.equal(operationsBuild.name, 'ai-operations-build-check');
 assert.equal(operationsBuild.main, 'operations/standalone.ts');

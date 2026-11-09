@@ -50,6 +50,8 @@ npm run config:cutover:plan -- \
 
 此校验只读取本地文件，不访问 Cloudflare。配置不齐时**失败关闭**，不提供猜测性默认值；正式运营须另行验证线上 Worker 与真实资源。相关负向合同由 `npm run check:private-center-release` 在合并及部署验证中执行。
 
+四 Worker 在线资源的只读清点方法、权限要求、脱敏字段和未验证边界见[Cloudflare 只读资源盘点](../operations/cloudflare-read-only-inventory.md)。盘点报告通过不代表 Secret 内容、运行时健康、Cron 全球传播或生产切换已经验收。
+
 
 在**只读、已授权**的运营通道核对以下内容并将结果以“通过/阻断/未知”记录在私有变更单；本聊天及公开 GitHub PR 不接受生产凭据值：
 

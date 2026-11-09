@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 增加 Cloudflare 四 Worker 只读盘点，检查路由、部署、绑定、D1/KV、Secret 名称及 Cron；Mock 验证，无生产访问。
+
 - 新增: Operations Cron 远程所有权核验与独立审批激活、撤销入口；无生产执行。
 
 - 修复: Gateway 部署准入收紧双中心绑定、D1/KV 与 Cron 归属，阻断明文密钥变量。
