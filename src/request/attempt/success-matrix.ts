@@ -10,6 +10,7 @@
 // cross-protocol pair is matrix-owned; native passes carry no conversion
 // context and never land here.
 
+import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../config/timeouts.ts';
@@ -24,7 +25,6 @@ import {
   replyToObject,
   synthesizeMatrixStreamFromObject,
 } from '../../conversion/matrix/pipeline.ts';
-import { decodeFramedInferenceResponse } from '../../../apps/gateway/transport/inference-stream-client.ts';
 import { estimateAnthropicInputTokens } from '../../protocol/anthropic.ts';
 import { readBufferedReplyText } from '../../protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../protocol/openai.ts';
