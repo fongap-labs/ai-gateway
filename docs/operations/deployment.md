@@ -64,7 +64,7 @@ Cloudflare Worker 部署
 - 所选的 runner profile 解析到特权信任域；
 - 当 `ignore_docs_only: true` 时，本次变更不仅限于文档。
 
-Pull Request 的 CI 不会触发生产部署。
+Pull Request 的 CI 不会触发生产部署。仅修改 `docs/` 的合并应由 `ignore_docs_only: true` 排除自动部署；仍需在合并后核对中央调度日志，确认没有将其错误归类为可部署的代码变更。
 
 ## 中央手动部署
 
