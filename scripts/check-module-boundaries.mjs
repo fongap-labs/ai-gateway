@@ -118,9 +118,8 @@ for (const [legacy, owner, symbol] of [
 ]) {
   const legacyCode = readFileSync(join(root, legacy), 'utf8');
   const ownerCode = readFileSync(join(root, owner), 'utf8');
-  const expected = legacy === 'src/request/model-fallback.ts'
-    ? "../../apps/gateway/policy/model-fallback.ts"
-    : "../../apps/gateway/scheduling/tier-policy.ts";
+  const expected =
+    legacy === 'src/request/model-fallback.ts' ? '../../apps/gateway/policy/model-fallback.ts' : '../../apps/gateway/scheduling/tier-policy.ts';
   assert.ok(legacyCode.includes(`export * from '${expected}';`), `${legacy} must be a compatibility-only export`);
   assert.doesNotMatch(legacyCode, /export (?:async )?function /, `${legacy} must not keep a competing scheduler implementation`);
   assert.ok(ownerCode.includes(`function ${symbol}(`), `${owner} must own ${symbol}`);
