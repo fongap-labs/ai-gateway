@@ -35,14 +35,12 @@ const operations = {
   name: 'ai-gateway-operations',
   main: 'operations/standalone.ts',
   triggers: { crons: [] },
-  d1_databases: [
-    { binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' },
-  ],
+  d1_databases: [{ binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' }],
 };
 const gateway = { name: 'ai-gateway', kv_namespaces: [{ binding: 'TIER1_AFFINITY', id: 'test-kv-id' }] };
 
 for (const [name, config] of Object.entries({ gateway, inference, generation, operations })) {
-  assert.equal(classifyDeployTarget(config, root), name, name + ' should be a recognized deployment target');
+  assert.equal(classifyDeployTarget(config, root), name, `${name} should be a recognized deployment target`);
 }
 
 function reject(config) {
@@ -70,7 +68,6 @@ reject({ ...operations, custom_domains: ['public.example.invalid'] });
 const wrongDb = copy(operations);
 wrongDb.d1_databases[0].binding = 'DIFFERENT_DB';
 reject(wrongDb);
-
 
 const wrapper = readFileSync(new URL('./cloudflare-wrangler.mjs', import.meta.url), 'utf8');
 assert.match(wrapper, /classifyDeployTarget\(config, root\)/, 'Production Wrangler wrapper must enforce the target allowlist');
