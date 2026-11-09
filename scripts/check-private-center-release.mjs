@@ -17,47 +17,47 @@ function record(o) {
   return o !== null && typeof o === 'object' && !Array.isArray(o);
 }
 function requireRecord(o, label) {
-  assert.ok(record(o), label + ' must be an object');
+  assert.ok(record(o), `${label} must be an object`);
 }
 function noPublicExposure(worker, label) {
-  assert.equal(worker.workers_dev, false, label + ' must disable workers.dev');
+  assert.equal(worker.workers_dev, false, `${label} must disable workers.dev`);
   for (const key of ['routes', 'route', 'custom_domains', 'secrets', 'env']) {
-    assert.equal(Object.hasOwn(worker, key), false, label + ' must not embed ' + key);
+    assert.equal(Object.hasOwn(worker, key), false, `${label} must not embed ${key}`);
   }
 }
 function names(names, label) {
-  assert.ok(Array.isArray(names) && names.every((n) => typeof n === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(n)), label + ' must contain Secret names only');
-  assert.equal(new Set(names).size, names.length, label + ' contains duplicate Secret names');
-  assert.ok(names.every((n) => !LEGACY.test(n)), label + ' contains retired Tier3 or OAuth bindings');
+  assert.ok(Array.isArray(names) && names.every((n) => typeof n === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(n)), `${label} must contain Secret names only`);
+  assert.equal(new Set(names).size, names.length, `${label} contains duplicate Secret names`);
+  assert.ok(names.every((n) => !LEGACY.test(n)), `${label} contains retired Tier3 or OAuth bindings`);
   return new Set(names);
 }
 function oneD1(worker, label) {
   const bindings = worker.d1_databases;
-  assert.ok(Array.isArray(bindings) && bindings.length === 1, label + ' requires exactly one D1');
+  assert.ok(Array.isArray(bindings) && bindings.length === 1, `${label} requires exactly one D1`);
   const db = bindings[0];
-  assert.ok(record(db) && db.binding === 'TOKEN_STATS_DB', label + ' must bind TOKEN_STATS_DB');
-  assert.ok(typeof db.database_id === 'string' && /^(?:[0-9a-f]{32}|[0-9a-f-]{36})$/i.test(db.database_id), label + ' D1 id is invalid');
+  assert.ok(record(db) && db.binding === 'TOKEN_STATS_DB', `${label} must bind TOKEN_STATS_DB`);
+  assert.ok(typeof db.database_id === 'string' && /^(?:[0-9a-f]{32}|[0-9a-f-]{36})$/i.test(db.database_id), `${label} D1 id is invalid`);
   return db.database_id;
 }
 function secretVars(config, label) {
-  requireRecord(config.vars, label + ' vars');
+  requireRecord(config.vars, `${label} vars`);
   for (const key of Object.keys(config.vars)) {
     assert.equal(PUBLIC_SECRET.test(key) || LEGACY.test(key) || /(?:^|_)SECRET(?:_|$)/.test(key) || /(?:^|_)AUTH_KEY$/.test(key), false,
-      label + ' exposes a credential variable name');
+      `${label} exposes a credential variable name`);
   }
 }
 function checkCenter(config, label, expectedName, expectedEntry, authName, sourceSha, namesSet) {
   requireRecord(config, label);
   noPublicExposure(config, label);
-  assert.equal(config.name, expectedName, label + ' worker identity mismatch');
-  assert.ok(typeof config.main === 'string' && config.main.endsWith(expectedEntry), label + ' entrypoint mismatch');
-  assert.equal(Object.hasOwn(config, 'triggers'), false, label + ' must never own cron');
-  assert.equal(Object.hasOwn(config, 'services'), false, label + ' must not route to another Worker');
+  assert.equal(config.name, expectedName, `${label} worker identity mismatch`);
+  assert.ok(typeof config.main === 'string' && config.main.endsWith(expectedEntry), `${label} entrypoint mismatch`);
+  assert.equal(Object.hasOwn(config, 'triggers'), false, `${label} must never own cron`);
+  assert.equal(Object.hasOwn(config, 'services'), false, `${label} must not route to another Worker`);
   secretVars(config, label);
-  assert.equal(config.vars.AIG_BUILD_SHA, sourceSha, label + ' build SHA differs from Gateway');
-  assert.ok(namesSet.has(authName), label + ' internal auth Secret is absent');
-  assert.ok([...namesSet].some((n) => NODE_SECRET.test(n)), label + ' has no static Token Secret shards');
-  assert.ok(Object.keys(config.vars).some((n) => /^AIG_TIER[12]_NODES_(0[1-9]|10)$/.test(n)), label + ' has no declared node shards');
+  assert.equal(config.vars.AIG_BUILD_SHA, sourceSha, `${label} build SHA differs from Gateway`);
+  assert.ok(namesSet.has(authName), `${label} internal auth Secret is absent`);
+  assert.ok([...namesSet].some((n) => NODE_SECRET.test(n)), `${label} has no static Token Secret shards`);
+  assert.ok(Object.keys(config.vars).some((n) => /^AIG_TIER[12]_NODES_(0[1-9]|10)$/.test(n)), `${label} has no declared node shards`);
 }
 /**
  * Verify FINAL cutover topology or its explicit cron handoff stages.
@@ -119,7 +119,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.length !== 3) throw new Error('usage: check-private-center-release.mjs FILE');
     const plan = JSON.parse(readFileSync(process.argv[2], 'utf8'));
     const result = assertReleaseTopology(plan);
-    process.stdout.write('Offline four-worker release topology passed (' + result.stage + '); no deployment authorized.\n');
+    process.stdout.write(`Offline four-worker release topology passed (${result.stage}); no deployment authorized.\n`);
   } catch {
     // Never echo the source text or any supplied Secret material.
     process.stderr.write('Offline four-worker release topology rejected; inspect private inputs and stage contracts.\n');
