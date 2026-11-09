@@ -143,6 +143,42 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// Physical-attempt usage settlement has a single Gateway owner; old imports
+// must be compatibility-only and real call sites must use the owned module.
+const ownedAttemptObservation = readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8');
+const legacyAttemptObservation = readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8');
+assert.ok(
+  legacyAttemptObservation.includes("export * from '../../../apps/gateway/attempt/observability.ts';"),
+  'Legacy physical-attempt observation must only re-export the Gateway implementation',
+);
+assert.doesNotMatch(legacyAttemptObservation, /^import |^export (?:async )?(?:function|const|class) /m);
+for (const symbol of ['observeUpstreamAttemptUsage', 'recordTokens', 'recordUndeliveredUpstreamAttempt']) {
+  assert.ok(ownedAttemptObservation.includes(`export function ${symbol}(`), `Gateway must own ${symbol}`);
+}
+assert.ok(ownedAttemptObservation.includes("from './body-release.ts'"), 'Attempt observation must use owned body release');
+assert.ok(
+  ownedAttemptObservation.includes("from '../response/response-helpers.ts'"),
+  'Attempt observation must use the Gateway response helper',
+);
+for (const name of [
+  'dispatch.ts',
+  'generation-dispatch.ts',
+  'inference-dispatch.ts',
+  'outcome.ts',
+  'success-image.ts',
+  'success-matrix.ts',
+  'success-object.ts',
+  'success-stream.ts',
+]) {
+  const path = `src/request/attempt/${name}`;
+  const source = readFileSync(join(root, path), 'utf8');
+  assert.ok(
+    source.includes("from '../../../apps/gateway/attempt/observability.ts'"),
+    `${path} must directly consume Gateway-owned attempt observation`,
+  );
+  assert.doesNotMatch(source, /from ['"]\.\/observability\.ts['"]/, `${path} cannot use the legacy observation path`);
+}
+
 // Gateway owns safe large-body release, buffered response decisions, and
 // terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [

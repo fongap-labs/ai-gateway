@@ -429,7 +429,7 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 `apps/gateway/attempt/body-release.ts` 统一处理大请求流式提交后的正文释放；`apps/gateway/attempt/attempt-mode.ts` 统一决定上游缓冲模式；`apps/gateway/attempt/oversize.ts` 统一处理超限响应终止。旧 `src/request/attempt/{body-release,attempt-mode,oversize}.ts` 仅作兼容导出，热路径直接依赖 Gateway-owned 代码，并由架构门禁固定。
 
-物理尝试用量结算仍保留在 `src/request/attempt/observability.ts`，因为中央回归测试当前直接读取该实现文件；未经单独授权不修改 Action Worker 测试。其他 attempt 调度、执行与可观测源码尚未全部迁移。无生产 Secret、Wrangler、Cron、D1、Service Binding、部署或发布改动。
+物理尝试用量结算已由 `apps/gateway/attempt/observability.ts` 独占实现；原 `src/request/attempt/observability.ts` 仅为兼容导出。现有中央回归支持新旧源码位置的兼容验证，本次没有修改 Action Worker 门禁。用量合并、单次结算、流式成功/失败、D1 异步持久化、TTFT 与大请求正文释放的行为均保持不变；其他 attempt 调度与执行源码尚需继续迁移。无生产 Secret、Wrangler、Cron、D1、Service Binding、部署或发布改动。
 
 ## 尚待迁移
 
