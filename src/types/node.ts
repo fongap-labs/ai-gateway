@@ -29,10 +29,4 @@ export type RuntimeNode = {
   credential: string;
   priority: number;
   models: NodeModelMap;
-  /**
-   * Legacy OAuth subscription nodes are being retired; static Tier 2 API Token
-   * nodes always use AIG_TIER2_CREDENTIALS_* in the new two-Tier runtime.
-   * Optional only while legacy OAuth dispatch code is being retired.
-   */
-  auth?: 'oauth';
 };
