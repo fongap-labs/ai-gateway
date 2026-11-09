@@ -42,16 +42,11 @@ export function resolveOpenAIPath(surface: Surface): string {
   return path;
 }
 
-// Strict upstream header allowlist. Client auth material is never forwarded;
-// the only Authorization header is the one built from the Runtime Node
-// credential. See buildUpstreamHeadersFor (transport/index.ts) for the
-// protocol dispatch. `extraHeaders` carries deployment-owned subscription
-// headers resolved by the request layer (never client-supplied values).
+// Strict native header allowlist; caller-supplied Authorization is never forwarded.
 export function buildOpenAIHeaders(
   request: Request,
   credential: string,
   requestId: string,
-  extraHeaders?: Readonly<Record<string, string>>,
 ): Headers {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${credential}`);
@@ -62,18 +57,7 @@ export function buildOpenAIHeaders(
   headers.set('X-Request-ID', requestId);
   const idempotencyKey = request.headers.get('idempotency-key');
   if (idempotencyKey) headers.set('Idempotency-Key', idempotencyKey.slice(0, 256));
-  applyExtraUpstreamHeaders(headers, extraHeaders);
   return headers;
-}
-
-// Applies deployment-owned subscription headers last so they can override
-// protocol defaults (e.g. a provider-specific beta header). Values are from
-// AIG_OAUTH_PROVIDERS, never from the client request.
-export function applyExtraUpstreamHeaders(headers: Headers, extraHeaders?: Readonly<Record<string, string>>): void {
-  if (!extraHeaders) return;
-  for (const [name, value] of Object.entries(extraHeaders)) {
-    headers.set(name, value);
-  }
 }
 
 // OpenAI Responses first-real-output predicate for the first-event guard:
