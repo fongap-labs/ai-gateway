@@ -20,7 +20,7 @@ import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
 import { hydrateSharedTier1Cooldowns } from '../../src/reliability/tier1-shared-cooldowns.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
-import { supportsRequest } from '../../src/scheduler/scheduler.ts';
+import { supportsRequest } from './scheduling/scheduler.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
