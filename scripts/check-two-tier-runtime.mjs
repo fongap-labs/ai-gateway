@@ -224,11 +224,13 @@ await verifyTier1FailureFallsBack(503);
 
 async function verifyStreamGuardAcceptsJsonFallback() {
   const physicalRequests = [];
+  const attemptEvents = [];
   const env = {
     AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
     AIG_ACCESS_MODELS_AIR: '*',
     AIG_HAS_STREAM_GUARD: 'true',
     AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    GATEWAY_EVENTS: { writeDataPoint: (event) => attemptEvents.push(event) },
     AIG_TIER1_NODES_01: JSON.stringify([node('stream-guard-free')]),
     AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
     AIG_POLICIES_CONFIG: JSON.stringify({
@@ -265,7 +267,15 @@ async function verifyStreamGuardAcceptsJsonFallback() {
   const body = await response.json();
   assert.equal(response.status, 200, 'A Provider JSON reply must be accepted if it ignored stream:true');
   assert.equal(body.choices[0]?.message.content, 'json fallback');
+  assert.deepEqual(body.usage, { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 });
   assert.deepEqual(physicalRequests, [{ path: '/internal/execute', stream: true }]);
+  assert.equal(attemptEvents.length, 1, 'one physical execution produces exactly one accounting event');
+  assert.equal(attemptEvents[0].blobs[4], 'ok');
+  const [status, headersMs, ttftMs, latencyMs] = attemptEvents[0].doubles;
+  assert.equal(status, 200);
+  for (const [name, value] of Object.entries({ headersMs, ttftMs, latencyMs })) {
+    assert.ok(Number.isFinite(value) && value >= 0, `${name} is recorded as a non-negative finite metric`);
+  }
 }
 
 await verifyStreamGuardAcceptsJsonFallback();
