@@ -11,9 +11,6 @@
 //   id, provider, base_url, models
 // Optional:
 //   priority (non-negative integer number, default 100)
-//   auth ("oauth"; Tier 2 only - marks a subscription node whose credential
-//         is resolved from the OAuth token store at dispatch time instead of
-//         a static AIG_TIER{N}_CREDENTIALS_* secret)
 //
 // Protocol and surfaces are NOT account-level configuration. They come from
 // the provider wire profile so one provider contract is defined exactly once.
@@ -21,7 +18,6 @@
 // strings are configuration errors.
 
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
-import { loadOAuthProviders } from '../oauth/provider-configs.ts';
 import type { NodeTier, RuntimeNode } from '../types/node.ts';
 import type { Tier, TierMap } from '../types/scheduler.ts';
 import { trimTrailingSlashes } from '../utils/trim.ts';
@@ -37,8 +33,7 @@ export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
-const ALLOWED_AUTH_MODES = new Set(['oauth']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models']);
 
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
@@ -47,7 +42,7 @@ export type GatewayConfig = {
   ready: boolean;
   /**
    * Some configuration was rejected (a malformed shard, a conflicting node, an
-   * invalid model/policy/fallback/OAuth setting). The gateway keeps serving with
+   * invalid model/policy/fallback setting). The gateway keeps serving with
    * what remains (status `degraded`), but a deploy is refused until it is fixed.
    */
   hasConfigErrors: boolean;
@@ -92,10 +87,6 @@ function collectAuxConfigDiagnostics(env: Record<string, unknown>): string[] {
     const pname = mcfg?.policy?.policy || 'default';
     if (!policies[pname]) diags.push(`AIG_MODELS_CONFIG: model "${model}" references unknown policy "${pname}"`);
   }
-  // A rejected AIG_OAUTH_PROVIDERS entry silently falls back to the built-in
-  // client, so the operator's client would never be used. Surface the parse
-  // error instead of letting it disappear.
-  loadOAuthProviders(env, diags);
   return diags;
 }
 
@@ -393,33 +384,12 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, auth)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models)`);
       return null;
     }
   }
 
-  // auth:"oauth" marks a Tier 2 subscription node whose credential is
-  // resolved at dispatch time from the OAuth token store instead of a static
-  // AIG_TIER{N}_CREDENTIALS_* secret. Tier roles are permanent architecture
-  // boundaries, so the marker is only valid on Tier 2.
-  const auth = rec.auth === undefined ? undefined : rec.auth;
-  if (auth !== undefined && typeof auth !== 'string') {
-    diagnostics.push(`node "${id}": auth must be the string "oauth" when present`);
-    return null;
-  }
-  if (auth !== undefined && !ALLOWED_AUTH_MODES.has(auth)) {
-    diagnostics.push(`node "${id}": unknown auth mode "${auth}" (allowed: ${[...ALLOWED_AUTH_MODES].join(', ')})`);
-    return null;
-  }
-  if (auth === 'oauth' && tier !== 'tier-2') {
-    diagnostics.push(`node "${id}": auth:"oauth" is a Tier 2 subscription marker and is not allowed on ${tier}`);
-    return null;
-  }
-
-  // Provider names are identifiers, not display strings: the provider profile
-  // looks them up case-insensitively, but the OAuth provider configuration and
-  // the onboarding routes compare them verbatim. A node configured as
-  // "Anthropic" would otherwise load as ready and never authenticate.
+  // Provider identifiers are normalized once and resolved by the wire registry.
   const provider = typeof rec.provider === 'string' ? rec.provider.trim().toLowerCase() : '';
   if (!provider) {
     diagnostics.push(`node "${id}": provider is required and must be a non-empty string`);
@@ -430,22 +400,14 @@ function buildRuntimeNode(
   const isImageOnly = profile.wire.surfaces.length === 1 && profile.wire.surfaces[0] === 'images_generations';
   const credentialBelongsToCenter = isGateway && (isGatewayInferenceCenterOwned || isImageOnly);
 
-  // base_url is required for static-credential nodes. Tier 2 `auth:"oauth"`
-  // subscription nodes may omit base_url: their Provider profile declares the
-  // upstream endpoint when subscriptionEndpoint exists, so onboarding a
-  // subscription needs only {id, provider, auth:"oauth", models}. A missing
-  // base_url with no provider default is a configuration error (fail-closed).
+  // Every Token node declares its upstream HTTPS base URL.
   const rawBaseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
-  const baseUrl = rawBaseUrl || (auth === 'oauth' ? (profile.subscriptionEndpoint ?? '') : '');
+  const baseUrl = rawBaseUrl;
   let url: URL;
   try {
     url = new URL(baseUrl);
   } catch {
-    if (auth === 'oauth' && !rawBaseUrl) {
-      diagnostics.push(`node "${id}": auth:"oauth" nodes require base_url or a provider adapter with a built-in subscription endpoint`);
-    } else {
-      diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
-    }
+    diagnostics.push(`node "${id}": base_url is missing or not a valid URL`);
     return null;
   }
   if (!isHttpAllowed && url.protocol !== 'https:') {
@@ -457,19 +419,10 @@ function buildRuntimeNode(
     return null;
   }
 
-  // Static-credential nodes require a matching secret shard entry. OAuth
-  // subscription nodes resolve their credential at dispatch time and a
-  // static secret entry would be a configuration error (two credential
-  // sources for one node), so the presence check is skipped for them.
+  // Public Gateway holds metadata only; private centers require static credentials.
   const credential = credentials.get(id) || '';
-  if (auth === undefined && !credential && !credentialBelongsToCenter) {
+  if (!credential && !credentialBelongsToCenter) {
     diagnostics.push(`node "${id}": no credential found in AIG_TIER{N}_CREDENTIALS_*; node excluded`);
-    return null;
-  }
-  if (auth === 'oauth' && credentials.get(id)) {
-    diagnostics.push(
-      `node "${id}": auth:"oauth" nodes must not have a static credential in AIG_TIER{N}_CREDENTIALS_*; the OAuth token store owns their credential`,
-    );
     return null;
   }
 
@@ -489,7 +442,6 @@ function buildRuntimeNode(
     credential: credentialBelongsToCenter ? '' : credential,
     priority,
     models,
-    ...(auth === 'oauth' ? { auth: 'oauth' as const } : {}),
   };
 }
 
