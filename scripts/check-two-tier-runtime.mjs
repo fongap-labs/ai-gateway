@@ -222,6 +222,64 @@ async function verifyTier1FailureFallsBack(status) {
 await verifyTier1FailureFallsBack(429);
 await verifyTier1FailureFallsBack(503);
 
+async function verifyStreamGuardAcceptsJsonFallback() {
+  const physicalRequests = [];
+  const attemptEvents = [];
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_HAS_STREAM_GUARD: 'true',
+    AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    GATEWAY_EVENTS: { writeDataPoint: (event) => attemptEvents.push(event) },
+    AIG_TIER1_NODES_01: JSON.stringify([node('stream-guard-free')]),
+    AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({
+      default: { max_attempts: 1, tier_attempts: { tier1: 1 }, hedge: { enabled: false } },
+    }),
+    AIG_INFERENCE_SERVICE: {
+      async fetch(request) {
+        const requestBody = await request.json();
+        physicalRequests.push({
+          path: new URL(request.url).pathname,
+          stream: requestBody.stream,
+        });
+        // Mock a Provider that ignores the private Center's stream:true body.
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-fallback',
+            object: 'chat.completion',
+            created: 1,
+            model: CUTOVER_MODEL,
+            choices: [{ index: 0, message: { role: 'assistant', content: 'json fallback' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+        );
+      },
+    },
+  };
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
+  const body = await response.json();
+  assert.equal(response.status, 200, 'A Provider JSON reply must be accepted if it ignored stream:true');
+  assert.equal(body.choices[0]?.message.content, 'json fallback');
+  assert.deepEqual(body.usage, { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 });
+  assert.deepEqual(physicalRequests, [{ path: '/internal/execute', stream: true }]);
+  assert.equal(attemptEvents.length, 1, 'one physical execution produces exactly one accounting event');
+  assert.equal(attemptEvents[0].blobs[4], 'ok');
+  const [status, headersMs, ttftMs, latencyMs] = attemptEvents[0].doubles;
+  assert.equal(status, 200);
+  for (const [name, value] of Object.entries({ headersMs, ttftMs, latencyMs })) {
+    assert.ok(Number.isFinite(value) && value >= 0, `${name} is recorded as a non-negative finite metric`);
+  }
+}
+
+await verifyStreamGuardAcceptsJsonFallback();
+
 console.log(
-  'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, routing, metadata, private credentials and fail-closed migration guards).',
+  'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
