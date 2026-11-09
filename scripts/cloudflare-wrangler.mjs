@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isWindows = process.platform === 'win32';
@@ -68,33 +69,6 @@ function databaseNameForBinding(configSource, binding) {
   }
 }
 
-function checkPrivateInferenceConfig(configSource) {
-  if (!configSource) return false;
-  try {
-    const config = JSON.parse(configSource);
-    return (
-      config.name === 'ai-inference-center' &&
-      config.workers_dev === false &&
-      config.main === path.join(root, 'src/inference/inference-center-entry.ts') &&
-      !['routes', 'route', 'custom_domains', 'triggers', 'services'].some((key) => Object.hasOwn(config, key))
-    );
-  } catch {
-    return false;
-  }
-}
-
-function checkAffinityKvBinding(configSource) {
-  if (!configSource) return false;
-  try {
-    const config = JSON.parse(configSource);
-    return (
-      config?.kv_namespaces?.some((entry) => entry?.binding === 'TIER1_AFFINITY' && typeof entry.id === 'string' && entry.id.length > 0) || false
-    );
-  } catch {
-    return false;
-  }
-}
-
 // `npm run deploy` flows all pass through this
 // wrapper. A real local deploy must uphold migration-before-code ordering;
 // `deploy --dry-run` remains local and non-mutating.
@@ -102,13 +76,26 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   const configPath = selectedConfigPath();
   const resolvedConfig = configPath && path.resolve(root, configPath);
   const configSource = resolvedConfig && fs.existsSync(resolvedConfig) ? fs.readFileSync(resolvedConfig, 'utf8') : '';
-  if (!checkAffinityKvBinding(configSource) && !checkPrivateInferenceConfig(configSource)) {
-    console.error('Refusing deploy: expected the gateway affinity KV or a verified private inference Worker config.');
+  // Production deployments only accept the exact Gateway (TIER1_AFFINITY),
+  // Inference, Generation, or cron-disabled Operations identities. Generated
+  // build-only manifests, public private-centers and premature Cron activation
+  // are not deployable through this entrypoint.
+  let config = null;
+  try {
+    config = JSON.parse(configSource);
+  } catch {
+    // Reject malformed or missing config without echoing operator contents.
+  }
+  const target = classifyDeployTarget(config, root);
+  if (!target) {
+    console.error('Refusing deploy: unapproved Worker identity, private bindings, or Operations cron state.');
     process.exitCode = 1;
     process.exit();
   }
   const dbName = databaseNameForBinding(configSource, 'TOKEN_STATS_DB');
-  if (dbName) {
+  // Operations shares the already-migrated Gateway D1; it must never
+  // independently apply schema changes while preparing a Cron handoff.
+  if (dbName && target !== 'operations') {
     const migrationArgs = ['--yes', wranglerVersion, 'd1', 'migrations', 'apply', dbName, '--remote', '-c', configPath];
     const migrationStatus = runWrangler(migrationArgs);
     if (migrationStatus !== 0) {
