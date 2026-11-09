@@ -144,7 +144,9 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
           const hedge = p.hedge;
           return (
             (attempts !== null && typeof attempts === 'object' && !Array.isArray(attempts) && Object.hasOwn(attempts, 'tier3')) ||
-            (hedge !== null && typeof hedge === 'object' && !Array.isArray(hedge) &&
+            (hedge !== null &&
+                typeof hedge === 'object' &&
+                !Array.isArray(hedge) &&
               Array.isArray((hedge as Record<string, unknown>).tiers) &&
               ((hedge as Record<string, unknown>).tiers as unknown[]).includes('tier3'))
           );
@@ -155,16 +157,16 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
     }
   }
   const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
-  const legacySubscriptionKeys = Object.keys(env).filter((key) =>
-    key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
+  const legacySubscriptionKeys = Object.keys(env).filter(
+    (key) => key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
   );
   if (legacyTierKeys.length > 0 || hasLegacyTier3Policy || legacySubscriptionKeys.length > 0) {
     if (legacyTierKeys.length > 0) {
-      diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
+      diagnostics.push(`two-tier cutover required: legacy Tier 3 variable or credential bindings remain (${legacyTierKeys.sort().join(', ')})`);
     }
     if (hasLegacyTier3Policy) diagnostics.push('two-tier cutover required: deprecated tier3 policy budget or hedge references remain');
     if (legacySubscriptionKeys.length > 0) {
-      diagnostics.push('retired subscription settings are forbidden (' + legacySubscriptionKeys.sort().join(', ') + ')');
+      diagnostics.push(`retired subscription settings are forbidden (${legacySubscriptionKeys.sort().join(', ')})`);
     }
     return {
       status: 'invalid',
@@ -182,7 +184,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       diagnostics,
     };
   }
-  let nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
+  const nodesDeclared = tierShards.reduce((sum, s) => sum + countArrayEntries(env[s.key] as string), 0);
 
   let status: ConfigStatus = 'unconfigured';
   if ((shouldRequireClientKey && !accessKeyBound) || tierShards.length === 0) {
@@ -260,7 +262,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       // OAuth subscriber capacity is not an API Token tier. Do not route it
       // into new Tier 2 or silently omit it from an otherwise healthy pool.
       if (rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && Object.hasOwn(rawNode, 'auth')) {
-        diagnostics.push(shard.key + ': deprecated subscription auth marker; remove the node through the two-tier cutover plan');
+        diagnostics.push(`${shard.key}: deprecated subscription auth marker; remove the node through the two-tier cutover plan`);
         hasLegacySubscriptionAuth = true;
         hasConfigErrors = true;
         continue;
