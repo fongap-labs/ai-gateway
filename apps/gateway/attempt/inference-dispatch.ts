@@ -166,18 +166,6 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     detach();
     return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
   }
-  // OAuth credential/adapter failures happen before a physical Provider attempt.
-  // Preserve legacy neutral rotation while keeping every other center error fail-closed.
-  if (executionResult === 'skipped' && node.auth === 'oauth') {
-    const centerErrorKind = upstream.headers.get('x-aig-error-kind');
-    const isSubscriptionUnavailable =
-      upstream.status === 503 && (centerErrorKind === 'center_subscription_unavailable' || centerErrorKind === 'center_subscription_unsupported');
-    const isSubscriptionRejected = upstream.status === 502 && centerErrorKind === 'center_subscription_rejected';
-    if (isSubscriptionUnavailable || isSubscriptionRejected) {
-      detach();
-      return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
-    }
-  }
   if (executionResult !== 'dispatched') {
     detach();
     // A center-isolate memory refusal is request-local, not evidence of a bad
@@ -223,24 +211,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   if (!upstream.ok) {
     detach();
     const errorText = await safeReadErrorBody(upstream, 4096, c.attemptDeadlineMs);
-    let classified = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
-    // The private center alone decodes subscription-specific error windows.
-    // Accept only a bounded neutral duration from the authenticated center;
-    // keep physical Provider adapter code and raw headers out of Gateway.
-    const resetHeader = upstream.headers.get('x-aig-subscription-quota-reset-ms');
-    const resetMs = resetHeader && /^[1-9]\d*$/.test(resetHeader) ? Number(resetHeader) : 0;
-    if (
-      node.auth === 'oauth' &&
-      classified.kind === KIND.RATE_LIMIT &&
-      Number.isSafeInteger(resetMs) &&
-      resetMs > 0 &&
-      resetMs <= QUOTA_RETRY_AFTER_MAX_MS
-    ) {
-      classified = { ...classified, cooldownMs: Math.max(classified.cooldownMs, resetMs) };
-      if (node.tier === 'tier-1') {
-        recordTier1QuotaReport(node.id, { remainingRequests: 0, resetAtMs: Date.now() + resetMs, source: 'private-subscription-window' });
-      }
-    }
+    const classified = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
     recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromJsonText(errorText));
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status, diagnostic: errorText });
     if (classified.action === 'stop') {
