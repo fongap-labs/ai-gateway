@@ -26,9 +26,9 @@ const RUNTIME_VAR_PATTERN = new RegExp(
 );
 const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_GENERATION_TARGET']);
 function assertTwoTierBindingNames(names) {
-  const retired = [...names].filter((name) =>
-    name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY'
-  ).sort();
+  const retired = [...names]
+    .filter((name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY')
+    .sort();
   if (retired.length > 0) {
     throw new Error(`Retired subscription bindings must be removed through controlled cutover: ${retired.join(', ')}`);
   }
@@ -204,7 +204,9 @@ const REQUIRED_SECRETS = ['CLOUDFLARE_API_TOKEN'];
 
 export function preflight(env) {
   const errors = [];
-  const oldBindings = Object.keys(env).filter((name) => name.startsWith('AIG_TIER3_')).sort();
+  const oldBindings = Object.keys(env)
+    .filter((name) => name.startsWith('AIG_TIER3_'))
+    .sort();
   if (oldBindings.length > 0) errors.push(`Legacy Tier 3 bindings require explicit two-tier cutover: ${oldBindings.join(', ')}`);
   const warnings = [];
   for (const name of REQUIRED_VARS) {
