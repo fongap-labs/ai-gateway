@@ -37,7 +37,30 @@ const operations = {
   triggers: { crons: [] },
   d1_databases: [{ binding: 'TOKEN_STATS_DB', database_name: 'ai-gateway-stats', database_id: '123e4567-e89b-42d3-a456-426614174000' }],
 };
-const gateway = { name: 'ai-gateway', kv_namespaces: [{ binding: 'TIER1_AFFINITY', id: 'test-kv-id' }] };
+const gateway = {
+  ...base,
+  name: 'ai-gateway',
+  main: path.join(root, 'src/index.ts'),
+  keep_vars: false,
+  triggers: { crons: ['0 3 * * *'] },
+  vars: {
+    AIG_BUILD_SHA: sha,
+    AIG_INFERENCE_ACTIVE: 'true',
+    AIG_GENERATION_ACTIVE: 'true',
+  },
+  services: [
+    { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+    { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
+  ],
+  kv_namespaces: [{ binding: 'TIER1_AFFINITY', id: 'test-kv-id' }],
+  d1_databases: operations.d1_databases,
+};
+const detachedGateway = {
+  ...gateway,
+  main: path.join(root, 'apps/gateway/index.ts'),
+  triggers: { crons: [] },
+};
+assert.equal(classifyDeployTarget(detachedGateway, root), 'gateway', 'Detached Gateway must remain deployable');
 
 for (const [name, config] of Object.entries({ gateway, inference, generation, operations })) {
   assert.equal(classifyDeployTarget(config, root), name, `${name} should be a recognized deployment target`);
@@ -48,6 +71,23 @@ function reject(config) {
 }
 const copy = (value) => structuredClone(value);
 reject({ ...gateway, name: 'uncontrolled' });
+reject({ ...gateway, main: 'src/unaudited-entry.ts' });
+reject({ ...gateway, workers_dev: true });
+reject({ ...gateway, keep_vars: true });
+reject({ ...gateway, triggers: { crons: [] } });
+reject({ ...gateway, services: [] });
+reject({ ...gateway, services: [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }] });
+reject({ ...gateway, kv_namespaces: [] });
+reject({ ...gateway, d1_databases: [] });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_ACCESS_KEY_AIR: 'not-a-worker-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_EDGE_CACHE_HMAC_KEY: 'not-a-worker-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_DEPLOY_HEALTH_KEY: 'not-a-worker-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, CLOUDFLARE_API_TOKEN: 'not-a-worker-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_TIER3_NODES_01: '[]' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_INFERENCE_ACTIVE: 'false' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_BUILD_SHA: 'main' } });
+reject({ ...detachedGateway, triggers: { crons: ['0 3 * * *'] } });
+reject({ ...generation, vars: { ...vars, AIG_ACCESS_KEY_AIR: 'not-a-center-var' } });
 reject({ ...inference, name: 'ai-gateway' });
 reject({ ...generation, main: 'apps/generation/index.ts' });
 reject({ ...generation, routes: [{ pattern: 'public.example.invalid' }] });
