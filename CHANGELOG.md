@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 私有推理中心 v6 非流式 Matrix SSE 对象收集与额度预算合同，Gateway 对未标记的响应拒绝回退本地转换；无部署变更。
+
 - 修复: Gateway 部署准入要求双私有中心绑定，禁止公网网关继续持有 Provider Token Secret 分片。
 
 - 新增: 四 Worker 离线发布拓扑门禁，验证同 SHA、私有双中心、凭据隔离、D1 一致和零双 Cron；不触碰生产资源。
