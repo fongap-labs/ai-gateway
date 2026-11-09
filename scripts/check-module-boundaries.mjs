@@ -155,7 +155,11 @@ for (const required of ['OPENAI_REMAINING_REQUESTS', 'ANTHROPIC_REMAINING_REQUES
 // legacy provider transport files must not duplicate executable semantics.
 for (const [legacy, owner, symbols] of [
   ['src/transport/openai.ts', 'packages/transport/openai-native.ts', ['buildOpenAIHeaders', 'resolveOpenAIPath', 'isOpenAIChatRealOutput']],
-  ['src/transport/anthropic.ts', 'packages/transport/anthropic-native.ts', ['buildAnthropicHeaders', 'resolveAnthropicPath', 'isAnthropicNativeRealOutput']],
+  [
+    'src/transport/anthropic.ts',
+    'packages/transport/anthropic-native.ts',
+    ['buildAnthropicHeaders', 'resolveAnthropicPath', 'isAnthropicNativeRealOutput'],
+  ],
 ]) {
   const shim = readFileSync(join(root, legacy), 'utf8');
   const code = readFileSync(join(root, owner), 'utf8');
