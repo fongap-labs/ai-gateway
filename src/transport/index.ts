@@ -68,12 +68,7 @@ export function resolveUpstreamPath(protocol: Protocol, surface: Surface): strin
 }
 
 // Protocol-native upstream headers always use static API Tokens.
-export function buildUpstreamHeadersFor(
-  protocol: Protocol,
-  request: Request,
-  credential: string,
-  requestId: string,
-): Headers {
+export function buildUpstreamHeadersFor(protocol: Protocol, request: Request, credential: string, requestId: string): Headers {
   switch (protocol) {
     case 'openai':
       return buildOpenAIHeaders(request, credential, requestId);
