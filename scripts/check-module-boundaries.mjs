@@ -84,13 +84,26 @@ for (const [legacy, owner, exportedSymbol] of [
     targetParts.shift();
   }
   const specifier = [...fromParts.map(() => '..'), ...targetParts].join('/');
-  assert.ok(compatibility.includes(`export * from '${specifier}';`), `${legacy} must re-export its unique Gateway owner`);
-  assert.doesNotMatch(compatibility, /^import |^export (?:async )?(?:function|const|class) /m, `${legacy} must contain no implementation`);
-  assert.ok(owned.includes(`function ${exportedSymbol}(`) || owned.includes(`async function ${exportedSymbol}(`), `${owner} must implement ${exportedSymbol}`);
+  assert.ok(
+    compatibility.includes(`export * from '${specifier}';`),
+    `${legacy} must re-export its unique Gateway owner`,
+  );
+  assert.doesNotMatch(
+    compatibility,
+    /^import |^export (?:async )?(?:function|const|class) /m,
+    `${legacy} must contain no implementation`,
+  );
+  assert.ok(
+    owned.includes(`function ${exportedSymbol}(`) || owned.includes(`async function ${exportedSymbol}(`),
+    `${owner} must implement ${exportedSymbol}`,
+  );
 }
 for (const [entry, expectedImports] of [
   ['apps/gateway/index.ts', ['./policy/router.ts']],
-  ['apps/gateway/preflight.ts', ['./policy/auth.ts', './policy/model-authz.ts', './policy/route-feasibility.ts', './policy/router.ts']],
+  [
+    'apps/gateway/preflight.ts',
+    ['./policy/auth.ts', './policy/model-authz.ts', './policy/route-feasibility.ts', './policy/router.ts'],
+  ],
   ['apps/gateway/request-handler.ts', ['./cache/edge-cache.ts', './policy/route-feasibility.ts', './policy/router.ts']],
   ['apps/gateway/tier-loop.ts', ['./policy/router.ts']],
   ['apps/gateway/cache/edge-cache.ts', ['../policy/auth.ts']],
@@ -98,7 +111,7 @@ for (const [entry, expectedImports] of [
 ]) {
   const source = readFileSync(join(root, entry), 'utf8');
   for (const specifier of expectedImports) {
-    assert.ok(source.includes(`from '${specifier}'`), `${entry} must directly use Gateway policy/cache: ${specifier}`);
+      assert.ok(source.includes(`from '${specifier}'`), `${entry} must directly use Gateway policy/cache: ${specifier}`);
   }
   assert.doesNotMatch(
     source,
