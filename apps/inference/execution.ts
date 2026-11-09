@@ -22,7 +22,7 @@ import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { streamUsageEnabled } from '../../src/providers/registry.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import { buildFramedMatrixResponse } from './conversion/framed-stream.ts';
+import { buildFramedMatrixObjectFallback, buildFramedMatrixResponse } from './conversion/framed-stream.ts';
 import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
 import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
 import { collectMatrixObject, type MatrixStreamBudget } from './conversion/stream.ts';
@@ -279,6 +279,30 @@ async function executeAdmittedNative(
     outgoing.set('content-type', framed.headers.get('content-type') ?? '');
     outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
     return new Response(framed.body, { status: upstream.status, headers: outgoing });
+  }
+  if (invocation.returnStream && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
+    // v4/v5: even when Provider ignores stream:true and returns native JSON,
+    // its object→IR→client SSE conversion stays inside the private center.
+    // Never forward unframed Provider bytes for Gateway to decode.
+    const from = protocolForSurface(invocation.surface);
+    const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
+    if (!from || !to || !invocation.displayModel) return dispatchedConversionProblem('center_conversion_route_invalid');
+    let raw: string;
+    try {
+      raw = await readBufferedReplyText(upstream, invocation.deadlineMs);
+    } catch {
+      return dispatchedConversionProblem('center_buffered_reply_invalid');
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return dispatchedConversionProblem('center_converted_object_invalid');
+      const framed = buildFramedMatrixObjectFallback(parsed as Record<string, unknown>, from, to, invocation.displayModel);
+      outgoing.set('content-type', framed.headers.get('content-type') ?? '');
+      outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
+      return new Response(framed.body, { status: upstream.status, headers: outgoing });
+    } catch {
+      return dispatchedConversionProblem('center_converted_object_invalid');
+    }
   }
   if (invocation.returnObject && !invocation.preferNonstream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
     // v6: only the private center may decode/collect the physical SSE into a
