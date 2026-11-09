@@ -8,7 +8,6 @@ import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute } from '../src/request/auth.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
-import { buildGenerationCenterDeployment } from './generation-center-deployment.mjs';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
@@ -42,7 +41,7 @@ const accessGroupPattern = KEY_GROUPS.join('|');
 const pkg = JSON.parse(read('package.json'));
 const operationsBuild = JSON.parse(read('wrangler.operations-build.jsonc'));
 assert.equal(operationsBuild.name, 'ai-operations-build-check');
-assert.equal(operationsBuild.main, 'operations/index.ts');
+assert.equal(operationsBuild.main, 'operations/standalone.ts');
 assert.equal(operationsBuild.workers_dev, false);
 assert.equal(operationsBuild.compatibility_date, config.compatibility_date);
 for (const key of ['triggers', 'routes', 'route', 'custom_domains', 'services', 'vars', 'secrets', 'kv_namespaces', 'd1_databases', 'inherit']) {
@@ -172,61 +171,6 @@ assert.throws(
 );
 assert.match(read('scripts/cloudflare-wrangler.mjs'), /checkPrivateInferenceConfig/);
 assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')), false);
-
-assert.throws(() => buildGenerationCenterDeployment({}), /CLOUDFLARE_API_TOKEN/);
-assert.throws(
-  () => buildGenerationCenterDeployment({
-    CLOUDFLARE_API_TOKEN: 'test-deploy-key',
-    CLOUDFLARE_ACCOUNT_ID: 'test-account',
-    AIG_GENERATION_AUTH_KEY: 'short',
-  }),
-  /at least 32/,
-);
-const generationImage = {
-  CLOUDFLARE_API_TOKEN: 'test-deploy-key',
-  CLOUDFLARE_ACCOUNT_ID: 'test-account',
-  DEPLOY_SOURCE_SHA: 'a'.repeat(40),
-  AIG_GENERATION_AUTH_KEY: 'test-generation-center-auth-key-32-characters',
-  AIG_MODELS_CONFIG: JSON.stringify({
-    'Image-Creator': {
-      policy: 'default',
-      visibility: 'internal',
-      ui_visible: false,
-      group: 'image',
-      modalities: { input: ['text'], output: ['image'] },
-    },
-  }),
-  AIG_POLICIES_CONFIG: '{}',
-  AIG_TIER1_NODES_01: JSON.stringify([
-    { id: 'image-1', provider: 'openai-image', base_url: 'https://api.example.invalid', models: { 'Image-Creator': 'gpt-image-1' } },
-  ]),
-  AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'image-1': 'mock-credential-no-network' }),
-};
-const imagePack = buildGenerationCenterDeployment(generationImage);
-assert.equal(imagePack.nodes, 1);
-assert.equal(imagePack.config.name, 'ai-generation-center');
-assert.equal(imagePack.config.workers_dev, false);
-assert.equal(imagePack.config.vars.AIG_BUILD_SHA, generationImage.DEPLOY_SOURCE_SHA);
-for (const key of ['routes', 'triggers', 'services', 'd1_databases', 'kv_namespaces']) assert.equal(imagePack.config[key], undefined);
-assert.equal(imagePack.config.vars.AIG_GENERATION_AUTH_KEY, undefined);
-assert.equal(imagePack.config.vars.AIG_TIER1_CREDENTIALS_01, undefined);
-assert.equal(imagePack.secrets.AIG_GENERATION_AUTH_KEY, generationImage.AIG_GENERATION_AUTH_KEY);
-assert.equal(imagePack.secrets.AIG_TIER1_CREDENTIALS_01, generationImage.AIG_TIER1_CREDENTIALS_01);
-assert.throws(() => buildGenerationCenterDeployment({ ...generationImage, DEPLOY_SOURCE_SHA: 'main' }), /DEPLOY_SOURCE_SHA/);
-assert.throws(() => buildGenerationCenterDeployment({ ...generationImage, AIG_TIER3_CREDENTIALS_01: '{}' }), /Legacy Tier 3/);
-assert.throws(() => buildGenerationCenterDeployment({ ...generationImage, AIG_OAUTH_PROVIDERS: '{}' }), /subscription bindings/);
-assert.throws(() => buildGenerationCenterDeployment({ ...generationImage, AIG_TIER1_CREDENTIALS_01: undefined }), /upstream credential/);
-assert.throws(
-  () =>
-    buildGenerationCenterDeployment({
-      ...generationImage,
-      AIG_TIER1_NODES_01: JSON.stringify([
-        { id: 'not-image', provider: 'openai', base_url: 'https://api.example.invalid', models: { 'Image-Creator': 'gpt-image-1' } },
-      ]),
-    }),
-  /only static image-generation nodes/,
-);
-assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-generation-center.sh')), false, 'Generation prepare must not imply an automatic deploy');
 
 const centerBindingConfig = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center' });
 assert.deepEqual(centerBindingConfig.services, [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }]);

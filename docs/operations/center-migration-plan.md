@@ -19,6 +19,21 @@ Cloudflare Service Binding 仅是**当前传输适配器**，业务执行接口�
 
 阶段二、三先完成再拆感知/生成，不为了三种中心同时上线而引入空壳服务。所有能力必须由真实消费路径、合同测试及运维证据支持。
 
+## Operations 独立调度的受控切换
+
+当前 `src/index.ts` 仍组合 Gateway `fetch` 与 Operations `scheduled`，现有 `wrangler.jsonc` 在 Gateway Worker 上保留 `0 3 * * *` Cron；**不得只修改入口而不部署新定时维护单元**，否则可能造成统计维护停摆。
+
+预备源码 `operations/standalone.ts` 已提供只包含 `scheduled` 的独立入口，没有公开 `fetch` 路由，并要求受控 D1 `TOKEN_STATS_DB` 绑定。预备 `wrangler.operations.jsonc` 的 `crons: []` 明确禁用独立 Cron；`npm run check:operations-cutover` 校验“旧 Cron 仍存在、新 Cron 禁止启用、D1 缺失失败关闭、无公网路径”。这些改动**不能证明生产 Operations 已部署**。
+
+生产切换必须另行完成以下原子化验收步骤：
+
+1. 在受控、隔离环境部署新 Operations Worker，提供与当前 Gateway **同一 D1 数据库**的 `TOKEN_STATS_DB` 绑定；检查实际 D1 schema、保留策略、预算与每次维护执行日志。不要给 Operations 配置任何 Provider Token 或 Gateway 公开域名。
+2. 在受控变更窗口核实上一次 Gateway Cron 已终止、没有正在运行的维护事务；准备一份包含 Gateway/Operations 版本、Cron 和 D1 绑定的回滚记录。
+3. 先验证独立 Operations 的一次受控维护执行和只读结果；然后撤销 Gateway Cron，并启用新 Worker 的 `0 3 * * *`，在每个变更步骤前后检查**最多一个有效维护触发器**，避免重复保留期删除或遗漏维护。
+4. 验证连续两轮统计聚合与旧指标一致、未丢失入库、无重复维护；失败即停止计划并按已记录的**代码+Cron+D1**整体回滚。
+
+没有以上证据，不得把 Operations 标记为已独立部署，也不得删除 Gateway 的旧 `scheduled` 兼容组合。任何 `wrangler.operations.jsonc` 中 Cron 的启用必须经过单独的部署授权和中央 CI；当前 PR 不操作 Cloudflare/D1/Cron。
+
 ## 部署顺序
 
 ```text
