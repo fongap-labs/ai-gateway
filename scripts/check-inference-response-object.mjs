@@ -102,7 +102,7 @@ try {
     { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
     { id: 'cmpl-test', object: 'chat.completion.chunk', model: 'gpt-test-upstream', choices: [], usage: upstream.usage },
   ];
-  answer = new Response(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\\n\\n`).join('')}data: [DONE]\\n\\n`, {
+  answer = new Response(`${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   });
