@@ -437,6 +437,12 @@ D1 Token 用量的时间桶、键与保留期常量、SQL 增量语句、每 iso
 
 `success-stream.ts` 因中央测试包仍从旧路径直接检查首事件守卫与流生命周期而保留原实现。矩阵转换成功响应终结实现已迁入 `apps/gateway/attempt/success-matrix.ts`；原 `src/request/attempt/success-matrix.ts` 仅为兼容导出，`success.ts` 分发器直接引用 Gateway-owned 实现，所有原有私有帧流解码、物理用量结算、预算终止与错误响应断言改为检验真实新路径。没有调整 Action Worker 测试。对象、对冲、dispatch、outcome 和物理尝试观测仍有剩余源码迁移。无生产配置或部署改动。
 
+## Gateway OAuth 管理路由归属
+
+OAuth 订阅管理的 `/oauth/start`、`/oauth/callback`、`/oauth/paste` 等实际 HTTP 路由，从 `src/oauth/routes.ts` 移入 `apps/gateway/oauth/routes.ts`；公开 Gateway 的 `apps/gateway/preflight.ts` 直接调用新实现。旧 `src/oauth/routes.ts` 只保留兼容导出。Gateway 路由直接调用自有 `policy/auth.ts`，保持表单凭据授权、PKCE、状态一次性消费与管理入口可关闭等既有安全语义。
+
+本批不迁移 `src/oauth/crypto.ts`、`token-store.ts`、`resolve.ts` 和 `provider-configs.ts`：令牌解密、D1 持久化和订阅刷新仍涉及私有推理中心与共享配置解析，必须按中心归属单独迁移。未变更加密密钥、访问控制、Token 存储结构、Cloudflare Secrets、Wrangler、D1 schema、Service Binding 或部署。
+
 ## 尚待迁移
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。

@@ -14,7 +14,6 @@ import type { Limits } from '../../src/config/timeouts.ts';
 import { getLimits, requestSizeAllowanceMs } from '../../src/config/timeouts.ts';
 import { dashboardResponse } from '../../src/dashboard/pages.ts';
 import { readmeStatusSvgResponse } from '../../src/dashboard/readme-status.ts';
-import { handleOAuthRoute } from '../../src/oauth/routes.ts';
 import {
   anthropicErrorResponse,
   estimateAnthropicInputTokens,
@@ -30,6 +29,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
+import { handleOAuthRoute } from './oauth/routes.ts';
 import {
   authorize,
   authorizeDeploymentHealth,

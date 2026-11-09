@@ -143,6 +143,21 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
+// OAuth onboarding HTTP handlers belong to Gateway; token encryption,
+// persistence and credential resolution remain shared dependencies.
+const oldOAuthRoutes = readFileSync(join(root, 'src/oauth/routes.ts'), 'utf8');
+const gatewayOAuthRoutes = readFileSync(join(root, 'apps/gateway/oauth/routes.ts'), 'utf8');
+const gatewayOAuthPreflight = readFileSync(join(root, 'apps/gateway/preflight.ts'), 'utf8');
+assert.ok(oldOAuthRoutes.includes("export * from '../../apps/gateway/oauth/routes.ts';"), 'Old OAuth entry must be a compatibility export');
+assert.doesNotMatch(oldOAuthRoutes, /^(?:import|export (?:async )?(?:function|const|class)) /m);
+assert.match(gatewayOAuthRoutes, /export async function handleOAuthRoute\(/);
+assert.match(gatewayOAuthRoutes, /from '\.\.\/policy\/auth\.ts'/);
+assert.match(gatewayOAuthRoutes, /from '\.\.\/\.\.\/\.\.\/src\/oauth\/token-store\.ts'/);
+assert.match(gatewayOAuthRoutes, /authorizeCredentials\(/);
+assert.match(gatewayOAuthRoutes, /consumeFlowState\(/);
+assert.match(gatewayOAuthRoutes, /hasTokenKey\(/);
+assert.ok(gatewayOAuthPreflight.includes("from './oauth/routes.ts'"), 'Gateway preflight must use its OAuth route owner');
+
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
 for (const [legacy, owner, symbol] of [['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess']]) {
