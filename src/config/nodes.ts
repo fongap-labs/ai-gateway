@@ -140,9 +140,35 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
 
   // Old Tier 3 must never disappear silently when the 2-Tier matcher is used.
   // Check names only: the public Gateway must not read Provider secret values.
+  let legacyPolicyTier3 = false;
+  const rawPolicies = readEnv(env, 'AIG_POLICIES_CONFIG');
+  if (rawPolicies) {
+    try {
+      const parsedPolicies: unknown = JSON.parse(rawPolicies);
+      if (parsedPolicies && typeof parsedPolicies === 'object' && !Array.isArray(parsedPolicies)) {
+        legacyPolicyTier3 = Object.values(parsedPolicies).some((policy) => {
+          if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return false;
+          const p = policy as Record<string, unknown>;
+          const attempts = p.tier_attempts;
+          const hedge = p.hedge;
+          return (
+            (attempts !== null && typeof attempts === 'object' && !Array.isArray(attempts) && Object.hasOwn(attempts, 'tier3')) ||
+            (hedge !== null && typeof hedge === 'object' && !Array.isArray(hedge) &&
+              Array.isArray((hedge as Record<string, unknown>).tiers) &&
+              ((hedge as Record<string, unknown>).tiers as unknown[]).includes('tier3'))
+          );
+        });
+      }
+    } catch {
+      // Malformed policy JSON is reported by the existing strict diagnostics.
+    }
+  }
   const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
-  if (legacyTierKeys.length > 0) {
-    diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
+  if (legacyTierKeys.length > 0 || legacyPolicyTier3) {
+    if (legacyTierKeys.length > 0) {
+      diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
+    }
+    if (legacyPolicyTier3) diagnostics.push('two-tier cutover required: deprecated tier3 policy budget or hedge references remain');
     return {
       status: 'invalid',
       ready: false,
