@@ -935,7 +935,11 @@ assert.ok(
   'Matrix conversion budgets must be issued to private center v5/v6',
 );
 assert.match(inferenceV4Success, /decodeFramedInferenceResponse\(/, 'Gateway must strip private frames before commit');
-assert.match(inferenceV4Success, /guardProtocol = isFramed \? clientIr : upstreamIr/, 'First event must inspect actual client protocol');
+assert.match(inferenceV4Success, /guardProtocol = clientIr/, 'Gateway must guard already-converted client SSE');
+assert.doesNotMatch(inferenceV4Success, /from ['"][^'"]*\/conversion\/matrix\/pipeline\.ts['"]/, 'Gateway must not import the private IR pipeline');
+assert.doesNotMatch(inferenceV4Success, /\b(?:replyFromNativeObject|replyToObject|collectMatrixObject|openMatrixStream|synthesizeMatrixStreamFromObject)\s*\(/, 'Gateway must not execute local Matrix reply conversion');
+assert.match(inferenceV4Success, /responseFormat !== INFERENCE_TRANSLATED_OBJECT_FORMAT/, 'Gateway must reject untagged converted objects');
+assert.match(inferenceV4Success, /responseFormat !== INFERENCE_FRAMED_STREAM_FORMAT/, 'Gateway must reject unframed converted SSE');
 const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
 const budgetGateway = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const budgetSettlement = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
