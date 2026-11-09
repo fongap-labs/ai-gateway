@@ -2,20 +2,20 @@
 // Copyright (c) 2026 Fongap Labs
 // Gateway-owned native streaming success implementation.
 
-import { gatewayError } from '../response/errors.ts';
-import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
 import { classifyClientAbort, classifyFirstEventFailure } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
+import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from '../../../src/request/attempt/observability.ts';
+import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
+import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../../src/transport/index.ts';
 import type { AttemptOutcome } from '../../../src/types/request.ts';
-import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from '../../../src/request/attempt/observability.ts';
-import { hedgeLoserOutcome, recordOutcome } from '../../../src/request/attempt/outcome.ts';
-import type { SuccessArgs } from '../../../src/request/attempt/success.ts';
+import { gatewayError } from '../response/errors.ts';
+import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../response/response-helpers.ts';
 
 export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
