@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: OAuth AES-GCM 凭据加解密与 D1 Token Store 实际源码移入 `packages/oauth/`，旧导入仅兼容导出。
+- 维护: Gateway OAuth 管理路由及 Token 刷新解析改为直接调用共享唯一所有者；保持 AAD、CAS、失败关闭和原有数据合同。
+
 - 维护: OAuth 管理端授权、回调与粘贴码 HTTP 路由迁归 Gateway 自有模块，预检入口直连新实现。
 - 维护: 旧 `src/oauth/routes.ts` 仅兼容导出；令牌加密、D1 存储、刷新、授权码和鉴权规则保持不变。
 

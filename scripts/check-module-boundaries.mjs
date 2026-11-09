@@ -152,11 +152,34 @@ assert.ok(oldOAuthRoutes.includes("export * from '../../apps/gateway/oauth/route
 assert.doesNotMatch(oldOAuthRoutes, /^(?:import|export (?:async )?(?:function|const|class)) /m);
 assert.match(gatewayOAuthRoutes, /export async function handleOAuthRoute\(/);
 assert.match(gatewayOAuthRoutes, /from '\.\.\/policy\/auth\.ts'/);
-assert.match(gatewayOAuthRoutes, /from '\.\.\/\.\.\/\.\.\/src\/oauth\/token-store\.ts'/);
+assert.match(gatewayOAuthRoutes, /from '\.\.\/\.\.\/\.\.\/packages\/oauth\/token-store\.ts'/);
 assert.match(gatewayOAuthRoutes, /authorizeCredentials\(/);
 assert.match(gatewayOAuthRoutes, /consumeFlowState\(/);
 assert.match(gatewayOAuthRoutes, /hasTokenKey\(/);
 assert.ok(gatewayOAuthPreflight.includes("from './oauth/routes.ts'"), 'Gateway preflight must use its OAuth route owner');
+
+// Shared OAuth cryptography and D1 token persistence live in one neutral
+// owner, preserving identity of caches across old and new import paths.
+const oauthCryptoShim = readFileSync(join(root, 'src/oauth/crypto.ts'), 'utf8');
+const oauthTokenShim = readFileSync(join(root, 'src/oauth/token-store.ts'), 'utf8');
+const oauthCryptoOwner = readFileSync(join(root, 'packages/oauth/crypto.ts'), 'utf8');
+const oauthTokenOwner = readFileSync(join(root, 'packages/oauth/token-store.ts'), 'utf8');
+assert.ok(oauthCryptoShim.includes("export * from '../../packages/oauth/crypto.ts';"), 'Old crypto path must only re-export shared owner');
+assert.ok(oauthTokenShim.includes("export * from '../../packages/oauth/token-store.ts';"), 'Old token store must only re-export shared owner');
+for (const shim of [oauthCryptoShim, oauthTokenShim]) {
+  assert.doesNotMatch(shim, /^(?:import|export (?:async )?(?:function|const|class|type)) /m, 'Old OAuth paths cannot duplicate implementations');
+}
+assert.match(oauthCryptoOwner, /export async function encryptSecret\(/, 'Shared crypto must own encryption');
+assert.match(oauthCryptoOwner, /export async function decryptSecret\(/, 'Shared crypto must own decryption');
+assert.match(oauthCryptoOwner, /cachedKeyPromise/, 'Shared crypto must preserve its single key cache');
+assert.match(oauthCryptoOwner, /additionalData\(/, 'Shared crypto must preserve row-scoped AAD');
+assert.match(oauthTokenOwner, /export async function consumeFlowState\(/, 'Shared store must own one-time OAuth state consumption');
+assert.match(oauthTokenOwner, /export async function persistRefreshedToken\(/, 'Shared store must own refresh CAS persistence');
+assert.ok(oauthTokenOwner.includes("from './crypto.ts'"), 'Shared token store must call shared crypto directly');
+assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/crypto.ts'"), 'Gateway OAuth routes must call shared encryption owner');
+assert.ok(gatewayOAuthRoutes.includes("from '../../../packages/oauth/token-store.ts'"), 'Gateway OAuth routes must call shared persistence owner');
+const oauthResolve = readFileSync(join(root, 'src/oauth/resolve.ts'), 'utf8');
+assert.ok(oauthResolve.includes("from '../../packages/oauth/token-store.ts'"), 'OAuth resolver must use shared token store directly');
 
 // Gateway-owned streaming and image success handlers are the only
 // implementations; old request/attempt modules are compatibility-only.
