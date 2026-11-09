@@ -17,9 +17,9 @@
 // Raw secrets never leave this module. Only the low-cardinality group label
 // is used in logs/stats.
 
+import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadAccessKeysConfig } from '../../../src/config/access-keys.ts';
 import type { AuthResult } from '../../../src/types/request.ts';
-import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 
 export type { AuthResult };
 
