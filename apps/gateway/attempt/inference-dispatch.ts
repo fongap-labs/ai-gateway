@@ -6,7 +6,7 @@
 // Once the binding exists there is NO automatic direct-provider fallback.
 
 import { type ExecutionInputSurface, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../../packages/contracts/execution.ts';
-import { INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
@@ -210,8 +210,8 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   if (
     returnStream &&
     upstream.ok &&
-    (isOpenAIStreamingResponse(upstream) ||
-      (upstream.headers.has('x-aig-response-format') && upstream.headers.get('x-aig-response-format') !== INFERENCE_FRAMED_STREAM_FORMAT))
+    (upstream.headers.get('x-aig-response-format') !== INFERENCE_FRAMED_STREAM_FORMAT ||
+      !upstream.headers.get('content-type')?.toLowerCase().includes(INFERENCE_FRAMED_STREAM_CONTENT_TYPE))
   ) {
     // A v4 center MUST NOT return unframed SSE. Reject before any client
     // response byte; no fallback to the direct Provider path.

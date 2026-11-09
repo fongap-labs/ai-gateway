@@ -117,15 +117,32 @@ try {
   providerBody = JSON.stringify({
     id: 'cmpl-test',
     object: 'chat.completion',
+    model: 'gpt-test-upstream',
     choices: [{ index: 0, message: { role: 'assistant', content: 'JSON fallback' }, finish_reason: 'stop' }],
+    usage,
   });
   providerContentType = 'application/json';
   const jsonFallback = await handleInferenceCenterRequest(inbound(), env);
   assert.equal(jsonFallback.status, 200);
-  assert.equal(jsonFallback.headers.has('x-aig-response-format'), false);
-  assert.equal((await jsonFallback.json()).object, 'chat.completion');
+  assert.equal(jsonFallback.headers.get('x-aig-response-format'), INFERENCE_FRAMED_STREAM_FORMAT);
+  const fallbackUsage = [];
+  const fallbackSse = await new Response(decodeFramedInferenceResponse(jsonFallback, { onUsage: (event) => fallbackUsage.push(event) })).text();
+  assert.match(fallbackSse, /JSON fallback/);
+  assert.match(fallbackSse, /message_stop/);
+  assert.match(fallbackSse, /public-model/);
+  assert.doesNotMatch(fallbackSse, /physical_only|never-expose|gpt-test-upstream/);
+  assert.deepEqual(fallbackUsage, [usage]);
   assert.equal(attempts, 2);
-  console.log('Inference v4: center converted true streaming, hid raw usage, rejected downgrade and preserved provider JSON fallback.');
+
+  providerBody = '{invalid-json';
+  const invalidFallback = await handleInferenceCenterRequest(inbound(), env);
+  assert.equal(invalidFallback.status, 502);
+  assert.equal(invalidFallback.headers.get('x-aig-result'), 'dispatched');
+  assert.equal(invalidFallback.headers.get('x-aig-error-kind'), 'center_converted_object_invalid');
+  assert.equal(invalidFallback.headers.has('x-aig-response-format'), false);
+  assert.equal(attempts, 3);
+
+  console.log('Inference v4: streaming and native JSON fallback are framed in center; usage remains private and failures close.');
 } finally {
   globalThis.fetch = originalFetch;
 }
