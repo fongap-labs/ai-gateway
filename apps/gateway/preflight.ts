@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { canRouteImageGeneration } from '../../packages/contracts/image-capabilities.ts';
+import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadAccessKeysConfig } from '../../src/config/access-keys.ts';
 import { getBool } from '../../src/config/env.ts';
@@ -21,7 +22,6 @@ import {
   validateAnthropicMessagesRequest,
 } from '../../src/protocol/anthropic.ts';
 import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../../src/protocol/http.ts';
-import { validateImageGenerationRequest } from '../../src/protocol/image.ts';
 import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';

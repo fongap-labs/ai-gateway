@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: 图像生成请求输入合同归属中立 `packages/contracts/image-request.ts`，Gateway 与 Generation Center 共享单一校验实现。
+- 维护: 旧 `src/protocol/image.ts` 仅兼容导出，不改变请求字段、图像尺寸、Prompt 长度、n=1 和 b64_json 限制。
+
 - 维护: Tier 2 订阅凭据解析、刷新 Singleflight 与 CAS 调用归属推理中心，旧 `src/oauth/resolve.ts` 仅兼容导出。
 - 维护: 推理中心物理执行入口直连自有凭据解析，不更改 OAuth Token Store、D1、Token 轮换、Provider 配置与请求行为。
 
