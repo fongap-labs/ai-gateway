@@ -147,7 +147,12 @@ export function parseExecutionInvocation(
   const rawStreamBudget = request.headers.get('x-aig-stream-budget');
   const budgetCapable = version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION || version === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION;
   const streamBudget = budgetCapable && rawStreamBudget !== null ? parseInferenceStreamBudget(rawStreamBudget) : null;
-  if (version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION ? streamBudget === null : rawStreamBudget !== null && (!budgetCapable || streamBudget === null)) return null;
+  if (
+    version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+      ? streamBudget === null
+      : rawStreamBudget !== null && (!budgetCapable || streamBudget === null)
+  )
+    return null;
   if (rawInputSurface === null) {
     if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
       return null;
