@@ -155,11 +155,17 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
     }
   }
   const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
-  if (legacyTierKeys.length > 0 || legacyPolicyTier3) {
+  const legacySubscriptionKeys = Object.keys(env).filter((key) =>
+    key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
+  );
+  if (legacyTierKeys.length > 0 || legacyPolicyTier3 || legacySubscriptionKeys.length > 0) {
     if (legacyTierKeys.length > 0) {
       diagnostics.push('two-tier cutover required: legacy Tier 3 variable or credential bindings remain (' + legacyTierKeys.sort().join(', ') + ')');
     }
     if (legacyPolicyTier3) diagnostics.push('two-tier cutover required: deprecated tier3 policy budget or hedge references remain');
+    if (legacySubscriptionKeys.length > 0) {
+      diagnostics.push('retired subscription settings are forbidden (' + legacySubscriptionKeys.sort().join(', ') + ')');
+    }
     return {
       status: 'invalid',
       ready: false,
