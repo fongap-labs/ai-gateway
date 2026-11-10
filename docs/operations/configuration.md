@@ -11,11 +11,11 @@
 | `AIG_ACCESS_KEY_{AIR,PRO,MAX,ULTRA,AGENT}` | 网关访问密钥 |
 | `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}` | 按分组划分的逻辑模型允许列表 |
 | `AIG_MODELS_CONFIG` | 可选的逻辑模型元数据/能力声明 |
-| `AIG_POLICIES_CONFIG` | attempt、hedge、超时与 Tier 1 准入策略 |
+| `AIG_POLICIES_CONFIG` | 可选策略覆盖；若 `AIG_MODELS_CONFIG` 引用了非内置策略名，必须在此定义同名策略 |
 | `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符；值来自主机仓库 Variable `CLOUDFLARE_ACCOUNT_ID_SECONDARY`（经中央别名注入，该名字需声明在 `.github/deploy.secrets.allowed`） |
 
-`src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。
+`src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。生产发布会在修改 Cloudflare 之前，对推理、感知、生成三个中心统一执行只读预检；自定义策略名必须在 `AIG_POLICIES_CONFIG` 中有对应定义（内置 `default`、`fast`、`long-reasoning` 无需重复配置），每个中心都需要至少一个符合能力要求的模型节点。不能以空策略或空节点代替真实的生产能力。
 
 **生产切换状态**：2026-11-09 新两层源码已合并，但不代表线上配置已切换。当前仓库仍保留部署清单，但 `automatic: false` 暂时冻结自动生产派发；历史 Environment 部署请求需独立核实。发布前请按[两层 Tier 生产切换门禁](../architecture/two-tier-cutover.md)确认旧版凭据与中心绑定；不要直接批准等待中的自动部署。边缘缓存只能使用独立的 `AIG_EDGE_CACHE_HMAC_KEY` Secret（至少 32 字符），不得恢复旧会员 Token 密钥。
 

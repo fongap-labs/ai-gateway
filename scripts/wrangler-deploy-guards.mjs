@@ -38,7 +38,7 @@ function safeCenterVars(config) {
     typeof vars.AIG_BUILD_SHA === 'string' &&
     SHA.test(vars.AIG_BUILD_SHA) &&
     typeof vars.AIG_MODELS_CONFIG === 'string' &&
-    typeof vars.AIG_POLICIES_CONFIG === 'string' &&
+    (vars.AIG_POLICIES_CONFIG === undefined || typeof vars.AIG_POLICIES_CONFIG === 'string') &&
     Object.keys(vars).some((name) => NODE_VAR.test(name)) &&
     Object.keys(vars).every((name) => !RETIRED.test(name) && !SECRET_VAR.test(name) && !PROVIDER_CREDENTIAL_VAR.test(name))
   );
