@@ -13,6 +13,7 @@ const NODE_SECRET = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const LEGACY = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
 const PUBLIC_SECRET = /^(?:AIG_TIER[12]_CREDENTIALS_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$)/;
 const GATEWAY_SECRET = /^(?:AIG_ACCESS_KEY_[A-Z0-9_]+|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$/;
+const OTHER_CREDENTIAL_VAR = /(?:^|_)(?:API_KEY|API_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD)(?:_|$)/;
 
 function record(o) {
   return o !== null && typeof o === 'object' && !Array.isArray(o);
@@ -53,7 +54,12 @@ function secretVars(config, label) {
   requireRecord(config.vars, `${label} vars`);
   for (const key of Object.keys(config.vars)) {
     assert.equal(
-      PUBLIC_SECRET.test(key) || LEGACY.test(key) || /(?:^|_)SECRET(?:_|$)/.test(key) || /(?:^|_)AUTH_KEY$/.test(key),
+      PUBLIC_SECRET.test(key) ||
+        LEGACY.test(key) ||
+        GATEWAY_SECRET.test(key) ||
+        OTHER_CREDENTIAL_VAR.test(key) ||
+        /(?:^|_)SECRET(?:_|$)/.test(key) ||
+        /(?:^|_)AUTH_KEY$/.test(key),
       false,
       `${label} exposes a credential variable name`,
     );
