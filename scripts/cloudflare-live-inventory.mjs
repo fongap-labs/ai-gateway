@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
 const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
+const SOURCE_SHA = /^[0-9a-f]{40}$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const RESOURCE_ID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const RETIRED = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
@@ -232,6 +233,14 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
             throw new Error('Secret key material is not permitted in Worker settings metadata.');
           }
           const projected = { name: binding.name, type: binding.type };
+          // Only the explicitly named, non-secret build identity may be read.
+          // Other plain_text values are never projected into a report.
+          if (binding.name === 'AIG_BUILD_SHA' && binding.type === 'plain_text') {
+            if (typeof binding.text !== 'string' || !SOURCE_SHA.test(binding.text)) {
+              throw new Error('Invalid declared Worker source SHA metadata.');
+            }
+            projected.declared_build_sha = binding.text;
+          }
           if (binding.type === 'service' && typeof binding.service === 'string') projected.service = binding.service;
           if (binding.type === 'd1') {
             if (typeof binding.database_id === 'string') projected.database_id = binding.database_id;
@@ -249,6 +258,8 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         'Worker binding',
       );
 
+      const declaredBuildSha =
+        rawBindings.find((binding) => binding.name === 'AIG_BUILD_SHA' && binding.type === 'plain_text')?.declared_build_sha ?? null;
       const bindings = rawBindings.map((binding) => {
         const item = { name: binding.name, type: binding.type };
         if (binding.type === 'service' && typeof binding.service === 'string') item.service = binding.service;
@@ -341,6 +352,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         d1Identity: typeof d1Id === 'string' && RESOURCE_ID.test(d1Id) ? d1Id : null,
         tier1KvBindingCount: kvBindings.length,
         tier1KvIdentityPresent: typeof kvId === 'string' && RESOURCE_ID.test(kvId),
+        declaredBuildSha,
         serviceTargets,
       };
     },
@@ -385,6 +397,7 @@ export async function inspectProductionWorkers(client) {
       continue;
     }
     if (!activeDeploymentReady(worker.activeDeployment)) issues.push('WORKER_ACTIVE_DEPLOYMENT_INVALID:' + name);
+    if (!worker.declaredBuildSha) issues.push('WORKER_DECLARED_SHA_MISSING:' + name);
     if (worker.retiredNames.length) issues.push('RETIRED_BINDINGS_PRESENT:' + name);
     if (name === 'ai-gateway' && worker.providerCredentialNames.length > 0) {
       issues.push('GATEWAY_PROVIDER_CREDENTIALS_PRESENT');
@@ -408,6 +421,8 @@ export async function inspectProductionWorkers(client) {
       active_deployment_present: worker.activeDeployment.present,
       active_traffic_version_count: worker.activeDeployment.versionCount,
       active_traffic_weight_total: worker.activeDeployment.trafficWeightTotal,
+      // Declared build identity is a plain-text Git commit SHA, not proof of the deployed artifact.
+      declared_build_sha: worker.declaredBuildSha,
       bindings: worker.bindings,
       secret_names: worker.secretNames,
       retired_binding_names: worker.retiredNames,
@@ -421,6 +436,10 @@ export async function inspectProductionWorkers(client) {
       tier1_kv_identity_present: worker.tier1KvIdentityPresent,
     };
   }
+
+  const declaredShas = WORKERS.map((name) => observed[name]?.declaredBuildSha);
+  const declaredBuildShaConsistent = declaredShas.every((sha) => typeof sha === 'string' && sha === declaredShas[0]);
+  if (!declaredBuildShaConsistent) issues.push('WORKER_DECLARED_SHA_MISMATCH');
 
   const gateway = observed['ai-gateway'];
   const inference = observed['ai-inference-center'];
@@ -483,6 +502,7 @@ export async function inspectProductionWorkers(client) {
     workers: inventory,
     checks: {
       gateway_service_bindings: serviceChecks,
+      declared_build_sha_consistent: declaredBuildShaConsistent,
       account_zone_count_scanned: routeInventory.zoneCount,
       gateway_public_route_present: gatewayPublicRoutePresent,
       tier1_kv_binding_present: tier1KvPresent,

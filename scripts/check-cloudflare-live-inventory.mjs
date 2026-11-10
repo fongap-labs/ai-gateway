@@ -7,8 +7,10 @@ const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'a
 const SECRET_SENTINEL = 'never-print-this-secret-value';
 const D1_ID = '123e4567-e89b-42d3-a456-426614174000';
 const KV_ID = '123e4567-e89b-42d3-a456-426614174001';
+const BUILD_SHA = 'a'.repeat(40);
 const BASE_SETTINGS = {
   'ai-gateway': [
+    { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
     { name: 'AIG_INFERENCE_SERVICE', type: 'service', service: 'ai-inference-center' },
     { name: 'AIG_GENERATION_SERVICE', type: 'service', service: 'ai-generation-center' },
     { name: 'TIER1_AFFINITY', type: 'kv_namespace', namespace_id: KV_ID },
@@ -18,14 +20,19 @@ const BASE_SETTINGS = {
     { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   ],
   'ai-inference-center': [
+    { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
     { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
     { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
   ],
   'ai-generation-center': [
+    { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
     { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
     { name: 'AIG_TIER2_CREDENTIALS_01', type: 'secret_text' },
   ],
-  'ai-gateway-operations': [{ name: 'TOKEN_STATS_DB', type: 'd1', database_id: D1_ID }],
+  'ai-gateway-operations': [
+    { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
+    { name: 'TOKEN_STATS_DB', type: 'd1', database_id: D1_ID },
+  ],
 };
 
 function makeDomain(id, service, enabled = true, previewsEnabled = false) {
@@ -114,6 +121,8 @@ assert.equal(report.production_cutover_approved, false);
 assert.deepEqual(report.access_requirement.api_token_permissions, ['Zone Read', 'Workers Routes Read', 'Workers Scripts Read']);
 assert.equal(report.access_requirement.secret_values_requested_or_reported, false);
 assert.equal(report.checks.shared_token_stats_d1_consistent, true);
+assert.equal(report.checks.declared_build_sha_consistent, true);
+assert.equal(report.workers['ai-gateway'].declared_build_sha, BUILD_SHA);
 assert.equal(report.checks.tier1_kv_binding_present, true);
 assert.equal(report.checks.gateway_provider_credential_binding_count, 0);
 assert.equal(report.checks.account_zone_count_scanned, 51);
@@ -192,6 +201,57 @@ await assert.rejects(
   ),
   /total count changed during inventory/,
 );
+
+const missingBuildShaSettings = structuredClone(BASE_SETTINGS);
+missingBuildShaSettings['ai-gateway-operations'] = missingBuildShaSettings['ai-gateway-operations'].filter(
+  (binding) => binding.name !== 'AIG_BUILD_SHA',
+);
+const missingBuildShaReport = await inspectProductionWorkers(
+  createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'mock-read-only-token-123',
+    fetchImpl: makeFetch({ settings: missingBuildShaSettings }).fetchImpl,
+  }),
+);
+assert.ok(missingBuildShaReport.blockers.includes('WORKER_DECLARED_SHA_MISSING:ai-gateway-operations'));
+assert.ok(missingBuildShaReport.blockers.includes('WORKER_DECLARED_SHA_MISMATCH'));
+
+const divergentBuildSettings = structuredClone(BASE_SETTINGS);
+divergentBuildSettings['ai-generation-center'][0].text = 'b'.repeat(40);
+const divergentBuildReport = await inspectProductionWorkers(
+  createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'mock-read-only-token-123',
+    fetchImpl: makeFetch({ settings: divergentBuildSettings }).fetchImpl,
+  }),
+);
+assert.ok(divergentBuildReport.blockers.includes('WORKER_DECLARED_SHA_MISMATCH'));
+assert.equal(divergentBuildReport.checks.declared_build_sha_consistent, false);
+
+const malformedBuildSettings = structuredClone(BASE_SETTINGS);
+malformedBuildSettings['ai-inference-center'][0].text = 'not-a-sha';
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: makeFetch({ settings: malformedBuildSettings }).fetchImpl,
+    }),
+  ),
+  /Invalid declared Worker source SHA metadata/,
+);
+
+const arbitraryTextSecret = 'plain-text-vars-must-stay-private';
+const isolatedSettings = structuredClone(BASE_SETTINGS);
+isolatedSettings['ai-inference-center'].push({ name: 'AIG_PUBLIC_URL', type: 'plain_text', text: arbitraryTextSecret });
+const isolatedReport = await inspectProductionWorkers(
+  createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'mock-read-only-token-123',
+    fetchImpl: makeFetch({ settings: isolatedSettings }).fetchImpl,
+  }),
+);
+assert.ok(!JSON.stringify(isolatedReport).includes(arbitraryTextSecret));
 
 const missingGatewayRouteMock = makeFetch({ routesByWorker: {}, domainsByService: { 'ai-gateway': [] } });
 const missingGatewayRouteReport = await inspectProductionWorkers(
