@@ -24,6 +24,7 @@ function inventoryFor(stage) {
         active_deployment_present: true,
         active_traffic_version_count: 1,
         active_traffic_weight_total: 100,
+        declared_build_sha: SHA,
         retired_binding_names: [],
         crons: name === 'ai-gateway' && stage === 'prepare' ? [CRON] : name === 'ai-gateway-operations' && stage === 'activate' ? [CRON] : [],
         token_stats_db_binding_count: name === 'ai-gateway' || name === 'ai-gateway-operations' ? 1 : 0,
@@ -42,6 +43,7 @@ function inventoryFor(stage) {
       gateway_public_route_present: true,
       tier1_kv_binding_present: true,
       shared_token_stats_d1_consistent: true,
+      declared_build_sha_consistent: true,
       gateway_provider_credential_binding_count: 0,
       private_worker_exposure_clear: true,
       gateway_service_bindings: { AIG_INFERENCE_SERVICE: true, AIG_GENERATION_SERVICE: true },
@@ -83,6 +85,9 @@ rejects((i) => (i.workers['ai-gateway'].crons = []));
 rejects((i) => (i.workers['ai-gateway'].retired_binding_names = ['AIG_TIER3_NODES_01']));
 rejects((i) => (i.workers['ai-gateway-operations'].token_stats_db_binding_count = 0));
 rejects((i) => (i.checks.shared_token_stats_d1_consistent = false));
+rejects((i) => (i.checks.declared_build_sha_consistent = false));
+rejects((i) => (i.workers['ai-inference-center'].declared_build_sha = 'b'.repeat(40)));
+rejects((i) => (i.workers['ai-gateway'].declared_build_sha = null));
 rejects((i) => (i.checks.private_worker_exposure_clear = false));
 rejects((i) => (i.checks.gateway_service_bindings.AIG_INFERENCE_SERVICE = false));
 rejects((i) => (i.checks.gateway_provider_credential_binding_count = 1));
