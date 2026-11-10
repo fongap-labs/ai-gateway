@@ -9,20 +9,20 @@ import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute } from '../src/request/auth.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
+import {
+  confirmPublishedIdentity,
+  confirmRestoredIdentity,
+  establishRecoveryBaseline,
+  fetchActiveDeployment,
+  guardedRollbackTarget,
+  parseActiveDeployment,
+  recordPublishedDeployment,
+} from './deployment-recovery.mjs';
 import { buildGenerationCenterDeployment } from './generation-center-deployment.mjs';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
-import {
-  parseActiveDeployment,
-  establishRecoveryBaseline,
-  recordPublishedDeployment,
-  confirmPublishedIdentity,
-  guardedRollbackTarget,
-  confirmRestoredIdentity,
-  fetchActiveDeployment,
-} from './deployment-recovery.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -517,9 +517,7 @@ const activeResponse = (deploymentId, versionId, message = null, percent = 100) 
   },
 });
 const baselineActive = parseActiveDeployment(activeResponse(baselineDeployment, baselineVersion));
-const publishedActive = parseActiveDeployment(
-  activeResponse(publishedDeployment, publishedVersion, `action-worker:deploy:${deployedBuild}`),
-);
+const publishedActive = parseActiveDeployment(activeResponse(publishedDeployment, publishedVersion, `action-worker:deploy:${deployedBuild}`));
 const restoredActive = parseActiveDeployment(activeResponse(restoredDeployment, baselineVersion));
 assert.equal(baselineActive.version_id, baselineVersion);
 for (const invalid of [
@@ -546,41 +544,24 @@ for (const invalid of [
   assert.throws(() => parseActiveDeployment(invalid), /deployment|version/i);
 }
 const baselineRecord = establishRecoveryBaseline(baselineActive, baselineActive, knownBuild, knownAccount);
+assert.throws(() => establishRecoveryBaseline(baselineActive, publishedActive, knownBuild, knownAccount), /changed|unverified/);
+assert.throws(() => establishRecoveryBaseline(baselineActive, baselineActive, 'short', knownAccount), /changed|unverified/);
+assert.throws(() => recordPublishedDeployment(baselineRecord, baselineActive, deployedBuild), /not verified/);
+assert.throws(() => recordPublishedDeployment(baselineRecord, restoredActive, deployedBuild), /not verified/);
 assert.throws(
-  () => establishRecoveryBaseline(baselineActive, publishedActive, knownBuild, knownAccount),
-  /changed|unverified/,
-);
-assert.throws(
-  () => establishRecoveryBaseline(baselineActive, baselineActive, 'short', knownAccount),
-  /changed|unverified/,
-);
-assert.throws(
-  () => recordPublishedDeployment(baselineRecord, baselineActive, deployedBuild),
-  /not verified/,
-);
-assert.throws(
-  () => recordPublishedDeployment(baselineRecord, restoredActive, deployedBuild),
-  /not verified/,
-);
-assert.throws(
-  () => recordPublishedDeployment(
-    baselineRecord,
-    parseActiveDeployment(activeResponse(publishedDeployment, publishedVersion, 'different-source')),
-    deployedBuild,
-  ),
+  () =>
+    recordPublishedDeployment(
+      baselineRecord,
+      parseActiveDeployment(activeResponse(publishedDeployment, publishedVersion, 'different-source')),
+      deployedBuild,
+    ),
   /not verified/,
 );
 const withPublished = recordPublishedDeployment(baselineRecord, publishedActive, deployedBuild);
 assert.equal(guardedRollbackTarget(withPublished, publishedActive), baselineVersion);
 assert.equal(confirmPublishedIdentity(withPublished, publishedActive), undefined);
 assert.throws(() => recordPublishedDeployment(withPublished, publishedActive, deployedBuild), /not verified/);
-assert.throws(
-  () => guardedRollbackTarget(
-    withPublished,
-    parseActiveDeployment(activeResponse(restoredDeployment, unrelatedVersion)),
-  ),
-  /drifted/,
-);
+assert.throws(() => guardedRollbackTarget(withPublished, parseActiveDeployment(activeResponse(restoredDeployment, unrelatedVersion))), /drifted/);
 assert.throws(() => guardedRollbackTarget(withPublished, baselineActive), /drifted/);
 assert.equal(confirmRestoredIdentity(withPublished, restoredActive, restoredActive, knownBuild), undefined);
 for (const [first, second, build] of [
@@ -588,28 +569,19 @@ for (const [first, second, build] of [
   [restoredActive, restoredActive, deployedBuild],
   [restoredActive, publishedActive, knownBuild],
 ]) {
-  assert.throws(
-    () => confirmRestoredIdentity(withPublished, first, second, build),
-    /not proven/,
-  );
+  assert.throws(() => confirmRestoredIdentity(withPublished, first, second, build), /not proven/);
 }
 let readCalls = 0;
 const readOnlyCloudflare = async (url, options) => {
   readCalls += 1;
-  assert.equal(
-    String(url),
-    `https://api.cloudflare.com/client/v4/accounts/${knownAccount}/workers/scripts/ai-gateway/deployments?per_page=1&page=1`,
-  );
+  assert.equal(String(url), `https://api.cloudflare.com/client/v4/accounts/${knownAccount}/workers/scripts/ai-gateway/deployments?per_page=1&page=1`);
   assert.equal(options?.method, 'GET');
   assert.equal(options?.redirect, 'error');
   assert.equal(options?.headers?.authorization, 'Bearer test-only-worker-inventory-token');
   assert.ok(options?.signal instanceof AbortSignal);
   return Response.json(activeResponse(baselineDeployment, baselineVersion));
 };
-assert.deepEqual(
-  await fetchActiveDeployment(knownAccount, 'test-only-worker-inventory-token', readOnlyCloudflare),
-  baselineActive,
-);
+assert.deepEqual(await fetchActiveDeployment(knownAccount, 'test-only-worker-inventory-token', readOnlyCloudflare), baselineActive);
 assert.equal(readCalls, 1);
 await assert.rejects(fetchActiveDeployment('wrong', 'not-a-token', readOnlyCloudflare), /account and token/);
 assert.equal(readCalls, 1);
