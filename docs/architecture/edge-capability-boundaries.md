@@ -1,30 +1,32 @@
-# 四 Worker 能力边界
+# 能力 Worker 边界
 
 ## 当前状态
 
-本页定义仓库当前的四 Worker 职责。它说明源码和离线合同，不代表 Cloudflare 生产切换已完成；生产资源状态须由受保护的只读盘点及独立运行时证据确认。`.github/deploy.json` 的 `automatic:false` 必须保持，源码合并或 Mock 通过不得标记为生产上线。
+本页定义四个计算 Worker（Gateway、Inference、Perception、Generation）及独立统计 Operations 的职责。只读运行盘点因此包含五个 Worker。本页说明源码和离线合同，不代表 Cloudflare 生产切换已完成；生产资源状态须由受保护的只读盘点及独立运行时证据确认。`.github/deploy.json` 的 `automatic:false` 必须保持，源码合并或 Mock 通过不得标记为生产上线。
 
 | Worker | 职责与边界 |
 | --- | --- |
 | Gateway | 唯一公开 API 入口；鉴权、模型授权、额度准入、两层调度、限流与故障恢复。通过私有 Service Binding 调用执行中心，不直接执行 Provider 请求。 |
-| Inference Center | 私有推理执行、Provider 协议适配、推理协议转换与响应流处理；只持有推理所需 Provider 凭据。 |
+| Inference Center | 私有原生/兼容推理执行、Provider 协议适配与文本请求处理；保留现有模型池以兼容未切换 Gateway；只持有其 Worker Secret 中的 Provider 凭据。 |
+| Perception Center | 私有执行现有 Chat、Responses、Messages 图像输入；仅接受目录明确标记 vision 的模型及明确支持图像输入的 Provider Profile；复用现有转换、预算、计费与流合同。 |
 | Generation Center | 私有生成能力执行与结果归一化；只持有生成所需 Provider 凭据。 |
 | Operations | 独立定时维护入口；使用与 Gateway 相同的 `TOKEN_STATS_DB`，不提供公开 `fetch` 路由且不持有 Provider 凭据。Cron 所有权按受控交接计划变更。 |
 
-当前运行时固定为 Tier 1 免费 API Key → Tier 2 API Token；无旧会员 OAuth 执行，也无 Tier 3。当前架构不包含独立感知 Worker；若未来加入能力，须先有真实消费路径、私有边界和合同测试。
+当前运行时固定为 Tier 1 免费 API Key → Tier 2 API Token；无旧会员 OAuth 执行，也无 Tier 3。Perception 不增加 OCR 专用接口，也不实现 audio/video 处理。
 
 ## 拓扑与数据边界
 
 ```mermaid
 flowchart LR
     Client[客户端] --> Gateway[Gateway：鉴权、额度、路由与恢复]
-    Gateway -->|私有 Service Binding| Inference[Inference Center：推理与协议转换]
+    Gateway -->|纯文本私有绑定| Inference[Inference Center：推理与文本协议转换]
+    Gateway -->|显式 vision + 图像请求| Perception[Perception Center：已有多模态图像输入]
     Gateway -->|私有 Service Binding| Generation[Generation Center：生成能力]
     Gateway --> Stats[(共享 TOKEN_STATS_DB)]
     Operations[Operations：定时维护] --> Stats
 ```
 
-Gateway 的 `TIER1_AFFINITY` KV 是独立 Tier 1 调度状态；它不能替代共享 D1。Inference、Generation 和 Operations 不应配置 Gateway 公网域名。模型 ID 和节点映射是配置数据，源码与文档示例应使用占位值，不应固化运营者的模型别名。
+Gateway 的 `TIER1_AFFINITY` KV 是独立 Tier 1 调度状态；它不能替代共享 D1。Inference、Perception、Generation 和 Operations 不应配置 Gateway 公网域名。模型 ID 和节点映射是配置数据，源码与文档示例应使用占位值，不应固化运营者的模型别名。详细请求形状和发布顺序见[Perception 源码范围与发布边界](../operations/perception-center-deployment.md)。
 
 网关必须保留零信任边界、路由决策及其所需的**最小请求元数据**。对于现有 JSON 接口，提取 `model` 可能仍需有界解析；“原样透传”不等于跳过大小限制、认证、权限或基本有效性校验。避免在网关中对大图像、音视频 Base64 内容做完整解析/重新序列化；大型文件采用能力中心直传或授权的对象存储方案，并明确客户端兼容性。
 

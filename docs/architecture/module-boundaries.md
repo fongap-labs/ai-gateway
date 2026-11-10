@@ -1,14 +1,15 @@
 # 源码迁移记录与当前 Worker 边界
 
-## 当前四 Worker 架构
+## 当前四计算 Worker 架构
 
 - `apps/gateway`：公开请求鉴权、模型授权、额度、两层调度、路由与故障恢复；不直接执行 Provider 推理。
-- `apps/inference`：私有推理执行与协议转换；只持有其执行所需的 Provider 凭据。
+- `apps/inference`：私有推理执行与协议转换；保留既有完整模型池以兼容旧 Gateway，Provider 凭据只在私有 Worker。
+- `apps/perception`：私有图像请求入口；仅接受目录显式 vision 模型与支持图像输入的 Provider，复用共享执行器。
 - `apps/generation`：私有生成能力；只持有其执行所需的 Provider 凭据。
 - `operations`：独立定时维护入口，使用共享 `TOKEN_STATS_DB`，没有公开 `fetch` 路由且不持有 Provider 凭据。
 - `packages/contracts`、`packages/provider-kit`、`packages/transport`、`packages/observability`：跨 Worker 的中立契约和基础设施。
 
-当前运行时只有 Tier 1 → Tier 2；会员 OAuth 执行和 Tier 3 均已退役。当前源码职责见[架构概览](overview.md)、[四 Worker 能力边界](edge-capability-boundaries.md)和[配置手册](../operations/configuration.md)。当前源码收尾及生产验收状态以[Issue #310](https://github.com/fongap-labs/ai-gateway/issues/310)为准。
+当前运行时只有 Tier 1 → Tier 2；会员 OAuth 执行和 Tier 3 均已退役。四个计算 Worker 之外，Operations 仍为独立统计 Worker；只读在线盘点共覆盖五个 Worker。当前源码职责见[架构概览](overview.md)、[能力 Worker 边界](edge-capability-boundaries.md)和[配置手册](../operations/configuration.md)。Perception 源码范围与生产边界见[Issue #350 实现说明](../operations/perception-center-deployment.md)；Issue #310 保留原有迁移验收历史。
 
 ## 历史记录说明
 
@@ -26,7 +27,7 @@ Biome 范围覆盖 `src/**/*.ts`、`apps/**/*.ts`、`packages/**/*.ts`、`operat
 
 ## 已迁移的运行入口
 
-运行入口分别落在 `apps/gateway/index.ts`、`apps/inference/index.ts`、`apps/generation/index.ts`；原有 `src/index.ts` 等路径仅保留兼容性转发，现有 Wrangler 配置不改变，避免本批次触发生产部署行为变化。
+运行入口分别落在 `apps/gateway/index.ts`、`apps/inference/index.ts`、`apps/perception/index.ts`、`apps/generation/index.ts`；原有 `src/index.ts` 等路径保留稳定转发入口。Wrangler build 配置只做独立 dry-run，本 PR 不触发生产部署。
 
 ## 请求与鉴权控制面归属
 
@@ -34,7 +35,7 @@ Gateway 应用直接持有 `apps/gateway/request-handler.ts` 和 `apps/gateway/p
 
 ## 能力中心物理执行职责
 
-`apps/inference/index.ts` 和 `apps/generation/index.ts` 仅保留私有 HTTP 鉴权、执行票据验证及健康检查；物理上游请求、OAuth/订阅解析和生成结果归一化分别归入各自的 `execution.ts`，错误信封由各自 `response.ts` 定义。两中心均不允许实现 Tier 调度、跨节点重试或对冲；中心内部业务逻辑仍需继续从共享 `src/` 依赖中抽离。
+`apps/inference/index.ts`、`apps/perception/index.ts` 和 `apps/generation/index.ts` 提供私有执行入口；Inference 与 Perception 共用经审查的单次推理执行器，Generation 使用独立执行器。中心均不实现 Tier 调度、跨节点重试或对冲；Perception 在上游调用前二次校验图像结构、目录 vision 声明和 Provider Profile。中心内部业务逻辑仍需继续从共享 `src/` 依赖中抽离。
 
 ## Provider 静态路由描述符
 

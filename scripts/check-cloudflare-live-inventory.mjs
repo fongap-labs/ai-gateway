@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createReadOnlyCloudflareClient, InventoryDiagnosticError, inspectProductionWorkers } from './cloudflare-live-inventory.mjs';
 
-const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
+const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center', 'ai-gateway-operations'];
 const SECRET_SENTINEL = 'never-print-this-secret-value';
 const D1_ID = '123e4567-e89b-42d3-a456-426614174000';
 const KV_ID = '123e4567-e89b-42d3-a456-426614174001';
@@ -12,10 +12,12 @@ const BASE_SETTINGS = {
   'ai-gateway': [
     { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
     { name: 'AIG_INFERENCE_SERVICE', type: 'service', service: 'ai-inference-center' },
+    { name: 'AIG_PERCEPTION_SERVICE', type: 'service', service: 'ai-perception-center' },
     { name: 'AIG_GENERATION_SERVICE', type: 'service', service: 'ai-generation-center' },
     { name: 'TIER1_AFFINITY', type: 'kv_namespace', namespace_id: KV_ID },
     { name: 'TOKEN_STATS_DB', type: 'd1', database_id: D1_ID },
     { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
+    { name: 'AIG_PERCEPTION_AUTH_KEY', type: 'secret_text' },
     { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
     { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   ],
@@ -28,6 +30,11 @@ const BASE_SETTINGS = {
     { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
     { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
     { name: 'AIG_TIER2_CREDENTIALS_01', type: 'secret_text' },
+  ],
+  'ai-perception-center': [
+    { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
+    { name: 'AIG_PERCEPTION_AUTH_KEY', type: 'secret_text' },
+    { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
   ],
   'ai-gateway-operations': [
     { name: 'AIG_BUILD_SHA', type: 'plain_text', text: BUILD_SHA },
@@ -46,6 +53,7 @@ function makeFetch(overrides = {}) {
   const cron = overrides.cron ?? {
     'ai-gateway': ['0 3 * * *'],
     'ai-inference-center': [],
+    'ai-perception-center': [],
     'ai-generation-center': [],
     'ai-gateway-operations': [],
   };
@@ -183,7 +191,12 @@ assert.equal(report.checks.account_zone_count_scanned, 51);
 assert.equal(report.workers['ai-gateway'].active_traffic_version_count, 1);
 assert.equal(report.workers['ai-gateway'].exposure.worker_route_count, 1);
 assert.equal(report.workers['ai-gateway'].exposure.enabled_custom_domain_count, 1);
-assert.deepEqual(report.workers['ai-gateway'].secret_names, ['AIG_ACCESS_KEY_AIR', 'AIG_GENERATION_AUTH_KEY', 'AIG_INFERENCE_AUTH_KEY']);
+assert.deepEqual(report.workers['ai-gateway'].secret_names, [
+  'AIG_ACCESS_KEY_AIR',
+  'AIG_GENERATION_AUTH_KEY',
+  'AIG_INFERENCE_AUTH_KEY',
+  'AIG_PERCEPTION_AUTH_KEY',
+]);
 assert.equal(JSON.stringify(report).includes(SECRET_SENTINEL), false);
 assert.equal(JSON.stringify(report).includes('private-host-must-not-leak.invalid'), false);
 assert.deepEqual(
@@ -419,6 +432,7 @@ const unsafeMock = makeFetch({
   cron: {
     'ai-gateway': ['0 3 * * *'],
     'ai-inference-center': [],
+    'ai-perception-center': [],
     'ai-generation-center': [],
     'ai-gateway-operations': ['0 3 * * *'],
   },
@@ -465,6 +479,7 @@ const customCronMock = makeFetch({
   cron: {
     'ai-gateway': ['17 4 * * 2'],
     'ai-inference-center': [],
+    'ai-perception-center': [],
     'ai-generation-center': [],
     'ai-gateway-operations': [],
   },

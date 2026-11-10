@@ -22,12 +22,12 @@ import { recordTier1QuotaReport } from '../../../src/reliability/tier1-state.ts'
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { quotaFromCenter } from '../reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
+import type { InferenceCenter } from '../transport/inference-client-request.ts';
 import { invokeInferenceNode } from '../transport/inference-client-request.ts';
+import { invokePerceptionNode } from '../transport/perception-client-request.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
-
-const INTERNAL_TARGET = 'https://inference.internal/internal/execute';
 
 function inputSurfaceForClientRoute(route: string): ExecutionInputSurface | null {
   switch (route) {
@@ -42,21 +42,36 @@ function inputSurfaceForClientRoute(route: string): ExecutionInputSurface | null
   }
 }
 
-function stopForCenter(c: AttemptContext, status: number, code: string): AttemptOutcome {
+function stopForCenter(c: AttemptContext, status: number, code: string, center: InferenceCenter = 'inference'): AttemptOutcome {
   rotateWithNeutralEnd(c.state, c.node, KIND.AUTH, c, true);
   return {
     budgetCharged: false,
-    response: gatewayError(c.request, c.env, c.route, status, 'Private inference center is unavailable.', c.requestId, undefined, undefined, code),
+    response: gatewayError(
+      c.request,
+      c.env,
+      c.route,
+      status,
+      center === 'perception' ? 'Private perception center is unavailable.' : 'Private inference center is unavailable.',
+      c.requestId,
+      undefined,
+      undefined,
+      center === 'perception' ? code.replace('inference', 'perception') : code,
+    ),
   };
 }
 
-export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Record<string, unknown>): Promise<AttemptOutcome> {
+export async function dispatchInferenceAttempt(
+  c: AttemptContext,
+  sourceBody: Record<string, unknown>,
+  center: InferenceCenter = 'inference',
+): Promise<AttemptOutcome> {
+  const invokeNode = center === 'perception' ? invokePerceptionNode : invokeInferenceNode;
   const { request, env, node, state, reqDescriptor, policy, limits, requestedModel, route } = c;
   const effectiveModel = reqDescriptor.model;
   // The center executes conversion from the ORIGINAL protocol shape.
   // Gateway's converted body remains an admission dry-run, not the wire body.
   const inputSurface = c.conversionContext ? inputSurfaceForClientRoute(c.conversionContext.clientRoute) : undefined;
-  if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid');
+  if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid', center);
   const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
   if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
   // Avoid a second copy for normal native requests with no alias or stream mutation.
@@ -92,7 +107,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
       ? c.attemptDeadlineMs - Date.now()
       : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts);
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
-    return stopForCenter(c, 504, 'gateway_inference_deadline_expired');
+    return stopForCenter(c, 504, 'gateway_inference_deadline_expired', center);
   }
   const windowMs = c.attemptCapMs && !hasBufferedResponse ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
@@ -122,7 +137,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
   const dispatchStartMs = Date.now();
   let upstream: Response;
   try {
-    upstream = await invokeInferenceNode(env, {
+    upstream = await invokeNode(env, {
       request,
       requestId: c.requestId,
       node,
@@ -148,7 +163,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     }
     // An RPC failure is not evidence that the selected PROVIDER is unhealthy.
     // Never retry by bypassing the private center: it may already have executed.
-    return stopForCenter(c, hasTimedOut ? 504 : 503, 'gateway_inference_center_unavailable');
+    return stopForCenter(c, hasTimedOut ? 504 : 503, 'gateway_inference_center_unavailable', center);
   }
   clearTimeout(timer);
   c.headersMs = Date.now() - dispatchStartMs;
@@ -205,7 +220,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
         ),
       };
     }
-    return stopForCenter(c, upstream.status === 413 ? 413 : 503, 'gateway_inference_center_rejected');
+    return stopForCenter(c, upstream.status === 413 ? 413 : 503, 'gateway_inference_center_rejected', center);
   }
   if (
     returnStream &&
@@ -217,7 +232,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     // response byte; no fallback to the direct Provider path.
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
-    return stopForCenter(c, 502, 'gateway_inference_stream_format_invalid');
+    return stopForCenter(c, 502, 'gateway_inference_stream_format_invalid', center);
   }
   if (node.tier === 'tier-1') {
     const signal = quotaFromCenter(upstream.headers);
@@ -265,7 +280,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     // Every successful non-stream Matrix reply must be tagged by Inference.
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
-    return stopForCenter(c, 502, 'gateway_inference_object_format_invalid');
+    return stopForCenter(c, 502, 'gateway_inference_object_format_invalid', center);
   }
 
   const physicalModel = node.models[effectiveModel] || effectiveModel;
@@ -275,7 +290,7 @@ export async function dispatchInferenceAttempt(c: AttemptContext, sourceBody: Re
     upstream,
     centerFramedStreamExpected: returnStream,
     c: successContext,
-    targetUrl: INTERNAL_TARGET,
+    targetUrl: `https://${center}.internal/internal/execute`,
     latencyMs: c.headersMs,
     detach,
     upstreamWasStreaming: isOpenAIStreamingResponse(upstream),

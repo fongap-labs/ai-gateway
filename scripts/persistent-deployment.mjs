@@ -51,6 +51,7 @@ export function validateDeploymentInputs(env) {
   }
   for (const [name, expected] of [
     ['AIG_INFERENCE_TARGET', 'ai-inference-center'],
+    ['AIG_PERCEPTION_TARGET', 'ai-perception-center'],
     ['AIG_GENERATION_TARGET', 'ai-generation-center'],
   ]) {
     if (String(env[name] || '').trim() !== expected) errors.push(`${name} must reference the approved private Worker before Gateway deployment.`);
@@ -113,10 +114,12 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   const services = Array.isArray(wranglerConfig?.services) ? wranglerConfig.services : [];
   const expectedServices = [
     { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+    { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
     { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
   ];
-  if (JSON.stringify(services) !== JSON.stringify(expectedServices)) missing.push('Both private center Service Bindings are required');
+  if (JSON.stringify(services) !== JSON.stringify(expectedServices)) missing.push('All three private center Service Bindings are required');
   if (!names.has('AIG_INFERENCE_AUTH_KEY')) missing.push('AIG_INFERENCE_AUTH_KEY');
+  if (!names.has('AIG_PERCEPTION_AUTH_KEY')) missing.push('AIG_PERCEPTION_AUTH_KEY');
   if (!names.has('AIG_GENERATION_AUTH_KEY')) missing.push('AIG_GENERATION_AUTH_KEY');
 
   if (missing.length) {
@@ -131,6 +134,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     credentialShards: 0,
     deploymentHealthKey: names.has('AIG_DEPLOY_HEALTH_KEY'),
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
+    perceptionAuthKey: names.has('AIG_PERCEPTION_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
   };
 }

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
+import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 
 // Gateway owns both private Center clients. The old paths remain lightweight
 // compatibility exports only; no execution, HTTP or secret policy may drift
@@ -35,6 +36,7 @@ for (const [kind, oldPath] of [
 
 const inferenceKey = 'test-inference-center-authentication-32-plus';
 const generationKey = 'test-generation-center-authentication-32-plus';
+const perceptionKey = 'test-perception-center-authentication-32-plus';
 const id = '12345678-1234-4234-8234-123456789012';
 const now = Date.now();
 let invocations = 0;
@@ -113,8 +115,19 @@ assert.equal(invocations, 2);
 assert.throws(() => buildGenerationRequest({}, generation), GenerationCenterUnavailable);
 await assert.rejects(() => invokeGenerationNode({ AIG_GENERATION_AUTH_KEY: generationKey }, generation), GenerationCenterUnavailable);
 assert.equal(invocations, 2);
+
+const perceptionEnv = { AIG_PERCEPTION_SERVICE: privateHttpTransport, AIG_PERCEPTION_AUTH_KEY: perceptionKey };
+const perceptionRequest = buildPerceptionRequest(perceptionEnv, inference);
+assert.equal(perceptionRequest.headers.get('x-aig-perception-auth'), perceptionKey);
+assert.equal(perceptionRequest.headers.has('x-aig-inference-auth'), false);
+assert.equal(perceptionRequest.headers.has('x-aig-generation-auth'), false);
+assert.equal((await invokePerceptionNode(perceptionEnv, inference)).status, 200);
+assert.equal(invocations, 3);
+assert.throws(() => buildPerceptionRequest({}, inference), PerceptionCenterUnavailable);
+await assert.rejects(() => invokePerceptionNode({ AIG_PERCEPTION_AUTH_KEY: perceptionKey }, inference), PerceptionCenterUnavailable);
+assert.equal(invocations, 3);
 assert.equal(
   calls.every((call) => call.url.endsWith('/internal/execute')),
   true,
 );
-console.log('Both centers passed standard HTTP Mock transport and isolation contracts.');
+console.log('All three centers passed standard HTTP Mock transport and isolation contracts.');

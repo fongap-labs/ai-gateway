@@ -4,12 +4,18 @@
 // Request-level attempt accounting; all execution is private-center owned.
 // An unavailable center always fails closed, never to a direct Provider.
 
+import { hasImageInput } from '../../../packages/contracts/image-input.ts';
+import { getProviderProfile } from '../../../packages/contracts/provider-profiles.ts';
+import { modelRegistryEntry } from '../../../src/config/registry.ts';
 import { recordAttemptEvent } from '../../../src/observability/gateway-events.ts';
+import { KIND } from '../../../src/reliability/classify.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
+import { gatewayError } from '../response/errors.ts';
 import { upstreamModelOf } from '../response/response-helpers.ts';
 import { dispatchGenerationAttempt } from './generation-dispatch.ts';
 import { dispatchInferenceAttempt } from './inference-dispatch.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
+import { rotateWithNeutralEnd } from './outcome.ts';
 
 export { isBufferedUpstreamReply } from './attempt-mode.ts';
 
@@ -76,8 +82,30 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // A missing Service Binding or auth key fails closed (503); never dispatch a
   // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
+  if (hasImageInput(bodyJson)) {
+    const visionDeclared = modelRegistryEntry(c.env, reqDescriptor.model).catalog.capabilities.vision === true;
+    const providerAcceptsImages = getProviderProfile(node.provider).imageInput;
+    if (!visionDeclared) {
+      return {
+        budgetCharged: false,
+        response: gatewayError(
+          c.request,
+          c.env,
+          route,
+          400,
+          'Image input is unavailable for the requested model and provider.',
+          c.requestId,
+          undefined,
+          undefined,
+          'gateway_image_input_unsupported',
+        ),
+      };
+    }
+    if (!providerAcceptsImages) return rotateWithNeutralEnd(c.state, node, KIND.AUTH, c, true);
+    return dispatchInferenceAttempt(c, sourceBody, 'perception');
+  }
   // The Gateway never owns Provider credentials or outbound network calls.
   // A missing/invalid Service Binding is classified by dispatchInferenceAttempt
   // as a neutral 503; it MUST NOT trigger a legacy direct-provider fallback.
-  return dispatchInferenceAttempt(c, sourceBody);
+  return dispatchInferenceAttempt(c, sourceBody, 'inference');
 }

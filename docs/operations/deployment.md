@@ -50,7 +50,7 @@ Cloudflare Worker 部署
 
 清单表达的是部署意图。它本身并不授予 runner 访问权限、凭据或生产环境的操作权限。
 
-**两层架构切换保护**：AG #312 已合并；在生产凭据和双中心未验收前，`.github/deploy.json` 的 `automatic` 暂时设为 `false`，停止合并后自动派发生产部署。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
+**两层架构切换保护**：AG #312 已合并；在生产凭据和 Inference、Perception、Generation 三个私有中心未验收前，`.github/deploy.json` 的 `automatic` 暂时设为 `false`，停止合并后自动派发生产部署。2026-11-09 核查到 [Action Worker 生产部署请求 #42612960426](https://github.com/fongap-labs/action-worker/actions/runs/42612960426)，其验证作业通过，实际部署作业先进入 `waiting`，随后于 `Resolve deploy Secret plan` 失败，原因是缺少 `CLOUDFLARE_ACCOUNT_ID_SECONDARY` 的受控变量来源；因此没有进入 `scripts/deploy.sh` 和 Cloudflare 发布步骤。未完成旧 Tier 3→新 Tier 2 凭据迁移、私有中心验收、回滚准备和独立生产审批前，不得因补齐该变量而重新发起生产部署。后续部署历史仍需重新核查。详见[两层生产切换检查单](../architecture/two-tier-cutover.md)。
 
 ## 自动部署（切换期间已禁用）
 
@@ -83,7 +83,7 @@ AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `produc
 
 已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
 
-运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、推理/生成中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
+运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、Inference/Perception/Generation 中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
 
 ## 生产 Environment
 
@@ -111,13 +111,13 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 
 `CLOUDFLARE_ACCOUNT_ID` 是非敏感账号标识，由中央策略映射到 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`。由于 `resolve-secret-scope` 只对目标在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，三个名称必须与 `.github/deploy.secrets.required` 一致。
 
-Provider、访问分组、Tier 节点凭据以及私有推理/生成中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。
+Provider、访问分组、Tier 节点凭据以及私有 Inference/Perception/Generation 中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。
 
 `AIG_DEPLOY_HEALTH_KEY` 不属于用户访问组。Worker 在运行时拒绝长度不足 32、包含非 URL 安全字符，或与任意 `AIG_ACCESS_KEY_<GROUP>` 完全相同的健康密钥；配置错误不会回退使用 AGENT 密钥。配置迁移时，必须先在 Cloudflare Worker Secrets 中写入独立同名 Secret，再将完全相同的值配置到 Action Worker `production` 与 `ai-gateway-ops` 的 Environment Secrets。旧业务组密钥保留在 Cloudflare Worker Secrets，不能作为健康密钥替代品。
 
-Worker 仅允许该密钥访问 `/health`、`/v1/models` 与 `/v1/messages/count_tokens` 健康探针；`/v1/models` 对该密钥返回空模型列表，其他模型调用仍必须使用对应的 `AIG_ACCESS_KEY_<GROUP>`。因此部署作业无需读取或暴露 `AIG_ACCESS_KEY_AGENT`。普通部署通过 `wrangler secret list` 读取名称和类型，要求 Gateway 同时具有 `AIG_INFERENCE_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；两中心分别持有自身的静态 Token Secret。缺少绑定或仍有旧 Gateway Token 时必须失败关闭，不进行发布；不会读取密钥值、生成密钥载荷或传入 `--secrets-file`。Cloudflare 部署会保留未随本次部署上传的已有 Worker Secrets。缺少必需密钥时部署在代码发布前失败即关闭。
+Worker 仅允许该密钥访问 `/health`、`/v1/models` 与 `/v1/messages/count_tokens` 健康探针；`/v1/models` 对该密钥返回空模型列表，其他模型调用仍必须使用对应的 `AIG_ACCESS_KEY_<GROUP>`。因此部署作业无需读取或暴露 `AIG_ACCESS_KEY_AGENT`。普通部署通过 `wrangler secret list` 读取名称和类型，要求 Gateway 同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。缺少绑定或仍有旧 Gateway Token 时必须失败关闭，不进行发布；不会读取密钥值、生成密钥载荷或传入 `--secrets-file`。Cloudflare 部署会保留未随本次部署上传的已有 Worker Secrets。缺少必需密钥时部署在代码发布前失败即关闭。
 
-部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚。本版本**必须同时配置**推理/生成 Service Binding 以及各自对应的中心认证密钥，不再将中心绑定作为可选的 Gateway 发布条件。
+部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚 Gateway。本版本**必须同时配置** Inference、Perception、Generation Service Binding 以及各自对应的中心认证 Secret，不再将中心绑定作为可选的 Gateway 发布条件。
 
 ## 跨 isolate 调用分析
 
@@ -172,8 +172,8 @@ ORDER BY node, calls DESC
 3. 安装锁定的 Node 依赖；
 4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
 5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
-6. 在同一受保护流水线中生成推理中心、生成中心的配置，记录已部署 Gateway 的健康恢复基线后依序发布两个**非公开**中心；
-7. 只读取两个中心的 Cloudflare Secret 名称，核对内部认证及必要 Provider 分片，任一缺失则失败关闭，**不切换主网关**；
+6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，记录已部署 Gateway 的健康恢复基线后依序发布三个**非公开**中心；
+7. 只读取三个中心的 Cloudflare Secret 名称，核对内部认证及必要 Provider 分片，任一缺失则失败关闭，Gateway 新代码尚未发布；
 8. 核对 Gateway Secret 清单并阻断旧 OAuth / 已迁移 Provider 凭据遗留；
 9. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
 10. 按精确源码 SHA 验证线上构建；
@@ -182,7 +182,7 @@ ORDER BY node, calls DESC
 
 **统一入口**：仍然只从 Action Worker 的 `手动 · 部署服务` 选择 `fongap-labs/ai-gateway`、`production`，或使用原来经过准入的自动部署触发。禁止另起一个私有中心代码发布工作流。
 
-**首次迁移提示**：Cloudflare Worker Secrets 不能从已有 Worker 中反读，且初次创建的私有中心可能尚无 Secret。统一部署可以先建立两个无公网入口的私有 Worker，但会在密钥清单核验处停止，不会切换 Gateway；应通过受控 `ai-gateway-ops` 仅做一次 Secret 配置，之后重新运行同一统一部署入口。三个 Worker 并非原子事务：若中心已更新而后续步骤失败，不能声称整个发布完成；中心的单独回滚仍需独立身份验证。
+**首次迁移提示**：Cloudflare Worker Secrets 不能从已有 Worker 中反读，且初次创建的私有中心可能尚无 Secret。统一部署可以先建立三个无公网入口的私有 Worker，但会在密钥清单核验处停止；应通过受保护的 `ai-gateway-ops` 为选中的 Worker 配置缺失 Secret，再用同一审核 SHA 重跑唯一源码部署入口。部署脚本在失败时报告已尝试更新的中心和 Gateway 阶段，但不会假设跨 Worker 原子性或自动回滚某个不明版本。恢复前须核实每个 Worker 的精确部署身份并选择兼容 SHA；不能声称只回滚 Gateway 就恢复整个拓扑。
 
 Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
@@ -193,8 +193,8 @@ Config 与 Secret 分片是相互独立（independent）的分区。运行时绑
 添加或轮换上游 key 的步骤：
 
 1. 将节点保留在两层配置对应的 `AIG_TIER{1,2}_NODES_XX` Variable 中，并与私有中心的节点 ID 和模型映射保持一致；
-2. 仅在对应的 Cloudflare 私有 Worker `ai-inference-center` 或 `ai-generation-center` 中，通过受控 Secret 管理通道更新 `AIG_TIER{1,2}_CREDENTIALS_XX`；**公开 `ai-gateway` 不得继续存有 Provider Token**；
-3. 在两个中心分别核对 Secret 名称、节点运行资格和内部健康，完成独立审批后才能更新 Gateway Service Binding；普通代码部署不得代替中心密钥迁移。
+2. 仅在对应的 Cloudflare 私有 Worker `ai-inference-center`、`ai-perception-center` 或 `ai-generation-center` 中，通过受控 Secret 管理通道更新 `AIG_TIER{1,2}_CREDENTIALS_XX`；**公开 `ai-gateway` 不得继续存有 Provider Token**；
+3. 在三个中心分别核对 Secret 名称、节点运行资格和内部健康，完成独立审批后才能更新 Gateway Service Binding；普通代码部署不得代替中心密钥迁移。
 
 不要将凭据放入节点 JSON 中。
 

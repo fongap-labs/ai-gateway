@@ -18,13 +18,13 @@ const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
 const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$`,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_PERCEPTION_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
   `^(AIG_TIER[12]_NODES_(0[1-9]|10)|AIG_MODELS_CONFIG|AIG_POLICIES_CONFIG|${GROUP_MODELS_PATTERN}|${RUNTIME_VAR_NAMES.join('|')})$`,
 );
-const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_GENERATION_TARGET']);
+const EXTRA_VAR_ALLOW = new Set(['AIG_BUILD_SHA', 'AIG_PUBLIC_URL', 'AIG_INFERENCE_TARGET', 'AIG_PERCEPTION_TARGET', 'AIG_GENERATION_TARGET']);
 function assertTwoTierBindingNames(names) {
   const retired = [...names]
     .filter((name) => name.startsWith('AIG_OAUTH_') || name === 'AIG_IS_SUBSCRIPTION_ENABLED' || name === 'AIG_TOKEN_ENCRYPTION_KEY')
@@ -42,6 +42,7 @@ function assertTwoTierBindingNames(names) {
 const CREDENTIAL_NAMES = new Set([
   'CLOUDFLARE_API_TOKEN',
   'AIG_INFERENCE_AUTH_KEY',
+  'AIG_PERCEPTION_AUTH_KEY',
   'AIG_GENERATION_AUTH_KEY',
   'AIG_DEPLOY_HEALTH_KEY',
   'AIG_EDGE_CACHE_HMAC_KEY',
@@ -139,6 +140,9 @@ export function normalizeRuntimeConfig(raw) {
   }
   if (vars.AIG_GENERATION_TARGET && (typeof secrets.AIG_GENERATION_AUTH_KEY !== 'string' || secrets.AIG_GENERATION_AUTH_KEY.length < 32)) {
     throw new Error('AIG_GENERATION_AUTH_KEY Secret is required for private generation service binding.');
+  }
+  if (vars.AIG_PERCEPTION_TARGET && (typeof secrets.AIG_PERCEPTION_AUTH_KEY !== 'string' || secrets.AIG_PERCEPTION_AUTH_KEY.length < 32)) {
+    throw new Error('AIG_PERCEPTION_AUTH_KEY Secret is required for private perception service binding.');
   }
   if (!Object.keys(secrets).some((k) => GROUP_KEY_RE.test(k))) {
     throw new Error(`secrets must contain at least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL})`);
@@ -263,6 +267,11 @@ export function preflight(env) {
   if (generationTarget && generationTarget !== 'ai-generation-center') errors.push('AIG_GENERATION_TARGET must be ai-generation-center.');
   if (generationTarget && (typeof env.AIG_GENERATION_AUTH_KEY !== 'string' || String(env.AIG_GENERATION_AUTH_KEY).length < 32)) {
     errors.push('AIG_GENERATION_AUTH_KEY Secret is required when AIG_GENERATION_TARGET is configured.');
+  }
+  const perceptionTarget = String(env.AIG_PERCEPTION_TARGET || '').trim();
+  if (perceptionTarget && perceptionTarget !== 'ai-perception-center') errors.push('AIG_PERCEPTION_TARGET must be ai-perception-center.');
+  if (perceptionTarget && (typeof env.AIG_PERCEPTION_AUTH_KEY !== 'string' || String(env.AIG_PERCEPTION_AUTH_KEY).length < 32)) {
+    errors.push('AIG_PERCEPTION_AUTH_KEY Secret is required when AIG_PERCEPTION_TARGET is configured.');
   }
   const analyticsDataset = String(env.AIG_ANALYTICS_DATASET || '').trim();
   if (analyticsDataset && !ANALYTICS_DATASET_NAME.test(analyticsDataset)) {
@@ -391,14 +400,19 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
   const generationTarget = String(vars.AIG_GENERATION_TARGET ?? '').trim();
   if (generationTarget && generationTarget !== 'ai-generation-center') throw new Error('Invalid AIG_GENERATION_TARGET.');
+  const perceptionTarget = String(vars.AIG_PERCEPTION_TARGET ?? '').trim();
+  if (perceptionTarget && perceptionTarget !== 'ai-perception-center') throw new Error('Invalid AIG_PERCEPTION_TARGET.');
   // Deployment-only selector: never expose this string as a Worker variable.
   const runtimeVars = { ...vars };
   delete runtimeVars.AIG_INFERENCE_TARGET;
   delete runtimeVars.AIG_GENERATION_TARGET;
+  delete runtimeVars.AIG_PERCEPTION_TARGET;
   delete runtimeVars.AIG_INFERENCE_ACTIVE;
   delete runtimeVars.AIG_GENERATION_ACTIVE;
+  delete runtimeVars.AIG_PERCEPTION_ACTIVE;
   if (inferenceTarget) runtimeVars.AIG_INFERENCE_ACTIVE = 'true';
   if (generationTarget) runtimeVars.AIG_GENERATION_ACTIVE = 'true';
+  if (perceptionTarget) runtimeVars.AIG_PERCEPTION_ACTIVE = 'true';
   const out = {
     name: 'ai-gateway',
     main: path.resolve(root, 'src/index.ts'),
@@ -408,10 +422,11 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     observability: { enabled: true },
     triggers: { crons: ['0 3 * * *'] },
     vars: { ...DEFAULT_OPTIMAL_VARS, ...runtimeVars },
-    ...(inferenceTarget || generationTarget
+    ...(inferenceTarget || perceptionTarget || generationTarget
       ? {
           services: [
             ...(inferenceTarget ? [{ binding: 'AIG_INFERENCE_SERVICE', service: inferenceTarget }] : []),
+            ...(perceptionTarget ? [{ binding: 'AIG_PERCEPTION_SERVICE', service: perceptionTarget }] : []),
             ...(generationTarget ? [{ binding: 'AIG_GENERATION_SERVICE', service: generationTarget }] : []),
           ],
         }

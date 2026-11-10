@@ -71,6 +71,17 @@ function isPrivateGeneration(config, root) {
   );
 }
 
+function isPrivatePerception(config, root) {
+  return (
+    privateBase(config) &&
+    config.name === 'ai-perception-center' &&
+    matchesEntrypoint(config.main, root, 'src/perception/perception-center-entry.ts') &&
+    config.keep_vars === false &&
+    noFields(config, ['triggers', 'kv_namespaces', 'd1_databases']) &&
+    safeCenterVars(config)
+  );
+}
+
 function isPrivateOperations(config) {
   const bindings = config?.d1_databases;
   return (
@@ -128,6 +139,7 @@ function isGateway(config, root) {
     typeof vars.AIG_BUILD_SHA !== 'string' ||
     !SHA.test(vars.AIG_BUILD_SHA) ||
     vars.AIG_INFERENCE_ACTIVE !== 'true' ||
+    vars.AIG_PERCEPTION_ACTIVE !== 'true' ||
     vars.AIG_GENERATION_ACTIVE !== 'true' ||
     Object.keys(vars).some((name) => RETIRED.test(name) || SECRET_VAR.test(name) || PROVIDER_CREDENTIAL_VAR.test(name))
   ) {
@@ -137,6 +149,7 @@ function isGateway(config, root) {
     JSON.stringify(config.services) ===
     JSON.stringify([
       { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+      { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
       { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
     ])
   );
@@ -146,6 +159,7 @@ function isGateway(config, root) {
 export function classifyDeployTarget(config, root) {
   if (isGateway(config, root)) return 'gateway';
   if (isPrivateInference(config, root)) return 'inference';
+  if (isPrivatePerception(config, root)) return 'perception';
   if (isPrivateGeneration(config, root)) return 'generation';
   if (isPrivateOperations(config)) return 'operations';
   return null;

@@ -1,11 +1,11 @@
 # 架构概览
 
-AI Gateway 采用小内核、独立能力中心和两层额度调度。Gateway 只负责鉴权、准入、路由、重试、状态与响应交付；真实 Provider 请求由私有 Inference / Generation Center 执行。各中心共享协议契约，不共享运行时密钥。
+AI Gateway 采用小内核、独立能力中心和两层额度调度。Gateway 只负责鉴权、准入、路由、重试、状态与响应交付；真实 Provider 请求由私有 Inference、Perception、Generation Center 执行。各中心共享协议契约，不共享运行时密钥。
 
 ## 设计目标
 
 - 统一 OpenAI Chat / Responses 与 Anthropic Messages 入口；保持物理上游执行与逻辑尝试、Hedge 及响应交付解耦。
-- 能力清晰分层：Gateway（策略）→ Inference / Generation（执行）→ Operations（统计与维护）。
+- 能力清晰分层：Gateway（策略）→ Inference / Perception / Generation（执行）→ Operations（统计与维护）。
 - 遵循失败关闭：旧三层配置、会员 OAuth 节点、过时权限和未迁移的额度预算不得被静默忽略。
 - 不将 Provider Token 放入公开 Gateway 的配置解析器、日志或客户端回复。
 
@@ -22,7 +22,7 @@ AI Gateway 采用小内核、独立能力中心和两层额度调度。Gateway �
 
 1. 公开 Gateway 验证访问密钥和逻辑模型权限；读取节点元数据与全局模型目录。
 2. 先尝试免费 Tier 1，满足超时、配额、冷却和剩余预算约束后才前往 Tier 2。
-3. Gateway 通过受保护的 Service Binding 将带版本的执行票据发送给私有中心；中心执行单次物理 Provider 请求。
+3. 纯文本请求由 Gateway 通过受保护的 Inference Service Binding 发送执行票据；含图像的请求只有在模型目录显式标记 `vision:true` 且 Provider Profile 声明图像输入后，才通过独立 Perception Service Binding 执行。图片生成使用 Generation。
 4. Gateway 负责成功结果、流式 SSE 和失败终态的统一结算。客户端响应开始后禁止透明切换。
 5. D1 用量统计与 Analytics Engine 只是观测，不得改变上游请求归属。
 
@@ -30,6 +30,7 @@ AI Gateway 采用小内核、独立能力中心和两层额度调度。Gateway �
 
 - `apps/gateway`：认证、路由、节点选择、Hedge、限流、预算、错误与成功响应。
 - `apps/inference`：凭据绑定、Provider HTTP 请求、矩阵转换和推理响应。
+- `apps/perception` 与 `src/perception`：已有 Chat / Responses / Messages 图像输入的私有执行入口；共享执行合同、预算和用量路径，不实现 OCR/audio/video 专用处理。
 - `apps/generation`：图像能力检查、物理生成与结果归一化。
 - `operations/`：独立的定时统计维护入口；需要 Gateway 已有的共享 `TOKEN_STATS_DB`，无公开 `fetch` 路由且不持有 Provider 凭据。
 - `packages/contracts` 与 `packages/transport`：中立协议契约和传输原语，不持有会员订阅执行路径。

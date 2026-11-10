@@ -47,11 +47,11 @@ npm run config:cutover:plan -- \
 
 ## 第二道门禁：目标生产资源核对
 
-部署前还需使用 `node scripts/check-private-center-release.mjs PRIVATE_MANIFEST.json` 在受保护的运营工作区执行**四 Worker 离线拓扑验收**。输入是已准备的 `gateway`、`inference`、`generation`、`operations` Wrangler 配置对象，以及 `source_sha`、`stage`（`prepare` / `detach` / `activate`）、`approved_for_production: false` 和按 Worker 分组的 `secret_names` **名称数组**；不得含 Secret 值。它核对三个计算 Worker 的相同不可变 SHA、两个私有中心 Service Bindings、公开 Gateway 不持有 Provider Token、四个 Worker 的暴露面、统一 D1 以及整个 Cron 交接期间单一拥有者；返回通过不代表准许生产发布。
+部署前还需使用 `node scripts/check-private-center-release.mjs PRIVATE_MANIFEST.json` 在受保护的运营工作区执行**五 Worker 离线拓扑验收**。输入是已准备的 `gateway`、`inference`、`perception`、`generation`、`operations` Wrangler 配置对象，以及 `source_sha`、`stage`（`prepare` / `detach` / `activate`）、`approved_for_production: false` 和按 Worker 分组的 `secret_names` **名称数组**；不得含 Secret 值。它核对四个计算 Worker 的相同不可变 SHA、三个私有中心 Service Bindings、公开 Gateway 不持有 Provider Token、五个 Worker 的暴露面、统一 D1 以及整个 Cron 交接期间单一拥有者；返回通过不代表准许生产发布。
 
 此校验只读取本地文件，不访问 Cloudflare。配置不齐时**失败关闭**，不提供猜测性默认值；正式运营须另行验证线上 Worker 与真实资源。相关负向合同由 `npm run check:private-center-release` 在合并及部署验证中执行。
 
-四 Worker 在线资源的只读清点方法、权限要求、脱敏字段和未验证边界见[Cloudflare 只读资源盘点](../operations/cloudflare-read-only-inventory.md)。盘点报告通过不代表 Secret 内容、运行时健康、Cron 全球传播或生产切换已经验收。
+五 Worker 在线资源的只读清点方法、权限要求、脱敏字段和未验证边界见[Cloudflare 只读资源盘点](../operations/cloudflare-read-only-inventory.md)。盘点报告通过不代表 Secret 内容、运行时健康、Cron 全球传播或生产切换已经验收。
 
 
 在**只读、已授权**的运营通道核对以下内容并将结果以“通过/阻断/未知”记录在私有变更单；本聊天及公开 GitHub PR 不接受生产凭据值：

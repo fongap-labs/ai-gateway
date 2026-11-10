@@ -66,4 +66,4 @@ Action Worker 执行类型、静态、安全、合同和两个中心 dry-run 构
 
 ## 感知中心与视频
 
-图片理解是聊天/Responses/Messages 请求中的多模态输入，与普通推理共用授权、工具调用和流式响应。当前它由推理执行中心承担，并没有独立的“感知执行”物理节点。后续需先建立可靠的模型能力及模态识别契约，避免在入口扫描/重写大体积 Base64；证明独立服务可降低资源成本后再拆分。视频生成尚无任务 ID、状态查询、取消和幂等恢复契约，保持未实现，不制造空壳或隐式重复消费。
+已有 Chat、Responses、Messages 图像输入由独立私有 Perception 入口承接。该入口通过单独的 `AIG_PERCEPTION_SERVICE` 和 `AIG_PERCEPTION_AUTH_KEY` 调用，并复用既有执行器；模型目录必须显式声明 `capabilities.vision: true`，Provider Profile 也必须声明图像输入。OCR、audio 和 video 仍没有专用执行合同。完整源码范围、配置筛选、Secret 所有权与部分失败处理见[Perception Center 部署边界](perception-center-deployment.md)。视频任务仍缺少任务 ID、状态查询、取消和幂等恢复合同，因此不增加视频执行路径。

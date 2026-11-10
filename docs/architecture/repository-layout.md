@@ -9,6 +9,7 @@ src/                         Gateway 领域工具与迁移期兼容入口（中�
 ├── scheduler/               Tier 1 免费池 P2C/亲和，以及 Tier 2 Token 健康/优先级选择
 ├── reliability/             失败分类、冷却、额度/热度/状态
 ├── transport/               packages/transport 的兼容导出；执行属于私有 Inference
+├── perception/              私有 Perception 执行入口的稳定转发
 ├── protocol/                客户端校验、CORS、协议特定的请求/错误行为
 ├── conversion/              Chat / Responses / Messages 兼容导出；实现位于 apps/inference 与 packages/conversion-core
 ├── stream/                  首事件守卫、SSE 解析、流生命周期
@@ -18,7 +19,7 @@ src/                         Gateway 领域工具与迁移期兼容入口（中�
 ├── runtime/                 运行时可用性与只读的公共模型状态
 └── dashboard/               公共/运营者展示层
 
-apps/                        Gateway 控制面、Inference 协议执行、Generation 图片生成的独立入口
+apps/                        Gateway 控制面、Inference/Perception 推理执行与 Generation 图片生成的独立入口
 packages/                    中立的合同、转换 IR、SSE 传输及用量存储原语
 operations/                  D1 用量维护与独立 Cron 运行入口（发布状态另核验）
 
@@ -75,7 +76,7 @@ docs/                        长期有效的当前文档
 - `scheduler` 选择可用节点；它不直接调用 provider。
 - `reliability` 记录可用性/失败状态；它不负责协议转换。
 - `request` 编排各领域模块；它不应重复实现其逻辑。
-- 物理上游 HTTP 语义由私有 Inference/Generation 执行；`packages/transport` 提供不依赖具体 Worker 的原生协议及流原语。
+- 物理上游 HTTP 语义由私有 Inference/Perception/Generation 执行；Perception 仅接收明确支持的图像请求，`packages/transport` 提供不依赖具体 Worker 的原生协议及流原语。
 - Inference Center 负责 Chat、Responses、Messages 之间经明确验证的协议转换，`packages/conversion-core` 持有中立 IR 和预算/保真原语。
 - 除非该契约被明确重新设计，否则 `observability` 与公共运行时投影不会把历史/D1 证据反馈到路由中。
 

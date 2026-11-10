@@ -13,6 +13,17 @@ for (const name of ['openai', 'anthropic', 'google', 'openai-image', 'google-ima
   assert.deepEqual(profile.wire, adapter.wire, `${name}: native adapter drifted`);
   assert.equal(profile.streamUsage, adapter.streamUsage, `${name}: usage streaming capability drifted`);
 }
+for (const [provider, acceptsImages] of [
+  ['openai', true],
+  ['anthropic', true],
+  ['google', false],
+  ['openai-image', false],
+  ['google-image', false],
+  ['cloudflare-image', false],
+  ['unknown-custom-provider', false],
+]) {
+  assert.equal(getProviderProfile(provider).imageInput, acceptsImages, `${provider}: image-input routing must remain explicit`);
+}
 assert.deepEqual(getProviderProfile(' OPENAI '), getProviderProfile('openai'));
 assert.deepEqual(getProviderProfile('unknown-custom-provider'), getProviderProfile('generic-openai'));
 console.log('Credential-free Provider routing profiles match all real adapters.');

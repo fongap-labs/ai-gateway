@@ -5,12 +5,12 @@ import { assertReadOnlyCutoverEvidence } from './production-cutover-evidence.mjs
 
 const SHA = 'a'.repeat(40);
 const CRON = '0 3 * * *';
-const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
+const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center', 'ai-gateway-operations'];
 const PHASES = ['prepare', 'detach', 'activate'];
 const UNVERIFIED = [
   'provider-secret-values-and-credential-functionality',
   'node-json-oauth-markers-and-migration-conflicts',
-  'four-worker-build-sha-equality',
+  'five-worker-build-sha-equality',
   'runtime-health-and-request-metrics',
   'global-cron-propagation-and-independent-runtime-evidence',
   'rollback-drill',
@@ -46,7 +46,7 @@ function inventoryFor(stage) {
       declared_build_sha_consistent: true,
       gateway_provider_credential_binding_count: 0,
       private_worker_exposure_clear: true,
-      gateway_service_bindings: { AIG_INFERENCE_SERVICE: true, AIG_GENERATION_SERVICE: true },
+      gateway_service_bindings: { AIG_INFERENCE_SERVICE: true, AIG_PERCEPTION_SERVICE: true, AIG_GENERATION_SERVICE: true },
     },
     unverified: [...UNVERIFIED],
   };
@@ -80,6 +80,7 @@ rejects((i) => (i.cron_phase = 'activate'));
 rejects((i) => (i.workers['ai-gateway'].deployed = false));
 rejects((i) => (i.workers['ai-inference-center'].active_traffic_weight_total = 95));
 rejects((i) => (i.workers['ai-inference-center'].crons = [CRON]));
+rejects((i) => (i.workers['ai-perception-center'].crons = [CRON]));
 rejects((i) => (i.workers['ai-gateway-operations'].crons = [CRON]));
 rejects((i) => (i.workers['ai-gateway'].crons = []));
 rejects((i) => (i.workers['ai-gateway'].retired_binding_names = ['AIG_TIER3_NODES_01']));
@@ -90,6 +91,7 @@ rejects((i) => (i.workers['ai-inference-center'].declared_build_sha = 'b'.repeat
 rejects((i) => (i.workers['ai-gateway'].declared_build_sha = null));
 rejects((i) => (i.checks.private_worker_exposure_clear = false));
 rejects((i) => (i.checks.gateway_service_bindings.AIG_INFERENCE_SERVICE = false));
+rejects((i) => (i.checks.gateway_service_bindings.AIG_PERCEPTION_SERVICE = false));
 rejects((i) => (i.checks.gateway_provider_credential_binding_count = 1));
 rejects((i) => (i.access_requirement.secret_values_requested_or_reported = true));
 rejects((i) => i.unverified.splice(0, 1));
@@ -101,4 +103,4 @@ rejects((i, p) => (p.source_sha = 'main'));
 rejects((i, p) => (p.phases[0].cron_owner = 'activate'));
 rejects((i, p) => (p.phases[0].requires_runtime_evidence_before_next_stage = false));
 assert.throws(() => assertReadOnlyCutoverEvidence(inventoryFor('prepare'), preflight, 'unknown'));
-console.log('Protected four-Worker evidence contract passed (read-only metadata, Cron phase, no implicit production authorization).');
+console.log('Protected five-Worker evidence contract passed (read-only metadata, Cron phase, no implicit production authorization).');
