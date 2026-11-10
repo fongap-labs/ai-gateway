@@ -45,6 +45,24 @@ flowchart LR
 
 图示为容量顺序，不代表无限次重试。请求共享尝试次数和时间预算；**流式响应开始输出后不会再透明切换上游**。不同接口和模型能力可能限制回退路径。
 
+## 四 Worker 架构与生产状态
+
+```mermaid
+flowchart LR
+    Client[客户端] --> Gateway[Gateway：鉴权、额度与路由]
+    Gateway -->|私有 Service Binding| Inference[Inference Center：推理执行与协议转换]
+    Gateway -->|私有 Service Binding| Generation[Generation Center：生成能力]
+    Gateway --> Stats[(共享用量 D1)]
+    Operations[Operations：定时维护] --> Stats
+```
+
+- Gateway 只处理鉴权、额度、调度、限流和故障恢复，不直接请求 Provider。
+- Inference Center 持有推理 Provider 凭据并负责执行和协议转换；Generation Center 仅持有生成能力所需凭据。
+- Operations 只运行定时维护，通过共享 D1 汇总和保留用量数据；它没有公开请求路由，也不持有 Provider 凭据。
+- 调度固定为 Tier 1 免费 API Key → Tier 2 API Token；会员 OAuth 与第三层 Tier 不属于当前运行时。
+
+这描述的是仓库架构和离线发布合同。生产 Cloudflare 上的 Worker 存在性、健康状态、Secret 所有权、Service Binding、D1/KV 与 Cron 交接必须依据最新只读盘点和运行证据核验；源码合并或 Mock 通过不等于生产切换完成。当前仓库保持 `.github/deploy.json` 的 `automatic:false`。操作步骤见[四 Worker 迁移与回滚计划](docs/operations/center-migration-plan.md)及[Cloudflare 只读盘点说明](docs/operations/cloudflare-read-only-inventory.md)。
+
 ## 快速开始
 
 需要 Node.js **22.18.0 或更高版本**、Cloudflare 账户、一个可用的上游节点，以及部署后可访问的 HTTPS 域名。直接部署需要创建并绑定名为 `TIER1_AFFINITY` 的 Cloudflare KV 命名空间；D1 用量统计为可选功能。

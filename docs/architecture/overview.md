@@ -31,9 +31,13 @@ AI Gateway 采用小内核、独立能力中心和两层额度调度。Gateway �
 - `apps/gateway`：认证、路由、节点选择、Hedge、限流、预算、错误与成功响应。
 - `apps/inference`：凭据绑定、Provider HTTP 请求、矩阵转换和推理响应。
 - `apps/generation`：图像能力检查、物理生成与结果归一化。
-- `operations/`：持久化统计和定期维护。
+- `operations/`：独立的定时统计维护入口；需要 Gateway 已有的共享 `TOKEN_STATS_DB`，无公开 `fetch` 路由且不持有 Provider 凭据。
 - `packages/contracts` 与 `packages/transport`：中立协议契约和传输原语，不持有会员订阅执行路径。
 - `src/config`、`src/reliability`：逐步收敛的兼容核心与共享可靠性状态；不通过兼容层恢复 OAuth 实现。
+
+## 源码与生产部署状态
+
+本页描述仓库内的职责边界及离线合同。真实生产状态须由当前 Cloudflare Worker、健康响应、绑定身份、Secret 名称所有权、D1/KV 和 Cron 运行证据确认；源码合并、Mock 或配置 API 读回本身都不能证明生产迁移完成。部署保持手动受控，`.github/deploy.json` 的 `automatic` 必须为 `false`。发布前检查与回滚流程见[能力中心迁移计划](../operations/center-migration-plan.md)和[只读环境盘点](../operations/cloudflare-read-only-inventory.md)。
 
 ## 当前不变式
 

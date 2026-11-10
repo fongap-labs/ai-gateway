@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: README 与架构概览说明四 Worker 边界，并区分离线合同和生产状态。
+
 - 修复: stream-guard JSON 回退错误；补单次结算与 TTFT/时延验收。
 - 新增: Operations D1 幂等合同和四 Worker 回滚顺序；未切生产。
 
