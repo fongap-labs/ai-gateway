@@ -679,7 +679,6 @@ assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 2, { maxAttem
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 0, policy), { 1: 3, 2: 1 });
 assert.throws(() => assertNodesArray([{ id: 'sub', provider: 'anthropic', auth: 'oauth', models: {} }], 'tier-2', 2), /obsolete subscription auth/);
 
-
 const opsKeys = {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
   CLOUDFLARE_API_TOKEN: 'approved-token',
@@ -715,7 +714,8 @@ for (const [worker, name] of [
   ['ai-inference-center', 'AIG_INFERENCE_AUTH_KEY'],
   ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
-]) assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
+])
+  assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
 assert.equal(mirrored.get('ai-gateway').get('AIG_DEPLOY_HEALTH_KEY'), opsKeys.AIG_DEPLOY_HEALTH_KEY);
 assert.equal(methods.filter((method) => method === 'PUT').length, 7);
 assert.equal(methods.includes('DELETE'), false);
