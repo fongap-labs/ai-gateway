@@ -102,7 +102,16 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
     }
     if (!response?.ok) {
       const status = response?.status;
-      const code = status === 401 ? 'AUTHENTICATION_FAILED' : status === 403 ? 'READ_PERMISSION_DENIED' : status === 404 ? 'RESOURCE_ENDPOINT_NOT_FOUND' : status === 429 ? 'CLOUDFLARE_RATE_LIMITED' : 'HTTP_REQUEST_FAILED';
+      const code =
+        status === 401
+          ? 'AUTHENTICATION_FAILED'
+          : status === 403
+            ? 'READ_PERMISSION_DENIED'
+            : status === 404
+              ? 'RESOURCE_ENDPOINT_NOT_FOUND'
+              : status === 429
+                ? 'CLOUDFLARE_RATE_LIMITED'
+                : 'HTTP_REQUEST_FAILED';
       throw new InventoryDiagnosticError(stage, code, status);
     }
     const body = await response.json().catch(() => null);
@@ -591,7 +600,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   main().catch((error) => {
     if (error instanceof InventoryDiagnosticError) {
       const http = error.status === null ? 'n/a' : String(error.status);
-      console.error('::error::Cloudflare read-only inventory: stage=' + error.stage + ' code=' + error.code + ' http=' + http + '. No changes made.');
+      console.error(`::error::Cloudflare read-only inventory: stage=${error.stage} code=${error.code} http=${http}. No changes made.`);
     } else {
       console.error('::error::Cloudflare read-only inventory: code=METADATA_CONTRACT_FAILED. No changes made.');
     }
