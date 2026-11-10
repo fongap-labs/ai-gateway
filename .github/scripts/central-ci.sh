@@ -34,7 +34,7 @@ run_phase npm-ci npm ci
 # Standard tools run here with fixed arguments, so a pull request cannot weaken them by editing the
 # "lint" or "typecheck" scripts in package.json. Their configuration files and the repository-owned
 # checks below are still part of the change under review.
-run_phase biome npx --no-install biome check .
+run_phase biome npx --no-install biome check --max-diagnostics=200 .
 run_phase typecheck npx --no-install tsc --noEmit
 run_phase validate-merge npm run validate:merge
 # Test suites are owned by action-worker (tests/packs/ai-gateway) and run against this checkout.
