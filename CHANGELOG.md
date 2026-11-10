@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 文档: 修正 OAuth、缓存密钥与动态模型目录说明。
+- 修复: 更新过期 OAuth、缓存密钥与模型目录说明。
 
 - 修复: 校验 Cloudflare 分页完整性、Secret 脱敏和 Cron 所有权。
 
