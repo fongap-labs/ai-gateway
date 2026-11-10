@@ -2,7 +2,7 @@
 
 ## 当前状态（截至 2026-11-10）
 
-四 Worker 源码边界、统一发布预检、配置迁移 dry-run、运行时 Mock 合同及回滚顺序已有仓库实现与离线验收记录。未访问或修改 Cloudflare 生产资源；Worker 存在性、健康、Secret 所有权、Service Binding、D1/KV、Cron 全球传播、真实请求指标和回滚演练仍未核验。生产切换另需授权，`.github/deploy.json` 必须保持 `automatic:false`。源码验收与生产验收的最新证据见[Issue #310](https://github.com/fongap-labs/ai-gateway/issues/310)。
+四 Worker 源码边界、统一发布预检、配置迁移 dry-run、运行时 Mock 合同及回滚顺序已有仓库实现与离线验收记录。在线盘点与离线三阶段发布计划另由 `scripts/production-cutover-evidence.mjs` 做只读元数据交叉校验（即便通过也不构成生产放行）。未访问或修改 Cloudflare 生产资源；Worker 存在性、健康、Secret 所有权、Service Binding、D1/KV、Cron 全球传播、真实请求指标和回滚演练仍未核验。生产切换另需授权，`.github/deploy.json` 必须保持 `automatic:false`。源码验收与生产验收的最新证据见[Issue #310](https://github.com/fongap-labs/ai-gateway/issues/310)。
 
 ## 部署约束
 
