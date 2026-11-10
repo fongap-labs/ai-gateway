@@ -3,24 +3,24 @@
 仓库中，每一类工作都有唯一的持久所有者：Worker 运行时、测试、工具、配置示例、迁移与文档。物理布局应当让这种归属一目了然。
 
 ```text
-src/                         共享的运行时契约与过渡入口（所有者见 apps/、packages/）
+src/                         Gateway 领域工具与迁移期兼容入口（中立契约在 packages/）
 ├── config/                  环境解析、节点、Model Registry、策略
 ├── providers/               provider → 协议/surface 映射与 stream-usage 特例
 ├── scheduler/               Tier 1 免费池 P2C/亲和，以及 Tier 2 Token 健康/优先级选择
 ├── reliability/             失败分类、冷却、额度/热度/状态
-├── transport/               上游路径、头部、原生 transport 行为
+├── transport/               packages/transport 的兼容导出；执行属于私有 Inference
 ├── protocol/                客户端校验、CORS、协议特定的请求/错误行为
-├── conversion/              仅负责 Chat Completions ↔ Anthropic Messages 转换
+├── conversion/              Chat / Responses / Messages 兼容导出；实现位于 apps/inference 与 packages/conversion-core
 ├── stream/                  首事件守卫、SSE 解析、流生命周期
-├── request/                 请求编排、tier 循环、回退、attempt 边界
+├── request/                 兼容导出；实际编排、tier 回退与 attempt 属于 apps/gateway
 │   └── attempt/             dispatch、hedge、成功处理、结果、attempt 可观测性
 ├── observability/           日志、指标、D1/token 用量、安全诊断
 ├── runtime/                 运行时可用性与只读的公共模型状态
 └── dashboard/               公共/运营者展示层
 
-apps/                        独立职责的 Gateway / Inference / Generation 运行时
-packages/                    不依赖具体应用的执行契约与传输原语
-operations/                  部署与运营边界
+apps/                        Gateway 控制面、Inference 协议执行、Generation 图片生成的独立入口
+packages/                    中立的合同、转换 IR、SSE 传输及用量存储原语
+operations/                  D1 用量维护与独立 Cron 运行入口（发布状态另核验）
 
 tests/                       （不存在）受控测试套件位于 action-worker：tests/packs/ai-gateway/
 
@@ -75,8 +75,8 @@ docs/                        长期有效的当前文档
 - `scheduler` 选择可用节点；它不直接调用 provider。
 - `reliability` 记录可用性/失败状态；它不负责协议转换。
 - `request` 编排各领域模块；它不应重复实现其逻辑。
-- `transport` 在节点被选定之后，负责上游 HTTP 语义。
-- `conversion` 仅负责明确的 Chat ↔ Messages 桥接。
+- 物理上游 HTTP 语义由私有 Inference/Generation 执行；`packages/transport` 提供不依赖具体 Worker 的原生协议及流原语。
+- Inference Center 负责 Chat、Responses、Messages 之间经明确验证的协议转换，`packages/conversion-core` 持有中立 IR 和预算/保真原语。
 - 除非该契约被明确重新设计，否则 `observability` 与公共运行时投影不会把历史/D1 证据反馈到路由中。
 
 ## Tier 1 归属
@@ -87,6 +87,12 @@ docs/                        长期有效的当前文档
 - `src/reliability/tier1-heat.ts`：有界的 provider-model 热度与 hedge/剩余容量保护。
 
 Tier 1 的访问密钥分组仅用于授权，不拥有调度优先级路径。Tier 2 静态 API Token 池保留独立的健康/优先级候选选择与可靠性状态，不接入会员订阅 Token。
+
+## 兼容入口与退役顺序
+
+`src/request/`、`src/conversion/`、`src/inference/`、`src/generation/` 中的纯转发文件不代表第二套执行实现。真正的运行时所有者分别位于 `apps/` 和 `packages/`；兼容导出仍可能被中央 Action Worker 测试包或外部工具引用。删除前必须核查源码导入、中央测试与构建入口，并以精确提交 SHA 通过完整 CI，不能仅凭文件薄或本仓库内没有调用就删除。
+
+`src/index.ts` 是当前已部署 Gateway 的最小组合入口，只转发 Gateway `fetch` 与 Operations `scheduled`。在受控 Cron 转移完成并验证新 Operations 独立运行之前，不得删除 `scheduled` 或提前改用 Gateway-only 入口；源码边界检查强制其保持纯转发，生产切换后的退役另走独立验证。
 
 ## 转换归属
 
