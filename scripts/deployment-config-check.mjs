@@ -23,6 +23,7 @@ import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-c
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
+import { buildRuntimeSecretPlan, synchronizeRuntimeSecrets } from './sync-runtime-secrets.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -42,6 +43,7 @@ const tooling = [
   'scripts/cloudflare-wrangler.mjs',
   'scripts/github-deployment-config.mjs',
   'scripts/persistent-deployment.mjs',
+  'scripts/sync-runtime-secrets.mjs',
   'scripts/deployment-recovery.mjs',
   'scripts/deploy.sh',
   'scripts/cloudflare-live-inventory.mjs',
@@ -156,7 +158,14 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
-assert.deepEqual(deploySecretScope.sort(), ['AIG_DEPLOY_HEALTH_KEY', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN']);
+assert.deepEqual(deploySecretScope.sort(), [
+  'AIG_DEPLOY_HEALTH_KEY',
+  'AIG_GENERATION_AUTH_KEY',
+  'AIG_INFERENCE_AUTH_KEY',
+  'AIG_PERCEPTION_AUTH_KEY',
+  'CLOUDFLARE_ACCOUNT_ID',
+  'CLOUDFLARE_API_TOKEN',
+]);
 const deployRequired = read('.github/deploy.secrets.required')
   .split(/\r?\n/)
   .map((line) => line.trim())
@@ -164,8 +173,6 @@ const deployRequired = read('.github/deploy.secrets.required')
 assert.deepEqual(deployRequired.sort(), deploySecretScope);
 for (const runtimeSecret of [
   'AIG_TOKEN_ENCRYPTION_KEY',
-  'AIG_INFERENCE_AUTH_KEY',
-  'AIG_GENERATION_AUTH_KEY',
   'AIG_ACCESS_KEY_AIR',
   'AIG_ACCESS_KEY_PRO',
   'AIG_ACCESS_KEY_MAX',
@@ -500,6 +507,9 @@ for (const [setting, expectedExit, message] of [
   assert.doesNotMatch(result.stdout, /Deployment complete|deployment completed/i);
 }
 assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
+assert.match(deployScript, /sync-runtime-secrets/);
+assert.ok(deployScript.indexOf('sync-runtime-secrets.mjs preflight') < deployScript.indexOf('deployment-recovery.mjs snapshot'));
+assert.ok(deployScript.indexOf('sync-runtime-secrets.mjs reconcile') < deployScript.indexOf('persistent-deployment.mjs verify-secrets'));
 assert.match(deployScript, /secret list/);
 assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\.json/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
@@ -668,5 +678,56 @@ assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 2, 2, policy), {
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 2, { maxAttempts: 5, tierAttempts: { tier2: 1 } }), { 1: 3, 2: 1 });
 assert.deepEqual(redistributeUnusedTierAttempts({ 1: 3, 2: 1 }, 1, 0, policy), { 1: 3, 2: 1 });
 assert.throws(() => assertNodesArray([{ id: 'sub', provider: 'anthropic', auth: 'oauth', models: {} }], 'tier-2', 2), /obsolete subscription auth/);
+
+const opsKeys = {
+  CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
+  CLOUDFLARE_API_TOKEN: 'approved-token',
+  AIG_DEPLOY_HEALTH_KEY: 'h'.repeat(32),
+  AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
+  AIG_PERCEPTION_AUTH_KEY: 'p'.repeat(32),
+  AIG_GENERATION_AUTH_KEY: 'g'.repeat(32),
+};
+const secretPlan = buildRuntimeSecretPlan(opsKeys);
+assert.deepEqual(secretPlan.workers, ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center']);
+assert.equal(secretPlan.writes.length, 7);
+assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_INFERENCE_AUTH_KEY: '' }), /AIG_INFERENCE_AUTH_KEY/);
+assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_PERCEPTION_AUTH_KEY: opsKeys.AIG_DEPLOY_HEALTH_KEY }), /distinct/);
+const mirrored = new Map(secretPlan.workers.map((worker) => [worker, new Map()]));
+const methods = [];
+const fakeCloudflare = async (url, options) => {
+  const worker = String(url).split('/workers/scripts/')[1]?.split('/secrets')[0];
+  assert.ok(mirrored.has(worker));
+  assert.equal(new Headers(options.headers).get('authorization'), 'Bearer approved-token');
+  methods.push(options.method);
+  if (options.method === 'GET') {
+    return Response.json({ success: true, result: [...mirrored.get(worker).keys()].map((name) => ({ name, type: 'secret_text' })) });
+  }
+  assert.equal(options.method, 'PUT');
+  const secret = JSON.parse(options.body);
+  assert.equal(secret.type, 'secret_text');
+  assert.ok(secretPlan.writes.some((item) => item.worker === worker && item.name === secret.name && item.value === secret.text));
+  mirrored.get(worker).set(secret.name, secret.text);
+  return Response.json({ success: true, result: { name: secret.name, type: 'secret_text' } });
+};
+assert.deepEqual(await synchronizeRuntimeSecrets(opsKeys, fakeCloudflare), { workers: 4, bindings: 7 });
+for (const [worker, name] of [
+  ['ai-inference-center', 'AIG_INFERENCE_AUTH_KEY'],
+  ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
+  ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
+])
+  assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
+assert.equal(mirrored.get('ai-gateway').get('AIG_DEPLOY_HEALTH_KEY'), opsKeys.AIG_DEPLOY_HEALTH_KEY);
+assert.equal(methods.filter((method) => method === 'PUT').length, 7);
+assert.equal(methods.includes('DELETE'), false);
+const rejectedMethods = [];
+await assert.rejects(
+  synchronizeRuntimeSecrets(opsKeys, async (url, options) => {
+    rejectedMethods.push(options.method);
+    if (String(url).includes('ai-generation-center')) return Response.json({ success: false }, { status: 403 });
+    return Response.json({ success: true, result: [] });
+  }),
+  /refused GET/,
+);
+assert.deepEqual(rejectedMethods, ['GET', 'GET', 'GET', 'GET'], 'All Workers must be read before any mutation');
 
 console.log('Deployment configuration check passed.');
