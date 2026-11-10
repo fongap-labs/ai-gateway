@@ -66,6 +66,9 @@ npm ci
 npm run validate:deploy
 npm run check:deploy
 
+# Verify ALL configured private centers before printing success or mutating Cloudflare.
+# Missing custom policies and missing image/vision capacity are reported together.
+node scripts/private-center-config.mjs preflight
 node scripts/persistent-deployment.mjs preflight
 # Confirm the one protected Environment contains all authentication inputs
 # before any production Worker or rollback-baseline mutation.
