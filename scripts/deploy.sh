@@ -8,7 +8,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
-
 # A central successful job is recorded as a successful production deployment.
 # Disabled deployments must not silently return success and generate an audit.
 case "${AIG_IS_DEPLOY_ENABLED:-true}" in
@@ -27,12 +26,14 @@ esac
   echo "ERROR: DEPLOY_SOURCE_SHA must be a full commit SHA" >&2
   exit 64
 }
+recovery_evidence="$RUNNER_TEMP/gateway-recovery-$DEPLOY_SOURCE_SHA.json"
 
 cleanup() {
   rm -f \
     "${RUNNER_TEMP:-/tmp}/wrangler.github.json" \
     "${RUNNER_TEMP:-/tmp}/worker-secrets.json" \
-    "${RUNNER_TEMP:-/tmp}/deployment-summary.txt" 2>/dev/null || true
+    "${RUNNER_TEMP:-/tmp}/deployment-summary.txt" \
+    "$recovery_evidence" "$recovery_evidence.next" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -57,9 +58,17 @@ node scripts/persistent-deployment.mjs verify-secrets \
   --file "$RUNNER_TEMP/worker-secrets.json" \
   --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
+# Confirm a healthy production version and preserve its exact Cloudflare UUID
+# before a new version or D1 migration can mutate remote state.
+node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
+
+# Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
+# guard refuses to claim an unrelated/concurrent deploy as this job's publish.
 # Cloudflare preserves existing Worker Secrets across code-only deployments.
 node scripts/cloudflare-wrangler.mjs deploy \
+  --message "action-worker:deploy:$DEPLOY_SOURCE_SHA" \
   --config "$RUNNER_TEMP/wrangler.github.json"
+node scripts/deployment-recovery.mjs capture-published "$recovery_evidence"
 
 health_ok=false
 for attempt in 1 2 3; do
@@ -74,11 +83,29 @@ for attempt in 1 2 3; do
 done
 
 if [[ "$health_ok" != "true" ]]; then
-  echo "Post-deploy health check failed; rolling back previous Worker version." >&2
-  node scripts/cloudflare-wrangler.mjs rollback --config "$RUNNER_TEMP/wrangler.github.json"
-  node scripts/persistent-deployment.mjs health-check || true
+  echo "Post-deploy health check failed; checking exact rollback eligibility." >&2
+  # Never default to Wrangler's unpinned previous-version selection, and never
+  # overwrite a concurrent production deployment. Both decisions use live API.
+  if ! rollback_version="$(node scripts/deployment-recovery.mjs rollback-target "$recovery_evidence")"; then
+    echo "ERROR: Rollback refused: production no longer matches this deployment." >&2
+    exit 77
+  fi
+  if ! node scripts/cloudflare-wrangler.mjs rollback "$rollback_version" \
+    --message "action-worker:rollback:$DEPLOY_SOURCE_SHA" \
+    --config "$RUNNER_TEMP/wrangler.github.json"; then
+    echo "ERROR: Targeted rollback was not confirmed by Cloudflare." >&2
+    exit 77
+  fi
+  if ! node scripts/deployment-recovery.mjs verify-restored "$recovery_evidence"; then
+    echo "ERROR: Restored version or public health is not verified." >&2
+    exit 77
+  fi
+  echo "Previous immutable Gateway version and public health restored; new deployment failed." >&2
   exit 1
 fi
+
+# No success audit if another actor replaced this version during health probes.
+node scripts/deployment-recovery.mjs verify-published "$recovery_evidence"
 
 if [[ -f "$RUNNER_TEMP/deployment-summary.txt" ]]; then
   {
