@@ -12,11 +12,8 @@ const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
 const RESOURCE_ID = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const RETIRED = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
-const PROVIDER_CREDENTIAL = /^AIG_TIER\d+_CREDENTIALS_/;
+const PROVIDER_CREDENTIAL = /^AIG_TIER\d+_CREDENTIALS(?:_|$)/;
 const SECRET_TYPES = new Set(['secret_text', 'secret_key']);
-const MAINTENANCE = '0 3 * * *';
-const DOMAIN_PAGE_SIZE = 100;
-const MAX_DOMAIN_PAGES = 100;
 const ZONE_PAGE_SIZE = 50;
 const MAX_ZONE_PAGES = 100;
 
@@ -36,15 +33,25 @@ function query(page, perPage) {
   return '?' + params.toString();
 }
 
-function validatePageInfo(info, page, perPage, label) {
-  if (info === undefined) return null;
+function validatePageInfo(info, page, perPage, label, resultCount) {
+  if (info === undefined) return { totalPages: null, totalCount: null };
   if (!info || typeof info !== 'object' || Array.isArray(info)) throw new Error('Invalid ' + label + ' pagination.');
-  if (info.page !== undefined && info.page !== page) throw new Error('Unexpected ' + label + ' page.');
-  if (info.per_page !== undefined && info.per_page !== perPage) throw new Error('Unexpected ' + label + ' page size.');
+  if (page !== null && page !== undefined && info.page !== undefined && info.page !== page) {
+    throw new Error('Unexpected ' + label + ' page.');
+  }
+  if (perPage !== null && perPage !== undefined && info.per_page !== undefined && info.per_page !== perPage) {
+    throw new Error('Unexpected ' + label + ' page size.');
+  }
+  if (info.count !== undefined && (!Number.isInteger(info.count) || info.count < 0 || info.count !== resultCount)) {
+    throw new Error('Unexpected ' + label + ' result count.');
+  }
+  if (info.total_count !== undefined && (!Number.isInteger(info.total_count) || info.total_count < 0)) {
+    throw new Error('Invalid ' + label + ' total count.');
+  }
   if (info.total_pages !== undefined && (!Number.isInteger(info.total_pages) || info.total_pages < 0)) {
     throw new Error('Invalid ' + label + ' page count.');
   }
-  return info.total_pages;
+  return { totalPages: info.total_pages ?? null, totalCount: info.total_count ?? null };
 }
 
 export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = fetch }) {
@@ -79,18 +86,8 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       // that would make completeness ambiguous.
       const response = await get('/workers/scripts');
       assertRecords(response.result, 'Worker list');
-      if (
-        response.info?.total_count !== undefined &&
-        (!Number.isInteger(response.info.total_count) || response.info.total_count !== response.result.length)
-      ) {
-        throw new Error('Worker list completeness could not be verified.');
-      }
-      if (
-        response.info?.total_pages !== undefined &&
-        (!Number.isInteger(response.info.total_pages) ||
-          response.info.total_pages > 1 ||
-          (response.info.total_pages === 0 && response.result.length > 0))
-      ) {
+      const { totalCount, totalPages } = validatePageInfo(response.info, null, null, 'Worker list', response.result.length);
+      if ((totalCount !== null && totalCount !== response.result.length) || (totalPages !== null && totalPages > 1)) {
         throw new Error('Worker list pagination metadata was unexpected.');
       }
       const names = response.result.map((item) => {
@@ -104,6 +101,8 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
     async zones() {
       const zones = [];
       const seen = new Set();
+      let expectedTotalPages = null;
+      let expectedTotalCount = null;
       for (let page = 1; page <= MAX_ZONE_PAGES; page += 1) {
         const params = new URLSearchParams({ 'account.id': accountId, page: String(page), per_page: String(ZONE_PAGE_SIZE) });
         const response = await get('/zones?' + params.toString());
@@ -121,11 +120,32 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
           seen.add(zone.id);
           zones.push(zone.id);
         }
-        const totalPages = validatePageInfo(response.info, page, ZONE_PAGE_SIZE, 'account zones');
-        if (totalPages !== null) {
-          if (response.result.length > 0 && totalPages === 0) throw new Error('Invalid account zone pagination.');
-          if (page >= totalPages) return zones;
-        } else if (response.result.length < ZONE_PAGE_SIZE) {
+        const { totalPages, totalCount } = validatePageInfo(response.info, page, ZONE_PAGE_SIZE, 'account zones', response.result.length);
+        if (totalPages === null || totalCount === null) {
+          throw new Error('Account zone pagination metadata is incomplete.');
+        }
+        if (expectedTotalPages !== null && expectedTotalPages !== totalPages) {
+          throw new Error('Account zone pagination changed during inventory.');
+        }
+        if (expectedTotalCount !== null && expectedTotalCount !== totalCount) {
+          throw new Error('Account zone total count changed during inventory.');
+        }
+        expectedTotalPages = totalPages;
+        expectedTotalCount = totalCount;
+        if (totalPages === 0) {
+          if (totalCount !== 0 || response.result.length > 0 || page !== 1) {
+            throw new Error('Invalid account zone pagination.');
+          }
+          return zones;
+        }
+        if (page > totalPages) throw new Error('Account zone pagination exceeded the reported page count.');
+        if (totalPages > page && response.result.length !== ZONE_PAGE_SIZE) {
+          throw new Error('Account zone page was incomplete before the reported final page.');
+        }
+        if (page === totalPages) {
+          if (response.result.length === 0 || zones.length !== totalCount) {
+            throw new Error('Account zone inventory did not match the reported total count.');
+          }
           return zones;
         }
       }
@@ -141,6 +161,10 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       for (const zoneId of zoneIds) {
         const response = await get('/zones/' + encodeURIComponent(zoneId) + '/workers/routes');
         assertRecords(response.result, 'zone Worker routes');
+        const { totalCount, totalPages } = validatePageInfo(response.info, null, null, 'zone Worker routes', response.result.length);
+        if ((totalCount !== null && totalCount !== response.result.length) || (totalPages !== null && totalPages > 1)) {
+          throw new Error('Zone Worker route result is incomplete.');
+        }
         for (const route of response.result) {
           if (typeof route.id !== 'string' || typeof route.pattern !== 'string' || (route.script !== undefined && typeof route.script !== 'string')) {
             throw new Error('Invalid zone Worker route metadata.');
@@ -157,13 +181,17 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
     async domains() {
       const domains = [];
       const seen = new Set();
-      for (let page = 1; page <= MAX_DOMAIN_PAGES; page += 1) {
-        const response = await get('/workers/domains' + query(page, DOMAIN_PAGE_SIZE));
+      for (const worker of WORKERS) {
+        // The official SDK models this endpoint as SinglePage and its documented
+        // query parameters are filters, not page/per_page. Scope each request to
+        // one target Worker and fail closed if the API reports multiple pages.
+        const params = new URLSearchParams({ service: worker });
+        const response = await get('/workers/domains?' + params.toString());
         assertRecords(response.result, 'Worker domains');
         for (const domain of response.result) {
           if (
             typeof domain.id !== 'string' ||
-            typeof domain.service !== 'string' ||
+            domain.service !== worker ||
             typeof domain.enabled !== 'boolean' ||
             typeof domain.previews_enabled !== 'boolean'
           ) {
@@ -175,14 +203,15 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
           // zone IDs, certificate IDs, and domain IDs never enter the report.
           domains.push({ service: domain.service, enabled: domain.enabled, previewsEnabled: domain.previews_enabled });
         }
-        const totalPages = validatePageInfo(response.info, page, DOMAIN_PAGE_SIZE, 'Worker domains');
-        if (totalPages !== null) {
-          if (page >= totalPages) return domains;
-        } else if (response.result.length < DOMAIN_PAGE_SIZE) {
-          return domains;
+        const { totalCount, totalPages } = validatePageInfo(response.info, 1, null, 'Worker domains', response.result.length);
+        if (totalPages !== null && totalPages > 1) {
+          throw new Error('Worker domain result is paginated but the documented endpoint does not accept page parameters.');
+        }
+        if ((totalPages === 0 && response.result.length > 0) || (totalCount !== null && totalCount !== response.result.length)) {
+          throw new Error('Worker domain result is incomplete.');
         }
       }
-      throw new Error('Worker domain inventory exceeded bounded pagination.');
+      return domains;
     },
 
     async worker(name) {
@@ -199,8 +228,8 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
           if (typeof binding.name !== 'string' || !SECRET_NAME.test(binding.name) || typeof binding.type !== 'string' || binding.type.length === 0) {
             throw new Error('Invalid Worker binding metadata.');
           }
-          if (SECRET_TYPES.has(binding.type) && Object.hasOwn(binding, 'text')) {
-            throw new Error('Secret values are not permitted in Worker settings metadata.');
+          if (SECRET_TYPES.has(binding.type) && ['text', 'key_base64', 'key_jwk'].some((field) => Object.hasOwn(binding, field))) {
+            throw new Error('Secret key material is not permitted in Worker settings metadata.');
           }
           const projected = { name: binding.name, type: binding.type };
           if (binding.type === 'service' && typeof binding.service === 'string') projected.service = binding.service;
@@ -247,7 +276,13 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       const deploymentResponse = await get(prefix + '/deployments' + query(1, 1));
       const deploymentResult = deploymentResponse.result;
       assertRecords(deploymentResult?.deployments, 'Worker deployments');
-      const deploymentPages = validatePageInfo(deploymentResponse.info, 1, 1, 'Worker deployments');
+      const { totalPages: deploymentPages } = validatePageInfo(
+        deploymentResponse.info,
+        1,
+        1,
+        'Worker deployments',
+        deploymentResult.deployments.length,
+      );
       if (deploymentPages === 0 && deploymentResult.deployments.length > 0) {
         throw new Error('Invalid Worker deployment pagination.');
       }
@@ -429,9 +464,9 @@ export async function inspectProductionWorkers(client) {
   const operationsCron = operations?.cron;
   let cronPhase = 'incomplete';
   if (gatewayCron && operationsCron) {
-    if (gatewayCron.length === 1 && gatewayCron[0] === MAINTENANCE && operationsCron.length === 0) cronPhase = 'prepare';
+    if (gatewayCron.length === 1 && operationsCron.length === 0) cronPhase = 'prepare';
     else if (gatewayCron.length === 0 && operationsCron.length === 0) cronPhase = 'detach';
-    else if (gatewayCron.length === 0 && operationsCron.length === 1 && operationsCron[0] === MAINTENANCE) cronPhase = 'activate';
+    else if (gatewayCron.length === 0 && operationsCron.length === 1) cronPhase = 'activate';
     else {
       cronPhase = 'unsafe';
       issues.push('CRON_OWNERSHIP_UNSAFE');
@@ -440,7 +475,10 @@ export async function inspectProductionWorkers(client) {
 
   return {
     report_type: 'cloudflare_read_only_inventory',
-    access_requirement: 'Workers Metadata Read-Only; Secret values are not requested or reported',
+    access_requirement: {
+      api_token_permissions: ['Zone Read', 'Workers Routes Read', 'Workers Scripts Read'],
+      secret_values_requested_or_reported: false,
+    },
     production_cutover_approved: false,
     workers: inventory,
     checks: {
