@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: AI Gateway 中央生产部署被禁用时改为失败关闭，非法开关值亦拒绝，防止未发布即返回成功并触发生产 Deployment 审计；使用真实 Bash 退出码合同验证，未执行生产发布。
+
 - 维护: README 与架构概览说明四 Worker 边界，并区分离线合同和生产状态。
 
 - 修复: stream-guard JSON 回退错误；补单次结算与 TTFT/时延验收。
