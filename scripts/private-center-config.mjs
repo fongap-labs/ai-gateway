@@ -44,8 +44,14 @@ function plainInputs(env) {
   const raw = env.AIG_OPS_VARIABLES_JSON;
   const vars = raw ? checkedJson(raw, 'Protected Variable snapshot') : env;
   for (const name of Object.keys(vars)) {
-    if (FORBIDDEN.test(name)) throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
+    if (/^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$)/.test(name) ||
+        (raw && FORBIDDEN.test(name))) {
+      throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
+    }
   }
+  // Direct deploy environments legitimately carry AIG_DEPLOY_HEALTH_KEY. Never
+  // serialize it into the center config; only the public variable allowlist
+  // below is copied into Cloudflare.
   return vars;
 }
 
