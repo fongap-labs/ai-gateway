@@ -44,8 +44,7 @@ function makeFetch(overrides = {}) {
   };
   const subdomains = overrides.subdomains ?? {};
   const deployments = overrides.deployments ?? {};
-  const domainsPageOne = Array.from({ length: 100 }, (_, index) => makeDomain('other-' + index, 'unrelated-worker'));
-  const domainsPageTwo = overrides.domainsPageTwo ?? [makeDomain('domain-gateway', 'ai-gateway')];
+  const domainsByService = overrides.domainsByService ?? { 'ai-gateway': [makeDomain('domain-gateway', 'ai-gateway')] };
   const zoneId = (index) => index.toString(16).padStart(32, '0');
 
   const fetchImpl = async (url, init) => {
@@ -63,18 +62,26 @@ function makeFetch(overrides = {}) {
       const page = Number(parsed.searchParams.get('page'));
       assert.ok(page === 1 || page === 2);
       const start = (page - 1) * 50;
-      const count = page === 1 ? 50 : 1;
+      const count = page === 1 ? (overrides.zonePageOneCount ?? 50) : 1;
       result = Array.from({ length: count }, (_, offset) => ({ id: zoneId(start + offset), account: { id: 'a'.repeat(32) } }));
-      resultInfo = { page, per_page: 50, total_pages: 2 };
+      resultInfo = {
+        page,
+        per_page: 50,
+        count: result.length,
+        total_count: 51,
+        total_pages: 2,
+        ...(overrides.zonePageInfo?.[page] ?? {}),
+      };
     } else if (/^\/zones\/[0-9a-f]{32}\/workers\/routes$/.test(endpoint)) {
       const [, zone] = endpoint.match(/^\/zones\/([0-9a-f]{32})\/workers\/routes$/);
       result = zone === zoneId(0) ? Object.values(routes).flat() : [];
     } else if (endpoint === '/workers/domains') {
-      const page = Number(parsed.searchParams.get('page'));
-      assert.equal(parsed.searchParams.get('per_page'), '100');
-      assert.ok(page === 1 || page === 2);
-      result = page === 1 ? domainsPageOne : domainsPageTwo;
-      resultInfo = { page, per_page: 100, total_pages: 2 };
+      const service = parsed.searchParams.get('service');
+      assert.ok(WORKERS.includes(service));
+      assert.equal(parsed.searchParams.has('page'), false, 'Worker Domains does not document page pagination');
+      assert.equal(parsed.searchParams.has('per_page'), false, 'Worker Domains does not document per_page pagination');
+      result = domainsByService[service] ?? [];
+      resultInfo = { count: result.length, total_pages: 1, ...(overrides.domainResultInfo?.[service] ?? {}) };
     } else {
       const match = endpoint.match(/^\/workers\/scripts\/([^/]+)\/(settings|schedules|subdomain|deployments)$/);
       assert.ok(match, 'Unexpected or prohibited API endpoint: ' + endpoint);
@@ -104,6 +111,8 @@ const report = await inspectProductionWorkers(client);
 assert.equal(report.metadata_consistency, 'pass');
 assert.equal(report.cron_phase, 'prepare');
 assert.equal(report.production_cutover_approved, false);
+assert.deepEqual(report.access_requirement.api_token_permissions, ['Zone Read', 'Workers Routes Read', 'Workers Scripts Read']);
+assert.equal(report.access_requirement.secret_values_requested_or_reported, false);
 assert.equal(report.checks.shared_token_stats_d1_consistent, true);
 assert.equal(report.checks.tier1_kv_binding_present, true);
 assert.equal(report.checks.gateway_provider_credential_binding_count, 0);
@@ -124,13 +133,67 @@ assert.equal(
   false,
   'Secrets endpoint must never be called',
 );
-assert.equal(mock.calls.filter((call) => new URL(call.url).pathname.endsWith('/workers/domains')).length, 2, 'All domain pages must be read');
+const domainCalls = mock.calls.filter((call) => new URL(call.url).pathname.endsWith('/workers/domains'));
+assert.equal(domainCalls.length, WORKERS.length, 'Each target Worker domain list must be queried');
+assert.deepEqual(
+  domainCalls.map((call) => new URL(call.url).searchParams.get('service')).sort(),
+  [...WORKERS].sort(),
+  'Worker Domains requests must be scoped to each target Worker',
+);
 assert.equal(
   mock.calls.some((call) => new URL(call.url).pathname.endsWith('/workers/scripts') && new URL(call.url).search),
   false,
 );
 
-const missingGatewayRouteMock = makeFetch({ routesByWorker: {}, domainsPageTwo: [] });
+const shortIntermediateZoneMock = makeFetch({ zonePageOneCount: 49 });
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: shortIntermediateZoneMock.fetchImpl,
+    }),
+  ),
+  /incomplete before the reported final page/,
+);
+
+const missingZonePaginationMock = makeFetch({ zonePageInfo: { 1: { total_count: undefined } } });
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: missingZonePaginationMock.fetchImpl,
+    }),
+  ),
+  /pagination metadata is incomplete/,
+);
+
+const truncatedZonePaginationMock = makeFetch({ zonePageInfo: { 1: { total_pages: 1 } } });
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: truncatedZonePaginationMock.fetchImpl,
+    }),
+  ),
+  /did not match the reported total count/,
+);
+
+const changingZoneTotalMock = makeFetch({ zonePageInfo: { 2: { total_count: 52 } } });
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: changingZoneTotalMock.fetchImpl,
+    }),
+  ),
+  /total count changed during inventory/,
+);
+
+const missingGatewayRouteMock = makeFetch({ routesByWorker: {}, domainsByService: { 'ai-gateway': [] } });
 const missingGatewayRouteReport = await inspectProductionWorkers(
   createReadOnlyCloudflareClient({
     accountId: 'a'.repeat(32),
@@ -150,7 +213,45 @@ await assert.rejects(
   inspectProductionWorkers(
     createReadOnlyCloudflareClient({ accountId: 'a'.repeat(32), token: 'mock-read-only-token-123', fetchImpl: secretValueMock.fetchImpl }),
   ),
-  /Secret values are not permitted/,
+  /Secret key material is not permitted/,
+);
+
+const secretKeyValueMock = makeFetch({
+  settings: {
+    ...structuredClone(BASE_SETTINGS),
+    'ai-generation-center': [{ name: 'AIG_GENERATION_KEY', type: 'secret_key', key_jwk: { private_key_must_not_leak: SECRET_SENTINEL } }],
+  },
+});
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: secretKeyValueMock.fetchImpl,
+    }),
+  ),
+  /Secret key material is not permitted/,
+);
+assert.equal(JSON.stringify(secretKeyValueMock.calls).includes(SECRET_SENTINEL), false);
+
+const duplicateSecretMock = makeFetch({
+  settings: {
+    ...structuredClone(BASE_SETTINGS),
+    'ai-inference-center': [
+      { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
+      { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
+    ],
+  },
+});
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: duplicateSecretMock.fetchImpl,
+    }),
+  ),
+  /Duplicate Worker binding metadata/,
 );
 
 const privateRouteMock = makeFetch({ routesByWorker: { 'ai-inference-center': [{ id: 'r-private', pattern: '*', script: 'ai-inference-center' }] } });
@@ -160,27 +261,45 @@ const privateRouteReport = await inspectProductionWorkers(
 assert.ok(privateRouteReport.blockers.includes('PRIVATE_WORKER_EXPOSED:ai-inference-center'));
 
 const privateDomainMock = makeFetch({
-  settings: { ...structuredClone(BASE_SETTINGS), 'ai-inference-center': BASE_SETTINGS['ai-inference-center'] },
+  domainsByService: { 'ai-inference-center': [makeDomain('domain-inference', 'ai-inference-center', true, false)] },
 });
-const privateDomainFetch = privateDomainMock.fetchImpl;
 const privateDomainReport = await inspectProductionWorkers(
   createReadOnlyCloudflareClient({
     accountId: 'a'.repeat(32),
     token: 'mock-read-only-token-123',
-    fetchImpl: async (url, init) => {
-      const parsed = new URL(String(url));
-      const endpoint = parsed.pathname.replace(/^\/client\/v4\/accounts\/[^/]+/, '').replace(/^\/client\/v4/, '');
-      if (endpoint === '/workers/domains' && parsed.searchParams.get('page') === '2') {
-        const body = await privateDomainFetch(url, init);
-        const json = await body.json();
-        json.result.push(makeDomain('domain-inference', 'ai-inference-center', true, false));
-        return new Response(JSON.stringify(json), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return privateDomainFetch(url, init);
-    },
+    fetchImpl: privateDomainMock.fetchImpl,
   }),
 );
 assert.ok(privateDomainReport.blockers.includes('PRIVATE_WORKER_EXPOSED:ai-inference-center'));
+
+const incompleteDomainMock = makeFetch({
+  domainResultInfo: { 'ai-generation-center': { total_pages: 2 } },
+});
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: incompleteDomainMock.fetchImpl,
+    }),
+  ),
+  /does not accept page parameters/,
+);
+
+const truncatedDomainMock = makeFetch({
+  domainsByService: { 'ai-generation-center': [] },
+  domainResultInfo: { 'ai-generation-center': { total_count: 1 } },
+});
+await assert.rejects(
+  inspectProductionWorkers(
+    createReadOnlyCloudflareClient({
+      accountId: 'a'.repeat(32),
+      token: 'mock-read-only-token-123',
+      fetchImpl: truncatedDomainMock.fetchImpl,
+    }),
+  ),
+  /Worker domain result is incomplete/,
+);
 
 const unsafeMock = makeFetch({
   cron: {
@@ -195,7 +314,7 @@ const unsafeMock = makeFetch({
       { name: 'TOKEN_STATS_DB', type: 'd1', database_id: '123e4567-e89b-42d3-a456-426614174099' },
       { name: 'AIG_TIER1_CREDENTIALS_01', type: 'secret_text' },
     ],
-    'ai-gateway': [...BASE_SETTINGS['ai-gateway'], { name: 'AIG_TIER2_CREDENTIALS_01', type: 'secret_text' }],
+    'ai-gateway': [...BASE_SETTINGS['ai-gateway'], { name: 'AIG_TIER2_CREDENTIALS', type: 'secret_text' }],
   },
 });
 const unsafeReport = await inspectProductionWorkers(
@@ -207,11 +326,49 @@ assert.ok(unsafeReport.blockers.includes('SHARED_D1_MISMATCH'));
 assert.ok(unsafeReport.blockers.includes('GATEWAY_PROVIDER_CREDENTIALS_PRESENT'));
 assert.ok(unsafeReport.blockers.includes('OPERATIONS_PROVIDER_CREDENTIALS_PRESENT'));
 
+const retiredBindingMock = makeFetch({
+  settings: {
+    ...structuredClone(BASE_SETTINGS),
+    'ai-gateway': [
+      ...BASE_SETTINGS['ai-gateway'],
+      { name: 'AIG_IS_SUBSCRIPTION_ENABLED', type: 'plain_text', text: 'must-not-appear-in-report' },
+      { name: 'AIG_OAUTH_ADMIN_GROUPS', type: 'secret_text' },
+      { name: 'AIG_TIER3_NODES_01', type: 'secret_text' },
+    ],
+  },
+});
+const retiredBindingReport = await inspectProductionWorkers(
+  createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'mock-read-only-token-123',
+    fetchImpl: retiredBindingMock.fetchImpl,
+  }),
+);
+assert.ok(retiredBindingReport.blockers.includes('RETIRED_BINDINGS_PRESENT:ai-gateway'));
+assert.equal(JSON.stringify(retiredBindingReport).includes('must-not-appear-in-report'), false);
+
+const customCronMock = makeFetch({
+  cron: {
+    'ai-gateway': ['17 4 * * 2'],
+    'ai-inference-center': [],
+    'ai-generation-center': [],
+    'ai-gateway-operations': [],
+  },
+});
+const customCronReport = await inspectProductionWorkers(
+  createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'mock-read-only-token-123',
+    fetchImpl: customCronMock.fetchImpl,
+  }),
+);
+assert.equal(customCronReport.cron_phase, 'prepare', 'Cron ownership detection must not hardcode the schedule expression');
+
 assert.throws(
   () => createReadOnlyCloudflareClient({ accountId: 'invalid', token: 'mock-read-only-token-123', fetchImpl: mock.fetchImpl }),
   /read-only credentials/,
 );
 
 console.log(
-  'Cloudflare live inventory contract passed: GET-only, paginated zones/domains, safe Secret metadata, complete route checks, and fail-closed ownership detection.',
+  'Cloudflare live inventory contract passed: GET-only, documented pagination, safe Secret metadata, complete route checks, and fail-closed ownership detection.',
 );
