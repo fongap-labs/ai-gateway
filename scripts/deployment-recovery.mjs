@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Read-only Cloudflare deployment identity ledger for fail-closed Gateway recovery.
 // Only the existing protected deployment credential is used. No secret values are stored.
-import { readFileSync, writeFileSync, renameSync, lstatSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { verifyRemote } from './github-deployment-config.mjs';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -43,11 +43,7 @@ export function parseActiveDeployment(body) {
 }
 
 export function establishRecoveryBaseline(before, after, build, accountId) {
-  if (
-    !accountPattern.test(accountId ?? '') ||
-    !sameIdentity(before, after) ||
-    !sha.test(build ?? '')
-  ) {
+  if (!accountPattern.test(accountId ?? '') || !sameIdentity(before, after) || !sha.test(build ?? '')) {
     throw new Error('Healthy baseline identity changed or the build SHA is unverified.');
   }
   return {
@@ -132,12 +128,7 @@ export async function fetchActiveDeployment(accountId, token, request = fetch) {
   if (!accountPattern.test(accountId ?? '') || typeof token !== 'string' || !token.trim()) {
     throw new Error('Protected Cloudflare Worker account and token are required.');
   }
-  const url =
-    'https://api.cloudflare.com/client/v4/accounts/' +
-    accountId +
-    '/workers/scripts/' +
-    worker +
-    '/deployments?per_page=1&page=1';
+  const url = 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/workers/scripts/' + worker + '/deployments?per_page=1&page=1';
   const response = await request(url, {
     method: 'GET',
     redirect: 'error',
