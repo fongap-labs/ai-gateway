@@ -480,7 +480,7 @@ assert.equal(customCronReport.cron_phase, 'prepare', 'Cron ownership detection m
 
 assert.throws(
   () => createReadOnlyCloudflareClient({ accountId: 'invalid', token: 'mock-read-only-token-123', fetchImpl: mock.fetchImpl }),
-  /read-only credentials/,
+  /INVALID_CREDENTIAL_METADATA/,
 );
 
 console.log(
