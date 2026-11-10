@@ -8,13 +8,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
+import { isBuiltinPolicyName } from '../src/config/policies.ts';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shaPattern = /^[a-f0-9]{40}$/;
 const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
 const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
-const builtinPolicies = new Set(['default', 'fast', 'long-reasoning']);
 const FORBIDDEN =
   /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|PERCEPTION|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
 const centerTypes = Object.freeze({
@@ -78,7 +78,7 @@ export function buildPrivateCenterConfig(worker, input) {
     throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
   }
   // Policy overrides are optional in the shared runtime. Built-in policies
-  // default, fast and long-reasoning are selected without a separate Variable.
+  // default, fast, long-reasoning, chat and coding work without a Variable.
   // A custom model policy is NEVER silently mapped to a built-in default.
   if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim()) {
     throw new Error('AIG_MODELS_CONFIG is required for private center release.');
@@ -92,7 +92,7 @@ export function buildPrivateCenterConfig(worker, input) {
       .filter((entry) => record(entry) && typeof entry.policy === 'string' && entry.policy.trim())
       .map((entry) => entry.policy.trim()),
   );
-  const unknownPolicies = [...referencedPolicies].filter((name) => !builtinPolicies.has(name) && !Object.hasOwn(policyOverrides, name)).sort();
+  const unknownPolicies = [...referencedPolicies].filter((name) => !isBuiltinPolicyName(name) && !Object.hasOwn(policyOverrides, name)).sort();
   if (unknownPolicies.length > 0) {
     problems.push(`AIG_POLICIES_CONFIG is missing definitions for referenced custom policies: ${unknownPolicies.join(', ')}.`);
   }
