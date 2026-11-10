@@ -386,9 +386,11 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_TIER1_PROBE_V2: 'true',
   AIG_REQUEST_ADMISSION: 'true',
   AIG_ISOLATE_MAX_IN_FLIGHT: '8',
-  // Bound free-tier amplification; explicit operator values still win.
-  AIG_STREAM_MAX_ATTEMPTS: '3',
-  AIG_NONSTREAM_MAX_ATTEMPTS: '3',
+  // Keep request-admission ceilings aligned with the built-in Tier 1-first
+  // chat/coding policies. The bounded request-wide cap remains 8 and explicit
+  // operator limits still win; Tier 2 retains one baseline fallback attempt.
+  AIG_STREAM_MAX_ATTEMPTS: '8',
+  AIG_NONSTREAM_MAX_ATTEMPTS: '8',
   AIG_REQUEST_HEDGE_MAX: '0',
   AIG_UPSTREAM_HEADER_TIMEOUT_MS: '60000',
   AIG_FIRST_EVENT_TIMEOUT_MS: '60000',
