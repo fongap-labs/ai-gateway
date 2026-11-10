@@ -175,7 +175,7 @@ ORDER BY node, calls DESC
 6. 查询 Cloudflare Worker Secret 名称并执行 fail-closed 盘点；
 7. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
 8. 按精确源码 SHA 验证线上构建；
-9. 若部署后验证失败，则回滚 Worker 部署。
+9. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并核验恢复版本和旧构建的公网健康。
 
 Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
@@ -207,7 +207,11 @@ AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 
 已部署的 Git commit SHA 会被传入 Worker 构建。经过认证的 `/health` 会暴露该构建标识。
 
-部署后验证要求线上构建与经过准入的精确源码 SHA 一致，随后再校验必需的网关接口。健康检查失败会触发 Worker 回滚。
+部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID，并验证其 `/health`、模型和 Claude 计数探针；仅保存版本 UUID、部署 UUID、构建 SHA，不保存 Token。无法取得健康旧版本或无法读取部署身份时，拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
+
+部署后验证要求线上构建与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。健康失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务，同时使用旧构建 SHA 执行完整公网健康检查。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
+
+**边界**：Cloudflare 版本切换接口不是条件原子写入；在回滚前读取与真正写入之间仍存在极短的外部并发发布窗口。中央单并发调度仅覆盖中央入口，无法为旁路发布提供分布式互斥。遇到已观察到的生产漂移必须拒绝回滚；在证明排他控制之前，这些源码合同不构成真实生产回滚验收。
 
 D1 迁移不会因 Worker 回滚而被事务性地撤销。因此，迁移变更必须在部署与回滚的边界两侧都保持安全。
 

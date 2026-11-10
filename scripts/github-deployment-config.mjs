@@ -508,6 +508,8 @@ export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs 
     body: JSON.stringify({ model: 'gateway-health-check', messages: [] }),
   });
   if (!count.ok) throw new Error(`remote Claude count_tokens failed (HTTP ${count.status})`);
+  // Return only the public, immutable build identity after all health probes pass.
+  return healthBody.build;
 }
 
 function resolveRuntime(argv) {

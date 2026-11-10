@@ -9,6 +9,15 @@ import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
 import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute } from '../src/request/auth.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
+import {
+  confirmPublishedIdentity,
+  confirmRestoredIdentity,
+  establishRecoveryBaseline,
+  fetchActiveDeployment,
+  guardedRollbackTarget,
+  parseActiveDeployment,
+  recordPublishedDeployment,
+} from './deployment-recovery.mjs';
 import { buildGenerationCenterDeployment } from './generation-center-deployment.mjs';
 import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
@@ -33,6 +42,7 @@ const tooling = [
   'scripts/cloudflare-wrangler.mjs',
   'scripts/github-deployment-config.mjs',
   'scripts/persistent-deployment.mjs',
+  'scripts/deployment-recovery.mjs',
   'scripts/deploy.sh',
   'scripts/cloudflare-live-inventory.mjs',
   'scripts/check-cloudflare-live-inventory.mjs',
@@ -472,6 +482,110 @@ assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
 assert.match(deployScript, /persistent-deployment\.mjs health-check/);
 assert.match(deployScript, /DEPLOY_SOURCE_SHA/);
+assert.ok(deployScript.includes('deployment-recovery.mjs snapshot'));
+assert.ok(deployScript.includes('deployment-recovery.mjs capture-published'));
+assert.ok(deployScript.includes('deployment-recovery.mjs rollback-target'));
+assert.ok(deployScript.includes('deployment-recovery.mjs verify-restored'));
+assert.ok(deployScript.includes('deployment-recovery.mjs verify-published'));
+assert.match(deployScript, /--message "action-worker:deploy:\$DEPLOY_SOURCE_SHA"/);
+assert.match(deployScript, /rollback "\$rollback_version"/);
+assert.equal(deployScript.includes('health-check || true'), false);
+assert.equal(deployScript.includes('cloudflare-wrangler.mjs rollback --config'), false);
+
+// Provider deployment identities are independent of the public /health build SHA.
+// Requiring both catches mistaken restores and prevents an unpinned Wrangler
+// rollback from selecting a different previously uploaded version.
+const baselineVersion = '11111111-1111-4111-8111-111111111111';
+const baselineDeployment = '22222222-2222-4222-8222-222222222222';
+const publishedVersion = '33333333-3333-4333-8333-333333333333';
+const publishedDeployment = '44444444-4444-4444-8444-444444444444';
+const restoredDeployment = '55555555-5555-4555-8555-555555555555';
+const unrelatedVersion = '66666666-6666-4666-8666-666666666666';
+const knownAccount = 'a'.repeat(32);
+const knownBuild = 'b'.repeat(40);
+const deployedBuild = 'c'.repeat(40);
+const activeResponse = (deploymentId, versionId, message = null, percent = 100) => ({
+  success: true,
+  result: {
+    deployments: [
+      {
+        id: deploymentId,
+        versions: [{ percentage: percent, version_id: versionId }],
+        annotations: message === null ? {} : { 'workers/message': message },
+      },
+    ],
+  },
+});
+const baselineActive = parseActiveDeployment(activeResponse(baselineDeployment, baselineVersion));
+const publishedActive = parseActiveDeployment(activeResponse(publishedDeployment, publishedVersion, `action-worker:deploy:${deployedBuild}`));
+const restoredActive = parseActiveDeployment(activeResponse(restoredDeployment, baselineVersion));
+assert.equal(baselineActive.version_id, baselineVersion);
+for (const invalid of [
+  { success: false, result: { deployments: [] } },
+  { success: true, result: { deployments: [] } },
+  activeResponse(baselineDeployment, baselineVersion, null, 50),
+  {
+    success: true,
+    result: {
+      deployments: [
+        {
+          id: baselineDeployment,
+          versions: [
+            { percentage: 50, version_id: baselineVersion },
+            { percentage: 50, version_id: publishedVersion },
+          ],
+        },
+      ],
+    },
+  },
+  activeResponse('invalid', baselineVersion),
+  activeResponse(baselineDeployment, 'invalid'),
+]) {
+  assert.throws(() => parseActiveDeployment(invalid), /deployment|version/i);
+}
+const baselineRecord = establishRecoveryBaseline(baselineActive, baselineActive, knownBuild, knownAccount);
+assert.throws(() => establishRecoveryBaseline(baselineActive, publishedActive, knownBuild, knownAccount), /changed|unverified/);
+assert.throws(() => establishRecoveryBaseline(baselineActive, baselineActive, 'short', knownAccount), /changed|unverified/);
+assert.throws(() => recordPublishedDeployment(baselineRecord, baselineActive, deployedBuild), /not verified/);
+assert.throws(() => recordPublishedDeployment(baselineRecord, restoredActive, deployedBuild), /not verified/);
+assert.throws(
+  () =>
+    recordPublishedDeployment(
+      baselineRecord,
+      parseActiveDeployment(activeResponse(publishedDeployment, publishedVersion, 'different-source')),
+      deployedBuild,
+    ),
+  /not verified/,
+);
+const withPublished = recordPublishedDeployment(baselineRecord, publishedActive, deployedBuild);
+assert.equal(guardedRollbackTarget(withPublished, publishedActive), baselineVersion);
+assert.equal(confirmPublishedIdentity(withPublished, publishedActive), undefined);
+assert.throws(() => recordPublishedDeployment(withPublished, publishedActive, deployedBuild), /not verified/);
+assert.throws(() => guardedRollbackTarget(withPublished, parseActiveDeployment(activeResponse(restoredDeployment, unrelatedVersion))), /drifted/);
+assert.throws(() => guardedRollbackTarget(withPublished, baselineActive), /drifted/);
+assert.equal(confirmRestoredIdentity(withPublished, restoredActive, restoredActive, knownBuild), undefined);
+for (const [first, second, build] of [
+  [publishedActive, publishedActive, knownBuild],
+  [restoredActive, restoredActive, deployedBuild],
+  [restoredActive, publishedActive, knownBuild],
+]) {
+  assert.throws(() => confirmRestoredIdentity(withPublished, first, second, build), /not proven/);
+}
+let readCalls = 0;
+const readOnlyCloudflare = async (url, options) => {
+  readCalls += 1;
+  assert.equal(String(url), `https://api.cloudflare.com/client/v4/accounts/${knownAccount}/workers/scripts/ai-gateway/deployments?per_page=1&page=1`);
+  assert.equal(options?.method, 'GET');
+  assert.equal(options?.redirect, 'error');
+  assert.equal(options?.headers?.authorization, 'Bearer test-only-worker-inventory-token');
+  assert.ok(options?.signal instanceof AbortSignal);
+  return Response.json(activeResponse(baselineDeployment, baselineVersion));
+};
+assert.deepEqual(await fetchActiveDeployment(knownAccount, 'test-only-worker-inventory-token', readOnlyCloudflare), baselineActive);
+assert.equal(readCalls, 1);
+await assert.rejects(fetchActiveDeployment('wrong', 'not-a-token', readOnlyCloudflare), /account and token/);
+assert.equal(readCalls, 1);
+
 assert.doesNotMatch(deployScript, /wrangler@\d+\.\d+\.\d+/);
 
 for (const removedExample of ['config/tier2-nodes.example.json', 'config/node-secrets.example.json', 'config/gateway-secrets.example.json']) {
