@@ -93,7 +93,7 @@ npm run deploy
 ### 验证与客户端接入
 
 ~~~bash
-curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/health
+curl -H "Authorization: Bearer YOUR_MAX_OR_ULTRA_KEY" https://your-gateway.example/health
 curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1/models
 ~~~
 
