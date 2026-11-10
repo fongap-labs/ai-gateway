@@ -721,12 +721,13 @@ assert.equal(methods.filter((method) => method === 'PUT').length, 7);
 assert.equal(methods.includes('DELETE'), false);
 const rejectedMethods = [];
 await assert.rejects(
-  synchronizeRuntimeSecrets(opsKeys, async (_url, options) => {
+  synchronizeRuntimeSecrets(opsKeys, async (url, options) => {
     rejectedMethods.push(options.method);
-    return Response.json({ success: false }, { status: 403 });
+    if (String(url).includes('ai-generation-center')) return Response.json({ success: false }, { status: 403 });
+    return Response.json({ success: true, result: [] });
   }),
   /refused GET/,
 );
-assert.deepEqual(rejectedMethods, ['GET'], 'No mutation after preflight failure');
+assert.deepEqual(rejectedMethods, ['GET', 'GET', 'GET', 'GET'], 'All Workers must be read before any mutation');
 
 console.log('Deployment configuration check passed.');
