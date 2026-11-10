@@ -1,39 +1,30 @@
-# 轻量网关与能力中心
+# 四 Worker 能力边界
 
-## 现状
+## 当前状态
 
-网关已逐步拆分为公开 Gateway 与私有执行中心。本文描述目标责任边界；某些生产 Service Binding 切换及配置迁移仍需独立验收。现行源码按 Tier 1 免费池 → Tier 2 静态 API Token 调度，旧会员 OAuth 执行模块已退役。既有 `legacy/v0.1.5` 是独立冻结分支，不修改其提交。
+本页定义仓库当前的四 Worker 职责。它说明源码和离线合同，不代表 Cloudflare 生产切换已完成；生产资源状态须由受保护的只读盘点及独立运行时证据确认。`.github/deploy.json` 的 `automatic:false` 必须保持，源码合并或 Mock 通过不得标记为生产上线。
 
-## 目标
+| Worker | 职责与边界 |
+| --- | --- |
+| Gateway | 唯一公开 API 入口；鉴权、模型授权、额度准入、两层调度、限流与故障恢复。通过私有 Service Binding 调用执行中心，不直接执行 Provider 请求。 |
+| Inference Center | 私有推理执行、Provider 协议适配、推理协议转换与响应流处理；只持有推理所需 Provider 凭据。 |
+| Generation Center | 私有生成能力执行与结果归一化；只持有生成所需 Provider 凭据。 |
+| Operations | 独立定时维护入口；使用与 Gateway 相同的 `TOKEN_STATS_DB`，不提供公开 `fetch` 路由且不持有 Provider 凭据。Cron 所有权按受控交接计划变更。 |
 
-```text
-客户端（聊天、编程、图片理解、图片生成、视频生成）
-                   |
-                   v
-       AI Gateway（唯一公共入口）
-       鉴权 / 模型授权 / 节点选择 / 额度准入 / 故障恢复
-           |            |            |
-           v            v            v
-        推理中心       感知中心       生成中心
-      文本与代码      多模态理解     图像与视频生成
-           \            |            /
-            供应商适配、协议转换、流处理与实际执行
+当前运行时固定为 Tier 1 免费 API Key → Tier 2 API Token；无旧会员 OAuth 执行，也无 Tier 3。当前架构不包含独立感知 Worker；若未来加入能力，须先有真实消费路径、私有边界和合同测试。
+
+## 拓扑与数据边界
+
+```mermaid
+flowchart LR
+    Client[客户端] --> Gateway[Gateway：鉴权、额度、路由与恢复]
+    Gateway -->|私有 Service Binding| Inference[Inference Center：推理与协议转换]
+    Gateway -->|私有 Service Binding| Generation[Generation Center：生成能力]
+    Gateway --> Stats[(共享 TOKEN_STATS_DB)]
+    Operations[Operations：定时维护] --> Stats
 ```
 
-中心是**职责**，不是三个强制常驻的服务器。先部署 Cloudflare Workers 内部服务，通过私有 Service Binding 连接；不启用 Oracle Cloud，也不增加公网暴露的能力中心。未来仅替换传输适配器与中心部署环境，保留客户端地址、模型目录和内部 HTTP 契约。
-
-## 职责
-
-| 职责 | 网关 | 能力中心 |
-| --- | --- | --- |
-| 客户端 API、密钥验证、分组和模型许可 | 唯一权威 | 不重复验证客户端凭据 |
-| 逻辑模型目录、模态资格、Tier 和节点选择 | 唯一权威 | 核对收到的执行票据和自身支持能力 |
-| 有界额度准入、请求级尝试预算、限流冷却、节点熔断与恢复 | 唯一权威 | 返回规范化失败分类及观测信号 |
-| 上游 Provider 静态 API Token、具体协议及模型映射 | 只持有节点标识和可路由能力摘要 | 唯一权威，凭据不回传 |
-| Chat、Responses、Messages 转换和流语义 | 不做正文转换 | 推理或感知中心按客户端协议完成 |
-| 图片/视频生成、非同步任务、下载与存储 | 路由、准入与任务引用 | 生成中心 |
-| 用量、TTFT、失败与资源统计 | 消费聚合信号与授权控制 | 记录真实物理执行和上游用量 |
-| 仪表盘、长周期聚合和定期清理 | 不进入热路径 | 独立观测任务或运维功能 |
+Gateway 的 `TIER1_AFFINITY` KV 是独立 Tier 1 调度状态；它不能替代共享 D1。Inference、Generation 和 Operations 不应配置 Gateway 公网域名。模型 ID 和节点映射是配置数据，源码与文档示例应使用占位值，不应固化运营者的模型别名。
 
 网关必须保留零信任边界、路由决策及其所需的**最小请求元数据**。对于现有 JSON 接口，提取 `model` 可能仍需有界解析；“原样透传”不等于跳过大小限制、认证、权限或基本有效性校验。避免在网关中对大图像、音视频 Base64 内容做完整解析/重新序列化；大型文件采用能力中心直传或授权的对象存储方案，并明确客户端兼容性。
 
@@ -82,21 +73,16 @@ content-type: application/json
 ## 模型与额度
 
 - 请求按 Tier 1 免费 API Key → Tier 2 静态 API Token 有界回退；Tier 2 是终点，不存在会员 OAuth 额度或隐式 Tier 3。旧 Tier 3 配置在预检中必须显式迁移。
-- 保留现行模型家族授权约束：Code 仅在 Code 家族回退；通用 Max/Pro 互通、Ultra 为高阶兜底，非 Air 请求不回落 Air；实际顺序以现行可执行策略和契约为准，迁移时不得暗改。
+- 模型资格与回退候选由当前模型目录和 Gateway 有界策略共同决定；只使用目录中已配置的逻辑模型 ID。变更候选关系时需通过配置迁移预检和请求合同测试，不把运营者模型别名写入文档或代码。
 - 额度来源包含运营者硬配置、上游可信的窗口信号及 429 冷却；未知额度不得当成无限或确定的 0。
 - isolate 本地计数与 KV 提示**不是全局硬限流**。若未来需要跨中心、跨隔离实例的严格原子额度，先给出成本与负载证据，再使用独立的原子协调机制，不在热路径对每条流写 D1。
 - 不能因为某一中心、账号或仓库失效而停止其他独立中心/节点；按失败域隔离。
 
 ## 实现语言
 
-| 部分 | 当前优先语言 | 理由 |
-| --- | --- | --- |
-| Cloudflare 入口 | TypeScript | 与 Workers 原生运行时、当前代码及部署脚本一致，避免双语重写 |
-| Cloudflare 能力中心 | TypeScript | 复用独立 Provider API Token、协议转换和流式传输模块；独立编译为 Worker |
-| 未来 Oracle Cloud 上的中心 | 默认沿用 TypeScript；有真实性能瓶颈时单独选 Go | 标准 HTTP 契约可替换运行环境；Go 适用于高并发与长任务，但无数据前不重新实现稳定的协议矩阵 |
-| 状态存储/运维 | 按状态一致性和持久性选型 | 不为增加语言或基础设施而增加组件 |
-
-不以“必须纯 Go”或“必须纯 Rust”为架构目标。先守住协议正确性、低 CPU、低内存、可回滚和单一实现，再以生产压测决定语言变化。
+- Rust 核心继续拥有其既定核心逻辑；TypeScript Worker 负责 Cloudflare 接入、服务适配与运行工具，不重复实现核心算法。
+- Gateway、Inference、Generation、Operations 的 Worker 入口和 TypeScript 运维脚本保持现有 TypeScript 边界。
+- 跨 Worker 服务调用继续使用明确的 HTTP/Request/Response/Streams 合同；语言边界不改变凭据归属、重试预算或失败语义。
 
 ## 禁止事项
 

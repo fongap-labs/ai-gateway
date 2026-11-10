@@ -97,7 +97,7 @@ curl -H "Authorization: Bearer YOUR_MAX_OR_ULTRA_KEY" https://your-gateway.examp
 curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1/models
 ~~~
 
-`/health` 默认仅允许 MAX、ULTRA 分组读取，可通过 `AIG_DIAGNOSTICS_GROUPS` 调整；`/v1/models` 仅展示调用密钥获准访问的模型。客户端使用网关的逻辑模型名（例如 `code-pro`），而不是必然使用上游原始模型名。
+`/health` 默认仅允许 MAX、ULTRA 分组读取，可通过 `AIG_DIAGNOSTICS_GROUPS` 调整；`/v1/models` 仅展示调用密钥获准访问的模型。客户端使用当前模型目录中已配置的逻辑模型 ID，而不是必然使用上游原始模型名。
 
 | 客户端协议 | 网关地址 | 请求入口 |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ Tier 2 仅接受静态 API Token，不使用会员登录或 OAuth；可用性受
 
 | 内容 | 文档 |
 | --- | --- |
-| 系统架构、路由与协议 | [架构概览](docs/architecture/overview.md) · [路由模型](docs/architecture/routing-model.md) · [协议模型](docs/architecture/protocol-model.md) |
+| 系统架构、路由与协议 | [架构概览](docs/architecture/overview.md) · [四 Worker 边界](docs/architecture/edge-capability-boundaries.md) · [路由模型](docs/architecture/routing-model.md) · [协议模型](docs/architecture/protocol-model.md) · [源码迁移记录](docs/architecture/module-boundaries.md) |
 | 配置与故障排查 | [配置](docs/operations/configuration.md) · [故障排查](docs/operations/troubleshooting.md) |
 | 部署、CI 与回滚 | [部署](docs/operations/deployment.md) |
 | 贡献、安全及全部文档 | [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [文档索引](docs/README.md) |
