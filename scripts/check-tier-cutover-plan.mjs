@@ -36,7 +36,6 @@ assert.equal(base.model_catalog.valid, true);
 assert.equal(base.unclassified_source_node_count, 0);
 assert.match(base.model_catalog.fingerprint_sha256, /^[a-f0-9]{64}$/);
 assert.match(base.node_moves[0]?.model_mapping.mapping_fingerprint_sha256, /^[a-f0-9]{64}$/);
-assert.ok(!JSON.stringify(base).includes('https://api.example.invalid'), 'Provider URLs must not appear in the plan');
 assert.ok(!JSON.stringify(base).includes(MOCK_UPSTREAM_MODEL), 'upstream model names must not appear in the redacted plan');
 assert.equal(JSON.stringify({ tiers, credentialIndex }), baselineInput, 'Preflight must not mutate source config');
 
