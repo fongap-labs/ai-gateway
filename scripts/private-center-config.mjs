@@ -13,7 +13,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shaPattern = /^[a-f0-9]{40}$/;
 const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
 const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
-const FORBIDDEN = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
+const FORBIDDEN =
+  /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
 const centerTypes = Object.freeze({
   'ai-inference-center': {
     entry: 'src/inference/inference-center-entry.ts',
@@ -29,14 +30,20 @@ const centerTypes = Object.freeze({
   },
 });
 
-function record(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+function record(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
 function centerType(worker) {
   if (!Object.hasOwn(centerTypes, worker)) throw new Error('Unknown private Worker target.');
   return centerTypes[worker];
 }
 function checkedJson(raw, name) {
   let value;
-  try { value = JSON.parse(raw); } catch { throw new Error(`${name} must be valid JSON.`); }
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error(`${name} must be valid JSON.`);
+  }
   if (!record(value)) throw new Error(`${name} must be a JSON object.`);
   return value;
 }
@@ -44,8 +51,7 @@ function plainInputs(env) {
   const raw = env.AIG_OPS_VARIABLES_JSON;
   const vars = raw ? checkedJson(raw, 'Protected Variable snapshot') : env;
   for (const name of Object.keys(vars)) {
-    if (/^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$)/.test(name) ||
-        (raw && FORBIDDEN.test(name))) {
+    if (/^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$)/.test(name) || (raw && FORBIDDEN.test(name))) {
       throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
     }
   }
@@ -66,8 +72,12 @@ export function buildPrivateCenterConfig(worker, input) {
   // A private center must use the same explicit model catalog and policies
   // as the approved Gateway. A synthesized empty map could silently disable
   // production aliases or make a referenced custom policy unknown.
-  if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim() ||
-      typeof env.AIG_POLICIES_CONFIG !== 'string' || !env.AIG_POLICIES_CONFIG.trim()) {
+  if (
+    typeof env.AIG_MODELS_CONFIG !== 'string' ||
+    !env.AIG_MODELS_CONFIG.trim() ||
+    typeof env.AIG_POLICIES_CONFIG !== 'string' ||
+    !env.AIG_POLICIES_CONFIG.trim()
+  ) {
     throw new Error('Both AIG_MODELS_CONFIG and AIG_POLICIES_CONFIG are required for private center release.');
   }
   const vars = {
@@ -86,18 +96,25 @@ export function buildPrivateCenterConfig(worker, input) {
     if (!match) continue;
     if (typeof raw !== 'string') throw new Error(`${name} must be a JSON string.`);
     let all;
-    try { all = JSON.parse(raw); } catch { throw new Error(`${name} must be valid JSON.`); }
+    try {
+      all = JSON.parse(raw);
+    } catch {
+      throw new Error(`${name} must be valid JSON.`);
+    }
     if (!Array.isArray(all)) throw new Error(`${name} must be a node array.`);
     for (const item of all) {
-      if (!record(item) || typeof item.provider !== 'string' ||
-          Object.hasOwn(item, 'auth') ||
-          Object.keys(item).some(k => /^(?:token|secret|password|api_key|credential)$/i.test(k))) {
+      if (
+        !record(item) ||
+        typeof item.provider !== 'string' ||
+        Object.hasOwn(item, 'auth') ||
+        Object.keys(item).some((k) => /^(?:token|secret|password|api_key|credential)$/i.test(k))
+      ) {
         throw new Error(`${name} contains an invalid or embedded-credential node.`);
       }
     }
-    const selected = all.filter(n => target.kind === 'generation'
-      ? isImageGenerationProvider(n.provider)
-      : !isImageGenerationProvider(n.provider));
+    const selected = all.filter((n) =>
+      target.kind === 'generation' ? isImageGenerationProvider(n.provider) : !isImageGenerationProvider(n.provider),
+    );
     if (!selected.length) continue;
     vars[name] = JSON.stringify(selected);
     tiers.add(match[1]);
@@ -125,20 +142,19 @@ export function buildPrivateCenterConfig(worker, input) {
 /** Verify names only. This is not proof of credential correctness or request health. */
 export function verifyPrivateCenterSecretNames(worker, rawInventory, tiers) {
   const target = centerType(worker);
-  if (!Array.isArray(rawInventory) ||
-      rawInventory.some(s => !record(s) || typeof s.name !== 'string' || s.type !== 'secret_text')) {
+  if (!Array.isArray(rawInventory) || rawInventory.some((s) => !record(s) || typeof s.name !== 'string' || s.type !== 'secret_text')) {
     throw new Error('Private center Secret inventory is invalid.');
   }
-  const names = new Set(rawInventory.map(s => s.name));
+  const names = new Set(rawInventory.map((s) => s.name));
   if (names.size !== rawInventory.length) throw new Error('Duplicate private center Secret names.');
-  const invalid = [...names].filter(n => n !== target.auth && !credentialName.test(n));
+  const invalid = [...names].filter((n) => n !== target.auth && !credentialName.test(n));
   if (invalid.length) throw new Error(`${worker} contains Secrets outside its ownership allowlist.`);
   if (!names.has(target.auth)) throw new Error(`${worker} is missing its internal auth Secret.`);
-  if (!Array.isArray(tiers) || tiers.some(t => t !== '1' && t !== '2')) {
+  if (!Array.isArray(tiers) || tiers.some((t) => t !== '1' && t !== '2')) {
     throw new Error('Private center node tier manifest is invalid.');
   }
   for (const tier of tiers) {
-    if (![...names].some(name => credentialName.test(name) && credentialName.exec(name)[1] === tier)) {
+    if (![...names].some((name) => credentialName.test(name) && credentialName.exec(name)[1] === tier)) {
       throw new Error(`${worker} lacks Tier ${tier} provider credential shards.`);
     }
   }
@@ -175,10 +191,14 @@ function main() {
     console.log(`Private ${result.worker} inventory passed: ${result.secretNames} Secret names; values and runtime readiness not verified.`);
     return;
   }
-  throw new Error('Usage: private-center-config.mjs prepare|verify-inventory --worker WORKER [--output FILE --manifest FILE | --inventory FILE --manifest FILE].');
+  throw new Error(
+    'Usage: private-center-config.mjs prepare|verify-inventory --worker WORKER [--output FILE --manifest FILE | --inventory FILE --manifest FILE].',
+  );
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (error) {
+  try {
+    main();
+  } catch (error) {
     // Do not echo operational metadata or values from supplied configuration.
     console.error(`Private center release blocked: ${error instanceof Error ? error.message : 'invalid input'}`);
     process.exitCode = 2;
