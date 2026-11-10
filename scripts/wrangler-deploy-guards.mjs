@@ -8,6 +8,7 @@ const NODE_VAR = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
 const RETIRED = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
 const SECRET_VAR =
   /(?:^|_)SECRET(?:_|$)|(?:^|_)AUTH_KEY$|_CREDENTIALS_|^AIG_ACCESS_KEY_|^AIG_DEPLOY_HEALTH_KEY$|^AIG_EDGE_CACHE_HMAC_KEY$|^CLOUDFLARE_/;
+const PROVIDER_CREDENTIAL_VAR = /(?:^|_)(?:API_KEY|API_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD)(?:_|$)/;
 
 function record(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -39,7 +40,7 @@ function safeCenterVars(config) {
     typeof vars.AIG_MODELS_CONFIG === 'string' &&
     typeof vars.AIG_POLICIES_CONFIG === 'string' &&
     Object.keys(vars).some((name) => NODE_VAR.test(name)) &&
-    Object.keys(vars).every((name) => !RETIRED.test(name) && !SECRET_VAR.test(name))
+    Object.keys(vars).every((name) => !RETIRED.test(name) && !SECRET_VAR.test(name) && !PROVIDER_CREDENTIAL_VAR.test(name))
   );
 }
 
@@ -128,7 +129,7 @@ function isGateway(config, root) {
     !SHA.test(vars.AIG_BUILD_SHA) ||
     vars.AIG_INFERENCE_ACTIVE !== 'true' ||
     vars.AIG_GENERATION_ACTIVE !== 'true' ||
-    Object.keys(vars).some((name) => RETIRED.test(name) || SECRET_VAR.test(name))
+    Object.keys(vars).some((name) => RETIRED.test(name) || SECRET_VAR.test(name) || PROVIDER_CREDENTIAL_VAR.test(name))
   ) {
     return false;
   }
