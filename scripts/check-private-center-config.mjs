@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPrivateCenterConfig, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
+import { buildPrivateCenterConfig, preflightPrivateCenters, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +28,33 @@ const withDeploySecret = buildPrivateCenterConfig('ai-inference-center', {
 assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
 assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
 const inference = buildPrivateCenterConfig('ai-inference-center', env);
+assert.deepEqual(preflightPrivateCenters(env), { workers: 3 });
+// AIG_POLICIES_CONFIG is optional when models use the same built-in policies as the Gateway.
+const withBuiltinPolicies = { ...env, AIG_POLICIES_CONFIG: '' };
+assert.equal(preflightPrivateCenters(withBuiltinPolicies).workers, 3);
+assert.equal(Object.hasOwn(buildPrivateCenterConfig('ai-inference-center', withBuiltinPolicies).config.vars, 'AIG_POLICIES_CONFIG'), false);
+const customPolicyModels = JSON.stringify({
+  chat: { policy: 'chat' },
+  coding: { policy: 'coding' },
+  vision: { capabilities: { vision: true } },
+});
+const missingCustomPolicies = { ...env, AIG_MODELS_CONFIG: customPolicyModels, AIG_POLICIES_CONFIG: '' };
+assert.throws(
+  () => preflightPrivateCenters(missingCustomPolicies),
+  /missing definitions for referenced custom policies: chat, coding/,
+);
+const withCustomPolicies = { ...missingCustomPolicies, AIG_POLICIES_CONFIG: '{"chat":{},"coding":{}}' };
+assert.equal(preflightPrivateCenters(withCustomPolicies).workers, 3);
+const noImageOrVision = {
+  ...withCustomPolicies,
+  AIG_MODELS_CONFIG: JSON.stringify({ chat: { policy: 'chat' }, coding: { policy: 'coding' } }),
+  AIG_TIER1_NODES_01: JSON.stringify([
+    { id: 'text-only', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { chat: 'physical-text' } },
+  ]),
+};
+assert.throws(() => preflightPrivateCenters(noImageOrVision), (error) =>
+  /ai-generation-center has no eligible node/.test(error.message) && /ai-perception-center has no eligible node/.test(error.message),
+);
 const generation = buildPrivateCenterConfig('ai-generation-center', env);
 const perception = buildPrivateCenterConfig('ai-perception-center', env);
 assert.equal(inference.nodeCount, 2);
@@ -102,6 +129,8 @@ for (const [worker, inventory, tiers, pattern] of [
 
 const deployScript = readFileSync(path.join(root, 'scripts/deploy.sh'), 'utf8');
 const script = (marker) => deployScript.indexOf(marker);
+assert.ok(script('private-center-config.mjs preflight') >= 0, 'All centers must be checked before any deployment.');
+assert.ok(script('private-center-config.mjs preflight') < script('persistent-deployment.mjs preflight'));
 assert.ok(script('private-center-config.mjs prepare') >= 0, 'Both centers must be prepared.');
 assert.ok(script('private-center-config.mjs verify-inventory') >= 0, 'Both Secret inventories must be checked.');
 assert.ok(script('node scripts/deployment-recovery.mjs snapshot') > script('private-center-config.mjs prepare'));
