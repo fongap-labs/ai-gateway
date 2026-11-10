@@ -258,7 +258,8 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         'Worker binding',
       );
 
-      const declaredBuildSha = rawBindings.find((binding) => binding.name === 'AIG_BUILD_SHA' && binding.type === 'plain_text')?.declared_build_sha ?? null;
+      const declaredBuildSha =
+        rawBindings.find((binding) => binding.name === 'AIG_BUILD_SHA' && binding.type === 'plain_text')?.declared_build_sha ?? null;
       const bindings = rawBindings.map((binding) => {
         const item = { name: binding.name, type: binding.type };
         if (binding.type === 'service' && typeof binding.service === 'string') item.service = binding.service;
