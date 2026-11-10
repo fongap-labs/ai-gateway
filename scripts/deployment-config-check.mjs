@@ -664,12 +664,14 @@ for (const file of srcFiles) {
   assert.doesNotMatch(source, /\bbudgetSplit\b|\bbudget_split\b/, `${file} must not contain alternate tier-budget config`);
 }
 
-// Deployment defaults bound free-tier attempts while retaining explicit overrides.
-assert.equal(DEFAULT_OPTIMAL_VARS.AIG_STREAM_MAX_ATTEMPTS, '3');
-assert.equal(DEFAULT_OPTIMAL_VARS.AIG_NONSTREAM_MAX_ATTEMPTS, '3');
+// Default admission must not silently reduce the Tier 1-first built-in policy
+// from eight attempts to three. Explicit operator caps still take precedence.
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_STREAM_MAX_ATTEMPTS, '8');
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_NONSTREAM_MAX_ATTEMPTS, '8');
 assert.equal(DEFAULT_OPTIMAL_VARS.AIG_REQUEST_HEDGE_MAX, '0');
 assert.equal(buildWranglerConfig({ AIG_STREAM_MAX_ATTEMPTS: '4' }).vars.AIG_STREAM_MAX_ATTEMPTS, '4');
-assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '3');
+assert.equal(buildWranglerConfig({}).vars.AIG_STREAM_MAX_ATTEMPTS, '8');
+assert.equal(buildWranglerConfig({}).vars.AIG_NONSTREAM_MAX_ATTEMPTS, '8');
 
 // A free tier that runs out of selectable nodes must not strand attempts.
 const policy = { maxAttempts: 5, tierAttempts: null };

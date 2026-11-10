@@ -31,6 +31,8 @@ const BUILTIN_POLICIES: Readonly<{
   default: PolicyConfig;
   fast: PolicyConfig;
   'long-reasoning': PolicyConfig;
+  chat: PolicyConfig;
+  coding: PolicyConfig;
 }> = Object.freeze({
   default: {
     maxAttempts: 5,
@@ -59,7 +61,34 @@ const BUILTIN_POLICIES: Readonly<{
     failoverBudgetMs: 180_000,
     maxInFlight: null,
   },
+  // Prefer free Tier 1 capacity: use the maximum bounded attempt budget
+  // (up to seven free attempts plus one Tier 2 reserve when both tiers exist).
+  // Actual dispatches stop on success, exhausted free keys, cooldown, time budget
+  // or retry-admission pressure. Do not duplicate free requests with hedges.
+  chat: {
+    maxAttempts: 8,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    headersTimeoutMs: null,
+    firstEventTimeoutMs: null,
+    failoverBudgetMs: null,
+    maxInFlight: null,
+  },
+  coding: {
+    maxAttempts: 8,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    headersTimeoutMs: null,
+    firstEventTimeoutMs: null,
+    failoverBudgetMs: null,
+    maxInFlight: null,
+  },
 });
+
+/** Single shared policy-name source for runtime and private-center deployment gates. */
+export function isBuiltinPolicyName(name: string): boolean {
+  return Object.hasOwn(BUILTIN_POLICIES, name);
+}
 
 let cachedEnv: Record<string, unknown> | undefined;
 let cached: { policies: Record<string, PolicyConfig>; errors: string[] } | undefined;
