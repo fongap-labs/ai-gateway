@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# Runtime provider/application secrets are persistent Cloudflare Worker Secrets.
-# This code-deploy path only reads their names and never uploads or deletes values.
+# Provider and application Secrets remain persistent in Cloudflare.
+# The ONE ai-gateway-ops Environment supplies health and center-auth keys, which
+# are synchronized to the four Workers in the existing source-script deploy.
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -66,6 +67,9 @@ npm run validate:deploy
 npm run check:deploy
 
 node scripts/persistent-deployment.mjs preflight
+# Confirm the one protected Environment contains all authentication inputs
+# before any production Worker or rollback-baseline mutation.
+node scripts/sync-runtime-secrets.mjs preflight
 node scripts/persistent-deployment.mjs prepare \
   --wrangler "$RUNNER_TEMP/wrangler.github.json" \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
@@ -96,6 +100,12 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --message "action-worker:center:$center:$DEPLOY_SOURCE_SHA" \
     --config "$config"
 done
+
+# Use the SAME protected ops Secret value for each private center and its
+# Gateway Service Binding. This is an idempotent named-secret reconciliation,
+# not an extra deploy workflow or another GitHub Environment.
+# All four live Workers are inspected before any Secret is changed.
+node scripts/sync-runtime-secrets.mjs reconcile
 
 # Read only Secret names for each center, then fail closed BEFORE switching
 # the public Gateway if either internal auth or provider shard is missing.
