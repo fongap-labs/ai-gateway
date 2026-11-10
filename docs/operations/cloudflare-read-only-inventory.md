@@ -39,6 +39,20 @@ node scripts/production-cutover-evidence.mjs \\
 
 成功输出仅表示**元数据进入受保护的运行时核验阶段**，始终是 `production_deployment_authorized:false`。它不验证报告是否来自真实 Cloudflare、Provider Secret 能否工作、四 Worker 实际构建 SHA、TTFT/429/503、Cron 全球传播或回滚演练；这些必须在独立生产观察和审批流程中完成，不能通过替换 JSON 状态直接获得发布权限。
 
+## 受保护工作流报错分类
+
+在 Action Worker `ai-gateway-ops` 的 `runtime-inventory` 手动任务中，前两项 `check-*` 是模拟合同测试，不访问真实 Cloudflare。真实请求由 `cloudflare-live-inventory.mjs` 发起；若发生 API 拒绝，日志只显示 `stage`（固定接口类别）、`code`（固定错误代码）及 `http` 状态，不包含 Token、账号 ID、URL、Worker 资源 ID 或 Cloudflare 原始错误响应。
+
+- `code=INVALID_CREDENTIAL_METADATA`：已传入的账号 ID 或 Token 形态非法，检查 `ai-gateway-ops` 环境变量/Secret 绑定（只核对名称和是否存在）。
+- `http=401` / `AUTHENTICATION_FAILED`：检查 Token 有效期、账号归属及授权，不要在日志中回显 Token。
+- `http=403` / `READ_PERMISSION_DENIED`：按 `stage` 核对 Cloudflare 权限；`worker-*` 需要 Workers Scripts Read 或该 API 支持的等价只读权限，`account-zones` 需要 Zone Read，`zone-routes` 需要 Workers Routes Read。Token 必须覆盖目标账号及相关 Zones。
+- `http=404` / `RESOURCE_ENDPOINT_NOT_FOUND`：核对账号、Worker 元数据范围或 Cloudflare API 版本，不要直接更改 Worker。
+- `http=429` / `CLOUDFLARE_RATE_LIMITED`：读请求遇到限流，评估请求配额后再重试。
+- `NETWORK_OR_TIMEOUT`、`API_RESPONSE_REJECTED`、`INVALID_API_JSON`：网络、接口响应或结构异常；先核实 Cloudflare API 状态与接口合同。
+- `METADATA_CONTRACT_FAILED`：请求可能已成功，但返回的数据未符合完整性或安全合同；只能在受保护环境中复查，不允许放宽校验。
+
+上述报错只用于定位读取失败。修复 API Token 授权也不会自动允许生产部署；发布仍受 `automatic:false`、三阶段预检及实际运行验收约束。
+
 ## 结果解释
 
 退出码 `0` 表示上述在线**元数据**合同未发现阻断；退出码 `2` 表示盘点失败或存在阻断。JSON 会列出每个 Worker 的部署存在性、活动部署版本数量、绑定名称/类型、Secret 名称、Cron、D1/KV 身份是否有效和路由暴露计数。
