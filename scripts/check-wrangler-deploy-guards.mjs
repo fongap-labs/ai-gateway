@@ -91,6 +91,15 @@ reject({ ...gateway, vars: { ...gateway.vars, AIG_INFERENCE_ACTIVE: 'false' } })
 reject({ ...gateway, vars: { ...gateway.vars, AIG_BUILD_SHA: 'main' } });
 reject({ ...detachedGateway, triggers: { crons: ['0 3 * * *'] } });
 reject({ ...generation, vars: { ...vars, AIG_ACCESS_KEY_AIR: 'not-a-center-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, OPENAI_API_KEY: 'not-a-gateway-var' } });
+reject({ ...inference, vars: { ...vars, OPENAI_API_KEY: 'not-a-center-var' } });
+reject({ ...generation, vars: { ...vars, GEMINI_API_KEY: 'not-a-center-var' } });
+reject({ ...inference, vars: { ...vars, PROVIDER_ACCESS_TOKEN: 'not-a-center-var' } });
+assert.equal(
+  classifyDeployTarget({ ...gateway, vars: { ...gateway.vars, AIG_TOKEN_D1_SAMPLE_PCT: '5' } }, root),
+  'gateway',
+  'Normal non-credential Token accounting configuration must remain valid',
+);
 reject({ ...inference, name: 'ai-gateway' });
 reject({ ...generation, main: 'apps/generation/index.ts' });
 reject({ ...generation, routes: [{ pattern: 'public.example.invalid' }] });
