@@ -15,7 +15,7 @@
 | `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符；值来自主机仓库 Variable `CLOUDFLARE_ACCOUNT_ID_SECONDARY`（经中央别名注入，该名字需声明在 `.github/deploy.secrets.allowed`） |
 
-`src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。生产发布会在修改 Cloudflare 之前，对推理、感知、生成三个中心统一执行只读预检；自定义策略名必须在 `AIG_POLICIES_CONFIG` 中有对应定义（内置 `default`、`fast`、`long-reasoning` 无需重复配置），每个中心都需要至少一个符合能力要求的模型节点。不能以空策略或空节点代替真实的生产能力。
+`src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。生产发布会在修改 Cloudflare 之前，对推理、感知、生成三个中心统一执行只读预检。策略 `default`、`fast`、`long-reasoning`、`chat` 和 `coding` 由代码内置，无需配置 `AIG_POLICIES_CONFIG`；仅引用其他自定义策略时才需要在该变量中定义。每个中心仍必须有至少一个符合能力要求的真实节点；不能用空节点替代生产能力。
 
 **生产切换状态**：2026-11-09 新两层源码已合并，但不代表线上配置已切换。当前仓库仍保留部署清单，但 `automatic: false` 暂时冻结自动生产派发；历史 Environment 部署请求需独立核实。发布前请按[两层 Tier 生产切换门禁](../architecture/two-tier-cutover.md)确认旧版凭据与中心绑定；不要直接批准等待中的自动部署。边缘缓存只能使用独立的 `AIG_EDGE_CACHE_HMAC_KEY` Secret（至少 32 字符），不得恢复旧会员 Token 密钥。
 
@@ -217,7 +217,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 }
 ```
 
-`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
+未显式配置时，内置 `chat` 策略最多 3 次逻辑尝试，内置 `coding` 最多 5 次；两者默认关闭 Hedge 并沿用全局超时、调度回退与并发限制。它们是兼顾可靠性和资源占用的安全基线，并非未经实测即断言的全局最优值。`AIG_POLICIES_CONFIG` 可按策略名显式覆盖，运行时和私有中心使用同一份内置定义。\n\n`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
 
 ## 请求时序
 
