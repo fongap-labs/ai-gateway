@@ -63,10 +63,17 @@ export function buildPrivateCenterConfig(worker, input) {
   if (typeof sourceSha !== 'string' || !shaPattern.test(sourceSha)) {
     throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
   }
+  // A private center must use the same explicit model catalog and policies
+  // as the approved Gateway. A synthesized empty map could silently disable
+  // production aliases or make a referenced custom policy unknown.
+  if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim() ||
+      typeof env.AIG_POLICIES_CONFIG !== 'string' || !env.AIG_POLICIES_CONFIG.trim()) {
+    throw new Error('Both AIG_MODELS_CONFIG and AIG_POLICIES_CONFIG are required for private center release.');
+  }
   const vars = {
     AIG_BUILD_SHA: sourceSha,
-    AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG || '{}',
-    AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG || '{}',
+    AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG,
+    AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG,
   };
   checkedJson(vars.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
   checkedJson(vars.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG');
