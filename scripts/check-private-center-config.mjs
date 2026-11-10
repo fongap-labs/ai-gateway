@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPrivateCenterConfig, preflightPrivateCenters, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
+import { getPolicy, isBuiltinPolicyName, loadPoliciesConfig } from '../src/config/policies.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = {
@@ -38,9 +39,33 @@ const customPolicyModels = JSON.stringify({
   coding: { policy: 'coding' },
   vision: { capabilities: { vision: true } },
 });
-const missingCustomPolicies = { ...env, AIG_MODELS_CONFIG: customPolicyModels, AIG_POLICIES_CONFIG: '' };
-assert.throws(() => preflightPrivateCenters(missingCustomPolicies), /missing definitions for referenced custom policies: chat, coding/);
-const withCustomPolicies = { ...missingCustomPolicies, AIG_POLICIES_CONFIG: '{"chat":{},"coding":{}}' };
+// chat and coding are built in; no operator-side policy Variable is needed.
+const withNamedBuiltinPolicies = { ...env, AIG_MODELS_CONFIG: customPolicyModels, AIG_POLICIES_CONFIG: '' };
+assert.equal(preflightPrivateCenters(withNamedBuiltinPolicies).workers, 3);
+assert.equal(isBuiltinPolicyName('chat'), true);
+assert.equal(isBuiltinPolicyName('coding'), true);
+assert.equal(isBuiltinPolicyName('private'), false);
+const defaultPolicies = loadPoliciesConfig({});
+assert.equal(defaultPolicies.chat.maxAttempts, 3);
+assert.deepEqual(defaultPolicies.chat.hedge, { enabled: false });
+assert.equal(defaultPolicies.coding.maxAttempts, 5);
+assert.deepEqual(defaultPolicies.coding.hedge, { enabled: false });
+assert.equal(getPolicy('Air', { Air: { policy: { policy: 'chat' } } }, defaultPolicies).maxAttempts, 3);
+assert.equal(getPolicy('Code-Max', { 'Code-Max': { policy: { policy: 'coding' } } }, defaultPolicies).maxAttempts, 5);
+// Explicit overrides take precedence, without changing any other built-in policy.
+const overridden = loadPoliciesConfig({ AIG_POLICIES_CONFIG: '{"chat":{"max_attempts":2}}' });
+assert.equal(overridden.chat.maxAttempts, 2);
+assert.equal(overridden.coding.maxAttempts, 5);
+assert.deepEqual(overridden.chat.hedge, { enabled: false });
+const missingCustomPolicies = {
+  ...withNamedBuiltinPolicies,
+  AIG_MODELS_CONFIG: JSON.stringify({
+    ...JSON.parse(customPolicyModels),
+    specialist: { policy: 'private' },
+  }),
+};
+assert.throws(() => preflightPrivateCenters(missingCustomPolicies), /missing definitions for referenced custom policies: private/);
+const withCustomPolicies = { ...missingCustomPolicies, AIG_POLICIES_CONFIG: '{"private":{}}' };
 assert.equal(preflightPrivateCenters(withCustomPolicies).workers, 3);
 const noImageOrVision = {
   ...withCustomPolicies,
