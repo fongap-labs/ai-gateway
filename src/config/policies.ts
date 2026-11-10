@@ -31,6 +31,8 @@ const BUILTIN_POLICIES: Readonly<{
   default: PolicyConfig;
   fast: PolicyConfig;
   'long-reasoning': PolicyConfig;
+  chat: PolicyConfig;
+  coding: PolicyConfig;
 }> = Object.freeze({
   default: {
     maxAttempts: 5,
@@ -59,7 +61,32 @@ const BUILTIN_POLICIES: Readonly<{
     failoverBudgetMs: 180_000,
     maxInFlight: null,
   },
+  // Safe operational baselines, not an assumption about upstream provider capacity.
+  // Adaptive routing, per-node recovery and the global failover budget remain authoritative.
+  chat: {
+    maxAttempts: 3,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    headersTimeoutMs: null,
+    firstEventTimeoutMs: null,
+    failoverBudgetMs: null,
+    maxInFlight: null,
+  },
+  coding: {
+    maxAttempts: 5,
+    tierAttempts: null,
+    hedge: { enabled: false },
+    headersTimeoutMs: null,
+    firstEventTimeoutMs: null,
+    failoverBudgetMs: null,
+    maxInFlight: null,
+  },
 });
+
+/** Single shared policy-name source for runtime and private-center deployment gates. */
+export function isBuiltinPolicyName(name: string): boolean {
+  return Object.hasOwn(BUILTIN_POLICIES, name);
+}
 
 let cachedEnv: Record<string, unknown> | undefined;
 let cached: { policies: Record<string, PolicyConfig>; errors: string[] } | undefined;
