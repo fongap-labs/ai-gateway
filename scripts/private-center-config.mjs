@@ -92,9 +92,7 @@ export function buildPrivateCenterConfig(worker, input) {
       .filter((entry) => record(entry) && typeof entry.policy === 'string' && entry.policy.trim())
       .map((entry) => entry.policy.trim()),
   );
-  const unknownPolicies = [...referencedPolicies]
-    .filter((name) => !builtinPolicies.has(name) && !Object.hasOwn(policyOverrides, name))
-    .sort();
+  const unknownPolicies = [...referencedPolicies].filter((name) => !builtinPolicies.has(name) && !Object.hasOwn(policyOverrides, name)).sort();
   if (unknownPolicies.length > 0) {
     problems.push(`AIG_POLICIES_CONFIG is missing definitions for referenced custom policies: ${unknownPolicies.join(', ')}.`);
   }
