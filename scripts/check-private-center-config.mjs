@@ -39,10 +39,7 @@ const customPolicyModels = JSON.stringify({
   vision: { capabilities: { vision: true } },
 });
 const missingCustomPolicies = { ...env, AIG_MODELS_CONFIG: customPolicyModels, AIG_POLICIES_CONFIG: '' };
-assert.throws(
-  () => preflightPrivateCenters(missingCustomPolicies),
-  /missing definitions for referenced custom policies: chat, coding/,
-);
+assert.throws(() => preflightPrivateCenters(missingCustomPolicies), /missing definitions for referenced custom policies: chat, coding/);
 const withCustomPolicies = { ...missingCustomPolicies, AIG_POLICIES_CONFIG: '{"chat":{},"coding":{}}' };
 assert.equal(preflightPrivateCenters(withCustomPolicies).workers, 3);
 const noImageOrVision = {
@@ -52,8 +49,9 @@ const noImageOrVision = {
     { id: 'text-only', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { chat: 'physical-text' } },
   ]),
 };
-assert.throws(() => preflightPrivateCenters(noImageOrVision), (error) =>
-  /ai-generation-center has no eligible node/.test(error.message) && /ai-perception-center has no eligible node/.test(error.message),
+assert.throws(
+  () => preflightPrivateCenters(noImageOrVision),
+  (error) => /ai-generation-center has no eligible node/.test(error.message) && /ai-perception-center has no eligible node/.test(error.message),
 );
 const generation = buildPrivateCenterConfig('ai-generation-center', env);
 const perception = buildPrivateCenterConfig('ai-perception-center', env);
