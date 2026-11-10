@@ -90,8 +90,15 @@ for (const [worker, inventory, tiers, pattern] of [
   assert.throws(() => verifyPrivateCenterSecretNames(worker, inventory, tiers), pattern);
 
 const deployScript = readFileSync(path.join(root, 'scripts/deploy.sh'), 'utf8');
-assert.ok(deployScript.includes('private-center-config.mjs prepare'));
-assert.ok(deployScript.includes('private-center-config.mjs verify-inventory'));
-assert.ok(deployScript.indexOf('private-center-config.mjs verify-inventory') < deployScript.indexOf('node scripts/deployment-recovery.mjs snapshot'));
-assert.ok(deployScript.indexOf('private-center-config.mjs verify-inventory') < deployScript.indexOf('node scripts/cloudflare-wrangler.mjs deploy'));
-console.log('Private center config & Secret name guards passed; no Cloudflare requests or production writes.');
+const script = (marker) => deployScript.indexOf(marker);
+assert.ok(script('private-center-config.mjs prepare') >= 0, 'Both centers must be prepared.');
+assert.ok(script('private-center-config.mjs verify-inventory') >= 0, 'Both Secret inventories must be checked.');
+assert.ok(script('node scripts/deployment-recovery.mjs snapshot') > script('private-center-config.mjs prepare'));
+assert.ok(script('node scripts/deployment-recovery.mjs snapshot') < script('node scripts/cloudflare-wrangler.mjs deploy'));
+assert.ok(script('private-center-config.mjs verify-inventory') > script('node scripts/cloudflare-wrangler.mjs deploy'));
+assert.ok(script('private-center-config.mjs verify-inventory') < script('node scripts/persistent-deployment.mjs verify-secrets'));
+assert.ok(script('node scripts/persistent-deployment.mjs verify-secrets') < script('node scripts/deployment-recovery.mjs capture-published'));
+assert.ok(deployScript.includes('action-worker:center:$center:$DEPLOY_SOURCE_SHA'));
+assert.ok(!deployScript.includes('AIG_OPS_SECRET_VALUE'));
+assert.ok(!deployScript.includes('wrangler secret put'));
+console.log('Unified source deploy & private center config guards passed; offline only.');
