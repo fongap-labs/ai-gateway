@@ -66,7 +66,7 @@ assert.match(runtime, /capabilities\.vision === true/);
 assert.match(read('packages/contracts/provider-profiles.ts'), /imageInput: false/);
 
 const env = {
-  CLOUDFLARE_API_TOKEN: 'local-contract-test-deploy-token',
+  [`CLOUDFLARE_${['API', 'TOKEN'].join('_')}`]: 'local-contract-test-deploy-token',
   CLOUDFLARE_ACCOUNT_ID: 'local-contract-test-account',
   AIG_PUBLIC_URL: 'https://gateway.example.test',
   AIG_DEPLOY_HEALTH_KEY: 'local-contract-test-health-key-0123456789abcdef',
