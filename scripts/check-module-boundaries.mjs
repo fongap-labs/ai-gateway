@@ -1019,6 +1019,20 @@ assert.doesNotMatch(retentionCompat, /export async function /, 'Legacy retention
 assert.match(compositionRoot, /import operations from '\.\.\/operations\/index\.ts'/, 'Cloudflare composition must delegate to Operations');
 assert.match(compositionRoot, /scheduled: operations\.scheduled/, 'Composition must preserve Cron behavior');
 assert.doesNotMatch(compositionRoot, /runUsageMaintenance|maintainUsageStats|async scheduled/, 'Composition must not own maintenance implementation');
+const composedRuntimeOnly = compositionRoot.replace(/^\s*\/\/[^\n]*(?:\n|$)/gm, '').trim();
+assert.equal(
+  composedRuntimeOnly,
+  [
+    "import gateway from '../apps/gateway/index.ts';",
+    "import operations from '../operations/index.ts';",
+    '',
+    'export default {',
+    '  fetch: gateway.fetch,',
+    '  scheduled: operations.scheduled,',
+    '};',
+  ].join('\n'),
+  'Before the protected Cron handoff, the old composition entry must remain a pure fetch/scheduled facade',
+);
 for (const [app, shim] of [
   ['apps/gateway/index.ts', 'src/index.ts'],
   ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],
