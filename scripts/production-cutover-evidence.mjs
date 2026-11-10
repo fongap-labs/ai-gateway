@@ -48,6 +48,7 @@ export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
   assert.equal(inventory.checks.gateway_public_route_present, true, 'Gateway must retain its public route');
   assert.equal(inventory.checks.tier1_kv_binding_present, true, 'Gateway Tier 1 KV is missing');
   assert.equal(inventory.checks.shared_token_stats_d1_consistent, true, 'Gateway and Operations must use the same D1');
+  assert.equal(inventory.checks.declared_build_sha_consistent, true, 'All four Workers must declare one build SHA');
   assert.equal(inventory.checks.gateway_provider_credential_binding_count, 0, 'Gateway must not own Provider credentials');
   assert.equal(inventory.checks.private_worker_exposure_clear, true, 'Private Workers must have no public routes');
   assert.equal(inventory.checks.gateway_service_bindings?.AIG_INFERENCE_SERVICE, true, 'Inference Service Binding is invalid');
@@ -66,6 +67,7 @@ export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
     assert.ok(Math.abs(worker.active_traffic_weight_total - 100) < 0.001, 'Active Worker traffic weights are invalid');
     assert.deepEqual(worker.crons, cronFor(phase, workerName), 'Unexpected live Cron owner or schedule');
     assert.deepEqual(worker.retired_binding_names, [], 'Retired Tier/OAuth bindings remain');
+    assert.equal(worker.declared_build_sha, preflight.source_sha, 'Declared Worker build SHA differs from the immutable release plan');
   }
   assert.equal(inventory.workers['ai-gateway'].token_stats_db_binding_count, 1, 'Gateway must have one TOKEN_STATS_DB');
   assert.equal(inventory.workers['ai-gateway-operations'].token_stats_db_binding_count, 1, 'Operations must have one TOKEN_STATS_DB');
