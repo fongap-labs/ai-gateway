@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
+import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,7 +15,7 @@ const shaPattern = /^[a-f0-9]{40}$/;
 const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
 const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
 const FORBIDDEN =
-  /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
+  /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|PERCEPTION|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
 const centerTypes = Object.freeze({
   'ai-inference-center': {
     entry: 'src/inference/inference-center-entry.ts',
@@ -27,6 +28,12 @@ const centerTypes = Object.freeze({
     base: 'wrangler.generation-center.jsonc',
     auth: 'AIG_GENERATION_AUTH_KEY',
     kind: 'generation',
+  },
+  'ai-perception-center': {
+    entry: 'src/perception/perception-center-entry.ts',
+    base: 'wrangler.perception-center.jsonc',
+    auth: 'AIG_PERCEPTION_AUTH_KEY',
+    kind: 'perception',
   },
 });
 
@@ -85,7 +92,7 @@ export function buildPrivateCenterConfig(worker, input) {
     AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG,
     AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG,
   };
-  checkedJson(vars.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
+  const modelCatalog = checkedJson(vars.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
   checkedJson(vars.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG');
   if (env.AIG_PROTOCOL_FALLBACKS) vars.AIG_PROTOCOL_FALLBACKS = env.AIG_PROTOCOL_FALLBACKS;
 
@@ -112,13 +119,34 @@ export function buildPrivateCenterConfig(worker, input) {
         throw new Error(`${name} contains an invalid or embedded-credential node.`);
       }
     }
-    const selected = all.filter((n) =>
-      target.kind === 'generation' ? isImageGenerationProvider(n.provider) : !isImageGenerationProvider(n.provider),
-    );
+    const selected = all.flatMap((n) => {
+      if (target.kind === 'generation') return isImageGenerationProvider(n.provider) ? [n] : [];
+      if (target.kind === 'inference') return !isImageGenerationProvider(n.provider) ? [n] : [];
+      if (!getProviderProfile(n.provider).imageInput) return [];
+      const mappings = record(n.models) ? n.models : {};
+      const visionNames = new Set(
+        Object.entries(modelCatalog)
+          .filter(([, entry]) => record(entry) && record(entry.capabilities) && entry.capabilities.vision === true)
+          .map(([name]) => name.toLowerCase()),
+      );
+      const selectedMappings = Object.fromEntries(Object.entries(mappings).filter(([logical]) => visionNames.has(logical.toLowerCase())));
+      // A wildcard node serves the catalog, so retain it only when at least one
+      // explicitly vision-enabled logical model exists.
+      if (Object.keys(mappings).length === 0) return visionNames.size ? [n] : [];
+      if (!Object.keys(selectedMappings).length) return [];
+      return [{ ...n, models: selectedMappings }];
+    });
     if (!selected.length) continue;
     vars[name] = JSON.stringify(selected);
     tiers.add(match[1]);
     total += selected.length;
+  }
+  if (target.kind === 'perception') {
+    vars.AIG_MODELS_CONFIG = JSON.stringify(
+      Object.fromEntries(
+        Object.entries(modelCatalog).filter(([, entry]) => record(entry) && record(entry.capabilities) && entry.capabilities.vision === true),
+      ),
+    );
   }
   if (!total) throw new Error(`${worker} has no eligible node; do not publish an empty private center.`);
 

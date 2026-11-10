@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Operations Cron handoff: read-only by default. Activation/reversal require
-// explicit operator approval, an offline four-Worker plan, and live CF checks.
+// explicit operator approval, an offline five-Worker plan, and live CF checks.
 // Never print credentials, response bodies, account identifiers or D1 IDs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -125,7 +125,7 @@ function assertApprovedPlan(file, action, env) {
     plan = JSON.parse(readFileSync(file, 'utf8'));
     assertReleaseTopology(plan);
   } catch {
-    throw new Error('Offline four-Worker topology plan is invalid.');
+    throw new Error('Offline five-Worker topology plan is invalid.');
   }
   if (plan.source_sha !== env.DEPLOY_SOURCE_SHA || plan.stage !== (action === 'activate' ? 'activate' : 'detach')) {
     throw new Error('Approved source SHA or Cron handoff phase differs from the release plan.');

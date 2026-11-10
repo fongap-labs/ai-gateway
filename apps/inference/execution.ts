@@ -5,6 +5,8 @@
 // model family retries, Tier scheduling or public routing in this module.
 
 import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import { hasImageInput } from '../../packages/contracts/image-input.ts';
+import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
@@ -14,7 +16,7 @@ import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
-import { collectKnownModels } from '../../src/config/registry.ts';
+import { collectKnownModels, modelRegistryEntry } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { estimateAnthropicInputTokens } from '../../src/protocol/anthropic.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
@@ -32,6 +34,7 @@ import { preDispatchProblem, problem } from './response.ts';
 // Its own memory pool remains separate, even in an in-process integration test.
 const centerBodyPool = createBodyAdmissionPool();
 type Invocation = ExecutionInvocation;
+type ExecutionOptions = { center?: 'perception' };
 
 function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface']): IrProtocol | null {
   switch (surface) {
@@ -108,7 +111,7 @@ function forwardedRequest(request: Request): Request {
   return new Request('https://inference.internal/execute', { method: 'POST', headers });
 }
 
-export async function executeNative(request: Request, env: GatewayEnv, invocation: Invocation): Promise<Response> {
+export async function executeNative(request: Request, env: GatewayEnv, invocation: Invocation, options: ExecutionOptions = {}): Promise<Response> {
   const config = loadExecutionConfig(env);
   // Keep serving strictly validated nodes in a degraded configuration, as the
   // former Gateway did. Invalid nodes and missing secrets are already excluded
@@ -139,7 +142,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     return rejected;
   }
   try {
-    return await executeAdmittedNative(request, env, invocation, node, maxRequestBytes);
+    return await executeAdmittedNative(request, env, invocation, node, maxRequestBytes, options);
   } finally {
     releaseBody();
   }
@@ -151,6 +154,7 @@ async function executeAdmittedNative(
   invocation: Invocation,
   node: RuntimeNode,
   maxRequestBytes: number,
+  options: ExecutionOptions,
 ): Promise<Response> {
   let rawBody: string;
   let clientBody: Record<string, unknown>;
@@ -161,6 +165,13 @@ async function executeAdmittedNative(
     clientBody = parsed as Record<string, unknown>;
   } catch (error) {
     return problem(error instanceof BodyTooLargeError ? 413 : 400, 'center_body_invalid');
+  }
+
+  if (options.center === 'perception') {
+    const visionDeclared = modelRegistryEntry(env, invocation.logicalModel).catalog.capabilities.vision === true;
+    if (!hasImageInput(clientBody) || !visionDeclared || !getProviderProfile(node.provider).imageInput) {
+      return preDispatchProblem(404, 'center_route_unavailable');
+    }
   }
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');

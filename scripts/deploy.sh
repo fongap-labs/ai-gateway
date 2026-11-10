@@ -27,6 +27,9 @@ esac
   exit 64
 }
 recovery_evidence="$RUNNER_TEMP/gateway-recovery-$DEPLOY_SOURCE_SHA.json"
+center_update_attempted=()
+gateway_update_attempted=false
+gateway_rollback_verified=false
 
 cleanup() {
   rm -f \
@@ -36,7 +39,24 @@ cleanup() {
     "${RUNNER_TEMP:-/tmp}/private-center-"*.json \
     "$recovery_evidence" "$recovery_evidence.next" 2>/dev/null || true
 }
-trap cleanup EXIT
+finish() {
+  status=$?
+  trap - EXIT
+  if [[ "$status" -ne 0 && "${#center_update_attempted[@]}" -gt 0 ]]; then
+    printf 'ERROR: partial multi-Worker release; private center update(s) attempted: %s.\n' "${center_update_attempted[*]}" >&2
+    if [[ "$gateway_rollback_verified" == "true" ]]; then
+      echo 'Gateway rollback identity and public health were verified; private centers may still be on the attempted source SHA.' >&2
+    elif [[ "$gateway_update_attempted" == "true" ]]; then
+      echo 'Gateway publication was attempted but no verified rollback is recorded; inspect exact Worker deployment identities before any retry or recovery.' >&2
+    else
+      echo 'Gateway publication was not attempted; existing Gateway configuration remains, while a bound center may already have changed.' >&2
+    fi
+    echo 'Do not claim an atomic rollback. Restore only an approved, compatible immutable SHA after checking each Worker identity through the protected release process.' >&2
+  fi
+  cleanup
+  exit "$status"
+}
+trap finish EXIT
 
 export DEPLOYED_SHA="$DEPLOY_SOURCE_SHA"
 export AIG_BUILD_SHA="$DEPLOY_SOURCE_SHA"
@@ -51,9 +71,9 @@ node scripts/persistent-deployment.mjs prepare \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
 # The existing Action Worker source-script deployment is the ONE release entry.
-# Build both private center manifests before mutating any Worker. Their Secret
+# Build all private center manifests before mutating any Worker. Their Secret
 # values remain managed exclusively by the protected ops channel.
-for center in ai-inference-center ai-generation-center; do
+for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
   node scripts/private-center-config.mjs prepare \
@@ -65,12 +85,13 @@ done
 # if a later center Secret inventory or Gateway health check fails.
 node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
 
-# Prepare both private centers automatically under the SAME audited commit and
-# credential environment. Neither center has public routes or Workers.dev.
+# Prepare all three private centers automatically under the SAME audited commit and
+# credential environment. No center has public routes or Workers.dev.
 # A first-time bootstrap may stop below for missing Cloudflare Secrets: it must
 # never enable Gateway Service Bindings until the owner has provisioned them.
-for center in ai-inference-center ai-generation-center; do
+for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
+  center_update_attempted+=("$center")
   node scripts/cloudflare-wrangler.mjs deploy \
     --message "action-worker:center:$center:$DEPLOY_SOURCE_SHA" \
     --config "$config"
@@ -78,7 +99,7 @@ done
 
 # Read only Secret names for each center, then fail closed BEFORE switching
 # the public Gateway if either internal auth or provider shard is missing.
-for center in ai-inference-center ai-generation-center; do
+for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
   inventory="$RUNNER_TEMP/private-center-$center-inventory.json"
@@ -101,6 +122,7 @@ node scripts/persistent-deployment.mjs verify-secrets \
 # Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
 # guard refuses to claim an unrelated/concurrent deploy as this job's publish.
 # Cloudflare preserves existing Worker Secrets across code-only deployments.
+gateway_update_attempted=true
 node scripts/cloudflare-wrangler.mjs deploy \
   --message "action-worker:deploy:$DEPLOY_SOURCE_SHA" \
   --config "$RUNNER_TEMP/wrangler.github.json"
@@ -136,6 +158,7 @@ if [[ "$health_ok" != "true" ]]; then
     echo "ERROR: Restored version or public health is not verified." >&2
     exit 77
   fi
+  gateway_rollback_verified=true
   echo "Previous immutable Gateway version and public health restored; new deployment failed." >&2
   exit 1
 fi

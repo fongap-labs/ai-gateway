@@ -28,6 +28,8 @@ export type InferenceInvocation = {
   signal?: AbortSignal;
 };
 
+export type InferenceCenter = 'inference' | 'perception';
+
 export class InferenceCenterUnavailable extends Error {
   constructor() {
     super('Private inference center is not configured.');

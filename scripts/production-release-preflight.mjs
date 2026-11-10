@@ -41,6 +41,7 @@ function comparePhaseInvariant(phase) {
     source_sha: phase.source_sha,
     gateway: removeKeys(phase.gateway, ['main', 'triggers']),
     inference: phase.inference,
+    perception: phase.perception,
     generation: phase.generation,
     operations: removeKeys(phase.operations, ['triggers']),
     secret_names: phase.secret_names,
@@ -57,7 +58,7 @@ function expectedCronOwner(phase) {
 }
 
 function checkDeployAllowlist(phase, index) {
-  const expected = ['gateway', 'inference', 'generation'];
+  const expected = ['gateway', 'inference', 'perception', 'generation'];
   if (index < RELEASE_PHASE_ORDER.length - 1) expected.push('operations');
   for (const worker of expected) {
     assert.equal(classifyDeployTarget(phase[worker], ROOT), worker, `${phase.stage} ${worker} is not deploy-allowlisted`);
@@ -120,7 +121,9 @@ export function assertProductionReleasePreflight(plan) {
       workers: topology.workers,
       cron_owner: cronOwner,
       wrangler_deploy_targets:
-        index < RELEASE_PHASE_ORDER.length - 1 ? ['gateway', 'inference', 'generation', 'operations'] : ['gateway', 'inference', 'generation'],
+        index < RELEASE_PHASE_ORDER.length - 1
+          ? ['gateway', 'inference', 'perception', 'generation', 'operations']
+          : ['gateway', 'inference', 'perception', 'generation'],
       requires_runtime_evidence_before_next_stage: true,
     });
   }

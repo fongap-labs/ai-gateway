@@ -21,6 +21,7 @@ const config = {
     vars: { AIG_BUILD_SHA: sha, AIG_TIER1_NODES_01: inferenceNodes },
     services: [
       { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+      { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
       { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
     ],
     triggers: { crons: ['0 3 * * *'] },
@@ -29,6 +30,12 @@ const config = {
   inference: {
     name: 'ai-inference-center',
     main: 'src/inference/inference-center-entry.ts',
+    workers_dev: false,
+    vars: { AIG_BUILD_SHA: sha, AIG_TIER1_NODES_01: inferenceNodes },
+  },
+  perception: {
+    name: 'ai-perception-center',
+    main: 'src/perception/perception-center-entry.ts',
     workers_dev: false,
     vars: { AIG_BUILD_SHA: sha, AIG_TIER1_NODES_01: inferenceNodes },
   },
@@ -47,8 +54,9 @@ const config = {
     d1_databases: [{ ...db }],
   },
   secret_names: {
-    gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
+    gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_PERCEPTION_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
     inference: ['AIG_INFERENCE_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
+    perception: ['AIG_PERCEPTION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
     generation: ['AIG_GENERATION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
     operations: [],
   },
@@ -82,6 +90,7 @@ for (const [worker, name] of [
   ['gateway', 'AIG_EDGE_CACHE_HMAC_KEY'],
   ['gateway', 'CLOUDFLARE_API_TOKEN'],
   ['inference', 'AIG_ACCESS_KEY_MAX'],
+  ['perception', 'OPENAI_API_KEY'],
   ['inference', 'OPENAI_API_KEY'],
   ['generation', 'GEMINI_API_KEY'],
   ['generation', 'AIG_EDGE_CACHE_HMAC_KEY'],
@@ -95,6 +104,7 @@ assert.equal(assertReleaseTopology(usageConfig).ready, true);
 reject((p) => (p.gateway.vars.AIG_TOKEN_ENCRYPTION_KEY = 'do-not-log'));
 reject((p) => p.secret_names.gateway.push('AIG_TIER1_CREDENTIALS_01'));
 reject((p) => p.secret_names.inference.push('AIG_TIER3_CREDENTIALS_01'));
+reject((p) => p.secret_names.perception.push('AIG_INFERENCE_AUTH_KEY'));
 reject((p) => (p.secret_names.generation = []));
 reject((p) => (p.inference.vars.AIG_BUILD_SHA = 'b'.repeat(40)));
 reject((p) => (p.operations.vars.AIG_BUILD_SHA = 'b'.repeat(40)));
@@ -113,4 +123,4 @@ reject((p) => (p.inference.services = []));
 reject((p) => (p.generation.triggers = { crons: [] }));
 const deploy = JSON.parse(readFileSync(new URL('../.github/deploy.json', import.meta.url), 'utf8'));
 assert.equal(deploy.automatic, false, 'Cutover must keep automatic production dispatch disabled');
-console.log('Four-worker offline release gate passed: private centers, Secret names, SHA, D1 and one cron owner.');
+console.log('Five-worker offline release gate passed: private centers, Secret names, SHA, D1 and one cron owner.');

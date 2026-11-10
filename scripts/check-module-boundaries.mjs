@@ -732,9 +732,18 @@ assert.match(
 );
 assert.match(
   dispatchSource,
-  /return dispatchInferenceAttempt\(c, sourceBody\);/,
-  'Every inference attempt must route through the private Inference Center',
+  /return dispatchInferenceAttempt\(c, sourceBody, 'inference'\);/,
+  'Text inference must route through the private Inference Center',
 );
+assert.match(
+  dispatchSource,
+  /return dispatchInferenceAttempt\(c, sourceBody, 'perception'\);/,
+  'Declared image input must use the private Perception Center',
+);
+assert.match(dispatchSource, /hasImageInput\(bodyJson\)/, 'Perception routing must require actual image-bearing input');
+assert.match(dispatchSource, /capabilities\.vision === true/, 'Perception routing must require explicit catalog vision capability');
+assert.match(dispatchSource, /getProviderProfile\(node\.provider\)\.imageInput/, 'Perception routing must require explicit provider image support');
+assert.doesNotMatch(dispatchSource, /rotateWithNeutralEnd\(state,/, 'Provider filtering must use the current attempt state');
 assert.doesNotMatch(dispatchSource, /AIG_INFERENCE_ACTIVE|AIG_GENERATION_ACTIVE/, 'No runtime switch may re-enable direct Provider execution');
 assert.ok(
   !existsSync(join(root, 'src/request/attempt/legacy-provider-dispatch.ts')),
@@ -1019,7 +1028,10 @@ assert.doesNotMatch(retentionCompat, /export async function /, 'Legacy retention
 assert.match(compositionRoot, /import operations from '\.\.\/operations\/index\.ts'/, 'Cloudflare composition must delegate to Operations');
 assert.match(compositionRoot, /scheduled: operations\.scheduled/, 'Composition must preserve Cron behavior');
 assert.doesNotMatch(compositionRoot, /runUsageMaintenance|maintainUsageStats|async scheduled/, 'Composition must not own maintenance implementation');
-const composedRuntimeOnly = compositionRoot.replace(/^\s*\/\/[^\n]*(?:\n|$)/gm, '').trim();
+const composedRuntimeOnly = compositionRoot
+  .replace(/\r\n/g, '\n')
+  .replace(/^\s*\/\/[^\n]*(?:\n|$)/gm, '')
+  .trim();
 assert.equal(
   composedRuntimeOnly,
   [
@@ -1037,6 +1049,7 @@ for (const [app, shim] of [
   ['apps/gateway/index.ts', 'src/index.ts'],
   ['apps/inference/index.ts', 'src/inference/inference-center-entry.ts'],
   ['apps/generation/index.ts', 'src/generation/generation-center-entry.ts'],
+  ['apps/perception/index.ts', 'src/perception/perception-center-entry.ts'],
 ]) {
   assert.ok(existsSync(join(root, app)), `Missing running app: ${app}`);
   assert.match(readFileSync(join(root, shim), 'utf8'), /apps\//, `Compatibility entrypoint not delegated: ${shim}`);
@@ -1050,4 +1063,9 @@ for (const path of [
   const content = readFileSync(join(root, path), 'utf8');
   assert.match(content, /packages\/contracts\/execution\.ts/, `${path} does not use the contract`);
 }
+assert.match(
+  readFileSync(join(root, 'src/perception/perception-center-entry.ts'), 'utf8'),
+  /from '\.\.\/\.\.\/packages\/contracts\/runtime\.ts'/,
+  'Perception compatibility entry must use the shared runtime type contract',
+);
 console.log(`Architecture boundary check passed (${checked} package/app files).`);

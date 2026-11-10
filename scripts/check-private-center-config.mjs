@@ -10,10 +10,10 @@ import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = {
   DEPLOY_SOURCE_SHA: 'a'.repeat(40),
-  AIG_MODELS_CONFIG: '{}',
+  AIG_MODELS_CONFIG: JSON.stringify({ vision: { capabilities: { vision: true } } }),
   AIG_POLICIES_CONFIG: '{}',
   AIG_TIER1_NODES_01: JSON.stringify([
-    { id: 'text-01', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { chat: 'physical-text' } },
+    { id: 'text-01', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { chat: 'physical-text', vision: 'physical-vision' } },
     { id: 'image-01', provider: 'openai-image', base_url: 'https://provider.example.test/v1', models: { image: 'physical-image' } },
   ]),
   AIG_TIER2_NODES_01: JSON.stringify([
@@ -29,12 +29,16 @@ assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_DEPLOY_HEALTH_KEY'
 assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
 const inference = buildPrivateCenterConfig('ai-inference-center', env);
 const generation = buildPrivateCenterConfig('ai-generation-center', env);
+const perception = buildPrivateCenterConfig('ai-perception-center', env);
 assert.equal(inference.nodeCount, 2);
 assert.deepEqual(inference.tiers, ['1', '2']);
 assert.equal(generation.nodeCount, 1);
 assert.deepEqual(generation.tiers, ['1']);
+assert.equal(perception.nodeCount, 1);
+assert.deepEqual(perception.tiers, ['1']);
 assert.equal(classifyDeployTarget(inference.config, root), 'inference');
 assert.equal(classifyDeployTarget(generation.config, root), 'generation');
+assert.equal(classifyDeployTarget(perception.config, root), 'perception');
 assert.deepEqual(
   JSON.parse(inference.config.vars.AIG_TIER1_NODES_01).map((n) => n.id),
   ['text-01'],
@@ -45,7 +49,9 @@ assert.deepEqual(
   ['image-01'],
 );
 assert.equal(generation.config.vars.AIG_TIER2_NODES_01, undefined);
-for (const config of [inference.config, generation.config]) {
+assert.deepEqual(JSON.parse(perception.config.vars.AIG_TIER1_NODES_01)[0].models, { vision: 'physical-vision' });
+assert.equal(perception.config.vars.AIG_TIER2_NODES_01, undefined);
+for (const config of [inference.config, perception.config, generation.config]) {
   assert.equal(config.workers_dev, false);
   assert.equal(config.keep_vars, false);
   for (const forbidden of ['routes', 'route', 'custom_domains', 'services', 'triggers', 'secrets', 'assets']) {
@@ -67,6 +73,10 @@ assert.deepEqual(
   verifyPrivateCenterSecretNames('ai-generation-center', [auth('AIG_GENERATION_AUTH_KEY'), auth('AIG_TIER1_CREDENTIALS_01')], generation.tiers),
   { worker: 'ai-generation-center', secretNames: 2, tierCount: 1 },
 );
+assert.deepEqual(
+  verifyPrivateCenterSecretNames('ai-perception-center', [auth('AIG_PERCEPTION_AUTH_KEY'), auth('AIG_TIER1_CREDENTIALS_01')], perception.tiers),
+  { worker: 'ai-perception-center', secretNames: 2, tierCount: 1 },
+);
 for (const [name, environment, pattern] of [
   ['ai-gateway', env, /Unknown private Worker/],
   ['ai-inference-center', { ...env, AIG_TOKEN_ENCRYPTION_KEY: 'legacy' }, /Forbidden Secret or retired Variable/],
@@ -78,6 +88,7 @@ for (const [name, environment, pattern] of [
   ],
   ['ai-inference-center', { ...env, AIG_TIER1_NODES_01: '[{"auth":"oauth"}]' }, /embedded-credential node/],
   ['ai-generation-center', { ...env, AIG_TIER1_NODES_01: '[]' }, /no eligible node/],
+  ['ai-perception-center', { ...env, AIG_MODELS_CONFIG: '{}' }, /no eligible node/],
   ['ai-inference-center', { ...env, DEPLOY_SOURCE_SHA: 'main' }, /immutable 40-digit/],
 ])
   assert.throws(() => buildPrivateCenterConfig(name, environment), pattern);

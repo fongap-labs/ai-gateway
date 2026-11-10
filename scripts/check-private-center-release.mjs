@@ -12,7 +12,8 @@ const SHA = /^[a-f0-9]{40}$/;
 const NODE_SECRET = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const LEGACY = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TOKEN_ENCRYPTION_KEY$)/;
 const PUBLIC_SECRET = /^(?:AIG_TIER[12]_CREDENTIALS_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$)/;
-const GATEWAY_SECRET = /^(?:AIG_ACCESS_KEY_[A-Z0-9_]+|AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$/;
+const GATEWAY_SECRET =
+  /^(?:AIG_ACCESS_KEY_[A-Z0-9_]+|AIG_INFERENCE_AUTH_KEY|AIG_PERCEPTION_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$/;
 const OTHER_CREDENTIAL_VAR = /(?:^|_)(?:API_KEY|API_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD)(?:_|$)/;
 
 function record(o) {
@@ -95,13 +96,14 @@ function checkCenter(config, label, expectedName, expectedEntry, authName, sourc
  */
 export function assertReleaseTopology(plan) {
   requireRecord(plan, 'release plan');
-  const { source_sha: sha, gateway, inference, generation, operations, secret_names: inventory, stage } = plan;
+  const { source_sha: sha, gateway, inference, perception, generation, operations, secret_names: inventory, stage } = plan;
   assert.ok(typeof sha === 'string' && SHA.test(sha), 'A full immutable source SHA is required');
   assert.ok(['prepare', 'detach', 'activate'].includes(stage), 'Unknown Operations cron handoff stage');
-  for (const [label, config] of Object.entries({ gateway, inference, generation, operations })) requireRecord(config, label);
+  for (const [label, config] of Object.entries({ gateway, inference, perception, generation, operations })) requireRecord(config, label);
   requireRecord(inventory, 'secret_names');
   const gNames = names(inventory.gateway, 'Gateway');
   const iNames = names(inventory.inference, 'Inference');
+  const perceptionNames = names(inventory.perception, 'Perception');
   const pNames = names(inventory.generation, 'Generation');
   const oNames = names(inventory.operations, 'Operations');
   assert.ok(
@@ -109,7 +111,10 @@ export function assertReleaseTopology(plan) {
     'Gateway Secret inventory contains a name outside its public-edge ownership allowlist',
   );
   assert.equal(oNames.size, 0, 'Operations must not own Provider or runtime Secrets');
-  assert.ok(gNames.has('AIG_INFERENCE_AUTH_KEY') && gNames.has('AIG_GENERATION_AUTH_KEY'), 'Gateway must hold both private center auth bindings');
+  assert.ok(
+    gNames.has('AIG_INFERENCE_AUTH_KEY') && gNames.has('AIG_PERCEPTION_AUTH_KEY') && gNames.has('AIG_GENERATION_AUTH_KEY'),
+    'Gateway must hold all three private center auth bindings',
+  );
   noPublicExposure(gateway, 'Gateway');
   assert.equal(gateway.name, 'ai-gateway');
   assert.equal(gateway.vars?.AIG_BUILD_SHA, sha, 'Gateway build SHA mismatch');
@@ -118,12 +123,24 @@ export function assertReleaseTopology(plan) {
     gateway.services,
     [
       { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+      { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
       { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
     ],
     'Gateway must route to both private centers through exact Service Bindings',
   );
   checkCenter(inference, 'Inference', 'ai-inference-center', 'src/inference/inference-center-entry.ts', 'AIG_INFERENCE_AUTH_KEY', sha, iNames);
+  checkCenter(
+    perception,
+    'Perception',
+    'ai-perception-center',
+    'src/perception/perception-center-entry.ts',
+    'AIG_PERCEPTION_AUTH_KEY',
+    sha,
+    perceptionNames,
+  );
   checkCenter(generation, 'Generation', 'ai-generation-center', 'src/generation/generation-center-entry.ts', 'AIG_GENERATION_AUTH_KEY', sha, pNames);
+  assert.equal(Object.hasOwn(perception, 'd1_databases'), false, 'Perception must not inherit a usage D1');
+  assert.equal(Object.hasOwn(perception, 'kv_namespaces'), false, 'Perception must not inherit Gateway KV');
   assert.equal(Object.hasOwn(generation, 'd1_databases'), false, 'Generation must not inherit a usage D1');
   assert.equal(Object.hasOwn(generation, 'kv_namespaces'), false, 'Generation must not inherit Gateway KV');
   const gatewayDb = oneD1(gateway, 'Gateway');
@@ -151,7 +168,7 @@ export function assertReleaseTopology(plan) {
   return {
     ready: true,
     stage,
-    workers: 4,
+    workers: 5,
     gates: ['private-centers', 'provider-secret-ownership', 'immutable-build', 'cron-single-owner', 'd1-equality'],
   };
 }
@@ -161,10 +178,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.length !== 3) throw new Error('usage: check-private-center-release.mjs FILE');
     const plan = JSON.parse(readFileSync(process.argv[2], 'utf8'));
     const result = assertReleaseTopology(plan);
-    process.stdout.write(`Offline four-worker release topology passed (${result.stage}); no deployment authorized.\n`);
+    process.stdout.write(`Offline five-worker release topology passed (${result.stage}); no deployment authorized.\n`);
   } catch {
     // Never echo the source text or any supplied Secret material.
-    process.stderr.write('Offline four-worker release topology rejected; inspect private inputs and stage contracts.\n');
+    process.stderr.write('Offline five-worker release topology rejected; inspect private inputs and stage contracts.\n');
     process.exitCode = 2;
   }
 }

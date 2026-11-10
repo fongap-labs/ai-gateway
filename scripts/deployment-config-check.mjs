@@ -190,6 +190,7 @@ assert.throws(
 assert.match(read('scripts/cloudflare-wrangler.mjs'), /classifyDeployTarget/);
 assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateInference/);
 assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateGeneration/);
+assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivatePerception/);
 assert.match(read('scripts/wrangler-deploy-guards.mjs'), /isPrivateOperations/);
 assert.equal(fs.existsSync(path.join(root, 'scripts/deploy-inference-center.sh')), false);
 
@@ -263,10 +264,22 @@ assert.equal(generationBound.vars.AIG_GENERATION_ACTIVE, 'true');
 assert.equal(generationBound.vars.AIG_GENERATION_TARGET, undefined);
 assert.equal(buildWranglerConfig({}).vars.AIG_GENERATION_ACTIVE, undefined);
 assert.throws(() => buildWranglerConfig({ AIG_GENERATION_TARGET: 'untrusted-target' }));
-const bothCenters = buildWranglerConfig({ AIG_INFERENCE_TARGET: 'ai-inference-center', AIG_GENERATION_TARGET: 'ai-generation-center' });
-assert.equal(bothCenters.services.length, 2);
-assert.equal(bothCenters.vars.AIG_INFERENCE_ACTIVE, 'true');
-assert.equal(bothCenters.vars.AIG_GENERATION_ACTIVE, 'true');
+const perceptionBound = buildWranglerConfig({ AIG_PERCEPTION_TARGET: 'ai-perception-center' });
+assert.deepEqual(perceptionBound.services, [{ binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' }]);
+assert.equal(perceptionBound.vars.AIG_PERCEPTION_ACTIVE, 'true');
+assert.equal(perceptionBound.vars.AIG_PERCEPTION_TARGET, undefined);
+assert.equal(buildWranglerConfig({}).vars.AIG_PERCEPTION_ACTIVE, undefined);
+assert.throws(() => buildWranglerConfig({ AIG_PERCEPTION_TARGET: 'untrusted-target' }));
+const allCenters = buildWranglerConfig({
+  AIG_INFERENCE_TARGET: 'ai-inference-center',
+  AIG_PERCEPTION_TARGET: 'ai-perception-center',
+  AIG_GENERATION_TARGET: 'ai-generation-center',
+});
+assert.equal(allCenters.services.length, 3);
+assert.equal(allCenters.services[1].binding, 'AIG_PERCEPTION_SERVICE');
+assert.equal(allCenters.vars.AIG_PERCEPTION_ACTIVE, 'true');
+assert.equal(allCenters.vars.AIG_INFERENCE_ACTIVE, 'true');
+assert.equal(allCenters.vars.AIG_GENERATION_ACTIVE, 'true');
 
 // Production deploy reads only deployment credentials; runtime secret values remain remote.
 const deployInputs = {
@@ -279,6 +292,7 @@ const deployInputs = {
   ]),
   AIG_AFFINITY_KV_ID: 'affinity-kv-id',
   AIG_INFERENCE_TARGET: 'ai-inference-center',
+  AIG_PERCEPTION_TARGET: 'ai-perception-center',
   AIG_GENERATION_TARGET: 'ai-generation-center',
 };
 const deployPrepared = validateDeploymentInputs(deployInputs);
@@ -293,6 +307,7 @@ const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
   { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
   { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
+  { name: 'AIG_PERCEPTION_AUTH_KEY', type: 'secret_text' },
   { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
 ];
 assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 0);
@@ -337,8 +352,17 @@ assert.throws(
     ),
   /AIG_INFERENCE_AUTH_KEY/,
 );
-assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, buildWranglerConfig({})), /Both private center Service Bindings/);
+assert.throws(
+  () =>
+    validateRemoteSecretInventory(
+      remoteSecretNames.filter((secret) => secret.name !== 'AIG_PERCEPTION_AUTH_KEY'),
+      generationPrepared.config,
+    ),
+  /AIG_PERCEPTION_AUTH_KEY/,
+);
+assert.throws(() => validateRemoteSecretInventory(remoteSecretNames, buildWranglerConfig({})), /All three private center Service Bindings/);
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_INFERENCE_TARGET: '' }), /AIG_INFERENCE_TARGET/);
+assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_PERCEPTION_TARGET: '' }), /AIG_PERCEPTION_TARGET/);
 assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_GENERATION_TARGET: '' }), /AIG_GENERATION_TARGET/);
 assert.throws(
   () =>

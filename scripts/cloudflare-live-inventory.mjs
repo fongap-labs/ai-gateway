@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Read-only Cloudflare inventory for the four-Worker production cutover.
+// Read-only Cloudflare inventory for the five-Worker production topology.
 // Use a Workers Metadata Read-Only token. Never call the Secrets API: its list
 // response includes Secret values. Only binding names/types are projected.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
+const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center', 'ai-gateway-operations'];
 const ACCOUNT_ID = /^[0-9a-f]{32}$/i;
 const SOURCE_SHA = /^[0-9a-f]{40}$/;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
@@ -487,12 +487,14 @@ export async function inspectProductionWorkers(client) {
 
   const gateway = observed['ai-gateway'];
   const inference = observed['ai-inference-center'];
+  const perception = observed['ai-perception-center'];
   const generation = observed['ai-generation-center'];
   const operations = observed['ai-gateway-operations'];
   const services = gateway?.serviceTargets ?? [];
   const serviceChecks = {};
   for (const [binding, service] of [
     ['AIG_INFERENCE_SERVICE', 'ai-inference-center'],
+    ['AIG_PERCEPTION_SERVICE', 'ai-perception-center'],
     ['AIG_GENERATION_SERVICE', 'ai-generation-center'],
   ]) {
     const matches = services.filter((target) => target.name === binding);
@@ -518,6 +520,7 @@ export async function inspectProductionWorkers(client) {
 
   for (const [name, worker] of [
     ['ai-inference-center', inference],
+    ['ai-perception-center', perception],
     ['ai-generation-center', generation],
   ]) {
     if (worker && worker.cron.length > 0) issues.push('UNEXPECTED_CENTER_CRON:' + name);
@@ -553,7 +556,7 @@ export async function inspectProductionWorkers(client) {
       shared_token_stats_d1_consistent: sharedD1,
       gateway_provider_credential_binding_count: gateway?.providerCredentialNames.length ?? null,
       private_worker_exposure_clear:
-        Boolean(inference && generation && operations) && issues.every((issue) => !issue.startsWith('PRIVATE_WORKER_EXPOSED:')),
+        Boolean(inference && perception && generation && operations) && issues.every((issue) => !issue.startsWith('PRIVATE_WORKER_EXPOSED:')),
     },
     cron_phase: cronPhase,
     metadata_consistency: issues.length === 0 ? 'pass' : 'blocked',
@@ -561,7 +564,7 @@ export async function inspectProductionWorkers(client) {
     unverified: [
       'provider-secret-values-and-credential-functionality',
       'node-json-oauth-markers-and-migration-conflicts',
-      'four-worker-build-sha-equality',
+      'five-worker-build-sha-equality',
       'runtime-health-and-request-metrics',
       'global-cron-propagation-and-independent-runtime-evidence',
       'rollback-drill',

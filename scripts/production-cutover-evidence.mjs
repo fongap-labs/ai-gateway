@@ -7,14 +7,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
+const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center', 'ai-gateway-operations'];
 const PHASES = ['prepare', 'detach', 'activate'];
 const CRON = '0 3 * * *';
 const SOURCE_SHA = /^[a-f0-9]{40}$/;
 const REQUIRED_UNVERIFIED = [
   'provider-secret-values-and-credential-functionality',
   'node-json-oauth-markers-and-migration-conflicts',
-  'four-worker-build-sha-equality',
+  'five-worker-build-sha-equality',
   'runtime-health-and-request-metrics',
   'global-cron-propagation-and-independent-runtime-evidence',
   'rollback-drill',
@@ -48,10 +48,11 @@ export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
   assert.equal(inventory.checks.gateway_public_route_present, true, 'Gateway must retain its public route');
   assert.equal(inventory.checks.tier1_kv_binding_present, true, 'Gateway Tier 1 KV is missing');
   assert.equal(inventory.checks.shared_token_stats_d1_consistent, true, 'Gateway and Operations must use the same D1');
-  assert.equal(inventory.checks.declared_build_sha_consistent, true, 'All four Workers must declare one build SHA');
+  assert.equal(inventory.checks.declared_build_sha_consistent, true, 'All five Workers must declare one build SHA');
   assert.equal(inventory.checks.gateway_provider_credential_binding_count, 0, 'Gateway must not own Provider credentials');
   assert.equal(inventory.checks.private_worker_exposure_clear, true, 'Private Workers must have no public routes');
   assert.equal(inventory.checks.gateway_service_bindings?.AIG_INFERENCE_SERVICE, true, 'Inference Service Binding is invalid');
+  assert.equal(inventory.checks.gateway_service_bindings?.AIG_PERCEPTION_SERVICE, true, 'Perception Service Binding is invalid');
   assert.equal(inventory.checks.gateway_service_bindings?.AIG_GENERATION_SERVICE, true, 'Generation Service Binding is invalid');
 
   assert.ok(Array.isArray(inventory.unverified), 'The inventory must preserve its outstanding evidence list');
@@ -61,7 +62,7 @@ export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
 
   for (const workerName of WORKERS) {
     const worker = inventory.workers[workerName];
-    assert.ok(record(worker) && worker.deployed === true, 'All four Workers must be deployed before protected verification');
+    assert.ok(record(worker) && worker.deployed === true, 'All five Workers must be deployed before protected verification');
     assert.equal(worker.active_deployment_present, true, 'A deployed Worker has no active deployment');
     assert.ok(worker.active_traffic_version_count > 0, 'A Worker has no active traffic version');
     assert.ok(Math.abs(worker.active_traffic_weight_total - 100) < 0.001, 'Active Worker traffic weights are invalid');

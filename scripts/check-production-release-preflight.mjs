@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Contract tests for the offline four-Worker release preflight.
+// Contract tests for the offline five-Worker release preflight.
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,9 +21,16 @@ const gateway = {
   compatibility_date: '2026-08-06',
   workers_dev: false,
   keep_vars: false,
-  vars: { AIG_BUILD_SHA: SHA, AIG_INFERENCE_ACTIVE: 'true', AIG_GENERATION_ACTIVE: 'true', AIG_TIER1_NODES_01: nodeShard },
+  vars: {
+    AIG_BUILD_SHA: SHA,
+    AIG_INFERENCE_ACTIVE: 'true',
+    AIG_PERCEPTION_ACTIVE: 'true',
+    AIG_GENERATION_ACTIVE: 'true',
+    AIG_TIER1_NODES_01: nodeShard,
+  },
   services: [
     { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+    { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
     { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
   ],
   triggers: { crons: [CRON] },
@@ -50,6 +57,13 @@ const generation = {
   keep_vars: false,
   vars: { ...centerVars },
 };
+const perception = {
+  name: 'ai-perception-center',
+  main: path.join(ROOT, 'src/perception/perception-center-entry.ts'),
+  workers_dev: false,
+  keep_vars: false,
+  vars: { ...centerVars },
+};
 const operations = {
   name: 'ai-gateway-operations',
   main: 'operations/standalone.ts',
@@ -60,8 +74,9 @@ const operations = {
   d1_databases: [{ ...db }],
 };
 const secretNames = {
-  gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
+  gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_PERCEPTION_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
   inference: ['AIG_INFERENCE_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
+  perception: ['AIG_PERCEPTION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
   generation: ['AIG_GENERATION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
   operations: [],
 };
@@ -77,6 +92,7 @@ function topology(stage) {
       ...(detached ? { main: 'apps/gateway/index.ts', triggers: { crons: [] } } : {}),
     },
     inference: structuredClone(inference),
+    perception: structuredClone(perception),
     generation: structuredClone(generation),
     operations: {
       ...structuredClone(operations),
@@ -99,8 +115,8 @@ assert.deepEqual(
   report.phases.map((phase) => phase.cron_owner),
   ['prepare', 'detach', 'activate'],
 );
-assert.deepEqual(report.phases[0]?.wrangler_deploy_targets, ['gateway', 'inference', 'generation', 'operations']);
-assert.deepEqual(report.phases[2]?.wrangler_deploy_targets, ['gateway', 'inference', 'generation']);
+assert.deepEqual(report.phases[0]?.wrangler_deploy_targets, ['gateway', 'inference', 'perception', 'generation', 'operations']);
+assert.deepEqual(report.phases[2]?.wrangler_deploy_targets, ['gateway', 'inference', 'perception', 'generation']);
 assert.equal(
   classifyDeployTarget(baseline.phases.activate.operations, ROOT),
   null,
@@ -118,9 +134,9 @@ function rejected(change, kind) {
 }
 
 rejected((p) => (p.phases.prepare.approved_for_production = true), 'Offline preflight must never authorize deployment');
-rejected((p) => (p.phases.activate.operations.vars.AIG_BUILD_SHA = 'b'.repeat(40)), 'All four Worker build SHAs must match');
+rejected((p) => (p.phases.activate.operations.vars.AIG_BUILD_SHA = 'b'.repeat(40)), 'All five Worker build SHAs must match');
 rejected((p) => (p.phases.detach.generation.vars.AIG_BUILD_SHA = 'b'.repeat(40)), 'Private center SHAs must match');
-rejected((p) => (p.phases.prepare.gateway.services[1].service = 'unapproved-service'), 'Both private service bindings are mandatory');
+rejected((p) => (p.phases.prepare.gateway.services[1].service = 'unapproved-service'), 'All private service bindings are mandatory');
 rejected((p) => (p.phases.prepare.gateway.kv_namespaces[0].binding = 'UNEXPECTED_KV'), 'Tier 1 KV identity is mandatory');
 rejected((p) => p.phases.prepare.secret_names.gateway.push('OPENAI_API_KEY'), 'Gateway Provider Secret names are forbidden');
 rejected((p) => p.phases.detach.secret_names.inference.push('OPENAI_API_KEY'), 'Inference must own only its auth and Provider credential names');
@@ -137,5 +153,5 @@ rejected((p) => p.phases.activate.secret_names.generation.push('AIG_EXTRA_SECRET
 rejected((p) => (p.phases.prepare.gateway.vars.AIG_BUILD_SHA = 'not-a-sha'), 'A full immutable SHA is required');
 
 console.log(
-  'Unified four-Worker release preflight passed: immutable SHA, Worker bindings, credential ownership, shared D1, staged Cron and deployment isolation.',
+  'Unified five-Worker release preflight passed: immutable SHA, Worker bindings, credential ownership, shared D1, staged Cron and deployment isolation.',
 );

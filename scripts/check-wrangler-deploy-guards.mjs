@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Four-Worker production deployment guard regression (no Wrangler calls).
+// Five-Worker production deployment guard regression (no Wrangler calls).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +30,13 @@ const generation = {
   keep_vars: false,
   vars,
 };
+const perception = {
+  ...base,
+  name: 'ai-perception-center',
+  main: path.join(root, 'src/perception/perception-center-entry.ts'),
+  keep_vars: false,
+  vars,
+};
 const operations = {
   ...base,
   name: 'ai-gateway-operations',
@@ -47,10 +54,12 @@ const gateway = {
   vars: {
     AIG_BUILD_SHA: sha,
     AIG_INFERENCE_ACTIVE: 'true',
+    AIG_PERCEPTION_ACTIVE: 'true',
     AIG_GENERATION_ACTIVE: 'true',
   },
   services: [
     { binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' },
+    { binding: 'AIG_PERCEPTION_SERVICE', service: 'ai-perception-center' },
     { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
   ],
   kv_namespaces: [{ binding: 'TIER1_AFFINITY', id: 'test-kv-id' }],
@@ -63,7 +72,7 @@ const detachedGateway = {
 };
 assert.equal(classifyDeployTarget(detachedGateway, root), 'gateway', 'Detached Gateway must remain deployable');
 
-for (const [name, config] of Object.entries({ gateway, inference, generation, operations })) {
+for (const [name, config] of Object.entries({ gateway, inference, perception, generation, operations })) {
   assert.equal(classifyDeployTarget(config, root), name, `${name} should be a recognized deployment target`);
 }
 assert.equal(classifyDeployTarget({ ...inference, main: 'src/inference/inference-center-entry.ts' }, root), 'inference');
@@ -80,6 +89,7 @@ reject({ ...gateway, keep_vars: true });
 reject({ ...gateway, triggers: { crons: [] } });
 reject({ ...gateway, services: [] });
 reject({ ...gateway, services: [{ binding: 'AIG_INFERENCE_SERVICE', service: 'ai-inference-center' }] });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_PERCEPTION_ACTIVE: 'false' } });
 reject({ ...gateway, kv_namespaces: [] });
 reject({ ...gateway, d1_databases: [] });
 reject({ ...gateway, vars: { ...gateway.vars, AIG_ACCESS_KEY_AIR: 'not-a-worker-var' } });
@@ -104,6 +114,9 @@ reject({ ...inference, name: 'ai-gateway' });
 reject({ ...generation, main: 'apps/generation/index.ts' });
 reject({ ...generation, routes: [{ pattern: 'public.example.invalid' }] });
 reject({ ...generation, workers_dev: true });
+reject({ ...perception, workers_dev: true });
+reject({ ...perception, services: [] });
+reject({ ...perception, main: 'apps/perception/unapproved-entry.ts' });
 reject({ ...generation, triggers: { crons: [] } });
 reject({ ...generation, d1_databases: operations.d1_databases });
 reject({ ...generation, vars: { ...vars, AIG_TIER3_NODES_01: '[]' } });
@@ -128,4 +141,4 @@ const wrapper = readFileSync(new URL('./cloudflare-wrangler.mjs', import.meta.ur
 assert.match(wrapper, /classifyDeployTarget\(config, root\)/, 'Production Wrangler wrapper must enforce the target allowlist');
 assert.match(wrapper, /target !== 'operations'/, 'Operations preparation must never rerun Gateway D1 schema migrations');
 
-console.log('Four-Worker Wrangler deploy allowlist passed: Gateway, private centers, staging Operations and negative guards.');
+console.log('Five-Worker Wrangler deploy allowlist passed: Gateway, three private centers, Operations and negative guards.');
