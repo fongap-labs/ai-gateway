@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import { createReadOnlyCloudflareClient, inspectProductionWorkers } from './cloudflare-live-inventory.mjs';
+import { createReadOnlyCloudflareClient, inspectProductionWorkers, InventoryDiagnosticError } from './cloudflare-live-inventory.mjs';
 
 const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
 const SECRET_SENTINEL = 'never-print-this-secret-value';
@@ -110,6 +110,74 @@ function makeFetch(overrides = {}) {
   };
   return { fetchImpl, calls };
 }
+
+// Fault categories are stable and cannot contain Cloudflare error bodies,
+// access token material, account identifiers or arbitrary endpoint URLs.
+const sensitiveApiText = 'private-cloudflare-error-body-must-never-leak';
+async function assertSafeFailure(fetchImpl, expectedCode, expectedStage, expectedStatus = null, call = 'scripts') {
+  const client = createReadOnlyCloudflareClient({
+    accountId: 'a'.repeat(32),
+    token: 'redacted-testing-token-123',
+    fetchImpl,
+  });
+  await assert.rejects(client[call](), (error) => {
+    assert.ok(error instanceof InventoryDiagnosticError);
+    assert.equal(error.code, expectedCode);
+    assert.equal(error.stage, expectedStage);
+    assert.equal(error.status, expectedStatus);
+    assert.equal(error.message.includes(sensitiveApiText), false);
+    assert.equal(error.message.includes('redacted-testing-token'), false);
+    assert.equal(error.message.includes('a'.repeat(32)), false);
+    return true;
+  });
+}
+for (const [status, code] of [
+  [401, 'AUTHENTICATION_FAILED'],
+  [403, 'READ_PERMISSION_DENIED'],
+  [404, 'RESOURCE_ENDPOINT_NOT_FOUND'],
+  [429, 'CLOUDFLARE_RATE_LIMITED'],
+  [503, 'HTTP_REQUEST_FAILED'],
+]) {
+  await assertSafeFailure(
+    async () => Response.json({ success: false, errors: [{ message: sensitiveApiText }] }, { status }),
+    code,
+    'worker-list',
+    status,
+  );
+}
+await assertSafeFailure(
+  async () => { throw new Error(sensitiveApiText); },
+  'NETWORK_OR_TIMEOUT',
+  'worker-list',
+);
+await assertSafeFailure(
+  async () => Response.json({ success: false, errors: [{ message: sensitiveApiText }] }),
+  'API_RESPONSE_REJECTED',
+  'worker-list',
+);
+await assertSafeFailure(
+  async () => new Response(sensitiveApiText, { status: 200 }),
+  'INVALID_API_JSON',
+  'worker-list',
+);
+await assertSafeFailure(
+  async () => Response.json({ success: false }, { status: 403 }),
+  'READ_PERMISSION_DENIED',
+  'account-zones',
+  403,
+  'zones',
+);
+await assertSafeFailure(
+  async () => Response.json({ success: false }, { status: 403 }),
+  'READ_PERMISSION_DENIED',
+  'worker-domains',
+  403,
+  'domains',
+);
+assert.throws(
+  () => createReadOnlyCloudflareClient({ accountId: 'invalid', token: 'invalid' }),
+  (error) => error instanceof InventoryDiagnosticError && error.code === 'INVALID_CREDENTIAL_METADATA' && error.stage === 'configuration',
+);
 
 const mock = makeFetch();
 const client = createReadOnlyCloudflareClient({ accountId: 'a'.repeat(32), token: 'mock-read-only-token-123', fetchImpl: mock.fetchImpl });
