@@ -25,7 +25,9 @@ export function buildRuntimeSecretPlan(env) {
   const token = required(env, 'CLOUDFLARE_API_TOKEN');
   if (!accountPattern.test(account)) throw new Error('Approved Cloudflare account ID is invalid.');
   const health = required(env, 'AIG_DEPLOY_HEALTH_KEY');
-  if (!secretPattern.test(health)) throw new Error('AIG_DEPLOY_HEALTH_KEY requires at least 32 URL-safe characters.');
+  if (!secretPattern.test(health) || Buffer.byteLength(health, 'utf8') > 4500) {
+    throw new Error('AIG_DEPLOY_HEALTH_KEY requires 32 or more URL-safe characters within the Cloudflare Secret size limit.');
+  }
   const values = centers.map(([worker, name]) => {
     const value = required(env, name);
     if (value.length < 32 || Buffer.byteLength(value, 'utf8') > 4500) {
