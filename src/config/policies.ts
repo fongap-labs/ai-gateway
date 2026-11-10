@@ -61,10 +61,12 @@ const BUILTIN_POLICIES: Readonly<{
     failoverBudgetMs: 180_000,
     maxInFlight: null,
   },
-  // Safe operational baselines, not an assumption about upstream provider capacity.
-  // Adaptive routing, per-node recovery and the global failover budget remain authoritative.
+  // Prefer free Tier 1 capacity: use the maximum bounded attempt budget
+  // (up to seven free attempts plus one Tier 2 reserve when both tiers exist).
+  // Actual dispatches stop on success, exhausted free keys, cooldown, time budget
+  // or retry-admission pressure. Do not duplicate free requests with hedges.
   chat: {
-    maxAttempts: 3,
+    maxAttempts: 8,
     tierAttempts: null,
     hedge: { enabled: false },
     headersTimeoutMs: null,
@@ -73,7 +75,7 @@ const BUILTIN_POLICIES: Readonly<{
     maxInFlight: null,
   },
   coding: {
-    maxAttempts: 5,
+    maxAttempts: 8,
     tierAttempts: null,
     hedge: { enabled: false },
     headersTimeoutMs: null,
