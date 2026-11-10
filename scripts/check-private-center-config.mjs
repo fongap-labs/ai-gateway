@@ -57,7 +57,7 @@ assert.equal(getPolicy('Code-Max', { 'Code-Max': { policy: { policy: 'coding' } 
 // Explicit overrides take precedence, without changing any other built-in policy.
 const overridden = loadPoliciesConfig({ AIG_POLICIES_CONFIG: '{"chat":{"max_attempts":2}}' });
 assert.equal(overridden.chat.maxAttempts, 2);
-assert.equal(overridden.coding.maxAttempts, 5);
+assert.equal(overridden.coding.maxAttempts, 8);
 assert.deepEqual(overridden.chat.hedge, { enabled: false });
 const missingCustomPolicies = {
   ...withNamedBuiltinPolicies,
