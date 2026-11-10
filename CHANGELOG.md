@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- 修复: 跨核对四 Worker 只读在线盘点和受控三阶段发布预检，拒绝无效 Cron、D1、Service Binding、私有公开入口以及隐式生产授权；继续保留运行时、指标和回滚独立验收。
+- 修复: 四 Worker 在线盘点与三阶段发布计划交叉核验，阻断无证据生产切换。
 
-- 维护: 源码边界锁定旧 Gateway/Cron 组合入口为纯转发，修正 Chat/Responses/Messages 转换层及兼容导出归属说明；未提前移除生产 Cron。
+- 维护: 保留旧 Cron 纯转发入口，修正转换层与兼容导出的归属说明。
 
 - 修复: 四 Worker 发布预检拒绝将访问密钥、健康密钥、HMAC 密钥和 Provider API 凭据放入普通变量，并增加负向测试。
 
