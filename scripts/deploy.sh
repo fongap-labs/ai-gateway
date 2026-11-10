@@ -9,10 +9,19 @@ cd "$ROOT"
 
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 
-if [[ "${AIG_IS_DEPLOY_ENABLED:-true}" == "false" ]]; then
-  echo "AI Gateway deployment is disabled by AIG_IS_DEPLOY_ENABLED=false."
-  exit 0
-fi
+# A central successful job is recorded as a successful production deployment.
+# Disabled deployments must not silently return success and generate an audit.
+case "${AIG_IS_DEPLOY_ENABLED:-true}" in
+  true) ;;
+  false)
+    echo "ERROR: AI Gateway deployment is disabled; no production deployment occurred." >&2
+    exit 77
+    ;;
+  *)
+    echo "ERROR: AIG_IS_DEPLOY_ENABLED must be true or false." >&2
+    exit 64
+    ;;
+esac
 
 [[ "${DEPLOY_SOURCE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || {
   echo "ERROR: DEPLOY_SOURCE_SHA must be a full commit SHA" >&2
