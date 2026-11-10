@@ -36,7 +36,18 @@ assert.equal(base.model_catalog.valid, true);
 assert.equal(base.unclassified_source_node_count, 0);
 assert.match(base.model_catalog.fingerprint_sha256, /^[a-f0-9]{64}$/);
 assert.match(base.node_moves[0]?.model_mapping.mapping_fingerprint_sha256, /^[a-f0-9]{64}$/);
-assert.ok(!JSON.stringify(base).includes('https://api.example.invalid'), 'Provider URLs must not appear in the plan');
+// Reject any serialized HTTP(S)/WS(S) URL, regardless of its hostname or path.
+const providerUrlPattern = /(?:https?|wss?):\/\//i;
+assert.doesNotMatch(JSON.stringify(base), providerUrlPattern, 'Provider URLs must not appear in the plan');
+for (const providerUrl of [
+  'https://another-provider.example.invalid/v1',
+  'https://api.example.invalid.attacker.invalid/v1',
+  'https://attacker.invalid/path/https://api.example.invalid',
+]) {
+  const report = plan({ tiers: { ...tiers, 1: [node('free-a', { base_url: providerUrl })] } });
+  assert.equal(report.preflight_passed, true, 'Valid alternate Provider URL must pass preflight');
+  assert.doesNotMatch(JSON.stringify(report), providerUrlPattern, 'Provider URLs must never enter the plan');
+}
 assert.ok(!JSON.stringify(base).includes(MOCK_UPSTREAM_MODEL), 'upstream model names must not appear in the redacted plan');
 assert.equal(JSON.stringify({ tiers, credentialIndex }), baselineInput, 'Preflight must not mutate source config');
 
