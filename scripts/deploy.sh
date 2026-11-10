@@ -50,15 +50,38 @@ node scripts/persistent-deployment.mjs prepare \
   --wrangler "$RUNNER_TEMP/wrangler.github.json" \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
-# Fail closed before any production Gateway mutation unless both private
-# Worker names and their required Secret shards are already present in Cloudflare.
-# This does not bootstrap centers or infer Secret values from GitHub.
+# The existing Action Worker source-script deployment is the ONE release entry.
+# Build both private center manifests before mutating any Worker. Their Secret
+# values remain managed exclusively by the protected ops channel.
+for center in ai-inference-center ai-generation-center; do
+  config="$RUNNER_TEMP/private-center-$center.json"
+  manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
+  node scripts/private-center-config.mjs prepare \
+    --worker "$center" --output "$config" --manifest "$manifest"
+done
+
+# Snapshot the currently healthy Gateway before the FIRST center mutation.
+# This guard does not make a multi-Worker rollout atomic; never report success
+# if a later center Secret inventory or Gateway health check fails.
+node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
+
+# Prepare both private centers automatically under the SAME audited commit and
+# credential environment. Neither center has public routes or Workers.dev.
+# A first-time bootstrap may stop below for missing Cloudflare Secrets: it must
+# never enable Gateway Service Bindings until the owner has provisioned them.
+for center in ai-inference-center ai-generation-center; do
+  config="$RUNNER_TEMP/private-center-$center.json"
+  node scripts/cloudflare-wrangler.mjs deploy \
+    --message "action-worker:center:$center:$DEPLOY_SOURCE_SHA" \
+    --config "$config"
+done
+
+# Read only Secret names for each center, then fail closed BEFORE switching
+# the public Gateway if either internal auth or provider shard is missing.
 for center in ai-inference-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
   inventory="$RUNNER_TEMP/private-center-$center-inventory.json"
-  node scripts/private-center-config.mjs prepare \
-    --worker "$center" --output "$config" --manifest "$manifest"
   node scripts/cloudflare-wrangler.mjs secret list \
     --format json --config "$config" > "$inventory"
   node scripts/private-center-config.mjs verify-inventory \
@@ -74,10 +97,7 @@ node scripts/persistent-deployment.mjs verify-secrets \
   --file "$RUNNER_TEMP/worker-secrets.json" \
   --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
-# Confirm a healthy production version and preserve its exact Cloudflare UUID
-# before a new version or D1 migration can mutate remote state.
-node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
-
+# The previous healthy Gateway identity was recorded before center publication.
 # Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
 # guard refuses to claim an unrelated/concurrent deploy as this job's publish.
 # Cloudflare preserves existing Worker Secrets across code-only deployments.
