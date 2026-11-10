@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getPolicy, isBuiltinPolicyName, loadPoliciesConfig } from '../src/config/policies.ts';
 import { buildPrivateCenterConfig, preflightPrivateCenters, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
-import { getPolicy, isBuiltinPolicyName, loadPoliciesConfig } from '../src/config/policies.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = {
