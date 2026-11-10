@@ -172,10 +172,17 @@ ORDER BY node, calls DESC
 3. 安装锁定的 Node 依赖；
 4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
 5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
-6. 查询 Cloudflare Worker Secret 名称并执行 fail-closed 盘点；
-7. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
-8. 按精确源码 SHA 验证线上构建；
-9. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并核验恢复版本和旧构建的公网健康。
+6. 在同一受保护流水线中生成推理中心、生成中心的配置，记录已部署 Gateway 的健康恢复基线后依序发布两个**非公开**中心；
+7. 只读取两个中心的 Cloudflare Secret 名称，核对内部认证及必要 Provider 分片，任一缺失则失败关闭，**不切换主网关**；
+8. 核对 Gateway Secret 清单并阻断旧 OAuth / 已迁移 Provider 凭据遗留；
+9. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
+10. 按精确源码 SHA 验证线上构建；
+11. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并核验恢复版本和旧构建的公网健康。
+
+
+**统一入口**：仍然只从 Action Worker 的 `手动 · 部署服务` 选择 `fongap-labs/ai-gateway`、`production`，或使用原来经过准入的自动部署触发。禁止另起一个私有中心代码发布工作流。
+
+**首次迁移提示**：Cloudflare Worker Secrets 不能从已有 Worker 中反读，且初次创建的私有中心可能尚无 Secret。统一部署可以先建立两个无公网入口的私有 Worker，但会在密钥清单核验处停止，不会切换 Gateway；应通过受控 `ai-gateway-ops` 仅做一次 Secret 配置，之后重新运行同一统一部署入口。三个 Worker 并非原子事务：若中心已更新而后续步骤失败，不能声称整个发布完成；中心的单独回滚仍需独立身份验证。
 
 Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
