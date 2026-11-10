@@ -18,6 +18,29 @@ const SECRET_TYPES = new Set(['secret_text', 'secret_key']);
 const ZONE_PAGE_SIZE = 50;
 const MAX_ZONE_PAGES = 100;
 
+const INVENTORY_STAGES = new Set([
+  'worker-list',
+  'account-zones',
+  'zone-routes',
+  'worker-domains',
+  'worker-settings',
+  'worker-schedules',
+  'worker-subdomain',
+  'worker-deployments',
+]);
+
+// Only fixed diagnostic codes, stages, and HTTP status are surfaced. Never
+// include the request URL, Cloudflare response body, account ID, or token.
+export class InventoryDiagnosticError extends Error {
+  constructor(stage, code, status = null) {
+    super('Read-only inventory rejected (' + code + ') at ' + stage + '.');
+    this.name = 'InventoryDiagnosticError';
+    this.stage = INVENTORY_STAGES.has(stage) ? stage : 'configuration';
+    this.code = code;
+    this.status = Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+  }
+}
+
 function assertRecords(items, label) {
   if (!Array.isArray(items) || !items.every((x) => x && typeof x === 'object' && !Array.isArray(x))) {
     throw new Error('Invalid remote ' + label + ' metadata.');
@@ -57,25 +80,46 @@ function validatePageInfo(info, page, perPage, label, resultCount) {
 
 export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = fetch }) {
   if (!ACCOUNT_ID.test(accountId || '') || typeof token !== 'string' || token.length < 16) {
-    throw new Error('Cloudflare inventory requires protected read-only credentials.');
+    throw new InventoryDiagnosticError('configuration', 'INVALID_CREDENTIAL_METADATA');
   }
 
-  async function get(endpoint) {
-    if (typeof endpoint !== 'string' || !endpoint.startsWith('/') || endpoint.startsWith('//')) {
-      throw new Error('Invalid Cloudflare inventory endpoint.');
+  async function get(endpoint, stage) {
+    if (!INVENTORY_STAGES.has(stage) || typeof endpoint !== 'string' || !endpoint.startsWith('/') || endpoint.startsWith('//')) {
+      throw new InventoryDiagnosticError('configuration', 'INVALID_REQUEST_STAGE');
     }
     const path = /^\/zones(?:\/|\?)/.test(endpoint) ? endpoint : '/accounts/' + accountId + endpoint;
     const url = 'https://api.cloudflare.com/client/v4' + path;
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { authorization: 'Bearer ' + token },
-      redirect: 'error',
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response?.ok) throw new Error('Cloudflare read-only inventory request failed.');
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { authorization: 'Bearer ' + token },
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      throw new InventoryDiagnosticError(stage, 'NETWORK_OR_TIMEOUT');
+    }
+    if (!response?.ok) {
+      const status = response?.status;
+      const code =
+        status === 401
+          ? 'AUTHENTICATION_FAILED'
+          : status === 403
+            ? 'READ_PERMISSION_DENIED'
+            : status === 404
+              ? 'RESOURCE_ENDPOINT_NOT_FOUND'
+              : status === 429
+                ? 'CLOUDFLARE_RATE_LIMITED'
+                : 'HTTP_REQUEST_FAILED';
+      throw new InventoryDiagnosticError(stage, code, status);
+    }
     const body = await response.json().catch(() => null);
-    if (body?.success !== true || !Object.hasOwn(body, 'result')) {
-      throw new Error('Cloudflare read-only inventory response was invalid.');
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new InventoryDiagnosticError(stage, 'INVALID_API_JSON');
+    }
+    if (body.success !== true || !Object.hasOwn(body, 'result')) {
+      throw new InventoryDiagnosticError(stage, 'API_RESPONSE_REJECTED');
     }
     return { result: body.result, info: body.result_info };
   }
@@ -85,7 +129,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       // The official Scripts list endpoint accepts a tags filter, not page or
       // per_page. Treat it as one complete result and reject pagination hints
       // that would make completeness ambiguous.
-      const response = await get('/workers/scripts');
+      const response = await get('/workers/scripts', 'worker-list');
       assertRecords(response.result, 'Worker list');
       const { totalCount, totalPages } = validatePageInfo(response.info, null, null, 'Worker list', response.result.length);
       if ((totalCount !== null && totalCount !== response.result.length) || (totalPages !== null && totalPages > 1)) {
@@ -106,7 +150,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       let expectedTotalCount = null;
       for (let page = 1; page <= MAX_ZONE_PAGES; page += 1) {
         const params = new URLSearchParams({ 'account.id': accountId, page: String(page), per_page: String(ZONE_PAGE_SIZE) });
-        const response = await get('/zones?' + params.toString());
+        const response = await get('/zones?' + params.toString(), 'account-zones');
         assertRecords(response.result, 'account zone list');
         for (const zone of response.result) {
           if (
@@ -160,7 +204,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       const counts = Object.fromEntries(WORKERS.map((name) => [name, 0]));
       const routeIds = new Set();
       for (const zoneId of zoneIds) {
-        const response = await get('/zones/' + encodeURIComponent(zoneId) + '/workers/routes');
+        const response = await get('/zones/' + encodeURIComponent(zoneId) + '/workers/routes', 'zone-routes');
         assertRecords(response.result, 'zone Worker routes');
         const { totalCount, totalPages } = validatePageInfo(response.info, null, null, 'zone Worker routes', response.result.length);
         if ((totalCount !== null && totalCount !== response.result.length) || (totalPages !== null && totalPages > 1)) {
@@ -187,7 +231,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         // query parameters are filters, not page/per_page. Scope each request to
         // one target Worker and fail closed if the API reports multiple pages.
         const params = new URLSearchParams({ service: worker });
-        const response = await get('/workers/domains?' + params.toString());
+        const response = await get('/workers/domains?' + params.toString(), 'worker-domains');
         assertRecords(response.result, 'Worker domains');
         for (const domain of response.result) {
           if (
@@ -219,7 +263,7 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       if (!WORKERS.includes(name)) throw new Error('Unapproved Worker identity.');
       const prefix = '/workers/scripts/' + encodeURIComponent(name);
       const rawBindings = await (async () => {
-        const settings = (await get(prefix + '/settings')).result;
+        const settings = (await get(prefix + '/settings', 'worker-settings')).result;
         if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
           throw new Error('Invalid Worker settings.');
         }
@@ -272,19 +316,19 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         'Worker Secret name',
       );
 
-      const scheduleResult = (await get(prefix + '/schedules')).result;
+      const scheduleResult = (await get(prefix + '/schedules', 'worker-schedules')).result;
       assertRecords(scheduleResult?.schedules, 'Worker Cron');
       const cron = scheduleResult.schedules.map((item) => {
         if (typeof item.cron !== 'string' || item.cron.length === 0) throw new Error('Invalid Worker Cron.');
         return item.cron;
       });
 
-      const subdomain = (await get(prefix + '/subdomain')).result;
+      const subdomain = (await get(prefix + '/subdomain', 'worker-subdomain')).result;
       if (typeof subdomain?.enabled !== 'boolean' || typeof subdomain?.previews_enabled !== 'boolean') {
         throw new Error('Invalid Worker public subdomain metadata.');
       }
 
-      const deploymentResponse = await get(prefix + '/deployments' + query(1, 1));
+      const deploymentResponse = await get(prefix + '/deployments' + query(1, 1), 'worker-deployments');
       const deploymentResult = deploymentResponse.result;
       assertRecords(deploymentResult?.deployments, 'Worker deployments');
       const { totalPages: deploymentPages } = validatePageInfo(
@@ -553,8 +597,13 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(() => {
-    console.error('Cloudflare inventory refused; inspect protected read-only credentials or API permissions. No changes made.');
+  main().catch((error) => {
+    if (error instanceof InventoryDiagnosticError) {
+      const http = error.status === null ? 'n/a' : String(error.status);
+      console.error(`::error::Cloudflare read-only inventory: stage=${error.stage} code=${error.code} http=${http}. No changes made.`);
+    } else {
+      console.error('::error::Cloudflare read-only inventory: code=METADATA_CONTRACT_FAILED. No changes made.');
+    }
     process.exitCode = 2;
   });
 }
