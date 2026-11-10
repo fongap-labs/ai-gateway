@@ -4,7 +4,7 @@
 
 ## 权限与运行
 
-使用限定到目标 Workers 的 **Metadata Read-Only** API Token，并在受保护的本地终端设置 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。为完整枚举公开路由，还需要账号的 **Zone Read** 与各 zone 的 **Workers Routes Read**。Metadata Read-Only 可查看 Workers 元数据与设置，但不能查看脚本内容或 Secret 值；Routes Read 和 Zone Read 也只用于 GET 清点。脚本固定使用 HTTPS `GET`，失败时不输出 Cloudflare 错误正文。
+使用仅具备读取权限、范围限定到目标 account/zones 的 API Token，并在受保护的本地终端设置 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。按 Cloudflare 当前 API 权限说明，完整清点需要 **Workers Scripts Read**、**Zone Read** 和 **Workers Routes Read**；仅有 Workers Metadata Read-Only 不足以读取 Worker Domains。脚本固定使用 HTTPS `GET`，不调用 Secret 接口，失败时不输出 Cloudflare 错误正文。
 
 ```bash
 node scripts/cloudflare-live-inventory.mjs
@@ -16,11 +16,11 @@ node scripts/cloudflare-live-inventory.mjs --out ./private/cloudflare-inventory.
 ## 覆盖范围
 
 - Worker Scripts 列表确认四个目标 Worker 是否存在；对每个存在的 Worker 查询最新有效部署、Settings、Schedules 和 Subdomain。
-- Worker Scripts 列表本身不使用分页参数；如果响应提示结果数大于返回项数，脚本失败关闭。Zones 按账号过滤并使用官方分页参数获取全部 Zone，再逐 Zone 读取 Worker Routes，避免依赖 Scripts 列表中可选的 routes 字段。Worker Domains 按官方 `result_info` 处理所有分页，Zones 与 Domains 盘点均设有 100 页上限；Deployments 只请求第一页一条记录，以确认当前活动部署。
-- Settings 检查 Inference/Generation Service Bindings、Tier 1 KV、`TOKEN_STATS_DB`、遗留 Tier 3/OAuth/会员订阅绑定名，以及 Gateway/Operations 上游凭据分片名；D1/KV 原始资源 ID 只在内存中用于一致性比较，不进入报告。
+- Worker Scripts 列表本身不使用分页参数；如果响应提示结果数大于返回项数，脚本失败关闭。Zones 按账号过滤并使用官方分页参数获取全部 Zone，再逐 Zone 读取 Worker Routes；Routes 是单页响应，避免依赖 Scripts 列表中可选的 routes 字段。Worker Domains 使用官方支持的 `service` 过滤器逐 Worker 查询；该接口在官方 SDK 中为单页列表，不发送未文档化的 `page/per_page` 参数，若 `result_info` 报告多页则失败关闭。Deployments 只请求第一页一条记录，以确认官方定义的最新活动部署。
+- Settings 检查 Inference/Generation Service Bindings、Tier 1 KV、`TOKEN_STATS_DB`、遗留 Tier 3/OAuth/会员订阅绑定名，以及 Gateway/Operations 上游凭据分片名；D1/KV 原始资源 ID 只在内存中用于一致性比较，不进入报告。重复 binding 名、Secret binding 出现 key material 字段或响应计数不一致都会拒绝生成报告。
 - Worker Routes 会逐个 Zone 读取，Custom Domains、workers.dev 和 Preview URL 归并成公开暴露计数；Gateway 至少要有一个公开接入路由。Private Inference、Generation 和 Operations 出现公开路由、启用域名、workers.dev 或 Preview URL 时报告阻断。
 - Gateway 与 Operations 的 D1 必须分别恰有一个有效 `TOKEN_STATS_DB`，且 ID 相同。Tier 1 KV 必须恰有一个带有效身份的 `TIER1_AFFINITY` binding。
-- Gateway 必须分别且唯一绑定 `ai-inference-center` 与 `ai-generation-center`。Cron 阶段仅识别 Gateway 持有旧 Cron 的 `prepare`、双方无 Cron 的 `detach`、Operations 持有 Cron 的 `activate`；双 Cron、未知 Cron 和中心 Cron 均阻断。
+- Gateway 必须分别且唯一绑定 `ai-inference-center` 与 `ai-generation-center`。Cron 阶段按持有者和数量识别 Gateway 恰有一个 Cron 的 `prepare`、双方无 Cron 的 `detach`、Operations 恰有一个 Cron 的 `activate`；双 Cron、多 Cron 和中心 Cron 均阻断。Cron 表达式作为运行配置原样报告，不与硬编码表达式比较。
 
 ## 结果解释
 
@@ -31,3 +31,4 @@ node scripts/cloudflare-live-inventory.mjs --out ./private/cloudflare-inventory.
 离线 Mock 合同由 `npm run check:cloudflare-inventory` 执行；它不连接 Cloudflare，不验证真实账号状态。
 
 接口合同以 Cloudflare 官方文档为准：[Scripts 列表](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/list/)、[Script Settings](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/script_and_version_settings/methods/get/)、[Deployments](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)、[Schedules](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/)、[Subdomain](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/get/)、[Zones](https://developers.cloudflare.com/api/resources/zones/methods/list/)、[Worker Routes](https://developers.cloudflare.com/api/resources/workers/subresources/routes/methods/list/)、[Worker Domains](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/) 和 [Secrets 列表响应](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/secrets/methods/list/)。
+
