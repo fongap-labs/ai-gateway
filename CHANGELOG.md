@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 修复: 统一从现有 ai-gateway-ops 环境读取推理、感知、生成认证密钥，在四 Worker 统一发布期间自动同步网关及私有中心的对应 Secret，并增加同源、失败关闭与密钥隔离测试；不新建部署环境或清理 Provider 凭据。
+- 修复: 从单一 ai-gateway-ops 环境自动同步四个 Worker 的认证密钥，并保留原有部署门禁。
 
 - 新增: 为显式 vision 图像请求增加独立 Perception 私有绑定、执行入口与发布校验；未启用生产发布。
 
