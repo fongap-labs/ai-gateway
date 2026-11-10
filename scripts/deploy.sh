@@ -33,6 +33,7 @@ cleanup() {
     "${RUNNER_TEMP:-/tmp}/wrangler.github.json" \
     "${RUNNER_TEMP:-/tmp}/worker-secrets.json" \
     "${RUNNER_TEMP:-/tmp}/deployment-summary.txt" \
+    "${RUNNER_TEMP:-/tmp}/private-center-"*.json \
     "$recovery_evidence" "$recovery_evidence.next" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -48,6 +49,21 @@ node scripts/persistent-deployment.mjs preflight
 node scripts/persistent-deployment.mjs prepare \
   --wrangler "$RUNNER_TEMP/wrangler.github.json" \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
+
+# Fail closed before any production Gateway mutation unless both private
+# Worker names and their required Secret shards are already present in Cloudflare.
+# This does not bootstrap centers or infer Secret values from GitHub.
+for center in ai-inference-center ai-generation-center; do
+  config="$RUNNER_TEMP/private-center-$center.json"
+  manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
+  inventory="$RUNNER_TEMP/private-center-$center-inventory.json"
+  node scripts/private-center-config.mjs prepare \
+    --worker "$center" --output "$config" --manifest "$manifest"
+  node scripts/cloudflare-wrangler.mjs secret list \
+    --format json --config "$config" > "$inventory"
+  node scripts/private-center-config.mjs verify-inventory \
+    --worker "$center" --inventory "$inventory" --manifest "$manifest"
+done
 
 # Wrangler returns names and types only; no secret values are downloaded.
 node scripts/cloudflare-wrangler.mjs secret list \
