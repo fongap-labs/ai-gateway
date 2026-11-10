@@ -217,7 +217,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 }
 ```
 
-未显式配置时，内置 `chat` 策略最多 3 次逻辑尝试，内置 `coding` 最多 5 次；两者默认关闭 Hedge 并沿用全局超时、调度回退与并发限制。它们是兼顾可靠性和资源占用的安全基线，并非未经实测即断言的全局最优值。`AIG_POLICIES_CONFIG` 可按策略名显式覆盖，运行时和私有中心使用同一份内置定义。
+未显式配置时，内置 `chat` 与 `coding` 策略均允许最多 8 次请求级逻辑尝试（现行安全上限），用于优先轮换 Tier 1 免费节点。两层均可用时，跨层分配初始保留 1 次 Tier 2 兜底，其余最多 7 次分配给 Tier 1；若 Tier 1 已无可调度节点，未用完的尝试预算可转到 Tier 2。成功、节点冷却、重试准入或总超时将提前终止；最大尝试次数不是必须打满的目标。内置策略关闭 Hedge，避免向同一免费池额外发送重复请求。中央部署默认的流式和非流式尝试准入上限也相应调整至 8；显式设置的较低上限仍优先。`AIG_POLICIES_CONFIG` 可以按名称覆盖，但不是常规必填变量。
 
 `max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
 
@@ -225,7 +225,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
 除非解析后的模型策略提供了 `failover_budget_ms`，否则 `AIG_FAILOVER_BUDGET_MS` 即为一次请求的全局墙钟预算。`AIG_UPSTREAM_HEADER_TIMEOUT_MS` 与 `AIG_FIRST_EVENT_TIMEOUT_MS` 仍是全局的阶段默认值，而模型策略可以用 `headers_timeout_ms` 与 `first_event_timeout_ms` 覆盖它们。Native Tier、协议回退、模型家族回退以及有界复检都不会重置已解析的预算。一次物理 dispatch 会在 header、首个有意义的输出、响应体组装以及有界的诊断读取之间共享同一个绝对 attempt 截止时间。hedge 孪生请求继承该截止时间。
 
-中央部署默认启用已有的请求准入、流式透传、热路径保护、成本保护与恢复探测开关，并将流式和非流式尝试上限都设为 3、每个 isolate 的在途请求上限设为 8、hedge 上限设为 0。部署时的显式变量可以覆盖这些值；直接部署应自行设置对应变量。模型策略仍保留其原有定义，启用 `AIG_REQUEST_ADMISSION` 时再应用尝试上限。这里的并发限制只在单个 isolate 生效，不能当作 provider 的全局额度。
+中央部署默认启用已有的请求准入、流式透传、热路径保护、成本保护与恢复探测开关，并将流式和非流式尝试上限都设为 8、每个 isolate 的在途请求上限设为 8、hedge 上限设为 0。部署时的显式变量可以覆盖这些值；直接部署应自行设置对应变量。模型策略仍保留其原有定义，启用 `AIG_REQUEST_ADMISSION` 时再应用尝试上限。这里的并发限制只在单个 isolate 生效，不能当作 provider 的全局额度。
 
 Agent 客户端应让网关承担一次请求内的有限回退，客户端最多补一次有界重试；同一步的重试复用 `x-gateway-deadline-ms`，并遵守 `Retry-After`。不要仅按 HTTP 503/504 判断是否重试，应读取网关错误元数据。Cloudflare 返回的 1102 可能绕过 Worker 的错误处理器：客户端需另外识别资源错误，停止原样重试并保存进度。协议响应头和截止时间的完整说明见[协议模型](../architecture/protocol-model.md#错误信封)。
 
