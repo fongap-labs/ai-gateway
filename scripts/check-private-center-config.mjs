@@ -20,6 +20,13 @@ const env = {
     { id: 'text-02', provider: 'anthropic', base_url: 'https://provider.example.test', models: { coding: 'physical-code' } },
   ]),
 };
+const withDeploySecret = buildPrivateCenterConfig('ai-inference-center', {
+  ...env,
+  AIG_DEPLOY_HEALTH_KEY: 'deployed-gateway-secret-must-not-enter-private-center',
+  AIG_INFERENCE_AUTH_KEY: 'private-center-auth-kept-out-of-config',
+});
+assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
+assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
 const inference = buildPrivateCenterConfig('ai-inference-center', env);
 const generation = buildPrivateCenterConfig('ai-generation-center', env);
 assert.equal(inference.nodeCount, 2);
@@ -52,7 +59,7 @@ for (const [name, environment, pattern] of [
   ['ai-gateway', env, /Unknown private Worker/],
   ['ai-inference-center', { ...env, AIG_TOKEN_ENCRYPTION_KEY: 'legacy' }, /Forbidden Secret or retired Variable/],
   ['ai-generation-center', { ...env, AIG_TIER3_NODES_01: '[]' }, /Forbidden Secret or retired Variable/],
-  ['ai-inference-center', { ...env, AIG_TIER1_CREDENTIALS_01: 'credential' }, /Forbidden Secret or retired Variable/],
+  ['ai-inference-center', { ...env, AIG_OPS_VARIABLES_JSON: JSON.stringify({ AIG_TIER1_CREDENTIALS_01: 'credential' }) }, /Forbidden Secret or retired Variable/],
   ['ai-inference-center', { ...env, AIG_TIER1_NODES_01: '[{"auth":"oauth"}]' }, /embedded-credential node/],
   ['ai-generation-center', { ...env, AIG_TIER1_NODES_01: '[]' }, /no eligible node/],
   ['ai-inference-center', { ...env, DEPLOY_SOURCE_SHA: 'main' }, /immutable 40-digit/],
