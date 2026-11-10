@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { buildPrivateCenterConfig, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,4 +64,9 @@ for (const [worker, inventory, tiers, pattern] of [
   ['ai-generation-center', [auth('AIG_GENERATION_AUTH_KEY'), auth('AIG_TIER1_CREDENTIALS_01'), auth('AIG_TIER1_CREDENTIALS_01')], ['1'], /Duplicate/],
 ]) assert.throws(() => verifyPrivateCenterSecretNames(worker, inventory, tiers), pattern);
 
+const deployScript = readFileSync(path.join(root, 'scripts/deploy.sh'), 'utf8');
+assert.ok(deployScript.includes('private-center-config.mjs prepare'));
+assert.ok(deployScript.includes('private-center-config.mjs verify-inventory'));
+assert.ok(deployScript.indexOf('private-center-config.mjs verify-inventory') < deployScript.indexOf('node scripts/deployment-recovery.mjs snapshot'));
+assert.ok(deployScript.indexOf('private-center-config.mjs verify-inventory') < deployScript.indexOf('node scripts/cloudflare-wrangler.mjs deploy'));
 console.log('Private center config & Secret name guards passed; no Cloudflare requests or production writes.');
