@@ -217,7 +217,9 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 }
 ```
 
-未显式配置时，内置 `chat` 策略最多 3 次逻辑尝试，内置 `coding` 最多 5 次；两者默认关闭 Hedge 并沿用全局超时、调度回退与并发限制。它们是兼顾可靠性和资源占用的安全基线，并非未经实测即断言的全局最优值。`AIG_POLICIES_CONFIG` 可按策略名显式覆盖，运行时和私有中心使用同一份内置定义。\n\n`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
+未显式配置时，内置 `chat` 策略最多 3 次逻辑尝试，内置 `coding` 最多 5 次；两者默认关闭 Hedge 并沿用全局超时、调度回退与并发限制。它们是兼顾可靠性和资源占用的安全基线，并非未经实测即断言的全局最优值。`AIG_POLICIES_CONFIG` 可按策略名显式覆盖，运行时和私有中心使用同一份内置定义。
+
+`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
 
 ## 请求时序
 
