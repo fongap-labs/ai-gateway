@@ -22,6 +22,23 @@ node scripts/cloudflare-live-inventory.mjs --out ./private/cloudflare-inventory.
 - Gateway 与 Operations 的 D1 必须分别恰有一个有效 `TOKEN_STATS_DB`，且 ID 相同。Tier 1 KV 必须恰有一个带有效身份的 `TIER1_AFFINITY` binding。
 - Gateway 必须分别且唯一绑定 `ai-inference-center` 与 `ai-generation-center`。Cron 阶段按持有者和数量识别 Gateway 恰有一个 Cron 的 `prepare`、双方无 Cron 的 `detach`、Operations 恰有一个 Cron 的 `activate`；双 Cron、多 Cron 和中心 Cron 均阻断。Cron 表达式作为运行配置原样报告，不与硬编码表达式比较。
 
+## 在线元数据与离线三阶段计划交叉核验
+
+先在受保护终端生成在线清单，再从同一计划的三个 Wrangler 拓扑快照执行离线发布预检。两份报告应只保存在不被 Git 追踪的私有目录，不要上传到公开 PR、Issue 或 CI Artifacts：
+
+```bash
+node scripts/cloudflare-live-inventory.mjs --out ./private/cloudflare-inventory.json
+node scripts/production-release-preflight.mjs --plan ./private/three-phase-plan.json > ./private/release-preflight.json
+node scripts/production-cutover-evidence.mjs \\
+  --inventory ./private/cloudflare-inventory.json \\
+  --preflight ./private/release-preflight.json \\
+  --phase prepare
+```
+
+最后一个命令只比较报告，不访问 Cloudflare。它要求：四 Worker 均已部署且活动流量权重有效、私有 Worker 没有公网入口、Gateway 两个 Service Binding 正确、KV 和共享 D1 存在、Tier/OAuth 遗留绑定消失、在线 Cron 所有权与 `prepare` / `detach` / `activate` 阶段完全一致。它还要求离线三阶段计划、不可变源码 SHA 和未验证事项清单完整。离线测试 `npm run check:production-cutover-evidence` 使用模拟报告，不连接生产。
+
+成功输出仅表示**元数据进入受保护的运行时核验阶段**，始终是 `production_deployment_authorized:false`。它不验证报告是否来自真实 Cloudflare、Provider Secret 能否工作、四 Worker 实际构建 SHA、TTFT/429/503、Cron 全球传播或回滚演练；这些必须在独立生产观察和审批流程中完成，不能通过替换 JSON 状态直接获得发布权限。
+
 ## 结果解释
 
 退出码 `0` 表示上述在线**元数据**合同未发现阻断；退出码 `2` 表示盘点失败或存在阻断。JSON 会列出每个 Worker 的部署存在性、活动部署版本数量、绑定名称/类型、Secret 名称、Cron、D1/KV 身份是否有效和路由暴露计数。
