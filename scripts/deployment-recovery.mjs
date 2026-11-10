@@ -66,7 +66,7 @@ export function recordPublishedDeployment(snapshot, active, sourceSha) {
     !sha.test(sourceSha ?? '') ||
     sameIdentity(snapshot.previous, active) ||
     active.version_id === snapshot.previous.version_id ||
-    active.message !== 'action-worker:deploy:' + sourceSha
+    active.message !== `action-worker:deploy:${sourceSha}`
   ) {
     throw new Error('New deployment ownership and immutable source SHA are not verified.');
   }
@@ -85,7 +85,7 @@ export function confirmPublishedIdentity(snapshot, active) {
     !validSnapshot(snapshot) ||
     snapshot.published === null ||
     !sameIdentity(snapshot.published, active) ||
-    active.message !== 'action-worker:deploy:' + snapshot.published.build
+    active.message !== `action-worker:deploy:${snapshot.published.build}`
   ) {
     throw new Error('Production drifted before the deployment success audit.');
   }
@@ -128,11 +128,11 @@ export async function fetchActiveDeployment(accountId, token, request = fetch) {
   if (!accountPattern.test(accountId ?? '') || typeof token !== 'string' || !token.trim()) {
     throw new Error('Protected Cloudflare Worker account and token are required.');
   }
-  const url = 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/workers/scripts/' + worker + '/deployments?per_page=1&page=1';
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${worker}/deployments?per_page=1&page=1`;
   const response = await request(url, {
     method: 'GET',
     redirect: 'error',
-    headers: { authorization: 'Bearer ' + token },
+    headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error('Cloudflare Worker deployment inventory is unreadable.');
@@ -153,7 +153,7 @@ function readSnapshot(file, accountId) {
 }
 
 function saveSnapshot(file, data, exclusive) {
-  const destination = exclusive ? file : file + '.next';
+  const destination = exclusive ? file : `${file}.next`;
   writeFileSync(destination, JSON.stringify(data), { mode: 0o600, flag: 'wx' });
   if (!exclusive) renameSync(destination, file);
 }
@@ -215,7 +215,7 @@ async function main() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error('Gateway recovery guard: ' + (error instanceof Error ? error.message : 'unknown error'));
+    console.error(`Gateway recovery guard: ${error instanceof Error ? error.message : 'unknown error'}`);
     process.exitCode = 77;
   });
 }
