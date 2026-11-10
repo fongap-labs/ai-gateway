@@ -1,9 +1,3 @@
-# CODEOWNERS for ai-gateway
-# Code owners are requested for review automatically. Their approval is required only while the
-# repository ruleset enables require_code_owner_review (see the ORG-006 plan in action-worker).
-
-* @fongap @fongxen
-
-/.github/ @fongap @fongxen
-
-/scripts/ @fongap @fongxen
+# CODEOWNERS intentionally contains no active ownership patterns.
+# Pull requests are merged by central signed CI gates with no requested reviewer or code-owner approval.
+# Keep this file as an explicit record; do not restore automatic review assignments.
