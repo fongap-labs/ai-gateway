@@ -46,12 +46,14 @@ assert.equal(isBuiltinPolicyName('chat'), true);
 assert.equal(isBuiltinPolicyName('coding'), true);
 assert.equal(isBuiltinPolicyName('private'), false);
 const defaultPolicies = loadPoliciesConfig({});
-assert.equal(defaultPolicies.chat.maxAttempts, 3);
+assert.equal(defaultPolicies.chat.maxAttempts, 8);
 assert.deepEqual(defaultPolicies.chat.hedge, { enabled: false });
-assert.equal(defaultPolicies.coding.maxAttempts, 5);
+assert.equal(defaultPolicies.chat.tierAttempts, null, 'Tier 1 may consume all non-reserved attempts');
+assert.equal(defaultPolicies.coding.maxAttempts, 8);
 assert.deepEqual(defaultPolicies.coding.hedge, { enabled: false });
-assert.equal(getPolicy('Air', { Air: { policy: { policy: 'chat' } } }, defaultPolicies).maxAttempts, 3);
-assert.equal(getPolicy('Code-Max', { 'Code-Max': { policy: { policy: 'coding' } } }, defaultPolicies).maxAttempts, 5);
+assert.equal(defaultPolicies.coding.tierAttempts, null, 'No artificial Tier 1 attempt quota');
+assert.equal(getPolicy('Air', { Air: { policy: { policy: 'chat' } } }, defaultPolicies).maxAttempts, 8);
+assert.equal(getPolicy('Code-Max', { 'Code-Max': { policy: { policy: 'coding' } } }, defaultPolicies).maxAttempts, 8);
 // Explicit overrides take precedence, without changing any other built-in policy.
 const overridden = loadPoliciesConfig({ AIG_POLICIES_CONFIG: '{"chat":{"max_attempts":2}}' });
 assert.equal(overridden.chat.maxAttempts, 2);
