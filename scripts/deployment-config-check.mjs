@@ -447,6 +447,24 @@ for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: 
 }
 
 const deployScript = read('scripts/deploy.sh');
+// An approved central production audit depends on this script's exit status.
+// Verify the real Bash entrypoint, not a regex-only approximation: disabling
+// deployment must never turn an unexecuted publish into a successful job.
+for (const [setting, expectedExit, message] of [
+  ['false', 77, /deployment is disabled/],
+  ['invalid', 64, /must be true or false/],
+]) {
+  const result = spawnSync('bash', [path.join(root, 'scripts/deploy.sh')], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 5000,
+    env: { ...process.env, AIG_IS_DEPLOY_ENABLED: setting, DEPLOY_SOURCE_SHA: '' },
+  });
+  assert.equal(result.error, undefined, 'Disabled deploy must execute Bash without external API access');
+  assert.equal(result.status, expectedExit, 'Unexecuted deploy must never return a successful exit status');
+  assert.match(result.stderr, message);
+  assert.doesNotMatch(result.stdout, /Deployment complete|deployment completed/i);
+}
 assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
 assert.match(deployScript, /secret list/);
 assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\.json/);
