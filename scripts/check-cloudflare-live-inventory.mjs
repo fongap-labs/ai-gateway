@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
-import { createReadOnlyCloudflareClient, inspectProductionWorkers, InventoryDiagnosticError } from './cloudflare-live-inventory.mjs';
+import { createReadOnlyCloudflareClient, InventoryDiagnosticError, inspectProductionWorkers } from './cloudflare-live-inventory.mjs';
 
 const WORKERS = ['ai-gateway', 'ai-inference-center', 'ai-generation-center', 'ai-gateway-operations'];
 const SECRET_SENTINEL = 'never-print-this-secret-value';
@@ -146,7 +146,9 @@ for (const [status, code] of [
   );
 }
 await assertSafeFailure(
-  async () => { throw new Error(sensitiveApiText); },
+  async () => {
+    throw new Error(sensitiveApiText);
+  },
   'NETWORK_OR_TIMEOUT',
   'worker-list',
 );
@@ -155,25 +157,9 @@ await assertSafeFailure(
   'API_RESPONSE_REJECTED',
   'worker-list',
 );
-await assertSafeFailure(
-  async () => new Response(sensitiveApiText, { status: 200 }),
-  'INVALID_API_JSON',
-  'worker-list',
-);
-await assertSafeFailure(
-  async () => Response.json({ success: false }, { status: 403 }),
-  'READ_PERMISSION_DENIED',
-  'account-zones',
-  403,
-  'zones',
-);
-await assertSafeFailure(
-  async () => Response.json({ success: false }, { status: 403 }),
-  'READ_PERMISSION_DENIED',
-  'worker-domains',
-  403,
-  'domains',
-);
+await assertSafeFailure(async () => new Response(sensitiveApiText, { status: 200 }), 'INVALID_API_JSON', 'worker-list');
+await assertSafeFailure(async () => Response.json({ success: false }, { status: 403 }), 'READ_PERMISSION_DENIED', 'account-zones', 403, 'zones');
+await assertSafeFailure(async () => Response.json({ success: false }, { status: 403 }), 'READ_PERMISSION_DENIED', 'worker-domains', 403, 'domains');
 assert.throws(
   () => createReadOnlyCloudflareClient({ accountId: 'invalid', token: 'invalid' }),
   (error) => error instanceof InventoryDiagnosticError && error.code === 'INVALID_CREDENTIAL_METADATA' && error.stage === 'configuration',
