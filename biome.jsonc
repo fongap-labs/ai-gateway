@@ -12,6 +12,7 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
+      "style": { "useTemplate": "off" },
       "correctness": {
         "noUnusedVariables": "error",
         "noUnusedFunctionParameters": "off"
