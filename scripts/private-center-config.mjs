@@ -14,6 +14,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shaPattern = /^[a-f0-9]{40}$/;
 const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
 const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
+const builtinPolicies = new Set(['default', 'fast', 'long-reasoning']);
 const FORBIDDEN =
   /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|PERCEPTION|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
 const centerTypes = Object.freeze({
@@ -76,24 +77,32 @@ export function buildPrivateCenterConfig(worker, input) {
   if (typeof sourceSha !== 'string' || !shaPattern.test(sourceSha)) {
     throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
   }
-  // A private center must use the same explicit model catalog and policies
-  // as the approved Gateway. A synthesized empty map could silently disable
-  // production aliases or make a referenced custom policy unknown.
-  if (
-    typeof env.AIG_MODELS_CONFIG !== 'string' ||
-    !env.AIG_MODELS_CONFIG.trim() ||
-    typeof env.AIG_POLICIES_CONFIG !== 'string' ||
-    !env.AIG_POLICIES_CONFIG.trim()
-  ) {
-    throw new Error('Both AIG_MODELS_CONFIG and AIG_POLICIES_CONFIG are required for private center release.');
+  // Policy overrides are optional in the shared runtime. Built-in policies
+  // default, fast and long-reasoning are selected without a separate Variable.
+  // A custom model policy is NEVER silently mapped to a built-in default.
+  if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim()) {
+    throw new Error('AIG_MODELS_CONFIG is required for private center release.');
+  }
+  const modelCatalog = checkedJson(env.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
+  const hasPolicyOverride = typeof env.AIG_POLICIES_CONFIG === 'string' && env.AIG_POLICIES_CONFIG.trim().length > 0;
+  const policyOverrides = hasPolicyOverride ? checkedJson(env.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG') : {};
+  const problems = [];
+  const referencedPolicies = new Set(
+    Object.values(modelCatalog)
+      .filter((entry) => record(entry) && typeof entry.policy === 'string' && entry.policy.trim())
+      .map((entry) => entry.policy.trim()),
+  );
+  const unknownPolicies = [...referencedPolicies]
+    .filter((name) => !builtinPolicies.has(name) && !Object.hasOwn(policyOverrides, name))
+    .sort();
+  if (unknownPolicies.length > 0) {
+    problems.push(`AIG_POLICIES_CONFIG is missing definitions for referenced custom policies: ${unknownPolicies.join(', ')}.`);
   }
   const vars = {
     AIG_BUILD_SHA: sourceSha,
     AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG,
-    AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG,
+    ...(hasPolicyOverride ? { AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG } : {}),
   };
-  const modelCatalog = checkedJson(vars.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
-  checkedJson(vars.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG');
   if (env.AIG_PROTOCOL_FALLBACKS) vars.AIG_PROTOCOL_FALLBACKS = env.AIG_PROTOCOL_FALLBACKS;
 
   let total = 0;
@@ -148,7 +157,8 @@ export function buildPrivateCenterConfig(worker, input) {
       ),
     );
   }
-  if (!total) throw new Error(`${worker} has no eligible node; do not publish an empty private center.`);
+  if (!total) problems.push(`${worker} has no eligible node; do not publish an empty private center.`);
+  if (problems.length) throw new Error(problems.join(' '));
 
   const baseText = fs.readFileSync(path.join(root, target.base), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   const base = JSON.parse(baseText);
@@ -165,6 +175,21 @@ export function buildPrivateCenterConfig(worker, input) {
     throw new Error('Private Worker configuration is not on the approved Wrangler deploy allowlist.');
   }
   return { config, nodeCount: total, tiers: [...tiers].sort(), authName: target.auth };
+}
+
+/** Read-only preflight for the ENTIRE mandatory three-center topology.
+ * Collects every missing model/policy/capability before mutating any Worker. */
+export function preflightPrivateCenters(input) {
+  const issues = [];
+  for (const worker of Object.keys(centerTypes)) {
+    try {
+      buildPrivateCenterConfig(worker, input);
+    } catch (error) {
+      issues.push(`${worker}: ${error instanceof Error ? error.message : 'invalid configuration'}`);
+    }
+  }
+  if (issues.length) throw new Error(`Private center readiness check failed: ${issues.join(' | ')}`);
+  return { workers: Object.keys(centerTypes).length };
 }
 
 /** Verify names only. This is not proof of credential correctness or request health. */
@@ -202,6 +227,11 @@ function localPath(file) {
 function main() {
   const [command] = process.argv.slice(2);
   const worker = argument('--worker');
+  if (command === 'preflight') {
+    const result = preflightPrivateCenters(process.env);
+    console.log(`Private center preflight passed: ${result.workers} Worker configs; no remote state mutated.`);
+    return;
+  }
   if (command === 'prepare') {
     const output = localPath(argument('--output'));
     const manifest = localPath(argument('--manifest'));
@@ -220,7 +250,7 @@ function main() {
     return;
   }
   throw new Error(
-    'Usage: private-center-config.mjs prepare|verify-inventory --worker WORKER [--output FILE --manifest FILE | --inventory FILE --manifest FILE].',
+    'Usage: private-center-config.mjs preflight|prepare|verify-inventory [--worker WORKER --output FILE --manifest FILE | --worker WORKER --inventory FILE --manifest FILE].',
   );
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
