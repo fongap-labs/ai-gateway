@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: MIT
+// Protected private Worker bootstrap and inventory gate. Only non-sensitive
+// Variables and Cloudflare Secret NAMES are consumed; no Secret values are read.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
+import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const shaPattern = /^[a-f0-9]{40}$/;
+const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
+const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
+const FORBIDDEN = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
+const centerTypes = Object.freeze({
+  'ai-inference-center': {
+    entry: 'src/inference/inference-center-entry.ts',
+    base: 'wrangler.inference-center.jsonc',
+    auth: 'AIG_INFERENCE_AUTH_KEY',
+    kind: 'inference',
+  },
+  'ai-generation-center': {
+    entry: 'src/generation/generation-center-entry.ts',
+    base: 'wrangler.generation-center.jsonc',
+    auth: 'AIG_GENERATION_AUTH_KEY',
+    kind: 'generation',
+  },
+});
+
+function record(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+function centerType(worker) {
+  if (!Object.hasOwn(centerTypes, worker)) throw new Error('Unknown private Worker target.');
+  return centerTypes[worker];
+}
+function checkedJson(raw, name) {
+  let value;
+  try { value = JSON.parse(raw); } catch { throw new Error(`${name} must be valid JSON.`); }
+  if (!record(value)) throw new Error(`${name} must be a JSON object.`);
+  return value;
+}
+function plainInputs(env) {
+  const raw = env.AIG_OPS_VARIABLES_JSON;
+  const vars = raw ? checkedJson(raw, 'Protected Variable snapshot') : env;
+  for (const name of Object.keys(vars)) {
+    if (FORBIDDEN.test(name)) throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
+  }
+  return vars;
+}
+
+/** Build only a private Worker: no routes, public URLs, services or Secret values. */
+export function buildPrivateCenterConfig(worker, input) {
+  const target = centerType(worker);
+  const env = plainInputs(input);
+  const sourceSha = input.DEPLOY_SOURCE_SHA;
+  if (typeof sourceSha !== 'string' || !shaPattern.test(sourceSha)) {
+    throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
+  }
+  const vars = {
+    AIG_BUILD_SHA: sourceSha,
+    AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG || '{}',
+    AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG || '{}',
+  };
+  checkedJson(vars.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
+  checkedJson(vars.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG');
+  if (env.AIG_PROTOCOL_FALLBACKS) vars.AIG_PROTOCOL_FALLBACKS = env.AIG_PROTOCOL_FALLBACKS;
+
+  let total = 0;
+  const tiers = new Set();
+  for (const [name, raw] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
+    const match = shardName.exec(name);
+    if (!match) continue;
+    if (typeof raw !== 'string') throw new Error(`${name} must be a JSON string.`);
+    let all;
+    try { all = JSON.parse(raw); } catch { throw new Error(`${name} must be valid JSON.`); }
+    if (!Array.isArray(all)) throw new Error(`${name} must be a node array.`);
+    for (const item of all) {
+      if (!record(item) || typeof item.provider !== 'string' ||
+          Object.hasOwn(item, 'auth') ||
+          Object.keys(item).some(k => /^(?:token|secret|password|api_key|credential)$/i.test(k))) {
+        throw new Error(`${name} contains an invalid or embedded-credential node.`);
+      }
+    }
+    const selected = all.filter(n => target.kind === 'generation'
+      ? isImageGenerationProvider(n.provider)
+      : !isImageGenerationProvider(n.provider));
+    if (!selected.length) continue;
+    vars[name] = JSON.stringify(selected);
+    tiers.add(match[1]);
+    total += selected.length;
+  }
+  if (!total) throw new Error(`${worker} has no eligible node; do not publish an empty private center.`);
+
+  const baseText = fs.readFileSync(path.join(root, target.base), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  const base = JSON.parse(baseText);
+  const config = {
+    ...base,
+    name: worker,
+    main: path.join(root, target.entry),
+    workers_dev: false,
+    keep_vars: false,
+    vars,
+  };
+  const classification = classifyDeployTarget(config, root);
+  if (classification !== target.kind) {
+    throw new Error('Private Worker configuration is not on the approved Wrangler deploy allowlist.');
+  }
+  return { config, nodeCount: total, tiers: [...tiers].sort(), authName: target.auth };
+}
+
+/** Verify names only. This is not proof of credential correctness or request health. */
+export function verifyPrivateCenterSecretNames(worker, rawInventory, tiers) {
+  const target = centerType(worker);
+  if (!Array.isArray(rawInventory) ||
+      rawInventory.some(s => !record(s) || typeof s.name !== 'string' || s.type !== 'secret_text')) {
+    throw new Error('Private center Secret inventory is invalid.');
+  }
+  const names = new Set(rawInventory.map(s => s.name));
+  if (names.size !== rawInventory.length) throw new Error('Duplicate private center Secret names.');
+  const invalid = [...names].filter(n => n !== target.auth && !credentialName.test(n));
+  if (invalid.length) throw new Error(`${worker} contains Secrets outside its ownership allowlist.`);
+  if (!names.has(target.auth)) throw new Error(`${worker} is missing its internal auth Secret.`);
+  if (!Array.isArray(tiers) || tiers.some(t => t !== '1' && t !== '2')) {
+    throw new Error('Private center node tier manifest is invalid.');
+  }
+  for (const tier of tiers) {
+    if (![...names].some(name => credentialName.test(name) && credentialName.exec(name)[1] === tier)) {
+      throw new Error(`${worker} lacks Tier ${tier} provider credential shards.`);
+    }
+  }
+  return { worker, secretNames: names.size, tierCount: tiers.length };
+}
+function argument(flag) {
+  const i = process.argv.indexOf(flag);
+  return i === -1 ? '' : process.argv[i + 1] || '';
+}
+function localPath(file) {
+  const temp = process.env.RUNNER_TEMP;
+  if (!temp || !file || path.dirname(path.resolve(file)) !== path.resolve(temp)) {
+    throw new Error('Private center artifacts must be direct children of RUNNER_TEMP.');
+  }
+  return path.resolve(file);
+}
+function main() {
+  const [command] = process.argv.slice(2);
+  const worker = argument('--worker');
+  if (command === 'prepare') {
+    const output = localPath(argument('--output'));
+    const manifest = localPath(argument('--manifest'));
+    const { config, nodeCount, tiers } = buildPrivateCenterConfig(worker, process.env);
+    fs.writeFileSync(output, JSON.stringify(config), { mode: 0o600, flag: 'wx' });
+    fs.writeFileSync(manifest, JSON.stringify({ worker, tiers }), { mode: 0o600, flag: 'wx' });
+    console.log(`Private ${worker} configuration prepared: ${nodeCount} eligible node(s); no Secrets transferred.`);
+    return;
+  }
+  if (command === 'verify-inventory') {
+    const inventory = JSON.parse(fs.readFileSync(localPath(argument('--inventory')), 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(localPath(argument('--manifest')), 'utf8'));
+    assert.equal(worker, manifest.worker, 'Private center inventory target mismatch.');
+    const result = verifyPrivateCenterSecretNames(worker, inventory, manifest.tiers);
+    console.log(`Private ${result.worker} inventory passed: ${result.secretNames} Secret names; values and runtime readiness not verified.`);
+    return;
+  }
+  throw new Error('Usage: private-center-config.mjs prepare|verify-inventory --worker WORKER [--output FILE --manifest FILE | --inventory FILE --manifest FILE].');
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { main(); } catch (error) {
+    // Do not echo operational metadata or values from supplied configuration.
+    console.error(`Private center release blocked: ${error instanceof Error ? error.message : 'invalid input'}`);
+    process.exitCode = 2;
+  }
+}
