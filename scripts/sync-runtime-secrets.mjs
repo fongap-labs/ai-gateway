@@ -123,7 +123,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (command === 'preflight') {
       const plan = buildRuntimeSecretPlan(process.env);
-      console.log(`Protected runtime authentication preflight passed: ${plan.workers.length} Workers / ${plan.writes.length} bindings; values not logged.`);
+      console.log(
+        `Protected runtime authentication preflight passed: ${plan.workers.length} Workers / ${plan.writes.length} bindings; values not logged.`,
+      );
     } else if (command === 'reconcile') {
       const result = await synchronizeRuntimeSecrets(process.env);
       console.log(`Cloudflare runtime authentication synchronized: ${result.workers} Workers / ${result.bindings} bindings; values not logged.`);
