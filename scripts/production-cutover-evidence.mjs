@@ -95,14 +95,7 @@ export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
 }
 
 function main(argv) {
-  if (
-    argv.length !== 6 ||
-    argv[0] !== '--inventory' ||
-    argv[2] !== '--preflight' ||
-    argv[4] !== '--phase' ||
-    !argv[1] ||
-    !argv[3]
-  ) {
+  if (argv.length !== 6 || argv[0] !== '--inventory' || argv[2] !== '--preflight' || argv[4] !== '--phase' || !argv[1] || !argv[3]) {
     throw new Error('usage: production-cutover-evidence.mjs --inventory PRIVATE_FILE --preflight PRIVATE_FILE --phase PHASE');
   }
   const inventory = JSON.parse(readFileSync(path.resolve(argv[1]), 'utf8'));
