@@ -482,15 +482,15 @@ assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs rollback/);
 assert.match(deployScript, /persistent-deployment\.mjs health-check/);
 assert.match(deployScript, /DEPLOY_SOURCE_SHA/);
-assert.match(deployScript, /deployment-recovery\\.mjs snapshot/);
-assert.match(deployScript, /deployment-recovery\\.mjs capture-published/);
-assert.match(deployScript, /deployment-recovery\\.mjs rollback-target/);
-assert.match(deployScript, /deployment-recovery\\.mjs verify-restored/);
-assert.match(deployScript, /deployment-recovery\\.mjs verify-published/);
+assert.ok(deployScript.includes('deployment-recovery.mjs snapshot'));
+assert.ok(deployScript.includes('deployment-recovery.mjs capture-published'));
+assert.ok(deployScript.includes('deployment-recovery.mjs rollback-target'));
+assert.ok(deployScript.includes('deployment-recovery.mjs verify-restored'));
+assert.ok(deployScript.includes('deployment-recovery.mjs verify-published'));
 assert.match(deployScript, /--message "action-worker:deploy:\$DEPLOY_SOURCE_SHA"/);
 assert.match(deployScript, /rollback "\$rollback_version"/);
-assert.doesNotMatch(deployScript, /health-check \\|\\| true/);
-assert.doesNotMatch(deployScript, /cloudflare-wrangler\\.mjs rollback --config/);
+assert.equal(deployScript.includes('health-check || true'), false);
+assert.equal(deployScript.includes('cloudflare-wrangler.mjs rollback --config'), false);
 
 // Provider deployment identities are independent of the public /health build SHA.
 // Requiring both catches mistaken restores and prevents an unpinned Wrangler
@@ -507,16 +507,18 @@ const deployedBuild = 'c'.repeat(40);
 const activeResponse = (deploymentId, versionId, message = null, percent = 100) => ({
   success: true,
   result: {
-    deployments: [{
-      id: deploymentId,
-      versions: [{ percentage: percent, version_id: versionId }],
-      annotations: message === null ? {} : { 'workers/message': message },
-    }],
+    deployments: [
+      {
+        id: deploymentId,
+        versions: [{ percentage: percent, version_id: versionId }],
+        annotations: message === null ? {} : { 'workers/message': message },
+      },
+    ],
   },
 });
 const baselineActive = parseActiveDeployment(activeResponse(baselineDeployment, baselineVersion));
 const publishedActive = parseActiveDeployment(
-  activeResponse(publishedDeployment, publishedVersion, 'action-worker:deploy:' + deployedBuild),
+  activeResponse(publishedDeployment, publishedVersion, `action-worker:deploy:${deployedBuild}`),
 );
 const restoredActive = parseActiveDeployment(activeResponse(restoredDeployment, baselineVersion));
 assert.equal(baselineActive.version_id, baselineVersion);
@@ -524,7 +526,20 @@ for (const invalid of [
   { success: false, result: { deployments: [] } },
   { success: true, result: { deployments: [] } },
   activeResponse(baselineDeployment, baselineVersion, null, 50),
-  { success: true, result: { deployments: [{ id: baselineDeployment, versions: [{ percentage: 50, version_id: baselineVersion }, { percentage: 50, version_id: publishedVersion }] }] } },
+  {
+    success: true,
+    result: {
+      deployments: [
+        {
+          id: baselineDeployment,
+          versions: [
+            { percentage: 50, version_id: baselineVersion },
+            { percentage: 50, version_id: publishedVersion },
+          ],
+        },
+      ],
+    },
+  },
   activeResponse('invalid', baselineVersion),
   activeResponse(baselineDeployment, 'invalid'),
 ]) {
@@ -583,7 +598,7 @@ const readOnlyCloudflare = async (url, options) => {
   readCalls += 1;
   assert.equal(
     String(url),
-    'https://api.cloudflare.com/client/v4/accounts/' + knownAccount + '/workers/scripts/ai-gateway/deployments?per_page=1&page=1',
+    `https://api.cloudflare.com/client/v4/accounts/${knownAccount}/workers/scripts/ai-gateway/deployments?per_page=1&page=1`,
   );
   assert.equal(options?.method, 'GET');
   assert.equal(options?.redirect, 'error');
