@@ -1,16 +1,18 @@
-# 能力中心源码拆分：依赖约束与阶段门禁
+# 源码迁移记录与当前 Worker 边界
 
-本文件追踪源码迁移，不证明 Cloudflare 生产环境已切换。
+## 当前四 Worker 架构
 
-## 最终结构
+- `apps/gateway`：公开请求鉴权、模型授权、额度、两层调度、路由与故障恢复；不直接执行 Provider 推理。
+- `apps/inference`：私有推理执行与协议转换；只持有其执行所需的 Provider 凭据。
+- `apps/generation`：私有生成能力；只持有其执行所需的 Provider 凭据。
+- `operations`：独立定时维护入口，使用共享 `TOKEN_STATS_DB`，没有公开 `fetch` 路由且不持有 Provider 凭据。
+- `packages/contracts`、`packages/provider-kit`、`packages/transport`、`packages/observability`：跨 Worker 的中立契约和基础设施。
 
-- `apps/gateway`：客户端认证、模型授权、Tier 选择、准入、Failover、Hedge、预算、首事件提交与转发。
-- `apps/inference`：Provider 执行、OAuth/订阅、Chat/Responses/Messages 转换与流式协议。
-- `apps/perception`：已有图片/多模态理解的真正执行；不存在的 OCR/视频能力不得建空壳冒充。
-- `apps/generation`：图片生成及未来异步生成任务。
-- `packages/contracts`：内网执行契约、错误与物理用量事件；只依赖平台标准 Request/Response/Streams。
-- `packages/provider-kit`、`packages/transport`、`packages/observability`：仅放跨业务单元复用的基础设施。
-- `operations`：Dashboard、聚合、维护，不进入请求热路径。
+当前运行时只有 Tier 1 → Tier 2；会员 OAuth 执行和 Tier 3 均已退役。当前源码职责见[架构概览](overview.md)、[四 Worker 能力边界](edge-capability-boundaries.md)和[配置手册](../operations/configuration.md)。当前源码收尾及生产验收状态以[Issue #310](https://github.com/fongap-labs/ai-gateway/issues/310)为准。
+
+## 历史记录说明
+
+下方各节按批次保留实施当时的源码迁移记录，包含已经过时的“待迁移”、Tier 3、OAuth 和模块状态表述；这些记录仅供追溯，不能作为当前架构、当前待办或生产状态证据。生产部署、Secret、Cron、D1/KV 和健康状态须另按只读盘点与运行证据核验。
 
 ## 源码静态质量门禁
 
@@ -461,13 +463,15 @@ Tier 2/3 的协议及 surface 硬门禁、模型资格、即时可用性、候�
 
 同时修复 Tier 2/3 迁移 #308 的遗漏：`apps/gateway/scheduling/tier-policy.ts` 直接从本地 `scheduler.ts` 读取选点和候选数量，不再经旧 `src/scheduler/scheduler.ts` 转发。架构门禁验证唯一实现、旧路径无状态、KV 时间预算与实际调用方向；现有中央 Tier 1 容量/冷却测试仍通过原 re-export 检查同一对象。未修改 Action Worker 测试包、门禁、pin、Secrets、D1、Wrangler 或生产部署。
 
-## 尚待迁移
+## 历史待迁移清单（已被后续变更取代）
+
+以下条目仅记录当时计划，不是当前待办：
 
 1. 将各应用内部执行源码从 `src/` 继续迁移至各自目录，随后独立构建并分离环境配置类型。
 2. Gateway 物理推理统一走私有中心；继续移走非执行 OAuth 管理和 Provider 配置兼容依赖。
 3. 由推理中心拥有双向协议转换、流处理和物理上游用量；Gateway 仅有界检查首事件。
 4. 对已有多模态理解建立真实感知中心，不制造无功能服务；生成中心继续完善非幂等边界。
-5. 独立运维与可观测处理；新增本地 HTTP Mock 合同测试；删除入口旧路径和例外。
+5. 独立运维与可观测处理；新增本地 HTTP Mock 合同测试；删除入口旧路径和例外。当前完成状态及未核验的生产事项见 Issue #310。
 
 ## 验收原则
 

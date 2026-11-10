@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 文档: 修正 OAuth、缓存密钥与动态模型目录说明。
+
 - 修复: 校验 Cloudflare 分页完整性、Secret 脱敏和 Cron 所有权。
 
 - 修复: Gateway 部署记录精确 Cloudflare 版本，失败回滚校验身份与公网健康；未切生产。

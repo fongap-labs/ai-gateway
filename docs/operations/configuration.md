@@ -53,12 +53,12 @@ priority
 
 ```json
 {
-  "id": "nvidia-01",
-  "provider": "nvidia",
-  "base_url": "https://integrate.api.nvidia.com/v1",
+  "id": "node-01",
+  "provider": "<registered-provider-id>",
+  "base_url": "https://provider.example/v1",
   "priority": 10,
   "models": {
-    "Code-Max": "upstream-code-model"
+    "<logical-model-id>": "<upstream-model-id>"
   }
 }
 ```
@@ -127,11 +127,10 @@ Tier 1 → Tier 2
 
 - Tier 1：免费或实际上免费的容量；可靠性工作的主要关注点。
 - Tier 2：静态 API Token 额度池，作为免费池耗尽后的最终兜底。
-- 
 
 ## 旧会员订阅层退役
 
-旧 Tier 2 的 Claude/Codex/Gemini 会员代理、OAuth、Token 刷新及专有适配器已删除。所有 `/oauth/*` 路由返回 404。旧 `AIG_OAUTH_*`、`AIG_TOKEN_ENCRYPTION_KEY` 和 `AIG_IS_SUBSCRIPTION_ENABLED` 配置被拒绝，不可重新启用。
+旧会员订阅代理、OAuth、Token 刷新及专有适配器已删除。所有 `/oauth/*` 路由返回 404。旧 `AIG_OAUTH_*`、`AIG_TOKEN_ENCRYPTION_KEY` 和 `AIG_IS_SUBSCRIPTION_ENABLED` 配置被拒绝，不可重新启用。
 
 将原 Tier 3 静态 Token 迁移到新 Tier 2 之前，在受保护环境中给 `npm run config:cutover:plan` 提供旧 Tier 1/2/3 节点、节点 ID 凭据索引、`AIG_POLICIES_CONFIG` 和 `AIG_MODELS_CONFIG`（不存在时显式提供空对象）。报告核对 Tier 2 静态 Key 保留、OAuth 节点退役、ID/凭据引用冲突、模型映射指纹和策略额度改写；不输出上游模型名或凭据值。它无法验证不同节点是否引用了相同真实 Secret 值。系统不会自动读取、复制或删除旧生产 Secret，也不会更改历史 D1 迁移记录。
 
@@ -156,7 +155,7 @@ Tier 1 → Tier 2
 
 `AIG_REQUEST_BODY_MAX_BYTES` 默认 20 MiB，最大 32 MiB。它限制的是单个请求；多个大请求同时进入同一个 isolate 时，另有一个 32 MiB 的「在途请求体」预算（按声明的 `Content-Length` 计）。实测一个请求在准备阶段占用的内存约为请求体的 2–3 倍（文本、解析后的 JSON、发往上游的副本），而一个 Worker isolate 只有约 128 MB；超出就会整个 isolate 被终止，连同其中所有请求、流与学到的 Tier 1 状态。因此超过预算的新请求会收到可重试的 503（`Retry-After: 1`，错误码 `gateway_body_budget_exhausted`）；没有其他请求在途时，单个达到上限的请求总能进入。声明了有效 `Content-Length`（有限且大于 0）的请求体按该值计入预算；没有有效 `Content-Length`（缺失、非数字或不大于 0，例如分块传输）的请求体按最坏情况计入，即 `AIG_REQUEST_BODY_MAX_BYTES`；没有请求体的请求不计入预算。请求体会先作为文本读取再解析，超大请求更容易触及 Worker 的内存上限；除非上游确实需要，否则不要提高该值。超过 256 KiB 的请求不参与边缘缓存，超过 1 MiB 的请求不启动 hedge。未修改的 native 请求直接复用原始 JSON 文本，避免二次 `JSON.stringify`；超过 1 MiB 的原始文本在构建或发出首个上游请求体后释放，不跨流式响应或后续重试保留；大型流式响应提交后，已解析的请求体及协议转换后的请求体也会被释放，避免在整个流期间保留 prompt 树。
 
-边缘缓存只响应显式 `x-gateway-cache: true` 的请求；`temperature: 0` 不会自动启用缓存。`AIG_EDGE_CACHE_TTL_SEC` 控制 Cache API 条目寿命，默认普通配置为 4 小时；启用 `AIG_COST_GUARDS` 且未显式设 TTL 时为 1 小时，设为 `0` 时跳过查找和写入。缓存键使用当前请求域名，并包含路由、模型、请求体、流式选择、key group 和由 `AIG_TOKEN_ENCRYPTION_KEY` 派生的调用凭据指纹。流式与非流式响应不共享条目。只有安全的 200 JSON 或协议终止完整的 SSE 流会缓存；工具调用、畸形/截断/不完整输出、观察超限和超过 256 KiB 的响应都不会存储。客户端取消会停止缓存填充。命中与未命中响应发送给客户端时都使用 `Cache-Control: private, no-store`，内部条目使用显式 `public, max-age`。Cloudflare Cache API 是按数据中心本地缓存，不会在不同数据中心间复制；生产部署需使用支持 Cache API 的自定义域名。轮换 `AIG_TOKEN_ENCRYPTION_KEY` 也会使现有缓存条目失效。
+边缘缓存只响应显式 `x-gateway-cache: true` 的请求；`temperature: 0` 不会自动启用缓存。`AIG_EDGE_CACHE_TTL_SEC` 控制 Cache API 条目寿命，默认普通配置为 4 小时；启用 `AIG_COST_GUARDS` 且未显式设 TTL 时为 1 小时，设为 `0` 时跳过查找和写入。缓存键使用当前请求域名，并包含路由、模型、请求体、流式选择、key group 和由独立 `AIG_EDGE_CACHE_HMAC_KEY` 派生的调用凭据指纹。流式与非流式响应不共享条目。只有安全的 200 JSON 或协议终止完整的 SSE 流会缓存；工具调用、畸形/截断/不完整输出、观察超限和超过 256 KiB 的响应都不会存储。客户端取消会停止缓存填充。命中与未命中响应发送给客户端时都使用 `Cache-Control: private, no-store`，内部条目使用显式 `public, max-age`。Cloudflare Cache API 是按数据中心本地缓存，不会在不同数据中心间复制；生产部署需使用支持 Cache API 的自定义域名。轮换 `AIG_EDGE_CACHE_HMAC_KEY` 会改变调用凭据指纹，使旧缓存条目不再匹配。
 
 `AIG_RATE_LIMIT_COOLDOWN_MS` 是 Tier 2 节点在 429 未携带任何提示时的回退等待时间。Tier 1 不使用它：Tier 1 的 key 遵循自适应阶梯 `15s -> 30s -> 1m -> 2m -> 5m -> 10m -> 20m -> 30m`（参见[可靠性模型](../architecture/reliability-model.md#429-处理)）。若要修改该阶梯，请将 `AIG_RATE_LIMIT_STEPS_MS` 设置为以逗号分隔的毫秒数，例如 `15000,30000,60000,300000`。除非某个 provider 需要不同的设置，否则请保持其未设置；缺失或格式错误的值会保持默认值。
 
@@ -168,7 +167,7 @@ Tier 1 → Tier 2
 
 `AIG_PUBLIC_DASHBOARD`（布尔值，默认为 `true`）决定是否公开仪表盘 `/` 与 `/readme-status.svg`；设为 `false` 时返回 404。
 
-其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP`、`AIG_DASHBOARD_MODELS`、`AIG_OAUTH_PROVIDERS` 与 `AIG_OAUTH_ADMIN_GROUPS`（参见 [Tier 2 订阅](#tier-2-订阅oauth)）。
+其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP` 与 `AIG_DASHBOARD_MODELS`。`AIG_OAUTH_*` 属于已退役配置，见[旧会员订阅层退役](#旧会员订阅层退役)。
 
 `AIG_DIAGNOSTICS_GROUPS` 决定哪些访问密钥分组可以读取 `/health` 与 `/metrics`，逗号分隔、不区分大小写，例如 `ULTRA` 或 `MAX,AGENT`。未设置时默认为 `MAX,ULTRA`；设为 `*` 时所有有效密钥都可读取。其他分组的密钥访问这两个端点会收到 `403`，`/v1/*` 不受影响。部署后的健康检查使用一个允许读取的分组密钥；已配置的密钥中没有任何一个允许读取时，部署预检直接失败。
 
@@ -179,7 +178,7 @@ Tier 1 → Tier 2
 示例：
 
 ```text
-AIG_DASHBOARD_MODELS=Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air
+AIG_DASHBOARD_MODELS=<comma-separated logical model IDs from the active catalog>
 ```
 
 它不会改变路由、授权、`/v1/models`、回退、D1 采集或聚合用量总计。它控制的是：哪些公共逻辑模型会出现在模型状态区域中，以及哪些模型可以在模型用量细分中按名称显示；未在允许列表中的用量会被汇总到「其他」中。
@@ -218,7 +217,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 }
 ```
 
-`max_attempts` 是请求级的逻辑 attempt 上限。Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可以选择性地为某一个策略覆盖全局的请求时序设置。若没有显式的模型策略，`Air`/`Code-Air` 使用内置的 `fast` 策略（`max_attempts=4`，60 秒故障转移预算），在 Air → Pro → Max → Ultra 之间提供一轮评估。`Pro`/`Max`/`Ultra` 及其 `Code-*` 变体使用 `long-reasoning`（`max_attempts=6`，不启用 hedge，60 秒 header 超时，60 秒首事件超时，180 秒故障转移预算），与完整的 3/2/1 家族回退计划保持一致。其他模型使用 `default`。显式设置的 `AIG_MODELS_CONFIG.<model>.policy` 总是优先。跨 Tier 的分配模型只有一种：严格的 Tier 优先级。`budget_split`, weighted allocation, and alternate tier-budget modes are not part of the current policy schema（`budget_split`、加权分配以及备用的 Tier 预算模式不属于当前的策略 schema），若出现即作为未知字段被拒绝。
+`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前模型目录中解析，并受请求级 attempt 上限约束；逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
 
 ## 请求时序
 
