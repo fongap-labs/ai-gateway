@@ -581,7 +581,10 @@ for (const [first, second, build] of [
 let readCalls = 0;
 const readOnlyCloudflare = async (url, options) => {
   readCalls += 1;
-  assert.match(String(url), /accounts\\/a{32}\\/workers\\/scripts\\/ai-gateway\\/deployments\\?per_page=1&page=1/);
+  assert.equal(
+    String(url),
+    'https://api.cloudflare.com/client/v4/accounts/' + knownAccount + '/workers/scripts/ai-gateway/deployments?per_page=1&page=1',
+  );
   assert.equal(options?.method, 'GET');
   assert.equal(options?.redirect, 'error');
   assert.equal(options?.headers?.authorization, 'Bearer test-only-worker-inventory-token');
