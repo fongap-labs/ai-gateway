@@ -1,10 +1,91 @@
 {
-  "general-air": { "policy": "fast" },
-  "code-pro": {
+  "Air": {
     "policy": "fast",
-    "capabilities": { "tools": true, "reasoning": true, "vision": false, "stream": true },
-    "reasoning_efforts": ["low", "medium", "high"]
+    "fallback": [
+      "Pro",
+      "Max",
+      "Ultra"
+    ]
   },
-  "code-max": { "policy": "stable" },
-  "internal-shadow": { "policy": "stable", "visibility": "internal" }
+  "Pro": {
+    "policy": "normal",
+    "fallback": [
+      "Max",
+      "Ultra"
+    ]
+  },
+  "Max": {
+    "policy": "normal",
+    "fallback": [
+      "Pro",
+      "Ultra"
+    ]
+  },
+  "Ultra": {
+    "policy": "deep",
+    "fallback": [
+      "Max",
+      "Pro"
+    ]
+  },
+  "Code-Air": {
+    "policy": "fast",
+    "fallback": [
+      "Code-Pro",
+      "Code-Max",
+      "Code-Ultra"
+    ]
+  },
+  "Code-Pro": {
+    "policy": "normal",
+    "fallback": [
+      "Code-Max",
+      "Code-Ultra"
+    ]
+  },
+  "Code-Max": {
+    "policy": "normal",
+    "fallback": [
+      "Code-Pro",
+      "Code-Ultra"
+    ]
+  },
+  "Code-Ultra": {
+    "policy": "deep",
+    "fallback": [
+      "Code-Max",
+      "Code-Pro"
+    ]
+  },
+  "Omni": {
+    "policy": "normal",
+    "fallback": [],
+    "capabilities": {
+      "vision": true
+    },
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    }
+  },
+  "Image-Creator": {
+    "policy": "normal",
+    "fallback": [],
+    "visibility": "internal",
+    "ui_visible": false,
+    "group": "image",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ]
+    }
+  }
 }

@@ -440,7 +440,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   });
   let familyReachable = feasibility.reachable;
   if (!familyReachable && route !== 'openai_images') {
-    for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels)) {
+    for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels, loadModelsConfig(env))) {
       if (effectiveModel === requestedModel) continue;
       const effectiveDescriptor = { ...requestDescriptor, model: effectiveModel };
       const candidateFeasibility = evaluateRouteFeasibility({

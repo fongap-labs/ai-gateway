@@ -14,6 +14,7 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { loadModelsConfig } from '../../src/config/models.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
@@ -171,7 +172,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   const modelPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
-      : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts);
+      : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts, loadModelsConfig(env));
   const familyModels = new Set(modelPlan.flat().map((pass) => pass.model.trim().toLowerCase()));
   const familyFallback = familyModels.size > 1;
 
