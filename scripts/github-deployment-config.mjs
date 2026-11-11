@@ -18,7 +18,7 @@ const GROUP_KEY_RE = new RegExp(`^${GROUP_KEY_PATTERN}$`);
 const GROUP_LABEL = KEY_GROUPS.join(', ');
 
 const SECRET_NAME = new RegExp(
-  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_PERCEPTION_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_DEPLOY_HEALTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$`,
+  `^(?:${GROUP_KEY_PATTERN}|AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)|AIG_INFERENCE_AUTH_KEY|AIG_PERCEPTION_AUTH_KEY|AIG_GENERATION_AUTH_KEY|AIG_EDGE_CACHE_HMAC_KEY)$`,
 );
 const MAX_VALUE_BYTES = 4500;
 const RUNTIME_VAR_PATTERN = new RegExp(
@@ -44,7 +44,6 @@ const CREDENTIAL_NAMES = new Set([
   'AIG_INFERENCE_AUTH_KEY',
   'AIG_PERCEPTION_AUTH_KEY',
   'AIG_GENERATION_AUTH_KEY',
-  'AIG_DEPLOY_HEALTH_KEY',
   'AIG_EDGE_CACHE_HMAC_KEY',
   ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`),
 ]);
@@ -222,9 +221,6 @@ export function preflight(env) {
   }
   const groupKeys = Object.keys(env).filter((k) => GROUP_KEY_RE.test(k) && env[k] && String(env[k]).trim() !== '');
   if (!groupKeys.length) errors.push(`At least one AIG_ACCESS_KEY_<GROUP> (${GROUP_LABEL}) is missing from GitHub Repository Secrets.`);
-  if (typeof env.AIG_DEPLOY_HEALTH_KEY !== 'string' || !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())) {
-    errors.push('AIG_DEPLOY_HEALTH_KEY must be a dedicated Secret containing at least 32 characters using only URL-safe characters.');
-  }
 
   const v = collectVarsFromEnv(env);
   const s = collectSecretsFromEnv(env);
@@ -474,35 +470,32 @@ function readSecretList(file) {
 }
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Remote deployment identity is the commit SHA returned by authenticated
-// /health. Human release labels are not part of runtime verification.
-export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs = 30_000, intervalMs = 5_000, allowDegraded = false } = {}) {
+// Remote deployment identity is the commit SHA returned by public /health/ready.
+// The endpoint exposes only build, readiness and degradation status.
+export async function verifyRemote(baseUrl, expectedBuild, { graceMs = 30_000, intervalMs = 5_000, allowDegraded = false } = {}) {
   const origin = String(baseUrl || '').replace(/\/+$/, '');
   if (!/^https:\/\//.test(origin)) throw new Error('AIG_PUBLIC_URL must be an absolute https URL');
-  const headers = { authorization: `Bearer ${accessKey}` };
   if (expectedBuild !== undefined && !/^[a-f0-9]{40}$/i.test(expectedBuild)) {
     throw new Error('Expected build must be a full commit SHA');
   }
 
   const deadline = Date.now() + (expectedBuild === undefined ? 0 : graceMs);
-  let healthBody = null;
-  let healthStatus = 0;
+  let readinessBody = null;
+  let readinessStatus = 0;
   let lastError = null;
   do {
     try {
-      const health = await fetch(`${origin}/health`, { headers, signal: AbortSignal.timeout(15000) });
-      healthStatus = health.status;
-      healthBody = await health.json().catch(() => null);
-      if (!health.ok || !healthBody?.ready) {
-        lastError = new Error(`remote /health is not ready (HTTP ${health.status}, status ${healthBody?.status || 'unknown'})`);
-      } else if (expectedBuild !== undefined && healthBody?.build !== expectedBuild) {
+      const readiness = await fetch(`${origin}/health/ready`, { signal: AbortSignal.timeout(15000) });
+      readinessStatus = readiness.status;
+      readinessBody = await readiness.json().catch(() => null);
+      if (!readiness.ok || readinessBody?.ready !== true) {
+        lastError = new Error(`remote /health/ready is not ready (HTTP ${readiness.status}, status ${readinessBody?.status || 'unknown'})`);
+      } else if (expectedBuild !== undefined && readinessBody?.build !== expectedBuild) {
         lastError = new Error(
-          `Remote /health.build does not match the validated deployment SHA (got ${healthBody?.build ?? 'unknown'}, expected ${expectedBuild})`,
+          `Remote /health/ready.build does not match the validated deployment SHA (got ${readinessBody?.build ?? 'unknown'}, expected ${expectedBuild})`,
         );
-      } else if (!allowDegraded && Number(healthBody?.nodes_total) > Number(healthBody?.nodes_usable)) {
-        lastError = new Error(
-          `Remote /health reports degraded node capacity (${healthBody?.nodes_usable}/${healthBody?.nodes_total} usable); fix the excluded nodes or set AIG_ALLOW_DEGRADED=true`,
-        );
+      } else if (!allowDegraded && readinessBody?.degraded === true) {
+        lastError = new Error('Remote /health/ready reports degraded capacity; fix the excluded nodes or set AIG_ALLOW_DEGRADED=true');
       } else {
         lastError = null;
         break;
@@ -514,19 +507,10 @@ export async function verifyRemote(baseUrl, accessKey, expectedBuild, { graceMs 
     if (remaining > 0) await sleepMs(Math.min(intervalMs, remaining));
   } while (Date.now() < deadline);
   if (lastError) throw lastError;
-  if (!healthBody?.ready) throw new Error(`remote /health is not ready (HTTP ${healthStatus}, status ${healthBody?.status || 'unknown'})`);
-
-  const models = await fetch(`${origin}/v1/models`, { headers, signal: AbortSignal.timeout(15000) });
-  if (!models.ok) throw new Error(`remote /v1/models failed (HTTP ${models.status})`);
-  const count = await fetch(`${origin}/v1/messages/count_tokens`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15000),
-    headers: { ...headers, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'gateway-health-check', messages: [] }),
-  });
-  if (!count.ok) throw new Error(`remote Claude count_tokens failed (HTTP ${count.status})`);
-  // Return only the public, immutable build identity after all health probes pass.
-  return healthBody.build;
+  if (readinessBody?.ready !== true) {
+    throw new Error(`remote /health/ready is not ready (HTTP ${readinessStatus}, status ${readinessBody?.status || 'unknown'})`);
+  }
+  return readinessBody.build;
 }
 
 function resolveRuntime(argv) {
@@ -598,14 +582,11 @@ async function main() {
     return;
   }
   if (command === 'health-check') {
-    const runtime = resolveRuntime(argv);
-    const healthKey = runtime.secrets.AIG_DEPLOY_HEALTH_KEY;
-    if (!healthKey) throw new Error('AIG_DEPLOY_HEALTH_KEY Secret is required for the deployment health check.');
     const allowDegraded = String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true';
-    await verifyRemote(process.env.AIG_PUBLIC_URL, healthKey, argValue(argv, '--expected-build') || undefined, {
+    await verifyRemote(process.env.AIG_PUBLIC_URL, argValue(argv, '--expected-build') || undefined, {
       allowDegraded,
     });
-    console.log('Remote health checks passed.');
+    console.log('Remote readiness check passed.');
     return;
   }
   throw new Error('usage: github-deployment-config.mjs <preflight|prepare|health-check> ...');

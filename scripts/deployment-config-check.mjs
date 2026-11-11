@@ -5,9 +5,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { detectRoute } from '../apps/gateway/policy/router.ts';
+import { preflight } from '../apps/gateway/preflight.ts';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
-import { canReadDiagnostics } from '../src/observability/diagnostic-endpoints.ts';
-import { authorize, authorizeDeploymentHealth, isDeploymentHealthCountTokensProbe, isDeploymentHealthRoute } from '../src/request/auth.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import {
   confirmPublishedIdentity,
@@ -19,7 +19,7 @@ import {
   recordPublishedDeployment,
 } from './deployment-recovery.mjs';
 import { buildGenerationCenterDeployment } from './generation-center-deployment.mjs';
-import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS } from './github-deployment-config.mjs';
+import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS, verifyRemote } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
@@ -159,7 +159,6 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
 assert.deepEqual(deploySecretScope.sort(), [
-  'AIG_DEPLOY_HEALTH_KEY',
   'AIG_GENERATION_AUTH_KEY',
   'AIG_INFERENCE_AUTH_KEY',
   'AIG_PERCEPTION_AUTH_KEY',
@@ -293,7 +292,6 @@ const deployInputs = {
   CLOUDFLARE_API_TOKEN: 'deploy-token',
   CLOUDFLARE_ACCOUNT_ID: 'account-id',
   AIG_PUBLIC_URL: 'https://api.example.test',
-  AIG_DEPLOY_HEALTH_KEY: 'deployment-health-key-0123456789abcdef0123456789abcdef',
   AIG_TIER1_NODES_01: JSON.stringify([
     { id: 'node-1', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { Chat: 'model-1' } },
   ]),
@@ -304,28 +302,13 @@ const deployInputs = {
 };
 const deployPrepared = validateDeploymentInputs(deployInputs);
 assert.equal(deployPrepared.config.name, 'ai-gateway');
-assert.equal(Object.hasOwn(deployPrepared.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
-assert.throws(() => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: '' }), /AIG_DEPLOY_HEALTH_KEY/);
-assert.throws(
-  () => validateDeploymentInputs({ ...deployInputs, AIG_DEPLOY_HEALTH_KEY: 'too-short' }),
-  /at least 32 characters using only URL-safe characters/,
-);
 const remoteSecretNames = [
   { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
-  { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
   { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
   { name: 'AIG_PERCEPTION_AUTH_KEY', type: 'secret_text' },
   { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
 ];
 assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 0);
-assert.throws(
-  () =>
-    validateRemoteSecretInventory(
-      remoteSecretNames.filter((secret) => secret.name !== 'AIG_DEPLOY_HEALTH_KEY'),
-      deployPrepared.config,
-    ),
-  /AIG_DEPLOY_HEALTH_KEY/,
-);
 assert.throws(
   () =>
     validateRemoteSecretInventory(
@@ -385,52 +368,56 @@ assert.throws(
   /Retired Tier 3 or subscriber Secret bindings/,
 );
 
-const deploymentHealthKey = 'deployment-health-key-0123456789abcdef0123456789abcdef';
-const deploymentHealthRequest = new Request('https://gateway.example.test/health', {
-  headers: { authorization: `Bearer ${deploymentHealthKey}` },
-});
-const deploymentHealthAuth = await authorizeDeploymentHealth(deploymentHealthRequest, {
-  AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
-});
-assert.ok(deploymentHealthAuth?.authorized && deploymentHealthAuth.mode === 'deploy');
-assert.equal(deploymentHealthAuth.group, null);
-assert.equal(deploymentHealthAuth.allowAll, false);
-assert.equal(deploymentHealthAuth.allowlist.size, 0);
-assert.equal(
-  await authorizeDeploymentHealth(deploymentHealthRequest, {
-    AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
-    AIG_ACCESS_KEY_AGENT: deploymentHealthKey,
-    AIG_ACCESS_MODELS_AGENT: '*',
-  }),
-  null,
-  'a deployment health credential reused as an application access key must be rejected',
+assert.equal(detectRoute('GET', '/health/ready'), 'readiness');
+const readinessResult = await preflight(
+  new Request('https://gateway.example.test/health/ready'),
+  {
+    AIG_BUILD_SHA: 'a'.repeat(40),
+    AIG_TIER1_NODES_01: '[]',
+  },
+  {},
 );
-const weakHealthRequest = new Request('https://gateway.example.test/health', {
-  headers: { authorization: 'Bearer too-short' },
-});
-assert.equal(await authorizeDeploymentHealth(weakHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'too-short' }), null);
-assert.equal(
-  await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: `${deploymentHealthKey}/` }),
-  null,
-  'invalid URL-unsafe deployment credentials must be rejected',
-);
-const reusedHealthKeyAuth = await authorize(deploymentHealthRequest, {
-  AIG_ACCESS_KEY_AGENT: deploymentHealthKey,
-  AIG_ACCESS_MODELS_AGENT: '*',
-  AIG_DEPLOY_HEALTH_KEY: deploymentHealthKey,
-});
-assert.equal(reusedHealthKeyAuth.authorized, false);
-assert.equal(canReadDiagnostics({ AIG_DIAGNOSTICS_GROUPS: 'MAX' }, deploymentHealthAuth), true);
-assert.equal(await authorizeDeploymentHealth(deploymentHealthRequest, { AIG_DEPLOY_HEALTH_KEY: 'a-different-health-key' }), null);
-assert.equal(isDeploymentHealthRoute('health'), true);
-assert.equal(isDeploymentHealthRoute('models'), true);
-assert.equal(isDeploymentHealthRoute('anthropic_count_tokens'), true);
-assert.equal(isDeploymentHealthRoute('metrics'), false);
-assert.equal(isDeploymentHealthRoute('openai_chat'), false);
-assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [] }), true);
-assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [{ role: 'user', content: 'x' }] }), false);
-assert.equal(isDeploymentHealthCountTokensProbe({ model: 'other-model', messages: [] }), false);
-assert.equal(isDeploymentHealthCountTokensProbe({ model: 'gateway-health-check', messages: [], system: 'not allowed' }), false);
+assert.equal(readinessResult.ok, false);
+assert.equal(readinessResult.response.status, 503);
+const readinessBody = await readinessResult.response.json();
+assert.deepEqual(Object.keys(readinessBody).sort(), ['build', 'degraded', 'ready', 'status']);
+assert.equal(readinessBody.build, 'a'.repeat(40));
+assert.equal(readinessBody.ready, false);
+assert.equal(Object.hasOwn(readinessBody, 'diagnostics'), false);
+
+const diagnosticsEnv = { AIG_ACCESS_KEY_AIR: 'air-key', AIG_DIAGNOSTICS_GROUPS: 'MAX' };
+for (const route of ['/health', '/metrics']) {
+  const missingKey = await preflight(new Request(`https://gateway.example.test${route}`), diagnosticsEnv, {});
+  assert.equal(missingKey.ok, false);
+  assert.equal(missingKey.response.status, 401, `${route} remains protected by a gateway access key`);
+  const disallowedGroup = await preflight(
+    new Request(`https://gateway.example.test${route}`, { headers: { authorization: 'Bearer air-key' } }),
+    diagnosticsEnv,
+    {},
+  );
+  assert.equal(disallowedGroup.ok, false);
+  assert.equal(disallowedGroup.response.status, 403, `${route} remains governed by AIG_DIAGNOSTICS_GROUPS`);
+}
+
+const previousFetch = globalThis.fetch;
+const readinessCalls = [];
+globalThis.fetch = async (input, init) => {
+  readinessCalls.push({ url: String(input), headers: new Headers(init?.headers) });
+  return Response.json({ build: 'b'.repeat(40), status: 'ready', ready: true, degraded: false });
+};
+try {
+  assert.equal(await verifyRemote('https://gateway.example.test/', 'b'.repeat(40)), 'b'.repeat(40));
+  assert.deepEqual(
+    readinessCalls.map((call) => call.url),
+    ['https://gateway.example.test/health/ready'],
+  );
+  assert.equal(readinessCalls[0].headers.has('authorization'), false, 'public readiness uses no application credential');
+  globalThis.fetch = async () => Response.json({ build: 'b'.repeat(40), status: 'degraded', ready: true, degraded: true });
+  await assert.rejects(verifyRemote('https://gateway.example.test'), /degraded capacity/);
+  assert.equal(await verifyRemote('https://gateway.example.test', undefined, { allowDegraded: true }), 'b'.repeat(40));
+} finally {
+  globalThis.fetch = previousFetch;
+}
 
 // CLOUDFLARE_ACCOUNT_ID is not a stored Secret, but it must stay declared: the control-plane
 // alias maps it to the CLOUDFLARE_ACCOUNT_ID_SECONDARY Variable, and resolve-secret-scope only
@@ -684,16 +671,15 @@ assert.throws(() => assertNodesArray([{ id: 'sub', provider: 'anthropic', auth: 
 const opsKeys = {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
   CLOUDFLARE_API_TOKEN: 'approved-token',
-  AIG_DEPLOY_HEALTH_KEY: 'h'.repeat(32),
   AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
   AIG_PERCEPTION_AUTH_KEY: 'p'.repeat(32),
   AIG_GENERATION_AUTH_KEY: 'g'.repeat(32),
 };
 const secretPlan = buildRuntimeSecretPlan(opsKeys);
 assert.deepEqual(secretPlan.workers, ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center']);
-assert.equal(secretPlan.writes.length, 7);
+assert.equal(secretPlan.writes.length, 6);
 assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_INFERENCE_AUTH_KEY: '' }), /AIG_INFERENCE_AUTH_KEY/);
-assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_PERCEPTION_AUTH_KEY: opsKeys.AIG_DEPLOY_HEALTH_KEY }), /distinct/);
+assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_PERCEPTION_AUTH_KEY: opsKeys.AIG_INFERENCE_AUTH_KEY }), /must be distinct/);
 const mirrored = new Map(secretPlan.workers.map((worker) => [worker, new Map()]));
 const methods = [];
 const fakeCloudflare = async (url, options) => {
@@ -711,15 +697,14 @@ const fakeCloudflare = async (url, options) => {
   mirrored.get(worker).set(secret.name, secret.text);
   return Response.json({ success: true, result: { name: secret.name, type: 'secret_text' } });
 };
-assert.deepEqual(await synchronizeRuntimeSecrets(opsKeys, fakeCloudflare), { workers: 4, bindings: 7 });
+assert.deepEqual(await synchronizeRuntimeSecrets(opsKeys, fakeCloudflare), { workers: 4, bindings: 6 });
 for (const [worker, name] of [
   ['ai-inference-center', 'AIG_INFERENCE_AUTH_KEY'],
   ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ])
   assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
-assert.equal(mirrored.get('ai-gateway').get('AIG_DEPLOY_HEALTH_KEY'), opsKeys.AIG_DEPLOY_HEALTH_KEY);
-assert.equal(methods.filter((method) => method === 'PUT').length, 7);
+assert.equal(methods.filter((method) => method === 'PUT').length, 6);
 assert.equal(methods.includes('DELETE'), false);
 const rejectedMethods = [];
 await assert.rejects(

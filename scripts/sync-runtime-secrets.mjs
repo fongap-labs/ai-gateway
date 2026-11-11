@@ -11,7 +11,6 @@ const centers = [
   ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ];
-const secretPattern = /^[A-Za-z0-9_-]{32,}$/;
 const accountPattern = /^[0-9a-f]{32}$/;
 
 function required(env, name) {
@@ -24,10 +23,6 @@ export function buildRuntimeSecretPlan(env) {
   const account = required(env, 'CLOUDFLARE_ACCOUNT_ID');
   const token = required(env, 'CLOUDFLARE_API_TOKEN');
   if (!accountPattern.test(account)) throw new Error('Approved Cloudflare account ID is invalid.');
-  const health = required(env, 'AIG_DEPLOY_HEALTH_KEY');
-  if (!secretPattern.test(health) || Buffer.byteLength(health, 'utf8') > 4500) {
-    throw new Error('AIG_DEPLOY_HEALTH_KEY requires 32 or more URL-safe characters within the Cloudflare Secret size limit.');
-  }
   const values = centers.map(([worker, name]) => {
     const value = required(env, name);
     if (value.length < 32 || Buffer.byteLength(value, 'utf8') > 4500) {
@@ -35,8 +30,8 @@ export function buildRuntimeSecretPlan(env) {
     }
     return { worker, name, value };
   });
-  if (new Set([health, ...values.map((v) => v.value)]).size !== 4) {
-    throw new Error('Deployment health and three center authentication keys must be distinct.');
+  if (new Set(values.map((v) => v.value)).size !== values.length) {
+    throw new Error('Three private-center authentication keys must be distinct.');
   }
   // All four Workers use a single Cloudflare account, one audited source and no separate ops environments.
   return {
@@ -46,7 +41,6 @@ export function buildRuntimeSecretPlan(env) {
     writes: [
       ...values.map(({ worker, name, value }) => ({ worker, name, value })),
       ...values.map(({ name, value }) => ({ worker: 'ai-gateway', name, value })),
-      { worker: 'ai-gateway', name: 'AIG_DEPLOY_HEALTH_KEY', value: health },
     ],
   };
 }

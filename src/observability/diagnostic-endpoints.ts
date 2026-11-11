@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Diagnostic HTTP endpoints: /health, /metrics, /v1/models.
+// Diagnostic HTTP endpoints: /health, /metrics, /v1/models, and public /health/ready.
 // Responses contain runtime state only — never credentials.
 
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
@@ -113,13 +113,34 @@ function buildModelsList(
 }
 
 // AIG_DIAGNOSTICS_GROUPS names the user key groups that read /health and /metrics (unset: MAX and
-// ULTRA; "*": every valid key). The deployment-only key can read /health but never /metrics.
+// ULTRA; "*": every valid key). The minimal /health/ready endpoint is public.
 export function canReadDiagnostics(env: Record<string, unknown>, authResult: AuthResult): boolean {
-  if (authResult.authorized && authResult.mode === 'deploy') return true;
   const allowed = diagnosticsGroups(env?.AIG_DIAGNOSTICS_GROUPS);
   if (allowed === null) return true;
   const group = authResult.authorized && 'group' in authResult ? authResult.group : null;
   return typeof group === 'string' && allowed.has(group.toUpperCase());
+}
+
+export function readinessResponse(request: Request, env: Record<string, unknown>, requestId: string): Response {
+  const config = loadGatewayConfig(env);
+  const statusCode = config.status === 'invalid' || config.status === 'unconfigured' ? 503 : 200;
+  return new Response(
+    JSON.stringify({
+      build: resolveBuildSha(env),
+      status: config.status,
+      ready: config.ready,
+      degraded: config.status === 'degraded',
+    }),
+    {
+      status: statusCode,
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+        ...corsHeaders(request, env),
+      },
+    },
+  );
 }
 
 export function healthResponse(request: Request, env: Record<string, unknown>, requestId: string, authResult: AuthResult): Response {

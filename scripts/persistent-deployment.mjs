@@ -36,11 +36,8 @@ export function validateDeploymentInputs(env) {
     (key) => key.startsWith('AIG_OAUTH_') || key === 'AIG_IS_SUBSCRIPTION_ENABLED' || key === 'AIG_TOKEN_ENCRYPTION_KEY',
   );
   if (retired.length > 0) errors.push(`Retired subscription bindings require explicit cleanup: ${retired.sort().join(', ')}`);
-  for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL', 'AIG_DEPLOY_HEALTH_KEY']) {
+  for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'AIG_PUBLIC_URL']) {
     if (typeof env[name] !== 'string' || !env[name].trim()) errors.push(`${name} is required for deployment.`);
-  }
-  if (typeof env.AIG_DEPLOY_HEALTH_KEY === 'string' && !/^[A-Za-z0-9_-]{32,}$/.test(env.AIG_DEPLOY_HEALTH_KEY.trim())) {
-    errors.push('AIG_DEPLOY_HEALTH_KEY must contain at least 32 characters using only URL-safe characters.');
   }
   if (env.AIG_PUBLIC_URL && !/^https:\/\//.test(String(env.AIG_PUBLIC_URL).trim())) {
     errors.push('AIG_PUBLIC_URL must be an absolute https URL.');
@@ -108,7 +105,6 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
   if (retiredNames.length > 0) missing.push(`Retired Tier 3 or subscriber Secret bindings remain (${retiredNames.sort().join(', ')})`);
   const upstreamSecrets = [...names].filter((name) => NODE_SECRET.test(name));
   if (upstreamSecrets.length > 0) missing.push('Gateway must not retain upstream Provider credential shards; move them to private centers');
-  if (!names.has('AIG_DEPLOY_HEALTH_KEY')) missing.push('AIG_DEPLOY_HEALTH_KEY');
   if (![...names].some((name) => GROUP_SECRET.test(name))) missing.push('AIG_ACCESS_KEY_<GROUP> (at least one application access key)');
 
   const services = Array.isArray(wranglerConfig?.services) ? wranglerConfig.services : [];
@@ -132,7 +128,6 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     total: names.size,
     accessKeyGroups: [...names].filter((name) => GROUP_SECRET.test(name)).length,
     credentialShards: 0,
-    deploymentHealthKey: names.has('AIG_DEPLOY_HEALTH_KEY'),
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
     perceptionAuthKey: names.has('AIG_PERCEPTION_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
@@ -192,13 +187,11 @@ async function main() {
     return;
   }
   if (command === 'health-check') {
-    const key = String(process.env.AIG_DEPLOY_HEALTH_KEY || '');
-    if (!key.trim()) throw new Error('AIG_DEPLOY_HEALTH_KEY is required for the post-deploy health check.');
     const expectedBuild = argValue(argv, '--expected-build') || undefined;
-    await verifyRemote(process.env.AIG_PUBLIC_URL, key, expectedBuild, {
+    await verifyRemote(process.env.AIG_PUBLIC_URL, expectedBuild, {
       allowDegraded: String(process.env.AIG_ALLOW_DEGRADED || '').toLowerCase() === 'true',
     });
-    console.log('Remote health checks passed.');
+    console.log('Remote readiness check passed.');
     return;
   }
   throw new Error('usage: persistent-deployment.mjs <preflight|prepare|verify-secrets|health-check>');

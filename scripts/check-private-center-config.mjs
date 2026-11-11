@@ -52,13 +52,11 @@ assert.equal(canonical.deep.failoverBudgetMs, 180000);
 assert.deepEqual(canonical.normal.hedge, { enabled: false });
 assert.equal(getPolicy('Write-Vivid', namedModels, canonical).failoverBudgetMs, 180000);
 assert.equal(getPolicy('Write-Basic', namedModels, canonical).failoverBudgetMs, 120000);
-const withDeploySecret = buildPrivateCenterConfig('ai-inference-center', {
+const withCenterSecret = buildPrivateCenterConfig('ai-inference-center', {
   ...env,
-  AIG_DEPLOY_HEALTH_KEY: 'deployed-gateway-secret-must-not-enter-private-center',
   AIG_INFERENCE_AUTH_KEY: 'private-center-auth-kept-out-of-config',
 });
-assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_DEPLOY_HEALTH_KEY'), false);
-assert.equal(Object.hasOwn(withDeploySecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
+assert.equal(Object.hasOwn(withCenterSecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
 const inference = buildPrivateCenterConfig('ai-inference-center', env);
 assert.deepEqual(preflightPrivateCenters(env), { workers: 3 });
 // AIG_POLICIES_CONFIG is optional when models use the same built-in policies as the Gateway.

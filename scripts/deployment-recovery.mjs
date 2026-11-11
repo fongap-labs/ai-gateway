@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Read-only Cloudflare deployment identity ledger for fail-closed Gateway recovery.
-// Only the existing protected deployment credential is used. No secret values are stored.
+// Cloudflare API Token reads deployment identity; no secret values are stored.
 import { lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,14 +169,13 @@ async function main() {
   }
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
   const token = process.env.CLOUDFLARE_API_TOKEN ?? '';
-  const healthKey = process.env.AIG_DEPLOY_HEALTH_KEY ?? '';
   const publicUrl = process.env.AIG_PUBLIC_URL ?? '';
-  if (!accountPattern.test(accountId) || !token.trim() || !healthKey.trim() || !publicUrl.trim()) {
+  if (!accountPattern.test(accountId) || !token.trim() || !publicUrl.trim()) {
     throw new Error('Gateway recovery preflight is missing protected configuration.');
   }
   const active = () => fetchActiveDeployment(accountId, token);
   const healthyBuild = async (expected) =>
-    await verifyRemote(publicUrl, healthKey, expected, {
+    await verifyRemote(publicUrl, expected, {
       allowDegraded: String(process.env.AIG_ALLOW_DEGRADED ?? '').toLowerCase() === 'true',
     });
 

@@ -29,13 +29,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { PolicyConfig } from '../../src/types/policy.ts';
 import type { AuthResult, RawBody, RequestDescriptor, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
-import {
-  authorize,
-  authorizeDeploymentHealth,
-  isDeploymentHealthCountTokensProbe,
-  isDeploymentHealthRoute,
-  presentedCredentials,
-} from './policy/auth.ts';
+import { authorize, presentedCredentials } from './policy/auth.ts';
 import { authorizeModel, filterVisibleModels, resolveClientModel } from './policy/model-authz.ts';
 import { modelFallbackCandidates } from './policy/model-fallback.ts';
 import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
@@ -135,6 +129,10 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
   if (request.method === 'OPTIONS') {
     return { ok: false, response: new Response(null, { status: 204, headers: corsHeaders(request, env) }) };
   }
+  if (route === 'readiness') {
+    const diag = await import('../../src/observability/diagnostic-endpoints.ts');
+    return { ok: false, response: diag.readinessResponse(request, env, requestId) };
+  }
   const isPublicDashboard = getBool(env, 'AIG_PUBLIC_DASHBOARD', true);
   if (request.method === 'GET' && pathname === '/' && acceptsHtml(request)) {
     if (!isPublicDashboard) return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
@@ -183,11 +181,7 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     };
   }
 
-  let authResult: AuthResult = await authorize(request, env);
-  const deploymentHealthRoute = isDeploymentHealthRoute(route);
-  if (!authResult.authorized && deploymentHealthRoute) {
-    authResult = (await authorizeDeploymentHealth(request, env)) ?? authResult;
-  }
+  const authResult: AuthResult = await authorize(request, env);
   if (!authResult.authorized) {
     authFingerprint ??= await authAttemptFingerprint(request);
     recordAuthFailure(authFingerprint);
@@ -311,13 +305,6 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     return {
       ok: false,
       response: gatewayError(request, env, route, 400, `Invalid JSON request body: ${errorMessage}`, requestId),
-    };
-  }
-
-  if (authResult.authorized && authResult.mode === 'deploy' && route === 'anthropic_count_tokens' && !isDeploymentHealthCountTokensProbe(bodyJson)) {
-    return {
-      ok: false,
-      response: gatewayError(request, env, route, 403, 'The deployment credential is limited to the empty health token-count probe.', requestId),
     };
   }
 
