@@ -6,9 +6,12 @@ import { servesModel } from '../config/registry.ts';
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { RoutableRequest } from '../types/scheduler.ts';
-import { jittered, modelCooldownMs } from './tier1-decision.ts';
+import { cryptoRng } from '../utils/crypto-rng.ts';
+import { jitterCooldownMs } from './cooldown-jitter.ts';
 import {
   FAILURE_STATE,
+  TIER1_5XX_BASE_MS,
+  TIER1_5XX_MAX_MS,
   TIER1_429_ACCOUNT_ESCALATION_MODELS,
   TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
   TIER1_429_PROBE_GATE_MS,
@@ -23,6 +26,8 @@ import {
   TIER1_OUTLIER_MULTIPLIER,
   TIER1_OVERSIZE_MEMORY_MS,
   TIER1_SIBLING_WAKE_MIN_REMAINING_MS,
+  TIER1_TIMEOUT_BASE_MS,
+  TIER1_TIMEOUT_MAX_MS,
   type Tier1AccountRuntime,
   type Tier1FailureState,
   type Tier1ModelRuntime,
@@ -310,6 +315,25 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
  * admitted through the normal single recovery probe, and a failed probe puts it back
  * on its previous schedule without escalating its ladder. Returns the woken ids.
  */
+
+function exponential(base: number, max: number, count: number): number {
+  return Math.min(max, base * 2 ** Math.max(0, count - 1));
+}
+
+function jittered(ms: number): number {
+  return jitterCooldownMs(ms, cryptoRng());
+}
+
+function modelCooldownMs(model: Tier1ModelRuntime, outcome: Tier1Outcome): number {
+  if (outcome.backoff === 'rate_limit') return Math.max(0, outcome.cooldownMs ?? 0);
+  if ((outcome.cooldownMs ?? 0) > 0) {
+    return Math.min(outcome.cooldownMs ?? 0, TIER1_COOLDOWN_MAX_MS);
+  }
+  if (outcome.backoff === 'timeout') return jittered(exponential(TIER1_TIMEOUT_BASE_MS, TIER1_TIMEOUT_MAX_MS, model.consecutiveFailures));
+  if (outcome.backoff === 'server') return jittered(exponential(TIER1_5XX_BASE_MS, TIER1_5XX_MAX_MS, model.consecutiveFailures));
+  return jittered(exponential(TIER1_COOLDOWN_DEFAULT_MS, TIER1_COOLDOWN_MAX_MS, model.consecutiveFailures));
+}
+
 export function wakeTier1ProviderSiblings(provider: string, recoveredAccountId: string, modelId: string, now: number = Date.now()): string[] {
   const woken: string[] = [];
   for (const [id, account] of accounts) {

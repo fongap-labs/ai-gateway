@@ -2,17 +2,9 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
-import { cryptoRng } from '../utils/crypto-rng.ts';
-import { jitterCooldownMs } from './cooldown-jitter.ts';
 import {
-  TIER1_5XX_BASE_MS,
-  TIER1_5XX_MAX_MS,
-  TIER1_COOLDOWN_DEFAULT_MS,
   TIER1_COOLDOWN_MAX_MS,
-  TIER1_TIMEOUT_BASE_MS,
-  TIER1_TIMEOUT_MAX_MS,
   type Tier1FailureInput,
-  type Tier1ModelRuntime,
   type Tier1Outcome,
 } from './tier1-definitions.ts';
 
@@ -83,20 +75,3 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
   return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'default', reason: kind || 'unknown' };
 }
 
-function exponential(base: number, max: number, count: number): number {
-  return Math.min(max, base * 2 ** Math.max(0, count - 1));
-}
-
-export function jittered(ms: number): number {
-  return jitterCooldownMs(ms, cryptoRng());
-}
-
-export function modelCooldownMs(model: Tier1ModelRuntime, outcome: Tier1Outcome): number {
-  if (outcome.backoff === 'rate_limit') return Math.max(0, outcome.cooldownMs ?? 0);
-  if ((outcome.cooldownMs ?? 0) > 0) {
-    return Math.min(outcome.cooldownMs ?? 0, TIER1_COOLDOWN_MAX_MS);
-  }
-  if (outcome.backoff === 'timeout') return jittered(exponential(TIER1_TIMEOUT_BASE_MS, TIER1_TIMEOUT_MAX_MS, model.consecutiveFailures));
-  if (outcome.backoff === 'server') return jittered(exponential(TIER1_5XX_BASE_MS, TIER1_5XX_MAX_MS, model.consecutiveFailures));
-  return jittered(exponential(TIER1_COOLDOWN_DEFAULT_MS, TIER1_COOLDOWN_MAX_MS, model.consecutiveFailures));
-}
