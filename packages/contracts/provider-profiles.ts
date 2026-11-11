@@ -33,7 +33,8 @@ const builtinProfiles: Readonly<Record<string, ProviderProfile>> = Object.freeze
   google: {
     wire: { protocol: 'openai', surfaces: ['chat_completions'] },
     streamUsage: true,
-    imageInput: false,
+    // Gemini's OpenAI-compatible Chat Completions surface accepts image inputs.
+    imageInput: true,
   },
   'openai-image': { wire: { protocol: 'openai', surfaces: ['images_generations'] }, streamUsage: false, imageInput: false },
   'google-image': { wire: { protocol: 'openai', surfaces: ['images_generations'] }, streamUsage: false, imageInput: false },
