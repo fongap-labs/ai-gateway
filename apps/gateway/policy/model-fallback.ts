@@ -86,7 +86,7 @@ export function buildModelFallbackPlan(
 ): ModelFallbackPass[][] {
   const rounds = buildModelFallbackRounds(requestedModel, knownModels, modelsConfig);
   if ((rounds[0]?.length ?? 0) <= 1) return [[{ model: requestedModel, attemptCap: null }]];
-  const first = firstRoundPlan(rounds[0], normalizedBudget(maxAttempts));
+  const first = firstRoundPlan(rounds[0] ?? [requestedModel], normalizedBudget(maxAttempts));
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
   const second = (rounds[1] ?? []).filter((model) => allowed.has(keyOf(model))).map((model) => ({ model, attemptCap: 1 }));
