@@ -1,40 +1,79 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Isolate-local adaptive state for Tier 1 only. Performance is learned from
-// real requests at (account, model) scope. Tier 2 static API Token capacity
-// continues to use node-state.ts and never reads this module.
 
+// Stable Tier 1 lifecycle/mutation facade; one account store is owned by tier1-store.ts.
 import { servesModel } from '../config/registry.ts';
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { RoutableRequest } from '../types/scheduler.ts';
 import { cryptoRng } from '../utils/crypto-rng.ts';
 import { jitterCooldownMs } from './cooldown-jitter.ts';
+import {
+  FAILURE_STATE,
+  TIER1_5XX_BASE_MS,
+  TIER1_5XX_MAX_MS,
+  TIER1_429_ACCOUNT_ESCALATION_MODELS,
+  TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
+  TIER1_429_PROBE_GATE_MS,
+  TIER1_COOLDOWN_DEFAULT_MS,
+  TIER1_COOLDOWN_MAX_MS,
+  TIER1_EWMA_ALPHA,
+  TIER1_FAILURE_THRESHOLD,
+  TIER1_FORBIDDEN_LADDER_MS,
+  TIER1_HALF_OPEN_SUCCESS_THRESHOLD,
+  TIER1_MODEL_MISSING_LADDER_MS,
+  TIER1_OUTLIER_CONSECUTIVE_THRESHOLD,
+  TIER1_OUTLIER_MULTIPLIER,
+  TIER1_OVERSIZE_MEMORY_MS,
+  TIER1_SIBLING_WAKE_MIN_REMAINING_MS,
+  TIER1_TIMEOUT_BASE_MS,
+  TIER1_TIMEOUT_MAX_MS,
+  type Tier1AccountRuntime,
+  type Tier1FailureState,
+  type Tier1ModelRuntime,
+  type Tier1Outcome,
+  type Tier1ReleaseToken,
+  type Tier1SharedCooldown,
+} from './tier1-definitions.ts';
+import { normalizeQuotaWindow } from './tier1-quota.ts';
+import { tier1Accounts as accounts, getTier1Account, getTier1Model, getTier1ModelPerf, resetTier1StoreForTests } from './tier1-store.ts';
 
-export const TIER1_EWMA_ALPHA = 0.25;
-export const TIER1_OUTLIER_MULTIPLIER = 4;
-export const TIER1_OUTLIER_CONSECUTIVE_THRESHOLD = 2;
+export { classifyTier1Failure } from './tier1-decision.ts';
+export type {
+  Tier1AccountRuntime,
+  Tier1FailureInput,
+  Tier1FailureState,
+  Tier1ModelRuntime,
+  Tier1Outcome,
+  Tier1QuotaState,
+  Tier1ReleaseToken,
+  Tier1SharedCooldown,
+} from './tier1-definitions.ts';
+export {
+  TIER1_5XX_BASE_MS,
+  TIER1_5XX_MAX_MS,
+  TIER1_429_ACCOUNT_ESCALATION_MODELS,
+  TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
+  TIER1_429_PROBE_GATE_MS,
+  TIER1_COOLDOWN_DEFAULT_MS,
+  TIER1_COOLDOWN_MAX_MS,
+  TIER1_EWMA_ALPHA,
+  TIER1_FAILURE_STATES,
+  TIER1_FAILURE_THRESHOLD,
+  TIER1_FORBIDDEN_LADDER_MS,
+  TIER1_HALF_OPEN_SUCCESS_THRESHOLD,
+  TIER1_MODEL_MISSING_LADDER_MS,
+  TIER1_OUTLIER_CONSECUTIVE_THRESHOLD,
+  TIER1_OUTLIER_MULTIPLIER,
+  TIER1_OVERSIZE_MEMORY_MS,
+  TIER1_SIBLING_WAKE_MIN_REMAINING_MS,
+  TIER1_TIMEOUT_BASE_MS,
+  TIER1_TIMEOUT_MAX_MS,
+} from './tier1-definitions.ts';
+export { snapshotTier1AccountRuntime, snapshotTier1Runtime, tier1LongCooldowns } from './tier1-diagnostics.ts';
+export { recordTier1QuotaReport, recordTier1QuotaSignal, settleTier1Quota, tier1QuotaState } from './tier1-quota.ts';
+export { getTier1Account, getTier1Model, getTier1ModelPerf, tier1AccountInFlight } from './tier1-store.ts';
 
-export const TIER1_FAILURE_THRESHOLD = 3;
-// A half-open model needs two consecutive successful observations before it is
-// treated as healthy again: one success proves the node answers, two prove the
-// answer was not a fluke.
-export const TIER1_HALF_OPEN_SUCCESS_THRESHOLD = 2;
-export const TIER1_COOLDOWN_DEFAULT_MS = 30_000;
-export const TIER1_COOLDOWN_MAX_MS = 1_800_000;
-export const TIER1_TIMEOUT_BASE_MS = 5_000;
-export const TIER1_TIMEOUT_MAX_MS = 120_000;
-export const TIER1_5XX_BASE_MS = 1_000;
-export const TIER1_5XX_MAX_MS = 300_000;
-// Auth (401/403) cooldown is account-scoped and comes from the shared upstream
-// classifier. If a direct internal caller omits the duration, fall back to the
-// canonical runtime-variable default rather than maintaining a second literal.
-const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.name === 'AIG_AUTH_FAILURE_COOLDOWN_MS')?.def ?? 0;
-// 429 cooldown duration is owned exclusively by adaptive-429.ts. This module
-// stores the supplied deadline and controls the post-cooldown recovery probe;
-// it must never invent a second rate-limit ladder.
-export const TIER1_429_PROBE_GATE_MS = 15_000;
 // The v2 per-isolate probe configuration below takes its bounds from the
 // single source of truth (AIG_TIER1_PROBE_TIMEOUT_MS). A misconfigured value
 // never wedges the gate: values below one second (or above the registry
@@ -62,231 +101,6 @@ export function configureTier1ProbeGate(cfg: { v2?: boolean; timeoutMs?: number 
   } else {
     probeGate.timeoutMs = PROBE_TIMEOUT_TUNABLE?.def ?? TIER1_429_PROBE_GATE_MS;
   }
-}
-// A 429 is blamed on the model that received it. Only when a second distinct model
-// on the same account is limited inside this window does the cooldown widen to the
-// whole account (an account-wide quota looks exactly like that).
-export const TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS = 60_000;
-export const TIER1_429_ACCOUNT_ESCALATION_MODELS = 2;
-// A model id the upstream keeps answering "not found" for is not coming back in
-// seconds: 5s, 20s, 80s, 5m, 20m, 30m (cleared by the first success).
-export const TIER1_MODEL_MISSING_LADDER_MS = Object.freeze([5_000, 20_000, 80_000, 300_000, 1_200_000, 1_800_000] as const);
-// Sibling keys of one provider usually share a quota window. When one recovers,
-// siblings still cooling down for at least this long are let back in early.
-export const TIER1_SIBLING_WAKE_MIN_REMAINING_MS = 60_000;
-// How long a "this request was too large" observation keeps large requests away.
-// After it lapses one request probes again, so a raised provider limit is noticed.
-export const TIER1_OVERSIZE_MEMORY_MS = 10 * 60_000;
-// A 403 refuses one request (policy, moderation, region, model permission), not the
-// key, so it is blamed on the model that got it. The first refusal costs nothing;
-// each refusal after the previous cooldown lapsed climbs 60s, 10m, then the auth
-// cooldown. A success clears the ladder.
-export const TIER1_FORBIDDEN_LADDER_MS = Object.freeze([0, 60_000, 600_000] as const);
-
-const FAILURE_STATE = Object.freeze({
-  NORMAL: 'normal',
-  COOLDOWN: 'cooldown',
-  HALF_OPEN: 'half_open',
-  DISABLED: 'disabled',
-} as const);
-
-export type Tier1FailureState = (typeof FAILURE_STATE)[keyof typeof FAILURE_STATE];
-
-export type Tier1ModelRuntime = {
-  supported: boolean;
-  // Live requests on this logical model. The half-open single-probe gate counts
-  // these, so traffic on the key's other models never starves a recovery probe.
-  inFlight: number;
-  disabled: boolean;
-  cooldownUntil: number;
-  cooldownReason: string | null;
-  failureState: Tier1FailureState;
-  consecutiveFailures: number;
-  consecutiveRateLimits: number;
-  consecutiveOutliers: number;
-  // 403 refusals in a row on this model; drives TIER1_FORBIDDEN_LADDER_MS.
-  consecutiveForbidden: number;
-  halfOpenSuccesses: number;
-  ttftEwma: number | null;
-  sampleCount: number;
-  lastObservedAt: number;
-  scopeAmbiguous429: boolean;
-  rateLimitRecoveryPending: boolean;
-  rateLimitRecoveryUntil: number;
-  // The current rate-limit cooldown is a long-lived allowance (hourly/daily
-  // window). Such a window belongs to this one credential, so it is not woken
-  // early when a sibling key recovers.
-  cooldownIsQuota: boolean;
-};
-
-export type Tier1QuotaState = 'normal' | 'near_limit' | 'exhausted_until';
-
-export type Tier1AccountRuntime = {
-  accountId: string;
-  // Provider this account belongs to, learned when it is first claimed. Used to
-  // wake sibling keys of the same provider when one of them recovers.
-  provider: string | null;
-  inFlight: number;
-  accountDisabled: boolean;
-  accountCooldownUntil: number;
-  accountCooldownReason: string | null;
-  consecutiveAccountFailures: number;
-  consecutiveRateLimits: number;
-  scopeAmbiguous429: boolean;
-  rateLimitRecoveryPending: boolean;
-  rateLimitRecoveryUntil: number;
-  // See Tier1ModelRuntime.cooldownIsQuota.
-  accountCooldownIsQuota: boolean;
-  // Logical models that recently took a 429 on this account (model -> last time).
-  // Two distinct models limited inside the window is the evidence that the limit
-  // belongs to the whole account, not to one upstream model.
-  recentRateLimitedModels: Map<string, number>;
-  // Smallest request (in body characters) each logical model recently refused as
-  // too large, with the time the memory lapses. Requests at least that large skip
-  // this account instead of paying a guaranteed 413 round trip.
-  oversizeCeilings: Map<string, { chars: number; until: number }>;
-  // How many times in a row an upstream model id answered "not found". Drives the
-  // model_missing ladder; cleared when that upstream model serves a request.
-  upstreamModelMisses: Map<string, number>;
-  quotaState: Tier1QuotaState;
-  quotaResetAt: number;
-  // Provider-reported quota, isolate-local. `null` = unknown: the gateway never
-  // fabricates a hard limit and keeps its reactive adaptive-429 + cooldown
-  // behavior. When a provider reports remaining requests/tokens, these drive a
-  // reservation counter so concurrent admission cannot all see the same tail of
-  // a window (the "20 concurrent requests see remaining=10" guard).
-  quotaRemainingRequests: number | null;
-  quotaRemainingTokens: number | null;
-  quotaSource: string | null;
-  // Per-account outstanding reservations not yet settled with actual usage.
-  // Restored on release-before-settle (abort/pre-execution failure); confirmed
-  // consumed on settle. Synchronous claim->makeToken keeps this race-free in
-  // the single-threaded isolate.
-  quotaReservedInFlight: number;
-  // model_missing is about the provider-facing model id, not the gateway's
-  // logical alias. Keep that short cooldown separate from logical-model
-  // performance/circuit state so remapping Code-Max does not inherit stale 404s.
-  upstreamModelCooldowns: Map<string, number>;
-  models: Map<string, Tier1ModelRuntime>;
-};
-
-export type Tier1ReleaseToken = { accountId: string; modelId: string | null; released: boolean; settled: boolean; quotaReserved: number };
-
-/** Failure-kind classification input consumed from the reliability layer.
- * `kind` is an open string: stream-layer kinds (e.g. 'stream_interrupted')
- * also flow through here, carrying the stream-layer `streamReason`. */
-export type Tier1FailureInput =
-  | {
-      kind?: string;
-      cooldownMs?: number;
-      retryAfterMs?: number;
-      rateLimitScope?: string;
-      /** 'quota' for a long-lived allowance; any other value is a short window. */
-      rateLimitClass?: string;
-      /** A 403: the request was refused, not the credential. */
-      forbidden?: boolean;
-      streamReason?: unknown;
-    }
-  | null
-  | undefined;
-
-export type Tier1Outcome = {
-  scope: 'account' | 'model' | 'upstream_model' | 'none';
-  action: 'disable' | 'cooldown' | 'neutral';
-  reason: string;
-  counted?: boolean;
-  cooldownMs?: number;
-  backoff?: 'rate_limit' | 'timeout' | 'server' | 'forbidden' | 'default';
-  scopeAmbiguous?: boolean;
-  /** True when a rate-limit cooldown reflects a long-lived allowance. */
-  isQuota?: boolean;
-};
-
-const accounts = new Map<string, Tier1AccountRuntime>();
-
-function newModelRuntime(): Tier1ModelRuntime {
-  return {
-    supported: true,
-    inFlight: 0,
-    disabled: false,
-    cooldownUntil: 0,
-    cooldownReason: null,
-    failureState: FAILURE_STATE.NORMAL,
-    consecutiveFailures: 0,
-    consecutiveRateLimits: 0,
-    consecutiveOutliers: 0,
-    consecutiveForbidden: 0,
-    halfOpenSuccesses: 0,
-    ttftEwma: null,
-    sampleCount: 0,
-    lastObservedAt: 0,
-    scopeAmbiguous429: false,
-    rateLimitRecoveryPending: false,
-    rateLimitRecoveryUntil: 0,
-    cooldownIsQuota: false,
-  };
-}
-
-function newAccountRuntime(accountId: string): Tier1AccountRuntime {
-  return {
-    accountId,
-    provider: null,
-    inFlight: 0,
-    accountDisabled: false,
-    accountCooldownUntil: 0,
-    accountCooldownReason: null,
-    consecutiveAccountFailures: 0,
-    consecutiveRateLimits: 0,
-    scopeAmbiguous429: false,
-    rateLimitRecoveryPending: false,
-    rateLimitRecoveryUntil: 0,
-    accountCooldownIsQuota: false,
-    recentRateLimitedModels: new Map(),
-    oversizeCeilings: new Map(),
-    upstreamModelMisses: new Map(),
-    quotaState: 'normal',
-    quotaResetAt: 0,
-    quotaRemainingRequests: null,
-    quotaRemainingTokens: null,
-    quotaSource: null,
-    quotaReservedInFlight: 0,
-    upstreamModelCooldowns: new Map(),
-    models: new Map(),
-  };
-}
-
-export function getTier1Account(accountId: string): Tier1AccountRuntime {
-  let account = accounts.get(accountId);
-  if (!account) {
-    account = newAccountRuntime(accountId);
-    accounts.set(accountId, account);
-  }
-  return account;
-}
-
-export function getTier1Model(accountId: string, modelId: string): Tier1ModelRuntime {
-  const account = getTier1Account(accountId);
-  let model = account.models.get(modelId);
-  if (!model) {
-    model = newModelRuntime();
-    account.models.set(modelId, model);
-  }
-  return model;
-}
-
-export function getTier1ModelPerf(accountId: string, modelId: string): Tier1ModelRuntime | null {
-  return accounts.get(accountId)?.models.get(modelId) ?? null;
-}
-
-export function tier1AccountInFlight(accountId: string): number {
-  return accounts.get(accountId)?.inFlight ?? 0;
-}
-
-export function tier1QuotaState(accountId: string, now: number = Date.now()): Tier1QuotaState {
-  const account = accounts.get(accountId);
-  if (!account) return 'normal';
-  if (account.quotaState === 'exhausted_until' && account.quotaResetAt <= now) return 'normal';
-  return account.quotaState;
 }
 
 function tier1UpstreamModelOf(node: RuntimeNode, logicalModel: string): string {
@@ -323,20 +137,6 @@ function rateLimitProbeBlocked(scope: RateLimitProbeScope, scopeInFlight: number
   if (scope.rateLimitRecoveryUntil <= now) return false;
   if (!probeGate.v2) return true;
   return scopeInFlight > 0;
-}
-
-// A provider-reported window that has rolled over is stale: the old remaining
-// tail is meaningless and must not keep the account blocked or admitted at a
-// fabricated count. Expiry returns the account to unknown quota until the next
-// report re-establishes the window; recovery then follows the normal reactive
-// path (429 -> cooldown -> probe -> restore).
-function normalizeQuotaWindow(account: Tier1AccountRuntime, now: number): void {
-  if (account.quotaResetAt > 0 && account.quotaResetAt <= now) {
-    account.quotaResetAt = 0;
-    account.quotaState = 'normal';
-    account.quotaRemainingRequests = null;
-    account.quotaRemainingTokens = null;
-  }
 }
 
 export function claimTier1Slot(
@@ -415,18 +215,6 @@ export function releaseTier1Slot(accountId: string, token: Tier1ReleaseToken | n
 /** Confirm actual quota consumption for a lease. Idempotent. The request
  *  reservation is consumed (not restored on release); token-usage is subtracted
  *  from the remaining-token window when the provider reports one. */
-export function settleTier1Quota(accountId: string, token: Tier1ReleaseToken | null | undefined, consumedTokens: number = 0): void {
-  if (!token || token.accountId !== accountId || token.settled) return;
-  token.settled = true;
-  const account = accounts.get(accountId);
-  if (!account) return;
-  if (token.quotaReserved > 0 && account.quotaReservedInFlight > 0) {
-    account.quotaReservedInFlight--;
-  }
-  if (account.quotaRemainingTokens !== null && Number.isFinite(consumedTokens) && consumedTokens > 0) {
-    account.quotaRemainingTokens = Math.max(0, account.quotaRemainingTokens - Math.trunc(consumedTokens));
-  }
-}
 
 function modelBlocked(model: Tier1ModelRuntime | null | undefined, now: number): boolean {
   return model?.disabled || (model?.cooldownUntil ?? 0) > now;
@@ -520,70 +308,13 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
   return true;
 }
 
-export function classifyTier1Failure(classification: Tier1FailureInput, opts: { retryAfterMs?: number } = {}): Tier1Outcome {
-  const { retryAfterMs } = opts;
-  const kind = classification?.kind;
-  if (kind === 'auth' && classification?.forbidden) {
-    return {
-      scope: 'model',
-      action: 'cooldown',
-      counted: false,
-      backoff: 'forbidden',
-      reason: kind,
-      cooldownMs: Math.max(0, classification?.cooldownMs ?? TIER1_AUTH_DEFAULT_COOLDOWN_MS),
-    };
-  }
-  if (kind === 'auth') {
-    return {
-      scope: 'account',
-      action: 'disable',
-      reason: kind,
-      cooldownMs: Math.max(0, classification?.cooldownMs ?? TIER1_AUTH_DEFAULT_COOLDOWN_MS),
-    };
-  }
-  if (kind === 'model_missing') {
-    return {
-      scope: 'upstream_model',
-      action: 'cooldown',
-      counted: false,
-      cooldownMs: classification?.cooldownMs || 5_000,
-      reason: kind,
-    };
-  }
-  if (kind === 'endpoint_not_found') {
-    return { scope: 'account', action: 'cooldown', counted: false, cooldownMs: classification?.cooldownMs || 5_000, reason: kind };
-  }
-  if (kind === 'rate_limit') {
-    const explicit = retryAfterMs ?? classification?.retryAfterMs ?? 0;
-    return {
-      scope: classification?.rateLimitScope === 'model' ? 'model' : 'account',
-      action: 'cooldown',
-      counted: false,
-      cooldownMs: explicit,
-      backoff: 'rate_limit',
-      reason: kind,
-      scopeAmbiguous: !classification?.rateLimitScope,
-      isQuota: classification?.rateLimitClass === 'quota',
-    };
-  }
-  if (kind === 'client' || kind === 'client_abort') {
-    return { scope: 'none', action: 'neutral', counted: false, cooldownMs: 0, reason: kind };
-  }
-  if (kind === 'headers_timeout' || kind === 'first_event_timeout' || kind === 'network' || kind === 'stream_interrupted') {
-    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'timeout', reason: kind };
-  }
-  if (kind === 'server') {
-    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'server', reason: kind };
-  }
-  if (kind === 'upstream_200_non_json_body' || kind === 'upstream_200_no_meaningful_output') {
-    // A structurally broken 200 response keeps the documented short cooldown.
-    // Without it the node is re-picked immediately and the broken upstream is
-    // hammered again inside the same request.
-    const short = Math.min(Math.max(0, classification?.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
-    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: short, backoff: 'default', reason: kind };
-  }
-  return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'default', reason: kind || 'unknown' };
-}
+/**
+ * A key of `provider` just recovered from a rate limit (on the account, or on `modelId`).
+ * Its siblings usually hit the same window (same plan, same reset), so any that are still
+ * cooling down for more than TIER1_SIBLING_WAKE_MIN_REMAINING_MS become eligible now. Each one is still
+ * admitted through the normal single recovery probe, and a failed probe puts it back
+ * on its previous schedule without escalating its ladder. Returns the woken ids.
+ */
 
 function exponential(base: number, max: number, count: number): number {
   return Math.min(max, base * 2 ** Math.max(0, count - 1));
@@ -603,13 +334,6 @@ function modelCooldownMs(model: Tier1ModelRuntime, outcome: Tier1Outcome): numbe
   return jittered(exponential(TIER1_COOLDOWN_DEFAULT_MS, TIER1_COOLDOWN_MAX_MS, model.consecutiveFailures));
 }
 
-/**
- * A key of `provider` just recovered from a rate limit (on the account, or on `modelId`).
- * Its siblings usually hit the same window (same plan, same reset), so any that are still
- * cooling down for more than TIER1_SIBLING_WAKE_MIN_REMAINING_MS become eligible now. Each one is still
- * admitted through the normal single recovery probe, and a failed probe puts it back
- * on its previous schedule without escalating its ladder. Returns the woken ids.
- */
 export function wakeTier1ProviderSiblings(provider: string, recoveredAccountId: string, modelId: string, now: number = Date.now()): string[] {
   const woken: string[] = [];
   for (const [id, account] of accounts) {
@@ -907,204 +631,6 @@ export function tier1HasDeferredCapacity(
   return false;
 }
 
-export function recordTier1QuotaSignal(
-  accountId: string,
-  signal: { remainingRatio?: number; resetAtMs?: number } = {},
-  now: number = Date.now(),
-): boolean {
-  const { remainingRatio, resetAtMs = 0 } = signal;
-  if (typeof remainingRatio !== 'number' || !Number.isFinite(remainingRatio) || remainingRatio < 0 || remainingRatio > 1) return false;
-  const account = getTier1Account(accountId);
-  if (remainingRatio === 0 && resetAtMs > now) {
-    account.quotaState = 'exhausted_until';
-    account.quotaResetAt = resetAtMs;
-  } else if (remainingRatio <= 0.1) {
-    account.quotaState = 'near_limit';
-  } else {
-    account.quotaState = 'normal';
-    account.quotaResetAt = 0;
-  }
-  return true;
-}
-
-/** Record a provider-reported quota window. This is the production writer that
- *  activates the dormant near_limit scoring and exhausted_until eligibility
- *  gate. Absolute remaining (requests/tokens) drives the reservation counter;
- *  the ratio (remaining/limit, when the provider reports a ceiling) drives the
- *  near_limit classification. A `null` signal (provider reports no quota) is
- *  ignored — unknown quota stays a no-op pass-through. */
-export function recordTier1QuotaReport(
-  accountId: string,
-  signal: {
-    remainingRequests?: number;
-    remainingTokens?: number;
-    limitRequests?: number;
-    limitTokens?: number;
-    resetAtMs?: number;
-    source?: string;
-  } | null,
-  now: number = Date.now(),
-): boolean {
-  if (!signal) return false;
-  const account = getTier1Account(accountId);
-  if (typeof signal.remainingRequests === 'number' && Number.isFinite(signal.remainingRequests) && signal.remainingRequests >= 0) {
-    // The provider's report is the window tail; reservations already acquired in
-    // this isolate are subtracted so new admission sees only what is genuinely
-    // left. Reservations are honored even if a fresher (lower) report would
-    // drop below them — the floor is zero, not negative.
-    const reported = Math.trunc(signal.remainingRequests);
-    account.quotaRemainingRequests = Math.max(0, reported - account.quotaReservedInFlight);
-  }
-  if (typeof signal.remainingTokens === 'number' && Number.isFinite(signal.remainingTokens) && signal.remainingTokens >= 0) {
-    account.quotaRemainingTokens = Math.max(0, Math.trunc(signal.remainingTokens));
-  }
-  if (typeof signal.resetAtMs === 'number' && Number.isFinite(signal.resetAtMs) && signal.resetAtMs > now) {
-    account.quotaResetAt = signal.resetAtMs;
-  } else if (account.quotaResetAt <= now && (signal.remainingRequests === 0 || signal.remainingTokens === 0)) {
-    // Only forget a reset instant that is already in the past. A report without
-    // a reset marker must not erase a reset instant a previous report proved,
-    // or the exhausted gate and its Retry-After would be lost while the
-    // window is still closed.
-    account.quotaResetAt = 0;
-  }
-  if (typeof signal.source === 'string' && signal.source) account.quotaSource = signal.source;
-
-  const remaining = signal.remainingRequests ?? signal.remainingTokens;
-  if (remaining === undefined) return true;
-  // Classify on the WORSE of the reported tails. A key whose token window is
-  // spent is not healthy even when its request window still has room, and the
-  // other way round; a single tail must never hide the exhausted one.
-  const tails = [quotaTailRatio(signal.remainingRequests, signal.limitRequests), quotaTailRatio(signal.remainingTokens, signal.limitTokens)].filter(
-    (tail): tail is number => tail !== null,
-  );
-  if (tails.length === 0) return true;
-  const worstTail = Math.min(...tails);
-  const exhausted = tails.some((tail) => tail === 0);
-  // Classification semantics match the ratio writer exactly: zero remaining
-  // with a known reset is exhausted; a zero-or-tiny tail is near_limit even
-  // without a reset marker; otherwise normal.
-  if (exhausted && account.quotaResetAt > now) {
-    account.quotaState = 'exhausted_until';
-  } else if (exhausted || worstTail <= 0.1) {
-    account.quotaState = 'near_limit';
-    // A zero tail with no usable reset marker cannot prove when the window
-    // refills. Keep the near_limit score demotion but drop the hard
-    // reservation gate: pinning it at zero would deny admission forever.
-    if (account.quotaResetAt <= now) {
-      if (signal.remainingRequests === 0) account.quotaRemainingRequests = null;
-      if (signal.remainingTokens === 0) account.quotaRemainingTokens = null;
-    }
-  } else {
-    account.quotaState = 'normal';
-    if (account.quotaResetAt <= now) account.quotaResetAt = 0;
-  }
-  return true;
-}
-
-/**
- * Ratio of a reported quota tail against its ceiling. A tail without a
- * ceiling is absolute: zero is exhausted, one or less is a near-limit tail,
- * anything larger counts as healthy.
- */
-function quotaTailRatio(remaining: number | undefined, limit: number | undefined): number | null {
-  if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return null;
-  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) return remaining / limit;
-  if (remaining <= 0) return 0;
-  if (remaining <= 1) return 0.1;
-  return 1;
-}
-
-function modelDiagnosticState(model: Tier1ModelRuntime | null | undefined, now: number): string {
-  if (!model) return 'configured';
-  if (model.disabled || model.failureState === FAILURE_STATE.DISABLED) return 'disabled';
-  if (model.cooldownUntil > now || model.failureState === FAILURE_STATE.COOLDOWN) return 'cooldown';
-  if (model.failureState === FAILURE_STATE.HALF_OPEN) return 'half_open';
-  if (model.sampleCount > 0) return 'observed_healthy';
-  return 'unknown';
-}
-
-export function snapshotTier1Runtime(accountId: string, modelId: string, now: number = Date.now()) {
-  const account = accounts.get(accountId);
-  const model = account?.models.get(modelId);
-  return {
-    account_id: accountId,
-    model: modelId,
-    state: account?.accountDisabled ? 'disabled' : account && account.accountCooldownUntil > now ? 'cooldown' : modelDiagnosticState(model, now),
-    account_disabled: account?.accountDisabled ?? false,
-    account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,
-    account_consecutive_rate_limits: account?.consecutiveRateLimits ?? 0,
-    account_scope_ambiguous_429: account?.scopeAmbiguous429 ?? false,
-    in_flight: account?.inFlight ?? 0,
-    quota_state: account?.quotaState === 'exhausted_until' && (account?.quotaResetAt ?? 0) <= now ? 'normal' : (account?.quotaState ?? 'normal'),
-    quota_reset_at: account && account.quotaResetAt > now ? new Date(account.quotaResetAt).toISOString() : null,
-    failure_state: model?.failureState ?? FAILURE_STATE.NORMAL,
-    consecutive_failures: model?.consecutiveFailures ?? 0,
-    consecutive_rate_limits: model?.consecutiveRateLimits ?? 0,
-    consecutive_outliers: model?.consecutiveOutliers ?? 0,
-    half_open_successes: model?.halfOpenSuccesses ?? 0,
-    cooldown_remaining_ms: model && model.cooldownUntil > now ? model.cooldownUntil - now : 0,
-    cooldown_reason: model && model.cooldownUntil > now ? model.cooldownReason : null,
-    ttft_ewma_ms: model?.ttftEwma == null ? null : Math.round(model.ttftEwma),
-    sample_count: model?.sampleCount ?? 0,
-    last_observed_at: model && model.lastObservedAt > 0 ? new Date(model.lastObservedAt).toISOString() : null,
-    scope_ambiguous_429: model?.scopeAmbiguous429 ?? false,
-  };
-}
-
-export function snapshotTier1AccountRuntime(accountId: string, modelIds: ReadonlyArray<string> = [], now: number = Date.now()) {
-  const account = accounts.get(accountId);
-  const ids = new Set(modelIds);
-  for (const id of account?.models.keys() ?? []) ids.add(id);
-  const models = [...ids].sort().map((id) => snapshotTier1Runtime(accountId, id, now));
-  return {
-    state: account?.accountDisabled
-      ? 'disabled'
-      : account && account.accountCooldownUntil > now
-        ? 'cooldown'
-        : models.some((m) => m.state === 'observed_healthy')
-          ? 'observed_healthy'
-          : account
-            ? 'unknown'
-            : 'configured',
-    in_flight: account?.inFlight ?? 0,
-    account_disabled: account?.accountDisabled ?? false,
-    account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,
-    consecutive_rate_limits: account?.consecutiveRateLimits ?? 0,
-    scope_ambiguous_429: account?.scopeAmbiguous429 ?? false,
-    models,
-  };
-}
-
-/**
- * A cooldown another isolate should honour: evidence that outlives this isolate
- * and is never cleared early. A credential rejection (401) or long-lived quota
- * on the account, or an escalated 403 refusal on one model. Short rate-limit
- * windows are not shared: a recovering sibling key may wake them early.
- */
-export type Tier1SharedCooldown = { node: string; model?: string; until: number; reason: string; quota?: boolean };
-
-export function tier1LongCooldowns(accountId: string, minRemainingMs: number, now: number = Date.now()): Tier1SharedCooldown[] {
-  const account = accounts.get(accountId);
-  if (!account) return [];
-  const out: Tier1SharedCooldown[] = [];
-  const accountReason = account.accountCooldownReason;
-  const isLongLived = accountReason === 'auth' || (accountReason === 'rate_limit' && account.accountCooldownIsQuota);
-  if (isLongLived && accountReason && account.accountCooldownUntil - now >= minRemainingMs) {
-    out.push({
-      node: accountId,
-      until: account.accountCooldownUntil,
-      reason: accountReason,
-      ...(account.accountCooldownIsQuota ? { quota: true } : {}),
-    });
-  }
-  for (const [modelId, model] of account.models) {
-    if (model.cooldownReason === 'auth' && model.cooldownUntil - now >= minRemainingMs) {
-      out.push({ node: accountId, model: modelId, until: model.cooldownUntil, reason: 'auth' });
-    }
-  }
-  return out;
-}
-
 /** Apply a cooldown another isolate shared. Never shortens a local one. */
 export function adoptTier1Cooldown(entry: Tier1SharedCooldown, now: number = Date.now()): void {
   if (!(entry.until > now)) return;
@@ -1129,7 +655,5 @@ export function adoptTier1Cooldown(entry: Tier1SharedCooldown, now: number = Dat
 }
 
 export function __resetTier1StateForTests(): void {
-  accounts.clear();
+  resetTier1StoreForTests();
 }
-
-export const TIER1_FAILURE_STATES = FAILURE_STATE;

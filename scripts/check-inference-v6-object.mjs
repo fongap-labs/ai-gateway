@@ -175,7 +175,11 @@ try {
     }),
     env,
   );
-  assert.equal(bufferedTimeout.status, 504);
+  assert.equal(
+    bufferedTimeout.status,
+    504,
+    `buffered SSE deadline must be 504, received ${bufferedTimeout.status}; code=${bufferedTimeout.headers.get('x-aig-error-kind')}; result=${bufferedTimeout.headers.get('x-aig-result')}; elapsed-window-ms=${Date.now() - shortWindow + 5_000}`,
+  );
   assert.equal(bufferedTimeout.headers.get('x-aig-result'), 'dispatched');
   assert.equal(bufferedTimeout.headers.get('x-aig-error-kind'), 'center_execution_deadline');
   assert.equal(attempts, 6);
