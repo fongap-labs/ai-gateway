@@ -61,7 +61,7 @@ const rapidSource = new ReadableStream(
   {
     pull(controller) {
       upstreamReads++;
-      controller.enqueue(encoder.encode(`data: {"backpressure":${upstreamReads}}\\n\\n`));
+      controller.enqueue(encoder.encode(`data: {"backpressure":${upstreamReads}}\n\n`));
       if (upstreamReads === 12) controller.close();
     },
     cancel(reason) {
