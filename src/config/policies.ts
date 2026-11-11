@@ -155,13 +155,13 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           const rawMax = cfg.max_attempts;
           if (typeof rawMax !== 'number' || !Number.isInteger(rawMax) || rawMax < MIN_ATTEMPTS || rawMax > MAX_ATTEMPTS) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
-            attempts = base?.maxAttempts ?? BUILTIN_POLICIES.normal.maxAttempts;
+            attempts = base?.maxAttempts ?? normal.maxAttempts;
             isMaxAttemptsValid = false;
           } else {
             attempts = rawMax;
           }
         } else {
-          attempts = base?.maxAttempts ?? BUILTIN_POLICIES.normal.maxAttempts;
+          attempts = base?.maxAttempts ?? normal.maxAttempts;
         }
 
         if (tierAttempts && tierAttemptsValid && isMaxAttemptsValid) {
@@ -282,5 +282,5 @@ export function getPolicy(modelName: string, modelsConfig: Record<string, ModelE
   // Model spelling is an opaque identifier: no tier/prefix inference.
   const explicit = modelsConfig[modelName]?.policy?.policy;
   const policyName = explicit || 'normal';
-  return policiesConfig[policyName] ?? policiesConfig.normal ?? BUILTIN_POLICIES.normal;
+  return policiesConfig[policyName] ?? policiesConfig.normal ?? normal;
 }
