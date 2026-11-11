@@ -316,10 +316,7 @@ const remoteSecretNames = [
 assert.equal(validateRemoteSecretInventory(remoteSecretNames, deployPrepared.config).credentialShards, 0);
 
 const retiredGatewayNames = ['AIG_TIER1_CREDENTIALS_01', 'AIG_TIER2_CREDENTIALS_01', 'AIG_TIER3_CREDENTIALS_01', 'AIG_TOKEN_ENCRYPTION_KEY'];
-const oldGatewayNames = [
-  ...remoteSecretNames,
-  ...[...retiredGatewayNames, 'AIG_EDGE_CACHE_HMAC_KEY'].map((name) => ({ name, type: 'secret_text' })),
-];
+const oldGatewayNames = [...remoteSecretNames, ...[...retiredGatewayNames, 'AIG_EDGE_CACHE_HMAC_KEY'].map((name) => ({ name, type: 'secret_text' }))];
 const inheritance = planGatewaySecretInheritance(oldGatewayNames, deployPrepared.config);
 assert.deepEqual(inheritance.excluded, retiredGatewayNames);
 const retainedNames = [...remoteSecretNames.map(({ name }) => name), 'AIG_EDGE_CACHE_HMAC_KEY'].sort();
@@ -362,7 +359,10 @@ try {
   const form = await new Response(body, { headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } }).formData();
   const metadata = JSON.parse(form.get('metadata'));
   assert.deepEqual(metadata.keep_bindings, ['secret_key']);
-  assert.deepEqual(metadata.bindings, retainedNames.map((name) => ({ name, type: 'inherit' })));
+  assert.deepEqual(
+    metadata.bindings,
+    retainedNames.map((name) => ({ name, type: 'inherit' })),
+  );
 } finally {
   fs.rmSync(inheritanceDir, { recursive: true, force: true });
 }
