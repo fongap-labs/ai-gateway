@@ -5,26 +5,15 @@
 import { lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifyRemote } from './github-deployment-config.mjs';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha = /^[0-9a-f]{40}$/;
 const accountPattern = /^[a-f0-9]{32}$/i;
 const worker = 'ai-gateway';
-const schemaVersion = 2;
+const schemaVersion = 3;
 
 function sameIdentity(a, b) {
   return a.deployment_id === b.deployment_id && a.version_id === b.version_id;
-}
-
-export function deploymentBuildFromMessage(message) {
-  const match = /^action-worker:deploy:([a-f0-9]{40})$/i.exec(message ?? '');
-  return match?.[1]?.toLowerCase() ?? null;
-}
-
-export function legacyReadinessBuild(error, active) {
-  if (![401, 404].includes(error?.status)) return null;
-  return deploymentBuildFromMessage(active?.message);
 }
 
 export function parseActiveDeployment(body) {
@@ -52,24 +41,14 @@ export function parseActiveDeployment(body) {
   };
 }
 
-export function establishRecoveryBaseline(before, after, build, accountId, readiness = 'verified') {
-  if (
-    !accountPattern.test(accountId ?? '') ||
-    !sameIdentity(before, after) ||
-    !sha.test(build ?? '') ||
-    !['verified', 'legacy'].includes(readiness)
-  ) {
-    throw new Error('Gateway baseline identity changed or its build SHA is unverified.');
-  }
+export function establishRecoveryBaseline(active, accountId) {
   return {
     schema_version: schemaVersion,
     account_id: accountId.toLowerCase(),
     worker,
     previous: {
-      deployment_id: before.deployment_id,
-      version_id: before.version_id,
-      build,
-      readiness,
+      deployment_id: active.deployment_id,
+      version_id: active.version_id,
     },
     published: null,
   };
@@ -80,7 +59,7 @@ export function recordPublishedDeployment(snapshot, active, sourceSha) {
     !validSnapshot(snapshot) ||
     snapshot.published !== null ||
     !sha.test(sourceSha ?? '') ||
-    sameIdentity(snapshot.previous, active) ||
+    active.deployment_id === snapshot.previous.deployment_id ||
     active.version_id === snapshot.previous.version_id ||
     active.message !== `action-worker:deploy:${sourceSha}`
   ) {
@@ -112,16 +91,14 @@ export function guardedRollbackTarget(snapshot, active) {
   return snapshot.previous.version_id;
 }
 
-export function confirmRestoredIdentity(snapshot, first, second, build) {
+export function confirmRestoredIdentity(snapshot, active) {
   if (
     !validSnapshot(snapshot) ||
     snapshot.published === null ||
-    !sameIdentity(first, second) ||
-    first.version_id !== snapshot.previous.version_id ||
-    first.deployment_id === snapshot.published.deployment_id ||
-    (snapshot.previous.readiness === 'verified' ? build !== snapshot.previous.build : build !== null)
+    active.version_id !== snapshot.previous.version_id ||
+    active.deployment_id === snapshot.published.deployment_id
   ) {
-    throw new Error('Cloudflare rollback and restored health are not proven.');
+    throw new Error('Cloudflare has not restored the recorded Worker version.');
   }
 }
 
@@ -132,8 +109,6 @@ function validSnapshot(snapshot) {
     accountPattern.test(snapshot.account_id ?? '') &&
     uuid.test(snapshot.previous?.deployment_id ?? '') &&
     uuid.test(snapshot.previous?.version_id ?? '') &&
-    sha.test(snapshot.previous?.build ?? '') &&
-    ['verified', 'legacy'].includes(snapshot.previous?.readiness) &&
     (snapshot.published === null ||
       (uuid.test(snapshot.published?.deployment_id ?? '') &&
         uuid.test(snapshot.published?.version_id ?? '') &&
@@ -186,36 +161,12 @@ async function main() {
   }
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
   const token = process.env.CLOUDFLARE_API_TOKEN ?? '';
-  const publicUrl = process.env.AIG_PUBLIC_URL ?? '';
-  if (!accountPattern.test(accountId) || !token.trim() || !publicUrl.trim()) {
-    throw new Error('Gateway recovery preflight is missing protected configuration.');
-  }
   const active = () => fetchActiveDeployment(accountId, token);
-  const healthyBuild = async (expected) =>
-    await verifyRemote(publicUrl, expected, {
-      allowDegraded: String(process.env.AIG_ALLOW_DEGRADED ?? '').toLowerCase() === 'true',
-    });
 
   if (operation === 'snapshot') {
-    const before = await active();
-    let build;
-    let readiness = 'verified';
-    try {
-      build = await healthyBuild(undefined);
-    } catch (error) {
-      build = legacyReadinessBuild(error, before);
-      if (!build) throw error;
-      readiness = 'legacy';
-      console.log('Legacy Gateway readiness is unavailable; Cloudflare metadata will establish its baseline.');
-    }
-    const after = await active();
-    const snapshot = establishRecoveryBaseline(before, after, build, accountId, readiness);
+    const snapshot = establishRecoveryBaseline(await active(), accountId);
     saveSnapshot(filename, snapshot, true);
-    console.log(
-      readiness === 'verified'
-        ? 'Previous ready Gateway version and Cloudflare deployment identity recorded.'
-        : 'Legacy Gateway source SHA and Cloudflare deployment identity recorded.',
-    );
+    console.log('Previous Gateway deployment and Cloudflare version recorded.');
     return;
   }
 
@@ -231,18 +182,8 @@ async function main() {
     // Print only the validated, pre-publish immutable Cloudflare version ID.
     console.log(guardedRollbackTarget(snapshot, await active()));
   } else {
-    const before = await active();
-    if (before.version_id !== snapshot.previous.version_id) {
-      throw new Error('Rollback did not restore the recorded Worker version.');
-    }
-    const restoredBuild = snapshot.previous.readiness === 'verified' ? await healthyBuild(snapshot.previous.build) : null;
-    const after = await active();
-    confirmRestoredIdentity(snapshot, before, after, restoredBuild);
-    console.log(
-      snapshot.previous.readiness === 'verified'
-        ? 'Previous Gateway version and public readiness are independently verified.'
-        : 'Previous legacy Gateway version and source SHA are restored and verified through Cloudflare.',
-    );
+    confirmRestoredIdentity(snapshot, await active());
+    console.log('Cloudflare restored the recorded Gateway version at 100% traffic.');
   }
 }
 

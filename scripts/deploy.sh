@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 # Provider and application Secrets remain persistent in Cloudflare.
-# The ONE ai-gateway-ops Environment supplies health and center-auth keys, which
-# are synchronized to the four Workers in the existing source-script deploy.
+# The protected ai-gateway-ops Environment supplies center authentication keys
+# that are synchronized to the four Workers in the source-script deploy.
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +46,7 @@ finish() {
   if [[ "$status" -ne 0 && "${#center_update_attempted[@]}" -gt 0 ]]; then
     printf 'ERROR: partial multi-Worker release; private center update(s) attempted: %s.\n' "${center_update_attempted[*]}" >&2
     if [[ "$gateway_rollback_verified" == "true" ]]; then
-      echo 'Gateway rollback identity was verified; public readiness was verified when the restored version supports it.' >&2
+      echo 'Cloudflare confirmed restoration of the previous Gateway version.' >&2
       echo 'Private centers may still be on the attempted source SHA.' >&2
     elif [[ "$gateway_update_attempted" == "true" ]]; then
       echo 'Gateway publication was attempted but no verified rollback is recorded; inspect exact Worker deployment identities before any retry or recovery.' >&2
@@ -89,8 +89,7 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
 done
 
 # Snapshot the live Gateway identity before the FIRST center mutation.
-# Use public readiness when the current version supports it; during the first
-# readiness rollout, a tagged legacy version is identified through Cloudflare.
+# The Cloudflare API gives us the rollback version ID for the current Worker.
 # This guard does not make a multi-Worker rollout atomic; never report success
 # if a later center Secret inventory or Gateway health check fails.
 node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
@@ -134,7 +133,7 @@ node scripts/persistent-deployment.mjs verify-secrets \
   --file "$RUNNER_TEMP/worker-secrets.json" \
   --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
-# The previous healthy Gateway identity was recorded before center publication.
+# The previous Gateway version was recorded before center publication.
 # Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
 # guard refuses to claim an unrelated/concurrent deploy as this job's publish.
 # Cloudflare preserves existing Worker Secrets across code-only deployments.
@@ -171,11 +170,11 @@ if [[ "$health_ok" != "true" ]]; then
     exit 77
   fi
   if ! node scripts/deployment-recovery.mjs verify-restored "$recovery_evidence"; then
-    echo "ERROR: Restored version or public health is not verified." >&2
+    echo "ERROR: Cloudflare did not verify the restored Gateway version." >&2
     exit 77
   fi
   gateway_rollback_verified=true
-  echo "Previous Gateway version restored; public readiness was verified when supported. New deployment failed." >&2
+  echo "Cloudflare restored the previous Gateway version. New deployment failed." >&2
   exit 1
 fi
 
