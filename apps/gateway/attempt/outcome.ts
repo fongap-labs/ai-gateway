@@ -127,6 +127,12 @@ export function recordOutcome(
   if (!c?.hedgedAttempt) state.logicalAttempts++;
   const hedged = !!(c?.hedgedAttempt || c?.hedgedWithTwin);
   const headersMs = c?.headersMs ?? (latencyMs >= 0 ? latencyMs : undefined);
+  // A model-family pass may dispatch a different logical model than the
+  // client requested. Diagnostics must name the model actually sent upstream.
+  const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
+  const physicalModel = upstreamModelOf(node, effectiveModel);
+  const attemptWindowMs =
+    c.attemptDeadlineMs !== undefined && c.attemptStartMs !== undefined ? Math.max(0, c.attemptDeadlineMs - c.attemptStartMs) : undefined;
   let tier1RateLimitStage: number | null = null;
   let tier1RateLimitCooldownMs: number | null = null;
   let tier1RateLimitScope: 'model' | 'account' | null = null;
@@ -225,10 +231,10 @@ export function recordOutcome(
     `dispatch request=${c?.requestId ?? state.requestId} logical_attempt=${state.logicalAttempts}/${state.maxAttempts}` +
       ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}` +
       ` protocol=${c?.upstreamProtocol ?? node.protocol} surface=${c?.surface ?? ''} tier=${node.tier}` +
-      ` model=${state.requestedModel}->${upstreamModelOf(node, state.requestedModel)}` +
+      ` model=${state.requestedModel}${effectiveModel !== state.requestedModel ? `=>${effectiveModel}` : ''}->${physicalModel}` +
       ` hedged=${hedged} kind=${classification.kind} status=${status} counted=${classification.counted}` +
       ` headers_ms=${headersMs ?? -1}${ttftWaitMs !== undefined ? ` ttft_wait_ms=${ttftWaitMs}` : ''}` +
-      ` latency_ms=${latencyMs}` +
+      ` latency_ms=${latencyMs}${attemptWindowMs !== undefined ? ` attempt_window_ms=${attemptWindowMs}` : ''}` +
       `${tier1RateLimitStage !== null ? ` rate_limit_scope=${tier1RateLimitScope} rate_limit_class=${classification.rateLimitWindow ?? 'unknown'} rate_limit_stage=${tier1RateLimitStage} rate_limit_cooldown_ms=${tier1RateLimitCooldownMs ?? -1}` : ''}` +
       `${diagnostic && c?.exposeUpstreamInfo ? ` detail=${trimDiagnostic(diagnostic, 200)}` : ''}`,
   );
@@ -238,6 +244,8 @@ export function recordOutcome(
     dispatch: state.dispatches,
     node_id: node.id,
     provider: node.provider,
+    effective_model: effectiveModel,
+    upstream_model: physicalModel,
     protocol: c?.upstreamProtocol ?? node.protocol,
     surface: c?.surface,
     status,
@@ -247,6 +255,7 @@ export function recordOutcome(
   if (headersMs !== undefined && headersMs >= 0) record.headers_ms = headersMs;
   if (ttftWaitMs !== undefined && ttftWaitMs >= 0) record.ttft_wait_ms = ttftWaitMs;
   if (latencyMs >= 0) record.latency_ms = latencyMs;
+  if (attemptWindowMs !== undefined) record.attempt_window_ms = attemptWindowMs;
   if (tier1RateLimitScope !== null) record.rate_limit_scope = tier1RateLimitScope;
   if (tier1RateLimitStage !== null) {
     record.rate_limit_class = classification.rateLimitWindow ?? 'unknown';
