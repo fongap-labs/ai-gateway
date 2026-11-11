@@ -69,7 +69,7 @@ function normalizedBudget(maxAttempts: number): number {
   return Math.max(1, Math.trunc(maxAttempts));
 }
 
-function firstRoundPlan(round: readonly string[], maxAttempts: number, template: readonly string[], reversible: boolean): ModelFallbackPass[] {
+function firstRoundPlan(round: readonly string[], maxAttempts: number, template: readonly string[], isReversible: boolean): ModelFallbackPass[] {
   // Widen first, then deepen. For a four-model family keep the 3/1/1/1
   // attempt preference, and for a three-model family use 3/2/1.
   const visible = round.slice(0, Math.min(round.length, maxAttempts));
@@ -77,7 +77,7 @@ function firstRoundPlan(round: readonly string[], maxAttempts: number, template:
   let remaining = Math.max(0, maxAttempts - visible.length);
   // v0.1.5: reversible families reserve 3/2/1, one-way families
   // reserve 3/1/1/1 regardless of how many sibling models are configured.
-  const preference = reversible ? [3, 2, 1] : [3, 1, 1, 1];
+  const preference = isReversible ? [3, 2, 1] : [3, 1, 1, 1];
   for (const [i, model] of visible.entries()) {
     if (!remaining) break;
     const current = caps[i] ?? 1;
