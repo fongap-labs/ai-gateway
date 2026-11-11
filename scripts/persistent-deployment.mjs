@@ -120,7 +120,7 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
 
   if (missing.length) {
     throw new Error(
-      `Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}. Add the missing secrets through the ai-gateway-ops workflow; normal code deployment will not upload runtime secrets.`,
+      `Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}. Gateway application access keys must already exist on its Cloudflare Worker.`,
     );
   }
 

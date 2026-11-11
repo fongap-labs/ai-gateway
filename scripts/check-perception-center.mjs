@@ -49,8 +49,10 @@ const snapshot = deploy.indexOf('deployment-recovery.mjs snapshot');
 const centerDeploy = deploy.indexOf('action-worker:center:$center:$DEPLOY_SOURCE_SHA');
 const inventory = deploy.indexOf('private-center-config.mjs verify-inventory');
 const gatewayDeploy = deploy.indexOf('action-worker:deploy:$DEPLOY_SOURCE_SHA');
-assert.ok(prepare >= 0 && prepare < snapshot && snapshot < centerDeploy && centerDeploy < inventory && inventory < gatewayDeploy);
-assert.match(deploy, /first-time bootstrap may stop below for missing Cloudflare Secrets/i);
+const providerPreflight = deploy.indexOf('sync_runtime_secrets preflight');
+const reconcile = deploy.indexOf('sync_runtime_secrets reconcile');
+assert.ok(prepare >= 0 && prepare < providerPreflight && providerPreflight < snapshot);
+assert.ok(snapshot < centerDeploy && centerDeploy < reconcile && reconcile < inventory && inventory < gatewayDeploy);
 assert.doesNotMatch(deploy, /wrangler secret put|--secrets-file|AIG_OPS_SECRET_VALUE/);
 
 const source = read('src/perception/perception-center-entry.ts');

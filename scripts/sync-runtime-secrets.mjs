@@ -58,8 +58,9 @@ export function buildProviderSecretWrites(env, configurations) {
       const nodeGroup = nodeShard.exec(name);
       if (!nodeGroup) continue;
       const nodes = JSON.parse(raw);
-      for (const { id } of nodes) {
-        if (typeof id !== 'string' || !nodeIdPattern.test(id)) throw new Error(`${name} contains an invalid private node ID.`);
+      for (const node of nodes) {
+        const id = typeof node.id === 'string' ? node.id.trim() : '';
+        if (!nodeIdPattern.test(id)) throw new Error(`${name} contains an invalid private node ID.`);
         const credential = credentials.get(id);
         if (credential?.tier !== nodeGroup[1]) {
           missing.push(`${worker} Tier ${nodeGroup[1]} node ${id}`);

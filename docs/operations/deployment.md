@@ -209,7 +209,7 @@ AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 
 部署前，`scripts/deployment-recovery.mjs` 使用 Cloudflare API Token 记录当前 `ai-gateway` 的部署和版本 UUID。回滚目标必须是当前承载 100% 流量的单一版本。旧 Worker 的公开就绪接口和源码 SHA 注记不参与这一步。Wrangler 为本次发布添加 `action-worker:deploy:<SHA>` 注记，发布后核对该注记、版本 UUID 和部署 UUID。
 
-部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先确认当前版本仍属于本次发布，再向 Wrangler 传入部署前记录的版本 UUID。Cloudflare 必须确认该历史版本重新承载 100% 流量。即使成功恢复旧版本，发布任务仍为失败。普通代码部署不上传 Worker Secret 值。
+部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先确认当前版本仍属于本次发布，再向 Wrangler 传入部署前记录的版本 UUID。Cloudflare 必须确认该历史版本重新承载 100% 流量。即使成功恢复旧版本，发布任务仍为失败。Gateway 代码上传不携带 Secret 值。
 
 **边界**：Cloudflare 版本切换接口不是条件原子写入；在回滚前读取与真正写入之间仍存在极短的外部并发发布窗口。中央单并发调度仅覆盖中央入口，无法为旁路发布提供分布式互斥。遇到已观察到的生产漂移必须拒绝回滚；在证明排他控制之前，这些源码合同不构成真实生产回滚验收。
 
