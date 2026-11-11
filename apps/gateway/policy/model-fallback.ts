@@ -50,8 +50,7 @@ function fallbackMode(requested: string, modelsConfig: Record<string, ModelEntry
 
 function configuredAttemptCaps(requested: string, modelsConfig: Record<string, ModelEntry>): readonly number[] | undefined {
   const requestedKey = keyOf(requested);
-  return (modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1])?.policy
-    .fallback_attempt_caps;
+  return (modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1])?.policy.fallback_attempt_caps;
 }
 export function buildModelFallbackRounds(
   requestedModel: string,
