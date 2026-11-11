@@ -138,6 +138,15 @@ const normalizedGeneration = buildPrivateCenterConfig('ai-generation-center', {
 });
 assert.equal(normalizedGeneration.nodeCount, 1, 'generation eligibility uses the normalized provider ID');
 const perception = buildPrivateCenterConfig('ai-perception-center', env);
+const googleVisionPerception = buildPrivateCenterConfig('ai-perception-center', {
+  ...env,
+  AIG_TIER1_NODES_01: JSON.stringify([
+    { id: 'google-vision', provider: 'google', base_url: 'https://provider.example.test/v1', models: { vision: 'physical-google-vision' } },
+  ]),
+  AIG_TIER2_NODES_01: '[]',
+});
+assert.equal(googleVisionPerception.nodeCount, 1, 'Google Gemini image-input nodes may serve declared vision models');
+assert.deepEqual(JSON.parse(googleVisionPerception.config.vars.AIG_TIER1_NODES_01)[0].models, { vision: 'physical-google-vision' });
 assert.equal(inference.nodeCount, 2);
 assert.deepEqual(inference.tiers, ['1', '2']);
 assert.equal(generation.nodeCount, 1);
