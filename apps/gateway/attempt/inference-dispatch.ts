@@ -7,7 +7,7 @@
 
 import { type ExecutionInputSurface, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
-import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../../src/protocol/openai.ts';
@@ -44,6 +44,7 @@ function inputSurfaceForClientRoute(route: string): ExecutionInputSurface | null
 
 function stopForCenter(c: AttemptContext, status: number, code: string, center: InferenceCenter = 'inference'): AttemptOutcome {
   rotateWithNeutralEnd(c.state, c.node, KIND.AUTH, c, true);
+  const centerName = center === 'perception' ? 'Private perception center' : 'Private inference center';
   return {
     budgetCharged: false,
     response: gatewayError(
@@ -51,7 +52,7 @@ function stopForCenter(c: AttemptContext, status: number, code: string, center: 
       c.env,
       c.route,
       status,
-      center === 'perception' ? 'Private perception center is unavailable.' : 'Private inference center is unavailable.',
+      status === 504 ? `${centerName} did not respond in time.` : `${centerName} is unavailable.`,
       c.requestId,
       undefined,
       undefined,
@@ -111,11 +112,15 @@ export async function dispatchInferenceAttempt(
   }
   const windowMs = c.attemptCapMs && !hasBufferedResponse ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
+  const centerMayBufferResponse = hasBufferedResponse || returnStream;
   const headersTimeout = attemptHeadersTimeoutMs(
-    hasBufferedResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
+    centerMayBufferResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
+  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(configuredHeadersMs, Math.max(1, c.attemptDeadlineMs - Date.now()), 1);
+  const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
+  const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
   const controller = new AbortController();
   let hasTimedOut = false;
@@ -150,6 +155,8 @@ export async function dispatchInferenceAttempt(
       streamBudget,
       displayModel: returnStream ? requestedModel : undefined,
       deadlineMs: c.attemptDeadlineMs,
+      upstreamHeadersDeadlineMs,
+      bufferedResponseDeadlineMs,
       body: outboundBody,
       signal: controller.signal,
     });
@@ -163,7 +170,12 @@ export async function dispatchInferenceAttempt(
     }
     // An RPC failure is not evidence that the selected PROVIDER is unhealthy.
     // Never retry by bypassing the private center: it may already have executed.
-    return stopForCenter(c, hasTimedOut ? 504 : 503, 'gateway_inference_center_unavailable', center);
+    return stopForCenter(
+      c,
+      hasTimedOut ? 504 : 503,
+      hasTimedOut ? 'gateway_inference_center_timeout' : 'gateway_inference_center_unavailable',
+      center,
+    );
   }
   clearTimeout(timer);
   c.headersMs = Date.now() - dispatchStartMs;
@@ -184,11 +196,34 @@ export async function dispatchInferenceAttempt(
     recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: c.headersMs });
     return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
   }
-  if (executionResult === 'attempted' && upstream.headers.get('x-aig-error-kind') === 'center_upstream_network') {
+  const centerErrorKind = upstream.headers.get('x-aig-error-kind');
+  if (executionResult === 'attempted' && (centerErrorKind === 'center_upstream_network' || centerErrorKind === 'center_upstream_headers_timeout')) {
     detach();
-    const classified = classifyNetworkError(false);
+    const classified = classifyNetworkError(centerErrorKind === 'center_upstream_headers_timeout');
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
     return { rotate: true, kind: classified.kind };
+  }
+  if (executionResult === 'skipped' && upstream.status === 504 && centerErrorKind === 'center_upstream_headers_timeout') {
+    detach();
+    return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+  }
+  if (executionResult === 'dispatched' && upstream.status === 504 && centerErrorKind === 'center_execution_deadline') {
+    detach();
+    recordUndeliveredUpstreamAttempt(c, node);
+    rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
+    return {
+      response: gatewayError(
+        request,
+        env,
+        route,
+        504,
+        'Private inference execution exceeded its time budget; the Provider may have processed the request.',
+        c.requestId,
+        undefined,
+        undefined,
+        'gateway_inference_execution_timeout',
+      ),
+    };
   }
   // Public Gateway sees metadata-only nodes. The private center may exclude
   // an invalid credential binding: this authenticated, exact pre-dispatch

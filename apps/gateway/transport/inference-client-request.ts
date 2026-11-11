@@ -24,6 +24,8 @@ export type InferenceInvocation = {
   streamBudget?: InferenceStreamBudget;
   displayModel?: string;
   deadlineMs: number;
+  upstreamHeadersDeadlineMs?: number;
+  bufferedResponseDeadlineMs?: number;
   body: string;
   signal?: AbortSignal;
 };
@@ -59,6 +61,8 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
       logicalModel: invocation.logicalModel,
       surface: invocation.surface,
       deadlineMs: invocation.deadlineMs,
+      upstreamHeadersDeadlineMs: invocation.upstreamHeadersDeadlineMs,
+      bufferedResponseDeadlineMs: invocation.bufferedResponseDeadlineMs,
       inputSurface: invocation.inputSurface,
       preferNonstream: invocation.preferNonstream,
       returnObject: invocation.returnObject,

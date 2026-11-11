@@ -30,6 +30,7 @@ const client = new Request('https://gateway.invalid/v1/messages', {
 const clientBody = { model: 'chat-test', max_tokens: 128, messages: [{ role: 'user', content: 'Hello' }] };
 const budget = { mode: 'error', cfg: { maxEvents: 100, maxOutputUnits: 200, maxToolEvents: 30, maxToolArgUnits: 1000, maxOutputTokens: 0 } };
 function inbound(overrides = {}) {
+  const deadlineMs = overrides.deadlineMs ?? Date.now() + 90_000;
   return buildInferenceRequest(env, {
     request: client,
     requestId: '12345678-1234-4234-8234-123456789012',
@@ -38,7 +39,9 @@ function inbound(overrides = {}) {
     surface: 'chat_completions',
     inputSurface: 'messages',
     returnObject: true,
-    deadlineMs: Date.now() + 90_000,
+    deadlineMs,
+    upstreamHeadersDeadlineMs: overrides.upstreamHeadersDeadlineMs ?? deadlineMs - 1_000,
+    bufferedResponseDeadlineMs: overrides.bufferedResponseDeadlineMs ?? deadlineMs - 250,
     body: JSON.stringify(clientBody),
     ...overrides,
   });
@@ -134,6 +137,12 @@ try {
   const invalidBudget = inbound({ streamBudget: budget });
   invalidBudget.headers.set('x-aig-stream-budget', JSON.stringify({ ...budget, cfg: { ...budget.cfg, maxOutputUnits: 0 } }));
   assert.equal((await handleInferenceCenterRequest(invalidBudget, env)).status, 400);
+  const invalidBufferedDeadline = inbound();
+  invalidBufferedDeadline.headers.set(
+    'x-aig-buffered-response-deadline-ms',
+    String(Number(invalidBufferedDeadline.headers.get('x-aig-deadline-ms')) + 1),
+  );
+  assert.equal((await handleInferenceCenterRequest(invalidBufferedDeadline, env)).status, 400);
   assert.equal(attempts, 4);
 
   providerText = 'data: {"foo":"bar"}\n\n';
@@ -142,7 +151,36 @@ try {
   assert.equal(interrupted.headers.get('x-aig-error-kind'), 'center_conversion_invalid');
   assert.equal(attempts, 5);
 
-  console.log('Inference v6 collects SSE and translates JSON, isolates raw usage, rejects downgrade and fails closed on errors/budgets.');
+  globalThis.fetch = async () => {
+    attempts++;
+    const ongoing = {
+      id: 'cmpl-timeout',
+      object: 'chat.completion.chunk',
+      model: 'gpt-test-upstream',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'still generating' }, finish_reason: null }],
+    };
+    return new Response(
+      new ReadableStream({
+        start: (controller) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(ongoing)}\n\n`)),
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  };
+  const shortWindow = Date.now() + 5_000;
+  const bufferedTimeout = await handleInferenceCenterRequest(
+    inbound({
+      deadlineMs: shortWindow,
+      upstreamHeadersDeadlineMs: Date.now() + 3_000,
+      bufferedResponseDeadlineMs: Date.now() + 250,
+    }),
+    env,
+  );
+  assert.equal(bufferedTimeout.status, 504);
+  assert.equal(bufferedTimeout.headers.get('x-aig-result'), 'dispatched');
+  assert.equal(bufferedTimeout.headers.get('x-aig-error-kind'), 'center_execution_deadline');
+  assert.equal(attempts, 6);
+
+  console.log('Inference v6 collects SSE, enforces separated deadlines, translates JSON, isolates raw usage, and fails closed on errors/budgets.');
 } finally {
   globalThis.fetch = originalFetch;
 }
