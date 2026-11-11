@@ -36,7 +36,7 @@ assert.deepEqual(
 );
 
 // v0.1.5 family behavior, expressed through opaque model configuration:
- // one-way upward fallback never returns; interchangeable models get two rounds.
+// one-way upward fallback never returns; interchangeable models get two rounds.
 const fallbackModels = {
   entry: { policy: { fallback: ['middle', 'high', 'last'] } },
   middle: { policy: { fallback: ['high', 'last'] } },
@@ -46,12 +46,18 @@ const fallbackModels = {
 const fallbackCatalog = new Set(Object.keys(fallbackModels));
 assert.deepEqual(
   buildModelFallbackRounds('entry', fallbackCatalog, fallbackModels),
-  [['entry', 'middle', 'high', 'last'], ['middle', 'high', 'last']],
+  [
+    ['entry', 'middle', 'high', 'last'],
+    ['middle', 'high', 'last'],
+  ],
   'one-way model fallback never returns to its origin',
 );
 assert.deepEqual(
   buildModelFallbackRounds('middle', fallbackCatalog, fallbackModels),
-  [['middle', 'high', 'last'], ['middle', 'high', 'last']],
+  [
+    ['middle', 'high', 'last'],
+    ['middle', 'high', 'last'],
+  ],
   'reversible model fallback rechecks the requested model like v0.1.5',
 );
 assert.deepEqual(
