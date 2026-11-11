@@ -127,7 +127,13 @@ export async function dispatchInferenceAttempt(
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
-  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(configuredHeadersMs, Math.max(1, c.attemptDeadlineMs - Date.now()), 1);
+  // Restore legacy/v0.1.5: a buffered Provider call may take the whole
+  // attempt window before response headers arrive, even via private Inference.
+  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
+    hasBufferedResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
+    Math.max(1, c.attemptDeadlineMs - Date.now()),
+    1,
+  );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
   const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
@@ -177,17 +183,15 @@ export async function dispatchInferenceAttempt(
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - dispatchStartMs });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
     }
-    // A missing binding is verified pre-dispatch; an RPC rejection may follow
-    // a slow Provider execution. Neither permits direct Provider fallback.
+    // Missing Service Bindings still fail closed: never bypass the private
+    // center for a direct Provider call. Once dispatch began, restore
+    // legacy/v0.1.5's bounded network/timeout candidate rotation instead.
     if (error instanceof InferenceCenterUnavailable || error instanceof PerceptionCenterUnavailable) {
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
-    return stopForCenter(
-      c,
-      hasTimedOut ? 504 : 502,
-      hasTimedOut ? EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_TIMEOUT : EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_TRANSPORT_ERROR,
-      center,
-    );
+    const classification = classifyNetworkError(hasTimedOut);
+    recordOutcome(state, node, classification, c, { latencyMs: Date.now() - dispatchStartMs });
+    return { rotate: true, kind: classification.kind };
   }
   clearTimeout(timer);
   c.headersMs = Date.now() - dispatchStartMs;
@@ -209,25 +213,13 @@ export async function dispatchInferenceAttempt(
     return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
   }
   if (execution.result === EXECUTION_WIRE_RESULT.ATTEMPTED) {
-    // An upstream fetch with lost headers might have executed. Do not replay
-    // it on another node, even for network and response-header timeouts.
+    // Legacy/v0.1.5 rotates another eligible node after a lost upstream
+    // response or headers timeout. The shared request budget, attempted-node
+    // filter, circuit cooldowns, and retry admission still bound each attempt.
     detach();
-    const headersTimedOut = execution.phase === 'upstream-headers';
-    const classified = classifyNetworkError(headersTimedOut);
+    const classified = classifyNetworkError(execution.phase === 'upstream-headers');
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
-    return {
-      response: gatewayError(
-        request,
-        env,
-        route,
-        headersTimedOut ? 504 : 502,
-        'The upstream execution outcome is unknown; it was not replayed.',
-        c.requestId,
-        undefined,
-        undefined,
-        EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_UPSTREAM_OUTCOME_UNKNOWN,
-      ),
-    };
+    return { rotate: true, kind: classified.kind };
   }
   if (execution.verifiedPreDispatchRotation) {
     detach();
@@ -239,21 +231,11 @@ export async function dispatchInferenceAttempt(
     execution.code === EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE
   ) {
     detach();
-    recordUndeliveredUpstreamAttempt(c, node);
-    rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
-    return {
-      response: gatewayError(
-        request,
-        env,
-        route,
-        504,
-        'Private inference execution exceeded its time budget; the Provider may have processed the request.',
-        c.requestId,
-        undefined,
-        undefined,
-        EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_EXECUTION_TIMEOUT,
-      ),
-    };
+    // Restore legacy's retry-on-timeout behavior after the execution window
+    // expires. The next candidate is still subject to the remaining budget.
+    const classified = classifyNetworkError(true);
+    recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status });
+    return { rotate: true, kind: classified.kind };
   }
   // Public Gateway sees metadata-only nodes. The private center may exclude
   // an invalid credential binding: this authenticated, exact pre-dispatch

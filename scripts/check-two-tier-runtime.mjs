@@ -3,10 +3,12 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
+import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
+import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
@@ -33,6 +35,108 @@ assert.deepEqual(
   originalCaps,
   'Token tier is terminal; no third tier can receive unused attempts',
 );
+
+// v0.1.5 family behavior, expressed through opaque model configuration:
+// one-way upward fallback never returns; interchangeable models get two rounds.
+const fallbackModels = {
+  entry: { policy: { fallback: ['middle', 'high', 'last'] } },
+  middle: { policy: { fallback: ['high', 'last'] } },
+  high: { policy: { fallback: ['middle', 'last'] } },
+  last: { policy: { fallback: ['middle', 'high'] } },
+};
+const fallbackCatalog = new Set(Object.keys(fallbackModels));
+assert.deepEqual(
+  buildModelFallbackRounds('entry', fallbackCatalog, fallbackModels),
+  [
+    ['entry', 'middle', 'high', 'last'],
+    ['middle', 'high', 'last'],
+  ],
+  'one-way model fallback never returns to its origin',
+);
+assert.deepEqual(
+  buildModelFallbackRounds('middle', fallbackCatalog, fallbackModels),
+  [
+    ['middle', 'high', 'last'],
+    ['middle', 'high', 'last'],
+  ],
+  'reversible model fallback rechecks the requested model like v0.1.5',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('entry', fallbackCatalog, 6, fallbackModels)[0].map((step) => step.attemptCap),
+  [3, 1, 1, 1],
+  'one-way family retains v0.1.5 cap allocation',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('middle', fallbackCatalog, 6, fallbackModels)[0].map((step) => step.attemptCap),
+  [3, 2, 1],
+  'interchangeable family retains v0.1.5 3/2/1 allocation',
+);
+
+// The three-member v0.1.5 fallback family remains revisitable even when
+// downstream model aliases are not configured to return to the source.
+const nonReciprocal = {
+  source: { policy: { fallback: ['peer-a', 'peer-b'], fallback_mode: 'recheck' } },
+  'peer-a': { policy: { fallback: [] } },
+  'peer-b': { policy: { fallback: [] } },
+};
+assert.deepEqual(
+  buildModelFallbackRounds('source', new Set(Object.keys(nonReciprocal)), nonReciprocal),
+  [
+    ['source', 'peer-a', 'peer-b'],
+    ['source', 'peer-a', 'peer-b'],
+  ],
+  'three-member families retain v0.1.5 recheck behavior without naming assumptions',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('source', new Set(Object.keys(nonReciprocal)), 6, nonReciprocal)[0].map((pass) => pass.attemptCap),
+  [3, 2, 1],
+  'three-member families retain v0.1.5 attempt shares',
+);
+
+// Model count and spelling never decide one-way vs recheck. Explicit policy
+// overrides graph-derived defaults, and attempt caps stay per-model config.
+const sameGraph = {
+  start: { policy: { fallback: ['leaf-a', 'leaf-b'] } },
+  'leaf-a': { policy: { fallback: [] } },
+  'leaf-b': { policy: { fallback: [] } },
+};
+assert.deepEqual(
+  buildModelFallbackRounds('start', new Set(Object.keys(sameGraph)), sameGraph)[1],
+  ['leaf-a', 'leaf-b'],
+  'unidirectional configured edges do not imply reverse access',
+);
+sameGraph.start.policy.fallback_mode = 'recheck';
+sameGraph.start.policy.fallback_attempt_caps = [2, 1, 3];
+assert.deepEqual(
+  buildModelFallbackRounds('start', new Set(Object.keys(sameGraph)), sameGraph)[1],
+  ['start', 'leaf-a', 'leaf-b'],
+  'explicit recheck works independent of family width and model name',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('start', new Set(Object.keys(sameGraph)), 6, sameGraph)[0].map((pass) => pass.attemptCap),
+  [2, 1, 3],
+  'configured caps override default order preferences without expanding request budget',
+);
+const parsedModelEnv = {
+  AIG_MODELS_CONFIG: JSON.stringify({
+    start: { fallback: ['leaf-a', 'leaf-b'], fallback_mode: 'recheck', fallback_attempt_caps: [2, 1, 3] },
+    'leaf-a': {},
+    'leaf-b': {},
+  }),
+};
+const parsedModels = loadModelsConfig(parsedModelEnv);
+assert.equal(getModelsConfigDiagnostics(parsedModelEnv).length, 0);
+assert.equal(parsedModels.start?.policy.fallback_mode, 'recheck');
+assert.deepEqual(parsedModels.start?.policy.fallback_attempt_caps, [2, 1, 3]);
+for (const invalid of [
+  { fallback: ['leaf-a'], fallback_mode: 'unexpected' },
+  { fallback: ['leaf-a'], fallback_attempt_caps: [2, 0] },
+  { fallback: ['leaf-a'], fallback_attempt_caps: [1] },
+  { fallback_mode: 'one_way' },
+]) {
+  const env = { AIG_MODELS_CONFIG: JSON.stringify({ start: invalid, 'leaf-a': {} }) };
+  assert.ok(getModelsConfigDiagnostics(env).length > 0, 'invalid fallback scheduling config must fail validation');
+}
 
 const CUTOVER_MODEL = 'cutover-contract-model';
 const MOCK_UPSTREAM_MODEL = 'mock-upstream-model';

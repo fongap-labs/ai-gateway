@@ -33,10 +33,25 @@ function configuredTargets(requested: string, modelsConfig: Record<string, Model
 }
 
 /**
- * Only configured, callable aliases enter the fallback rounds. Recheck each
- * sibling once but do not move back to the requested alias in round two.
- * This preserves one-way Air-style fallback without identifying a name as Air.
+ * Recheck is explicit, or follows an explicit reverse fallback edge.
+ * Without either, a one-way path cannot implicitly move back to its source.
+ * Neither model spelling nor number of siblings is used to choose the mode.
  */
+function fallbackMode(requested: string, modelsConfig: Record<string, ModelEntry>): 'one_way' | 'recheck' {
+  const requestedKey = keyOf(requested);
+  const entry = modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1];
+  if (entry?.policy.fallback_mode) return entry.policy.fallback_mode;
+  return configuredTargets(requested, modelsConfig).some((target) =>
+    configuredTargets(target, modelsConfig).some((reverse) => keyOf(reverse) === requestedKey),
+  )
+    ? 'recheck'
+    : 'one_way';
+}
+
+function configuredAttemptCaps(requested: string, modelsConfig: Record<string, ModelEntry>): readonly number[] | undefined {
+  const requestedKey = keyOf(requested);
+  return (modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1])?.policy.fallback_attempt_caps;
+}
 export function buildModelFallbackRounds(
   requestedModel: string,
   knownModels: ReadonlySet<string>,
@@ -53,7 +68,9 @@ export function buildModelFallbackRounds(
       seen.add(key);
     }
   }
-  return first.length > 1 ? [first, first.slice(1)] : [first];
+  if (first.length <= 1) return [first];
+  const second = fallbackMode(requestedModel, modelsConfig) === 'one_way' ? first.slice(1) : [...first];
+  return second.length ? [first, second] : [first];
 }
 
 function normalizedBudget(maxAttempts: number): number {
@@ -61,20 +78,29 @@ function normalizedBudget(maxAttempts: number): number {
   return Math.max(1, Math.trunc(maxAttempts));
 }
 
-function firstRoundPlan(round: readonly string[], maxAttempts: number, template: readonly string[]): ModelFallbackPass[] {
-  // Widen first, then deepen. For a four-model family keep the 3/1/1/1
-  // attempt preference, and for a three-model family use 3/2/1.
+function firstRoundPlan(
+  round: readonly string[],
+  maxAttempts: number,
+  template: readonly string[],
+  mode: 'one_way' | 'recheck',
+  configuredCaps?: readonly number[],
+): ModelFallbackPass[] {
+  // Give every eligible model one try before deepening preferred candidates.
+  // Caps are aligned with the full configured order, not the currently
+  // available subset; unavailable siblings never donate an inflated cap.
   const visible = round.slice(0, Math.min(round.length, maxAttempts));
   const caps = visible.map(() => 1);
   let remaining = Math.max(0, maxAttempts - visible.length);
-  const preference = round.length >= 4 ? [3, 1, 1, 1] : [3, 2, 1];
+  const sourcePreference = Math.max(1, Math.min(template.length, maxAttempts - template.length + 1));
   for (const [i, model] of visible.entries()) {
     if (!remaining) break;
-    const current = caps[i] ?? 1;
-    // Skipped/unavailable siblings do not donate their originally reserved cap.
     const rank = template.findIndex((name) => keyOf(name) === keyOf(model));
-    const extra = Math.min(remaining, Math.max(0, (preference[rank] ?? 1) - current));
-    caps[i] = current + extra;
+    if (rank < 0) continue;
+    // Derive the original v0.1.5 preference from the declared order rather
+    // than hard-coding arrays or assuming 3/4 named model families.
+    const desired = configuredCaps?.[rank] ?? (mode === 'recheck' ? Math.max(1, template.length - rank) : rank === 0 ? sourcePreference : 1);
+    const extra = Math.min(remaining, Math.max(0, desired - (caps[i] ?? 1)));
+    caps[i] = (caps[i] ?? 1) + extra;
     remaining -= extra;
   }
   return visible.map((model, i) => ({ model, attemptCap: caps[i] ?? 1 }));
@@ -88,12 +114,19 @@ export function buildModelFallbackPlan(
 ): ModelFallbackPass[][] {
   const rounds = buildModelFallbackRounds(requestedModel, knownModels, modelsConfig);
   if ((rounds[0]?.length ?? 0) <= 1) return [[{ model: requestedModel, attemptCap: null }]];
-  const first = firstRoundPlan(rounds[0] ?? [requestedModel], normalizedBudget(maxAttempts), [
-    requestedModel,
-    ...configuredTargets(requestedModel, modelsConfig),
-  ]);
+  const attemptBudget = normalizedBudget(maxAttempts);
+  const first = firstRoundPlan(
+    rounds[0] ?? [requestedModel],
+    attemptBudget,
+    [requestedModel, ...configuredTargets(requestedModel, modelsConfig)],
+    fallbackMode(requestedModel, modelsConfig),
+    configuredAttemptCaps(requestedModel, modelsConfig),
+  );
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
+  // A single logical attempt has no retry capacity: never expose a recheck
+  // round containing only the requested model when maxAttempts is one.
+  if (attemptBudget <= 1) return result;
   const second = (rounds[1] ?? []).filter((model) => allowed.has(keyOf(model))).map((model) => ({ model, attemptCap: 1 }));
   if (second.length) result.push(second);
   return result;

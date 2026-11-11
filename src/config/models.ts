@@ -35,6 +35,8 @@ const CAPABILITY_KEYS = ['tools', 'reasoning', 'vision', 'stream', 'ocr'];
 const ALLOWED_ENTRY_FIELDS = new Set([
   'policy',
   'fallback',
+  'fallback_mode',
+  'fallback_attempt_caps',
   'capabilities',
   'reasoning_efforts',
   'modalities',
@@ -73,6 +75,10 @@ export type ModelRuntimePolicy = {
   policy?: string;
   /** Explicit ordered candidate aliases; never inferred from model name. */
   fallback?: string[];
+  /** Recheck the original alias or only move forward; independent of spelling and family size. */
+  fallback_mode?: 'one_way' | 'recheck';
+  /** Optional per-alias caps: [requested, ...fallback], bounded by request maxAttempts. */
+  fallback_attempt_caps?: number[];
   visibility: string;
   ui_visible: boolean;
   display_order: number;
@@ -164,6 +170,32 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             }
             policy.fallback = names;
           }
+        }
+        const fallbackMode = cfg.fallback_mode;
+        if (fallbackMode !== undefined) {
+          if (fallbackMode === 'one_way' || fallbackMode === 'recheck') {
+            policy.fallback_mode = fallbackMode;
+          } else {
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback_mode must be "one_way" or "recheck"`);
+          }
+        }
+        const fallbackCaps = cfg.fallback_attempt_caps;
+        if (fallbackCaps !== undefined) {
+          if (
+            !Array.isArray(fallbackCaps) ||
+            !fallbackCaps.every((cap) => typeof cap === 'number' && Number.isSafeInteger(cap) && cap >= 1) ||
+            !Array.isArray(declaredFallback) ||
+            fallbackCaps.length !== declaredFallback.length + 1
+          ) {
+            errors.push(
+              `AIG_MODELS_CONFIG: model "${name}": fallback_attempt_caps must contain one positive integer for requested model and each fallback`,
+            );
+          } else {
+            policy.fallback_attempt_caps = [...fallbackCaps] as number[];
+          }
+        }
+        if ((fallbackMode !== undefined || fallbackCaps !== undefined) && !Array.isArray(declaredFallback)) {
+          errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback must be declared when configuring fallback behavior`);
         }
         const vis = cfg.visibility;
         if (vis !== undefined) {
