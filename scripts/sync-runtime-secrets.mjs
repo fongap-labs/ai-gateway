@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 // One protected GitHub Environment (ai-gateway-ops) supplies all runtime authentication.
 // The same center key is written to its private Worker and the Gateway binding.
-// Provider shards are deliberately not moved, deleted or read by this operation.
+// The same environment supplies Provider shards for the private Workers.
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +13,9 @@ const centers = [
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ];
 const accountPattern = /^[0-9a-f]{32}$/;
+const credentialShard = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
+const nodeShard = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
+const nodeIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function required(env, name) {
   const value = env[name];
@@ -19,7 +23,74 @@ function required(env, name) {
   return value;
 }
 
-export function buildRuntimeSecretPlan(env) {
+export function buildProviderSecretWrites(env, configurations) {
+  const credentials = new Map();
+  for (const [name, value] of Object.entries(env)) {
+    const shard = credentialShard.exec(name);
+    if (!shard || !value) continue;
+    let entries;
+    try {
+      entries = JSON.parse(value);
+    } catch {
+      throw new Error(`${name} must be a JSON object of node IDs to Provider keys.`);
+    }
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
+      throw new Error(`${name} must be a JSON object of node IDs to Provider keys.`);
+    }
+    for (const [id, key] of Object.entries(entries)) {
+      if (!nodeIdPattern.test(id) || typeof key !== 'string' || !key.trim()) {
+        throw new Error(`${name} contains an invalid node ID or empty Provider key.`);
+      }
+      if (credentials.has(id)) throw new Error(`Provider credential for node ${id} is declared more than once.`);
+      credentials.set(id, { name, tier: shard[1], key });
+    }
+  }
+
+  const missing = [];
+  const writes = [];
+  for (const [worker] of centers) {
+    const config = configurations[worker];
+    if (config?.name !== worker || !config.vars || typeof config.vars !== 'object' || Array.isArray(config.vars)) {
+      throw new Error(`Prepared private center configuration is invalid for ${worker}.`);
+    }
+    const shards = new Map();
+    for (const [name, raw] of Object.entries(config.vars)) {
+      const nodeGroup = nodeShard.exec(name);
+      if (!nodeGroup) continue;
+      const nodes = JSON.parse(raw);
+      for (const node of nodes) {
+        const id = typeof node.id === 'string' ? node.id.trim() : '';
+        if (!nodeIdPattern.test(id)) throw new Error(`${name} contains an invalid private node ID.`);
+        const credential = credentials.get(id);
+        if (credential?.tier !== nodeGroup[1]) {
+          missing.push(`${worker} Tier ${nodeGroup[1]} node ${id}`);
+          continue;
+        }
+        if (!shards.has(credential.name)) shards.set(credential.name, new Map());
+        shards.get(credential.name).set(id, credential.key);
+      }
+    }
+    for (const [name, entries] of shards) {
+      const value = JSON.stringify(Object.fromEntries(entries));
+      if (Buffer.byteLength(value, 'utf8') > 4500) throw new Error(`${worker} / ${name} is too large. Split the Provider shard in GitHub.`);
+      writes.push({ worker, name, value });
+    }
+  }
+  if (missing.length) throw new Error(`Missing matching Provider keys in ai-gateway-ops Secrets: ${missing.join(', ')}.`);
+  return writes;
+}
+
+function readPreparedConfigurations(env) {
+  const directory = required(env, 'RUNNER_TEMP');
+  return Object.fromEntries(
+    centers.map(([worker]) => {
+      const file = path.join(directory, `private-center-${worker}.json`);
+      return [worker, JSON.parse(readFileSync(file, 'utf8'))];
+    }),
+  );
+}
+
+export function buildRuntimeSecretPlan(env, configurations) {
   const account = required(env, 'CLOUDFLARE_ACCOUNT_ID');
   const token = required(env, 'CLOUDFLARE_API_TOKEN');
   if (!accountPattern.test(account)) throw new Error('Approved Cloudflare account ID is invalid.');
@@ -39,6 +110,7 @@ export function buildRuntimeSecretPlan(env) {
     token,
     workers: ['ai-gateway', ...centers.map(([worker]) => worker)],
     writes: [
+      ...(configurations ? buildProviderSecretWrites(env, configurations) : []),
       ...values.map(({ worker, name, value }) => ({ worker, name, value })),
       ...values.map(({ name, value }) => ({ worker: 'ai-gateway', name, value })),
     ],
@@ -89,8 +161,8 @@ async function inventory(fetcher, account, token, worker) {
   return names;
 }
 
-export async function synchronizeRuntimeSecrets(env, fetcher = fetch) {
-  const plan = buildRuntimeSecretPlan(env);
+export async function synchronizeRuntimeSecrets(env, fetcher = fetch, configurations) {
+  const plan = buildRuntimeSecretPlan(env, configurations);
   // Fail before ANY mutation if a Worker is missing or the token cannot inspect it.
   for (const worker of plan.workers) await inventory(fetcher, plan.account, plan.token, worker);
   for (const { worker, name, value } of plan.writes) {
@@ -116,13 +188,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const command = process.argv[2];
   try {
     if (command === 'preflight') {
-      const plan = buildRuntimeSecretPlan(process.env);
-      console.log(
-        `Protected runtime authentication preflight passed: ${plan.workers.length} Workers / ${plan.writes.length} bindings; values not logged.`,
-      );
+      const plan = buildRuntimeSecretPlan(process.env, readPreparedConfigurations(process.env));
+      console.log(`Protected runtime Secret preflight passed: ${plan.workers.length} Workers / ${plan.writes.length} bindings; values not logged.`);
     } else if (command === 'reconcile') {
-      const result = await synchronizeRuntimeSecrets(process.env);
-      console.log(`Cloudflare runtime authentication synchronized: ${result.workers} Workers / ${result.bindings} bindings; values not logged.`);
+      const result = await synchronizeRuntimeSecrets(process.env, fetch, readPreparedConfigurations(process.env));
+      console.log(`Cloudflare runtime Secrets synchronized: ${result.workers} Workers / ${result.bindings} bindings; values not logged.`);
     } else {
       throw new Error('usage: sync-runtime-secrets.mjs <preflight|reconcile>');
     }

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# Provider and application Secrets remain persistent in Cloudflare.
-# The protected ai-gateway-ops Environment supplies center authentication keys
-# that are synchronized to the four Workers in the source-script deploy.
+# The protected ai-gateway-ops Environment supplies private Provider shards and
+# center authentication. Application access keys stay in Cloudflare.
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -60,6 +59,21 @@ finish() {
 }
 trap finish EXIT
 
+# Only the Secret synchronization subprocess needs Provider keys.
+provider_secret_names=()
+for name in "${!AIG_TIER1_CREDENTIALS_@}" "${!AIG_TIER2_CREDENTIALS_@}"; do
+  if [[ "$name" =~ ^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$ ]]; then
+    export -n "$name"
+    provider_secret_names+=("$name")
+  fi
+done
+sync_runtime_secrets() (
+  if (( ${#provider_secret_names[@]} )); then
+    export "${provider_secret_names[@]}"
+  fi
+  exec node scripts/sync-runtime-secrets.mjs "$@"
+)
+
 export DEPLOYED_SHA="$DEPLOY_SOURCE_SHA"
 export AIG_BUILD_SHA="$DEPLOY_SOURCE_SHA"
 
@@ -71,16 +85,12 @@ npm run check:deploy
 # Missing custom policies and missing image/vision capacity are reported together.
 node scripts/private-center-config.mjs preflight
 node scripts/persistent-deployment.mjs preflight
-# Confirm the one protected Environment contains all authentication inputs
-# before any production Worker or rollback-baseline mutation.
-node scripts/sync-runtime-secrets.mjs preflight
 node scripts/persistent-deployment.mjs prepare \
   --wrangler "$RUNNER_TEMP/wrangler.github.json" \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
 # The existing Action Worker source-script deployment is the ONE release entry.
-# Build all private center manifests before mutating any Worker. Their Secret
-# values remain managed exclusively by the protected ops channel.
+# Build all private center manifests before mutating any Worker.
 for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
@@ -88,16 +98,17 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --worker "$center" --output "$config" --manifest "$manifest"
 done
 
+# Verify the protected environment covers every prepared private node before any write.
+sync_runtime_secrets preflight
+
 # Snapshot the live Gateway identity before the FIRST center mutation.
 # The Cloudflare API gives us the rollback version ID for the current Worker.
 # This guard does not make a multi-Worker rollout atomic; never report success
 # if a later center Secret inventory or Gateway health check fails.
 node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
 
-# Prepare all three private centers automatically under the SAME audited commit and
-# credential environment. No center has public routes or Workers.dev.
-# A first-time bootstrap may stop below for missing Cloudflare Secrets: it must
-# never enable Gateway Service Bindings until the owner has provisioned them.
+# Prepare all three private centers under the same audited commit. No center
+# has public routes or Workers.dev. Their credentials are applied below.
 for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   center_update_attempted+=("$center")
@@ -106,11 +117,9 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --config "$config"
 done
 
-# Use the SAME protected ops Secret value for each private center and its
-# Gateway Service Binding. This is an idempotent named-secret reconciliation,
-# not an extra deploy workflow or another GitHub Environment.
-# All four live Workers are inspected before any Secret is changed.
-node scripts/sync-runtime-secrets.mjs reconcile
+# Apply the Provider shards to their private Workers and mirror center auth
+# to the Gateway bindings. Inspect all four Workers before changing any Secret.
+sync_runtime_secrets reconcile
 
 # Read only Secret names for each center, then fail closed BEFORE switching
 # the public Gateway if either internal auth or provider shard is missing.
