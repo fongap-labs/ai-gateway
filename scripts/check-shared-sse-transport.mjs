@@ -48,6 +48,44 @@ const stream = ownedRelay(
   () => finished,
 );
 assert.equal(await new Response(stream).text(), '{"value":"ok"}');
+
+// A slow consumer may leave the output queue full indefinitely. The
+// conversion must stop upstream reads until another downstream read occurs.
+let upstreamReads = 0;
+let cancelledReason = null;
+let firstFrameReady;
+const firstFrame = new Promise((resolve) => {
+  firstFrameReady = resolve;
+});
+const rapidSource = new ReadableStream(
+  {
+    pull(controller) {
+      upstreamReads++;
+      controller.enqueue(encoder.encode(`data: {"backpressure":${upstreamReads}}\n\n`));
+      if (upstreamReads === 12) controller.close();
+    },
+    cancel(reason) {
+      cancelledReason = reason;
+    },
+  },
+  { highWaterMark: 0 },
+);
+const slowRelay = ownedRelay(
+  rapidSource,
+  (data, controller) => {
+    controller.enqueue(encoder.encode(data));
+    firstFrameReady();
+  },
+  () => false,
+  () => true,
+);
+await firstFrame;
+for (let i = 0; i < 8; i++) await Promise.resolve();
+assert.equal(upstreamReads, 1, 'slow downstream must not cause eager upstream read-ahead');
+const slowReader = slowRelay.getReader();
+assert.equal(new TextDecoder().decode((await slowReader.read()).value), '{"backpressure":1}');
+await slowReader.cancel('client-stopped-reading');
+assert.equal(cancelledReason, 'client-stopped-reading', 'downstream cancellation propagates to the upstream source');
 const reader = new ReadableStream({
   start(controller) {
     controller.enqueue(encoder.encode('x'));
