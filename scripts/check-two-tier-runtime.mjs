@@ -283,3 +283,5 @@ await verifyStreamGuardAcceptsJsonFallback();
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
+
+await import('./check-tier1-refactor.mjs');
