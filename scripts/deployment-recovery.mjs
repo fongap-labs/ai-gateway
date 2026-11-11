@@ -238,7 +238,9 @@ async function main() {
       throw new Error('Rollback did not restore the recorded Worker version.');
     }
     const restoredBuild =
-      snapshot.previous.readiness === 'verified' ? await healthyBuild(snapshot.previous.build) : null;
+      snapshot.previous.readiness === 'verified'
+        ? await healthyBuild(snapshot.previous.build)
+        : null;
     const after = await active();
     confirmRestoredIdentity(snapshot, before, after, restoredBuild);
     console.log(
