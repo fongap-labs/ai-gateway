@@ -206,9 +206,7 @@ async function main() {
       build = legacyReadinessBuild(error, before);
       if (!build) throw error;
       readiness = 'legacy';
-      console.log(
-        'Legacy Gateway readiness is unavailable; Cloudflare metadata will establish its baseline.',
-      );
+      console.log('Legacy Gateway readiness is unavailable; Cloudflare metadata will establish its baseline.');
     }
     const after = await active();
     const snapshot = establishRecoveryBaseline(before, after, build, accountId, readiness);
@@ -237,10 +235,7 @@ async function main() {
     if (before.version_id !== snapshot.previous.version_id) {
       throw new Error('Rollback did not restore the recorded Worker version.');
     }
-    const restoredBuild =
-      snapshot.previous.readiness === 'verified'
-        ? await healthyBuild(snapshot.previous.build)
-        : null;
+    const restoredBuild = snapshot.previous.readiness === 'verified' ? await healthyBuild(snapshot.previous.build) : null;
     const after = await active();
     confirmRestoredIdentity(snapshot, before, after, restoredBuild);
     console.log(
