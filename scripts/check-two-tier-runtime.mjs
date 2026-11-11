@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';
+import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
@@ -12,6 +13,7 @@ import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/mode
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
+import { getNodeState } from '../src/reliability/node-state.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
@@ -449,6 +451,72 @@ assert.equal(tier1State.snapshotTier1Runtime(quotaId, stateModelId, quotaNow).qu
 assert.equal(tier1State.snapshotTier1AccountRuntime(quotaId, [stateModelId], quotaNow).models.length, 1);
 tier1State.__resetTier1StateForTests();
 assert.equal(tier1Store.tier1Accounts.size, 0, 'reset clears the same store seen by diagnostics');
+
+
+// Mixed 429 + headers timeout must retain the cooldown of a configured
+// compatible-model fallback, even when the terminal-status tie selects 504.
+// Use opaque model names so the test cannot pass through hard-coded Code aliases.
+const retrySource = 'retry-source';
+const retryTarget = 'retry-target';
+const retryEnv = {
+  AIG_MODELS_CONFIG: JSON.stringify({
+    [retrySource]: { fallback: [retryTarget] },
+    [retryTarget]: {},
+  }),
+};
+const retryTargetNode = {
+  id: 'tier2-family-retry-cooldown',
+  tier: 'tier-2',
+  provider: 'openai',
+  protocol: 'openai',
+  surfaces: ['chat_completions'],
+  baseUrl: 'https://provider.invalid/v1',
+  credential: '',
+  priority: 0,
+  models: { [retryTarget]: 'physical-retry-target' },
+};
+getNodeState(retryTargetNode.id).cooldownUntil = Date.now() + 20_000;
+const retryState = (failureKinds) => ({
+  attempted: new Set([retryTargetNode.id]),
+  attempts: [{ status: 429 }],
+  logicalAttempts: 8,
+  dispatches: 8,
+  hedges: 0,
+  failureKinds,
+  logger: { info() {}, error() {}, debug() {} },
+  requestId: 'retry-test-request',
+  maxAttempts: 8,
+  maxDispatches: 8,
+  requestedModel: retrySource,
+  nodes: [retryTargetNode],
+  knownModels: new Set([retrySource, retryTarget]),
+});
+const exhausted = (kinds) =>
+  buildExhaustedResponse(
+    new Request('https://gateway.invalid/v1/chat/completions'),
+    retryEnv,
+    'openai_chat',
+    'retry-test-request',
+    retrySource,
+    retryState(kinds),
+    { 1: [], 2: [retryTargetNode] },
+    false,
+    { route: 'openai_chat', model: retrySource, protocol: 'openai', surface: 'chat_completions' },
+    new Set([retrySource, retryTarget]),
+    true,
+  );
+const mixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 });
+assert.equal(mixedRetry.status, 503);
+assert.equal(mixedRetry.headers.get('x-gateway-error-code'), 'gateway_attempt_budget_exhausted');
+assert.ok(
+  Number(mixedRetry.headers.get('retry-after')) >= 15,
+  'mixed 429/timeout exhaustion retains the configured fallback model cooldown',
+);
+const mixedRetryBody = await mixedRetry.json();
+assert.equal(mixedRetryBody.error.details.retry_after_ms, Number(mixedRetry.headers.get('retry-after')) * 1000);
+const timeoutRetry = exhausted({ headers_timeout: 8 });
+assert.equal(timeoutRetry.status, 503);
+assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
 
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
