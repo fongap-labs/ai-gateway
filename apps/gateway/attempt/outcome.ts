@@ -129,7 +129,7 @@ export function recordOutcome(
   const headersMs = c?.headersMs ?? (latencyMs >= 0 ? latencyMs : undefined);
   // A model-family pass may dispatch a different logical model than the
   // client requested. Diagnostics must name the model actually sent upstream.
-  const effectiveModel = c.reqDescriptor.model;
+  const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   const physicalModel = upstreamModelOf(node, effectiveModel);
   const attemptWindowMs =
     c.attemptDeadlineMs !== undefined && c.attemptStartMs !== undefined ? Math.max(0, c.attemptDeadlineMs - c.attemptStartMs) : undefined;
