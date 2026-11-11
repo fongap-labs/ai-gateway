@@ -36,22 +36,31 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
 
 逻辑模型回退独立于协议回退。协议回退改变同一逻辑模型的线协议/surface；家族回退改变逻辑模型本身，同时保留客户端路由与请求的模型标识。
 
-家族成员资格由最终的能力等级推导。每个前置的名称段都会作为逻辑家族前缀保留，因此新增家族无需修改源码。
+家族成员和顺序仅由 `AIG_MODELS_CONFIG` 中的 `fallback` 声明，代码不解析模型名称或依靠候选数量判断模式。每个模型均可显式设置 `fallback_mode`（`one_way`：不回到原模型；`recheck`：第二轮可复查原模型）。未声明时，以明确的反向 fallback 边决定是否可复查原模型；无反向边即视为单向，避免凭名称猜测。
 
-```text
-<family>-Ultra → <family>-Max → <family>-Pro
-<family>-Max   → <family>-Pro → <family>-Ultra
-<family>-Pro   → <family>-Max → <family>-Ultra
-<family>-Air   → <family>-Pro → <family>-Max → <family>-Ultra
+```json
+{
+  "alpha": { "policy": "coding", "fallback": ["beta", "gamma"], "fallback_mode": "recheck" },
+  "beta": { "policy": "coding", "fallback": ["gamma"] },
+  "gamma": { "policy": "coding", "fallback": [] },
+  "fast": {
+    "policy": "chat",
+    "fallback": ["alpha", "beta", "gamma"],
+    "fallback_mode": "one_way",
+    "fallback_attempt_caps": [3, 1, 1, 1]
+  }
+}
 ```
+
+`fallback_attempt_caps` 可选，按 `[请求模型, ...fallback]` 声明每个模型在第一轮的最多尝试次数，必须是正整数数组。未配置时使用通用“先覆盖、再加深”算法；对双向可复查的三模型计划，在六次预算下自然得到 `3/2/1`，单向四模型计划得到 `3/1/1/1`。所有配额仍受统一的 `max_attempts` 上限约束，不能通过配置扩大请求预算。
+
+升级前应检查已有配置：特别是原来只靠 `Air` 名字获得单向回退、或没有反向边却希望复查的模型，需要明确声明 `fallback_mode`。不为旧名称维护隐藏特殊分支。
 
 选择规则：默认先由客户端请求的模型执行。只要它当前可以接单（至少有一个节点未在冷却、熔断或额度耗尽中，且未达到策略的 `max_in_flight` 上限），就始终由它执行。它不可用或忙碌时，在同家族的兄弟模型中选择当前最空闲的一个，即与 P2C 使用同一评分、分数最低者。分数相同时保持上表顺序。上表的顺序只决定同分时的先后，不再是固定的执行顺序。
 
 切换对客户端无感：成功切换时，响应中的 `model` 仍是客户端请求的模型名，客户端不会收到错误或切换提示。只有所有候选都失败时，才返回错误。
 
-同样的规则也适用于无前缀的 `Ultra / Max / Pro / Air`。例如 `Code-*`、`Audit-*`，以及任何未来在已知模型目录中暴露出匹配同级层级的家族。
-
-回退绝不跨越家族前缀。`Air` 可以在其家族内向上移动；`Ultra / Max / Pro` 绝不会向下回退到 `Air`。若未配置兼容的同级模型，则请求的逻辑模型保持原有的单模型行为，并使用由策略负责的 attempt 预算。
+任何名称的模型都适用相同的规则。模型之间是否允许切换，由显式 fallback 列表决定；不能凭名称前缀、后缀或数量自动构造一个“家族”。没有可用 fallback 的模型保持单模型行为。
 
 `max_attempts` 是请求级的硬上限（`max_attempts` is the request-wide hard ceiling），家族规划绝不会提高它。第一轮家族分配先横向扩展、再纵向加深。兼容家族至多获得一轮有界的第二轮评估，且该轮只能使用同一请求中剩余的预算。
 
