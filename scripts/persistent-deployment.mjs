@@ -11,6 +11,8 @@ import { buildWranglerConfig, collectVarsFromEnv, normalizeNodeConfigJsonText, v
 const NODE_VAR = /^AIG_TIER[12]_NODES_(0[1-9]|10)$/;
 const NODE_SECRET = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const GROUP_SECRET = /^AIG_ACCESS_KEY_(AIR|PRO|MAX|ULTRA|AGENT)$/;
+const RETIRED_SECRET = /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$)/;
+const CENTER_AUTH = ['AIG_INFERENCE_AUTH_KEY', 'AIG_PERCEPTION_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY'];
 
 function readJson(file, label) {
   let value;
@@ -87,24 +89,31 @@ export function validateDeploymentInputs(env) {
   return { vars, config };
 }
 
-export function validateRemoteSecretInventory(secretList, wranglerConfig) {
+function readSecretNames(secretList) {
   if (!Array.isArray(secretList)) throw new Error('Wrangler secret inventory must be a JSON array.');
   const names = new Set();
   for (const entry of secretList) {
     if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string' || entry.type !== 'secret_text') {
       throw new Error('Wrangler secret inventory contains an invalid entry; refusing deployment.');
     }
+    if (!entry.name || entry.name.trim() !== entry.name || /[\r\n]/.test(entry.name) || names.has(entry.name)) {
+      throw new Error('Wrangler secret inventory contains an invalid or duplicate Secret name.');
+    }
     names.add(entry.name);
   }
+  return names;
+}
 
+export function validateRemoteSecretInventory(secretList, wranglerConfig) {
+  return validateGatewaySecretNames(readSecretNames(secretList), wranglerConfig);
+}
+
+function validateGatewaySecretNames(names, wranglerConfig) {
   const missing = [];
-  const retiredNames = [...names].filter(
-    (name) =>
-      name.startsWith('AIG_TIER3_') || name.startsWith('AIG_OAUTH_') || name === 'AIG_TOKEN_ENCRYPTION_KEY' || name === 'AIG_IS_SUBSCRIPTION_ENABLED',
-  );
+  const retiredNames = [...names].filter((name) => RETIRED_SECRET.test(name));
   if (retiredNames.length > 0) missing.push(`Retired Tier 3 or subscriber Secret bindings remain (${retiredNames.sort().join(', ')})`);
   const upstreamSecrets = [...names].filter((name) => NODE_SECRET.test(name));
-  if (upstreamSecrets.length > 0) missing.push('Gateway must not retain upstream Provider credential shards; move them to private centers');
+  if (upstreamSecrets.length > 0) missing.push(`Gateway must not retain upstream Provider credential shards (${upstreamSecrets.sort().join(', ')})`);
   if (![...names].some((name) => GROUP_SECRET.test(name))) missing.push('AIG_ACCESS_KEY_<GROUP> (at least one application access key)');
 
   const services = Array.isArray(wranglerConfig?.services) ? wranglerConfig.services : [];
@@ -114,14 +123,10 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     { binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' },
   ];
   if (JSON.stringify(services) !== JSON.stringify(expectedServices)) missing.push('All three private center Service Bindings are required');
-  if (!names.has('AIG_INFERENCE_AUTH_KEY')) missing.push('AIG_INFERENCE_AUTH_KEY');
-  if (!names.has('AIG_PERCEPTION_AUTH_KEY')) missing.push('AIG_PERCEPTION_AUTH_KEY');
-  if (!names.has('AIG_GENERATION_AUTH_KEY')) missing.push('AIG_GENERATION_AUTH_KEY');
+  missing.push(...CENTER_AUTH.filter((name) => !names.has(name)));
 
   if (missing.length) {
-    throw new Error(
-      `Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}. Gateway application access keys must already exist on its Cloudflare Worker.`,
-    );
+    throw new Error(`Cloudflare Worker secret inventory is incomplete: ${missing.join(', ')}.`);
   }
 
   return {
@@ -131,6 +136,33 @@ export function validateRemoteSecretInventory(secretList, wranglerConfig) {
     inferenceAuthKey: names.has('AIG_INFERENCE_AUTH_KEY'),
     perceptionAuthKey: names.has('AIG_PERCEPTION_AUTH_KEY'),
     generationAuthKey: names.has('AIG_GENERATION_AUTH_KEY'),
+  };
+}
+
+export function planGatewaySecretInheritance(secretList, config, { pendingCenterAuth = false } = {}) {
+  if (config?.name !== 'ai-gateway' || config.keep_vars !== false || config.unsafe !== undefined) {
+    throw new Error('Expected the generated Gateway configuration before Secret inheritance.');
+  }
+  const names = [...readSecretNames(secretList)];
+  const excluded = names.filter((name) => RETIRED_SECRET.test(name) || NODE_SECRET.test(name)).sort();
+  const retained = new Set(names.filter((name) => !excluded.includes(name)));
+  // The initial read runs before synchronization. The publishing check still
+  // requires these three bindings to be present in Cloudflare.
+  if (pendingCenterAuth) for (const name of CENTER_AUTH) retained.add(name);
+  validateGatewaySecretNames(retained, config);
+
+  return {
+    excluded,
+    config: {
+      ...config,
+      // Wrangler forwards these fields into Cloudflare upload metadata. Inherit
+      // the retained text Secrets by name so legacy bindings stay on the old
+      // version only. Other Secret binding types retain Wrangler's normal behavior.
+      unsafe: {
+        metadata: { keep_bindings: ['secret_key'] },
+        bindings: [...retained].sort().map((name) => ({ name, type: 'inherit' })),
+      },
+    },
   };
 }
 
@@ -176,6 +208,21 @@ async function main() {
     console.log('Deployment configuration prepared; no runtime secret values were read or written.');
     return;
   }
+  if (command === 'check-secret-source' || command === 'prepare-publish') {
+    const file = argValue(argv, '--file');
+    const configFile = argValue(argv, '--wrangler');
+    if (!file || !configFile) throw new Error(`usage: persistent-deployment.mjs ${command} --file FILE --wrangler FILE`);
+    const checkOnly = command === 'check-secret-source';
+    const { config, excluded } = planGatewaySecretInheritance(
+      readJson(file, 'Wrangler secret inventory'),
+      readJson(configFile, 'Generated Wrangler config'),
+      { pendingCenterAuth: checkOnly },
+    );
+    if (!checkOnly) fs.writeFileSync(configFile, JSON.stringify(config, null, 2), { mode: 0o600 });
+    const note = excluded.length ? ` New Gateway version will omit: ${excluded.join(', ')}.` : '';
+    console.log(`Gateway Secret inheritance validated by name.${note}`);
+    return;
+  }
   if (command === 'verify-secrets') {
     const file = argValue(argv, '--file');
     const configFile = argValue(argv, '--wrangler');
@@ -194,7 +241,7 @@ async function main() {
     console.log('Remote readiness check passed.');
     return;
   }
-  throw new Error('usage: persistent-deployment.mjs <preflight|prepare|verify-secrets|health-check>');
+  throw new Error('usage: persistent-deployment.mjs <preflight|prepare|check-secret-source|prepare-publish|verify-secrets|health-check>');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
