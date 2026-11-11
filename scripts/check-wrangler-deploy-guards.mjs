@@ -94,7 +94,7 @@ reject({ ...gateway, kv_namespaces: [] });
 reject({ ...gateway, d1_databases: [] });
 reject({ ...gateway, vars: { ...gateway.vars, AIG_ACCESS_KEY_AIR: 'not-a-worker-var' } });
 reject({ ...gateway, vars: { ...gateway.vars, AIG_EDGE_CACHE_HMAC_KEY: 'not-a-worker-var' } });
-reject({ ...gateway, vars: { ...gateway.vars, AIG_DEPLOY_HEALTH_KEY: 'not-a-worker-var' } });
+reject({ ...gateway, vars: { ...gateway.vars, AIG_CUSTOM_HEALTH_KEY: 'not-a-worker-var' } });
 reject({ ...gateway, vars: { ...gateway.vars, CLOUDFLARE_API_TOKEN: 'not-a-worker-var' } });
 reject({ ...gateway, vars: { ...gateway.vars, AIG_TIER3_NODES_01: '[]' } });
 reject({ ...gateway, vars: { ...gateway.vars, AIG_INFERENCE_ACTIVE: 'false' } });

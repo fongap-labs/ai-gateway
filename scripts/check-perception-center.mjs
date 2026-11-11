@@ -69,7 +69,6 @@ const env = {
   [`CLOUDFLARE_${['API', 'TOKEN'].join('_')}`]: 'local-contract-test-deploy-token',
   CLOUDFLARE_ACCOUNT_ID: 'local-contract-test-account',
   AIG_PUBLIC_URL: 'https://gateway.example.test',
-  AIG_DEPLOY_HEALTH_KEY: 'local-contract-test-health-key-0123456789abcdef',
   AIG_ACCESS_KEY_AIR: 'local-contract-test-access-key',
   AIG_AFFINITY_KV_ID: 'local-contract-test-kv',
   AIG_MODELS_CONFIG: JSON.stringify({ text: { policy: 'default' } }),
@@ -88,7 +87,6 @@ assert.throws(
     validateRemoteSecretInventory(
       [
         { name: 'AIG_ACCESS_KEY_AIR', type: 'secret_text' },
-        { name: 'AIG_DEPLOY_HEALTH_KEY', type: 'secret_text' },
         { name: 'AIG_INFERENCE_AUTH_KEY', type: 'secret_text' },
         { name: 'AIG_GENERATION_AUTH_KEY', type: 'secret_text' },
       ],

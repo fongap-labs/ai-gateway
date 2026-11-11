@@ -9,6 +9,7 @@ export type DetectedRoute =
   | 'openai_images'
   | 'anthropic_messages'
   | 'anthropic_count_tokens'
+  | 'readiness'
   | 'health'
   | 'metrics'
   | 'models'
@@ -39,6 +40,7 @@ export function normalizePath(pathname: string | undefined): string {
 export function detectRoute(method: string, pathname: string): DetectedRoute {
   const verb = String(method).toUpperCase();
   if (verb === 'GET') {
+    if (pathname === '/health/ready') return 'readiness';
     if (pathname === '/health') return 'health';
     if (pathname === '/metrics') return 'metrics';
     if (pathname === '/v1/models' || pathname === '/models') return 'models';

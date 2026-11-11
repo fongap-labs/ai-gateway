@@ -17,7 +17,7 @@ const shaPattern = /^[a-f0-9]{40}$/;
 const shardName = /^AIG_TIER([12])_NODES_(0[1-9]|10)$/;
 const credentialName = /^AIG_TIER([12])_CREDENTIALS_(0[1-9]|10)$/;
 const FORBIDDEN =
-  /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_DEPLOY_HEALTH_KEY$|AIG_(?:INFERENCE|PERCEPTION|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$)/;
+  /^(?:AIG_TIER3_|AIG_OAUTH_|AIG_TOKEN_ENCRYPTION_KEY$|AIG_IS_SUBSCRIPTION_ENABLED$|AIG_TIER[12]_CREDENTIALS_|AIG_ACCESS_KEY_|AIG_(?:INFERENCE|PERCEPTION|GENERATION)_AUTH_KEY$|AIG_EDGE_CACHE_HMAC_KEY$|AIG_[A-Z0-9_]*_HEALTH_KEY$)/;
 const centerTypes = Object.freeze({
   'ai-inference-center': {
     entry: 'src/inference/inference-center-entry.ts',
@@ -64,9 +64,7 @@ function plainInputs(env) {
       throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
     }
   }
-  // Direct deploy environments legitimately carry AIG_DEPLOY_HEALTH_KEY. Never
-  // serialize it into the center config; only the public variable allowlist
-  // below is copied into Cloudflare.
+  // Only the public variable allowlist below is copied into Cloudflare.
   return vars;
 }
 

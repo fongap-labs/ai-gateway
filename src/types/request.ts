@@ -31,15 +31,12 @@ export type RequestDescriptor = {
 export type RawBody = { text: string };
 
 /**
- * Auth result from request authorization. `mode` is 'grouped', 'deploy',
- * 'none', or 'skip' (version route short-circuit). The deploy mode is restricted
- * to health probes and never grants model-generation access. `group` is the
- * credential group label when a user access key was matched.
+ * Auth result from request authorization. `group` is the credential group
+ * label when a user access key was matched.
  */
 export type AuthResult =
   | { authorized: false; mode: 'none' | 'grouped' }
   | { authorized: true; mode: 'grouped'; group: string; allowAll: boolean; allowlist: Set<string> | undefined }
-  | { authorized: true; mode: 'deploy'; group: null; allowAll: false; allowlist: Set<string> }
   | { authorized: true; mode: 'skip'; group: null };
 
 /**

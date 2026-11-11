@@ -54,7 +54,7 @@ const config = {
     d1_databases: [{ ...db }],
   },
   secret_names: {
-    gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_PERCEPTION_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY', 'AIG_DEPLOY_HEALTH_KEY'],
+    gateway: ['AIG_ACCESS_KEY_AIR', 'AIG_INFERENCE_AUTH_KEY', 'AIG_PERCEPTION_AUTH_KEY', 'AIG_GENERATION_AUTH_KEY'],
     inference: ['AIG_INFERENCE_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
     perception: ['AIG_PERCEPTION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
     generation: ['AIG_GENERATION_AUTH_KEY', 'AIG_TIER1_CREDENTIALS_01'],
@@ -86,7 +86,6 @@ reject((p) => (p.gateway.vars.AIG_TIER1_CREDENTIALS_01 = 'do-not-log'));
 // health/cache keys must be Secret bindings in every independently deployed Worker.
 for (const [worker, name] of [
   ['gateway', 'AIG_ACCESS_KEY_AIR'],
-  ['gateway', 'AIG_DEPLOY_HEALTH_KEY'],
   ['gateway', 'AIG_EDGE_CACHE_HMAC_KEY'],
   ['gateway', 'CLOUDFLARE_API_TOKEN'],
   ['inference', 'AIG_ACCESS_KEY_MAX'],

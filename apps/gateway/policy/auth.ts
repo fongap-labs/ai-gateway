@@ -4,9 +4,7 @@
 // Gateway access-key authentication.
 //
 // User credentials are matched (constant-time SHA-256) against configured
-// AIG_ACCESS_KEY_<GROUP> secrets. The separate AIG_DEPLOY_HEALTH_KEY is only
-// resolved by the preflight layer for an explicit, non-generative health-probe
-// route; it never becomes a user access group or model-generation credential.
+// AIG_ACCESS_KEY_<GROUP> secrets.
 //
 // OAuth onboarding routes (/oauth/start) accept the access key through a
 // POST form body (the paste page), which is converted into an x-api-key
@@ -70,43 +68,6 @@ export async function authorize(request: Request, env: GatewayEnv): Promise<Auth
   return authorizeCredentials(presentedCredentials(request), env);
 }
 
-export function isDeploymentHealthRoute(route: string): boolean {
-  return route === 'health' || route === 'models' || route === 'anthropic_count_tokens';
-}
-
-export function isDeploymentHealthCountTokensProbe(body: Record<string, unknown>): boolean {
-  return (
-    body.model === 'gateway-health-check' &&
-    Array.isArray(body.messages) &&
-    body.messages.length === 0 &&
-    Object.keys(body).every((key) => key === 'model' || key === 'messages')
-  );
-}
-
-export async function authorizeDeploymentHealth(request: Request, env: GatewayEnv): Promise<AuthResult | null> {
-  const expected = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
-  // A deployment probe must use its own high-entropy identity, not a legacy
-  // access-group key or a short/malformed configuration value. Fail closed.
-  if (!/^[A-Za-z0-9_-]{32,}$/.test(expected)) return null;
-  if (loadAccessKeysConfig(env).keys.some((entry) => entry.secret === expected)) return null;
-
-  const presented = presentedCredentials(request);
-  if (presented.length === 0) return null;
-
-  const expectedDigest = await secretDigest(expected);
-  const candidateDigests = await Promise.all(presented.map((credential) => sha256Digest(credential)));
-  const matched = candidateDigests.some((digest) => constantTimeEquals(new Uint8Array(digest), expectedDigest));
-  if (!matched) return null;
-
-  return {
-    authorized: true,
-    mode: 'deploy',
-    group: null,
-    allowAll: false,
-    allowlist: new Set<string>(),
-  };
-}
-
 export async function authorizeCredentials(credentials: readonly string[], env: GatewayEnv): Promise<AuthResult> {
   const presented = credentials.map((c) => String(c ?? '').trim()).filter(Boolean);
   if (presented.length === 0) return { authorized: false, mode: 'none' };
@@ -115,16 +76,10 @@ export async function authorizeCredentials(credentials: readonly string[], env: 
   if (access.keys.length === 0) return { authorized: false, mode: 'none' };
 
   const candidateDigests = await Promise.all(presented.map((c) => sha256Digest(c)));
-  const deploymentHealthKey = String(env.AIG_DEPLOY_HEALTH_KEY ?? '').trim();
-  const deployDigest = deploymentHealthKey ? await secretDigest(deploymentHealthKey) : null;
-  const userCredentialDigests = deployDigest
-    ? candidateDigests.filter((candidate) => !constantTimeEquals(new Uint8Array(candidate), deployDigest))
-    : candidateDigests;
-
   for (const key of access.keys) {
     if (!key.secret) continue;
     const expected = await secretDigest(key.secret);
-    for (const candidate of userCredentialDigests) {
+    for (const candidate of candidateDigests) {
       if (constantTimeEquals(new Uint8Array(candidate), expected)) {
         return {
           authorized: true,

@@ -93,11 +93,12 @@ npm run deploy
 ### 验证与客户端接入
 
 ~~~bash
+curl https://your-gateway.example/health/ready
 curl -H "Authorization: Bearer YOUR_MAX_OR_ULTRA_KEY" https://your-gateway.example/health
 curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1/models
 ~~~
 
-`/health` 默认仅允许 MAX、ULTRA 分组读取，可通过 `AIG_DIAGNOSTICS_GROUPS` 调整；`/v1/models` 仅展示调用密钥获准访问的模型。客户端使用当前模型目录中已配置的逻辑模型 ID，而不是必然使用上游原始模型名。
+`/health/ready` 公开返回构建 SHA、就绪状态和降级标记，不含节点或诊断明细；部署与回滚用它验证版本。详细的 `/health` 和 `/metrics` 默认仅允许 MAX、ULTRA 分组读取，可通过 `AIG_DIAGNOSTICS_GROUPS` 调整。`/v1/models` 仍需网关访问密钥，并仅展示该密钥获准访问的模型。客户端使用当前模型目录中已配置的逻辑模型 ID，而不是必然使用上游原始模型名。
 
 | 客户端协议 | 网关地址 | 请求入口 |
 | --- | --- | --- |
@@ -108,7 +109,7 @@ curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1
 
 ## 安全与运行边界
 
-上游凭据和网关访问密钥必须放在 Secrets 中，不得写入仓库、节点 JSON 或请求网址。`/health`、`/metrics` 与模型接口要求鉴权；**仪表盘 `/` 和状态图 `/readme-status.svg` 默认公开**，不希望公开时设置 `AIG_PUBLIC_DASHBOARD=false`。
+上游凭据和网关访问密钥必须放在 Secrets 中，不得写入仓库、节点 JSON 或请求网址。`/health/ready` 仅返回最小发布就绪信息并公开；详细的 `/health`、`/metrics` 和模型接口要求鉴权。**仪表盘 `/` 和状态图 `/readme-status.svg` 默认公开**，不希望公开时设置 `AIG_PUBLIC_DASHBOARD=false`。
 
 Tier 2 仅接受静态 API Token，不使用会员登录或 OAuth；可用性受付费 API 额度、服务商限额和上游状态约束。KV、D1 或边缘资源达到限额时，部分共享状态及统计能力可能退化；不要把网关视为零故障或零成本服务。
 

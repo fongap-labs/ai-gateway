@@ -29,7 +29,7 @@ scripts/deploy.sh
     ↓
 Cloudflare Worker 部署
     ↓
-按精确源码 SHA 进行健康验证
+按精确源码 SHA 验证公开就绪端点
     ↓
 成功 / 部署失败时回滚 Worker
 ```
@@ -83,7 +83,7 @@ AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `produc
 
 已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
 
-运行时密钥边界已调整为：`production` 只向部署入口提供 Cloudflare 发布凭据与健康检查凭据；Provider 密钥、网关访问密钥、Inference/Perception/Generation 中心认证密钥及 Tier 凭据长期保存在 Cloudflare Worker Secrets。普通代码部署只读取 Cloudflare 返回的密钥**名称**，不读取或重新上传密钥值。配套的 `ai-gateway-ops` 工作流用于受审批的密钥盘点与单项更新；该 Environment 需由维护者创建并配置保护规则后才能使用。
+运行时密钥边界已调整为：生产发布只需要 Cloudflare 发布凭据和私有中心绑定所需的内部认证密钥。Provider 密钥、网关访问密钥与 Tier 凭据保存在 Cloudflare Worker Secrets；普通代码部署只读取远端 Secret **名称**，不会读取或上传 Provider 与用户访问密钥。Cloudflare API Token 用于发布和 Cloudflare API 操作。
 
 ## 生产 Environment
 
@@ -104,20 +104,18 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 - 对应的 `AIG_ACCESS_MODELS_{AIR,PRO,MAX,ULTRA,AGENT}`；
 - 可选的 `AIG_MODELS_CONFIG`、`AIG_POLICIES_CONFIG` 以及其他运行时 Variables。
 
-生产 Environment 的 Secrets 只保留：
+生产 Environment 的 Secrets 包括：
 
-- `CLOUDFLARE_API_TOKEN`：部署 Worker、D1 迁移与绑定所需的发布凭据；
-- `AIG_DEPLOY_HEALTH_KEY`：独立随机部署健康凭据，直接保存在 Action Worker `production` 与 Cloudflare Worker Secrets；不复用任何 `AIG_ACCESS_KEY_<GROUP>`，不写入 Wrangler 配置，也不随普通代码部署上传。
+- `CLOUDFLARE_API_TOKEN`：部署 Worker、D1 迁移与绑定所需的 Cloudflare 发布凭据；
+- `AIG_INFERENCE_AUTH_KEY`、`AIG_PERCEPTION_AUTH_KEY`、`AIG_GENERATION_AUTH_KEY`：Gateway 与三个私有中心之间的内部服务认证密钥。
 
 `CLOUDFLARE_ACCOUNT_ID` 是非敏感账号标识，由中央策略映射到 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`。由于 `resolve-secret-scope` 只对目标在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，三个名称必须与 `.github/deploy.secrets.required` 一致。
 
-Provider、访问分组、Tier 节点凭据以及私有 Inference/Perception/Generation 中心认证密钥均属于 Cloudflare Worker Secrets，不属于 `production`。
+Provider、访问分组和 Tier 节点凭据保存在对应的 Cloudflare Worker Secrets 中。三个中心认证密钥只用于私有 Service Binding 的内部鉴权。
 
-`AIG_DEPLOY_HEALTH_KEY` 不属于用户访问组。Worker 在运行时拒绝长度不足 32、包含非 URL 安全字符，或与任意 `AIG_ACCESS_KEY_<GROUP>` 完全相同的健康密钥；配置错误不会回退使用 AGENT 密钥。配置迁移时，必须先在 Cloudflare Worker Secrets 中写入独立同名 Secret，再将完全相同的值配置到 Action Worker `production` 与 `ai-gateway-ops` 的 Environment Secrets。旧业务组密钥保留在 Cloudflare Worker Secrets，不能作为健康密钥替代品。
+普通部署通过 `wrangler secret list` 只读取 Secret 名称和类型；Gateway 必须同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。缺少绑定或旧 Gateway Provider Token 时必须失败关闭，不进行发布；Cloudflare API Token 执行发布操作，普通代码部署不会将 Secret 值打包进 Wrangler 配置。
 
-Worker 仅允许该密钥访问 `/health`、`/v1/models` 与 `/v1/messages/count_tokens` 健康探针；`/v1/models` 对该密钥返回空模型列表，其他模型调用仍必须使用对应的 `AIG_ACCESS_KEY_<GROUP>`。因此部署作业无需读取或暴露 `AIG_ACCESS_KEY_AGENT`。普通部署通过 `wrangler secret list` 读取名称和类型，要求 Gateway 同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。缺少绑定或仍有旧 Gateway Token 时必须失败关闭，不进行发布；不会读取密钥值、生成密钥载荷或传入 `--secrets-file`。Cloudflare 部署会保留未随本次部署上传的已有 Worker Secrets。缺少必需密钥时部署在代码发布前失败即关闭。
-
-部署前的静态预检验证变量、绑定与健康检查凭据；部署后通过 `AIG_DEPLOY_HEALTH_KEY` 请求 `/health`，要求线上构建 SHA 与准入 SHA 一致，且节点容量未降级。节点凭据内容由 Worker 运行时加载；若节点被排除或健康检查失败，部署会重试并回滚 Gateway。本版本**必须同时配置** Inference、Perception、Generation Service Binding 以及各自对应的中心认证 Secret，不再将中心绑定作为可选的 Gateway 发布条件。
+部署前的静态预检验证变量与绑定；部署后使用无需网关访问密钥的 `GET /health/ready` 核对线上构建 SHA、就绪状态与降级标记。该端点只返回 `build`、`status`、`ready`、`degraded`，不含节点或诊断明细。默认拒绝降级容量；若节点被排除或就绪检查失败，部署会按受控流程回滚 Gateway。本版本**必须同时配置** Inference、Perception、Generation Service Binding 以及各自对应的中心认证 Secret。
 
 ## 跨 isolate 调用分析
 
@@ -212,11 +210,11 @@ AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 
 ## 验证与回滚
 
-已部署的 Git commit SHA 会被传入 Worker 构建。经过认证的 `/health` 会暴露该构建标识。
+已部署的 Git commit SHA 会被传入 Worker 构建。公开的 `/health/ready` 会暴露该构建标识；完整 `/health` 诊断仍要求授权访问。
 
-部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID，并验证其 `/health`、模型和 Claude 计数探针；仅保存版本 UUID、部署 UUID、构建 SHA，不保存 Token。无法取得健康旧版本或无法读取部署身份时，拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
+部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID，并通过公开的 `/health/ready` 验证其就绪状态和构建 SHA；仅保存版本 UUID、部署 UUID、构建 SHA，不保存 Token。无法取得健康旧版本或无法读取部署身份时，拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
 
-部署后验证要求线上构建与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。健康失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务，同时使用旧构建 SHA 执行完整公网健康检查。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
+部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务，并用旧构建 SHA 再次验证公开就绪端点。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
 
 **边界**：Cloudflare 版本切换接口不是条件原子写入；在回滚前读取与真正写入之间仍存在极短的外部并发发布窗口。中央单并发调度仅覆盖中央入口，无法为旁路发布提供分布式互斥。遇到已观察到的生产漂移必须拒绝回滚；在证明排他控制之前，这些源码合同不构成真实生产回滚验收。
 

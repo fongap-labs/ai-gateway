@@ -27,7 +27,7 @@ npm run check:deploy
 
 在本仓库中，`npm run validate:deploy` 与 `npm run validate:merge` 的脚本内容完全相同。额外的单元、集成、压力、Codex 与 Claude 契约测试属于 Action Worker 测试包的一部分，而不是本地 `validate:deploy` 脚本的内容。
 
-仅当 `main` 分支的推送触发的 CI 运行成功时，才允许自动部署到生产环境（`.github/deploy.json` 中 `automatic: true`）。部署入口 `scripts/deploy.sh`（由 `.github/deploy.json` 引用）在触碰生产环境之前，会先运行 `npm run validate:deploy` 与 `npm run check:deploy`，并在部署后通过 `/health` 验证部署标识（commit SHA）。
+仅当 `main` 分支的推送触发的 CI 运行成功时，才允许自动部署到生产环境（`.github/deploy.json` 中 `automatic: true`）。部署入口 `scripts/deploy.sh`（由 `.github/deploy.json` 引用）在触碰生产环境之前，会先运行 `npm run validate:deploy` 与 `npm run check:deploy`，并在部署后通过公开的 `/health/ready` 验证部署标识（commit SHA）。
 
 ## 行为契约
 
@@ -87,7 +87,7 @@ Tier 1 的热度保护是有界的整形增强，而不是第二套配额系统�
 - 网关客户端密钥使用分组访问密钥模型；
 - 客户端的 authorization 头与 cookie 绝不转发到上游；
 - 上游默认要求 HTTPS；
-- `/health` 与 `/metrics` 保持鉴权；
+- `/health` 与 `/metrics` 保持鉴权；`/health/ready` 只公开最小发布就绪字段；
 - 敏感的请求体不得写入日志。
 
 参见 [SECURITY.md](../../SECURITY.md)。
@@ -100,6 +100,6 @@ Tier 1 的热度保护是有界的整形增强，而不是第二套配额系统�
 
 ## 发布标识质量
 
-自动化校验的是**基于 commit SHA 的部署标识**，而非项目发布编号。在生产验证通过之前，`/health.build` 必须与被部署的 commit 相匹配。
+自动化校验的是**基于 commit SHA 的部署标识**，而非项目发布编号。在生产验证通过之前，`/health/ready` 的 `build` 必须与被部署的 commit 相匹配。
 
 项目发布编号由人工持有，且不在自动化质量门禁的范围之内。若需要命名发布，人工可以在验证过目标 commit 之后创建 Git tag 或 GitHub Release。CI 绝不可生成、推断、递增、同步或校验该编号。

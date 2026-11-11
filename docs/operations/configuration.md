@@ -169,7 +169,7 @@ Tier 1 → Tier 2
 
 其他当前使用的变量还包括：`AIG_CORS_ORIGIN`、`AIG_USAGE_INCLUDE_MODE`、`AIG_USAGE_EXCLUDE_PROVIDERS`、`AIG_ANTHROPIC_COUNT_MODE`、`AIG_LOG_LEVEL`、`AIG_PROTOCOL_FALLBACKS`、`AIG_SHOULD_EXPOSE_UPSTREAM`、`AIG_HAS_STREAM_GUARD`、`AIG_CAN_USE_HTTP` 与 `AIG_DASHBOARD_MODELS`。`AIG_OAUTH_*` 属于已退役配置，见[旧会员订阅层退役](#旧会员订阅层退役)。
 
-`AIG_DIAGNOSTICS_GROUPS` 决定哪些访问密钥分组可以读取 `/health` 与 `/metrics`，逗号分隔、不区分大小写，例如 `ULTRA` 或 `MAX,AGENT`。未设置时默认为 `MAX,ULTRA`；设为 `*` 时所有有效密钥都可读取。其他分组的密钥访问这两个端点会收到 `403`，`/v1/*` 不受影响。部署后的健康检查使用一个允许读取的分组密钥；已配置的密钥中没有任何一个允许读取时，部署预检直接失败。
+`AIG_DIAGNOSTICS_GROUPS` 决定哪些访问密钥分组可以读取详细的 `/health` 与 `/metrics`，逗号分隔、不区分大小写，例如 `ULTRA` 或 `MAX,AGENT`。未设置时默认为 `MAX,ULTRA`；设为 `*` 时所有有效密钥都可读取。其他分组的密钥访问这两个端点会收到 `403`，`/v1/*` 不受影响。公开的 `/health/ready` 只返回构建 SHA、就绪状态和降级标记，不含节点或诊断明细；发布验证直接读取该端点，不需要网关访问密钥。
 
 ## 仪表盘模型展示
 
@@ -243,7 +243,7 @@ D1 用量与公共状态仅作为可观测性输入；历史聚合数据不会�
 
 ## 部署标识
 
-部署标识是 Git commit SHA，它被注入为 `GITHUB_SHA`，并通过经过认证的 `/health` 以 `build` 字段暴露。若需要命名发布，由人工以 Git tag / GitHub Release 的方式创建。
+部署标识是 Git commit SHA，它被注入为 `GITHUB_SHA`，并通过公开的 `/health/ready` 以 `build` 字段暴露。若需要命名发布，由人工以 Git tag / GitHub Release 的方式创建。
 
 ## 本地校验
 

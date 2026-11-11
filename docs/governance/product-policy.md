@@ -62,7 +62,7 @@ ai-gateway maintains one current contract（只维护一套当前的契约）。
 
 - 源文件、配置、文档、测试、CI 与运行时端点，都不得包含、生成、推断、同步、递增或校验项目发布编号。
 - `package.json` 与 lock 元数据不承载项目发布编号。
-- 运行时的部署标识是 Git commit SHA，通过经过认证的 `/health` 暴露，并被部署验证所使用。
+- 运行时的部署标识是 Git commit SHA，通过公开的 `/health/ready` 暴露，并被部署验证所使用；完整诊断仍由访问分组控制。
 - 当需要命名发布时，由人工创建 Git tag 或 GitHub Release（human creates the Git tag or GitHub Release manually）。
 - 自动化绝不可代替运营者创建或推进发布编号（Automation must never create or advance release numbering）。
 
