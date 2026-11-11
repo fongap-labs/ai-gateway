@@ -37,6 +37,8 @@ import {
   type Tier1ReleaseToken,
 } from './tier1-contract.ts';
 import { modelCooldownMs, rateLimitProbeBlocked, shouldTransitionToHalfOpen } from './tier1-decisions.ts';
+import { readTier1LongCooldowns, snapshotTier1AccountRuntimeState, snapshotTier1RuntimeState, type Tier1SharedCooldown } from './tier1-diagnostics.ts';
+import { applyTier1QuotaReport, applyTier1QuotaSignal, normalizeQuotaWindow } from './tier1-quota.ts';
 import {
   allTier1Accounts,
   getTier1Account,
@@ -116,20 +118,6 @@ function recoveryGateMs(): number {
  * wedge the key for more than AIG_TIER1_PROBE_TIMEOUT_MS.
  */
 
-
-// A provider-reported window that has rolled over is stale: the old remaining
-// tail is meaningless and must not keep the account blocked or admitted at a
-// fabricated count. Expiry returns the account to unknown quota until the next
-// report re-establishes the window; recovery then follows the normal reactive
-// path (429 -> cooldown -> probe -> restore).
-function normalizeQuotaWindow(account: Tier1AccountRuntime, now: number): void {
-  if (account.quotaResetAt > 0 && account.quotaResetAt <= now) {
-    account.quotaResetAt = 0;
-    account.quotaState = 'normal';
-    account.quotaRemainingRequests = null;
-    account.quotaRemainingTokens = null;
-  }
-}
 
 export function claimTier1Slot(
   node: RuntimeNode,
@@ -626,197 +614,32 @@ export function recordTier1QuotaSignal(
   signal: { remainingRatio?: number; resetAtMs?: number } = {},
   now: number = Date.now(),
 ): boolean {
-  const { remainingRatio, resetAtMs = 0 } = signal;
-  if (typeof remainingRatio !== 'number' || !Number.isFinite(remainingRatio) || remainingRatio < 0 || remainingRatio > 1) return false;
-  const account = getTier1Account(accountId);
-  if (remainingRatio === 0 && resetAtMs > now) {
-    account.quotaState = 'exhausted_until';
-    account.quotaResetAt = resetAtMs;
-  } else if (remainingRatio <= 0.1) {
-    account.quotaState = 'near_limit';
-  } else {
-    account.quotaState = 'normal';
-    account.quotaResetAt = 0;
+  if (typeof signal.remainingRatio !== 'number' || !Number.isFinite(signal.remainingRatio) || signal.remainingRatio < 0 || signal.remainingRatio > 1) {
+    return false;
   }
-  return true;
+  return applyTier1QuotaSignal(getTier1Account(accountId), signal, now);
 }
 
-/** Record a provider-reported quota window. This is the production writer that
- *  activates the dormant near_limit scoring and exhausted_until eligibility
- *  gate. Absolute remaining (requests/tokens) drives the reservation counter;
- *  the ratio (remaining/limit, when the provider reports a ceiling) drives the
- *  near_limit classification. A `null` signal (provider reports no quota) is
- *  ignored — unknown quota stays a no-op pass-through. */
 export function recordTier1QuotaReport(
   accountId: string,
-  signal: {
-    remainingRequests?: number;
-    remainingTokens?: number;
-    limitRequests?: number;
-    limitTokens?: number;
-    resetAtMs?: number;
-    source?: string;
-  } | null,
+  signal: { remainingRequests?: number; remainingTokens?: number; limitRequests?: number; limitTokens?: number; resetAtMs?: number; source?: string } | null,
   now: number = Date.now(),
 ): boolean {
   if (!signal) return false;
-  const account = getTier1Account(accountId);
-  if (typeof signal.remainingRequests === 'number' && Number.isFinite(signal.remainingRequests) && signal.remainingRequests >= 0) {
-    // The provider's report is the window tail; reservations already acquired in
-    // this isolate are subtracted so new admission sees only what is genuinely
-    // left. Reservations are honored even if a fresher (lower) report would
-    // drop below them — the floor is zero, not negative.
-    const reported = Math.trunc(signal.remainingRequests);
-    account.quotaRemainingRequests = Math.max(0, reported - account.quotaReservedInFlight);
-  }
-  if (typeof signal.remainingTokens === 'number' && Number.isFinite(signal.remainingTokens) && signal.remainingTokens >= 0) {
-    account.quotaRemainingTokens = Math.max(0, Math.trunc(signal.remainingTokens));
-  }
-  if (typeof signal.resetAtMs === 'number' && Number.isFinite(signal.resetAtMs) && signal.resetAtMs > now) {
-    account.quotaResetAt = signal.resetAtMs;
-  } else if (account.quotaResetAt <= now && (signal.remainingRequests === 0 || signal.remainingTokens === 0)) {
-    // Only forget a reset instant that is already in the past. A report without
-    // a reset marker must not erase a reset instant a previous report proved,
-    // or the exhausted gate and its Retry-After would be lost while the
-    // window is still closed.
-    account.quotaResetAt = 0;
-  }
-  if (typeof signal.source === 'string' && signal.source) account.quotaSource = signal.source;
-
-  const remaining = signal.remainingRequests ?? signal.remainingTokens;
-  if (remaining === undefined) return true;
-  // Classify on the WORSE of the reported tails. A key whose token window is
-  // spent is not healthy even when its request window still has room, and the
-  // other way round; a single tail must never hide the exhausted one.
-  const tails = [quotaTailRatio(signal.remainingRequests, signal.limitRequests), quotaTailRatio(signal.remainingTokens, signal.limitTokens)].filter(
-    (tail): tail is number => tail !== null,
-  );
-  if (tails.length === 0) return true;
-  const worstTail = Math.min(...tails);
-  const exhausted = tails.some((tail) => tail === 0);
-  // Classification semantics match the ratio writer exactly: zero remaining
-  // with a known reset is exhausted; a zero-or-tiny tail is near_limit even
-  // without a reset marker; otherwise normal.
-  if (exhausted && account.quotaResetAt > now) {
-    account.quotaState = 'exhausted_until';
-  } else if (exhausted || worstTail <= 0.1) {
-    account.quotaState = 'near_limit';
-    // A zero tail with no usable reset marker cannot prove when the window
-    // refills. Keep the near_limit score demotion but drop the hard
-    // reservation gate: pinning it at zero would deny admission forever.
-    if (account.quotaResetAt <= now) {
-      if (signal.remainingRequests === 0) account.quotaRemainingRequests = null;
-      if (signal.remainingTokens === 0) account.quotaRemainingTokens = null;
-    }
-  } else {
-    account.quotaState = 'normal';
-    if (account.quotaResetAt <= now) account.quotaResetAt = 0;
-  }
-  return true;
-}
-
-/**
- * Ratio of a reported quota tail against its ceiling. A tail without a
- * ceiling is absolute: zero is exhausted, one or less is a near-limit tail,
- * anything larger counts as healthy.
- */
-function quotaTailRatio(remaining: number | undefined, limit: number | undefined): number | null {
-  if (typeof remaining !== 'number' || !Number.isFinite(remaining)) return null;
-  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) return remaining / limit;
-  if (remaining <= 0) return 0;
-  if (remaining <= 1) return 0.1;
-  return 1;
-}
-
-function modelDiagnosticState(model: Tier1ModelRuntime | null | undefined, now: number): string {
-  if (!model) return 'configured';
-  if (model.disabled || model.failureState === FAILURE_STATE.DISABLED) return 'disabled';
-  if (model.cooldownUntil > now || model.failureState === FAILURE_STATE.COOLDOWN) return 'cooldown';
-  if (model.failureState === FAILURE_STATE.HALF_OPEN) return 'half_open';
-  if (model.sampleCount > 0) return 'observed_healthy';
-  return 'unknown';
+  return applyTier1QuotaReport(getTier1Account(accountId), signal, now);
 }
 
 export function snapshotTier1Runtime(accountId: string, modelId: string, now: number = Date.now()) {
-  const account = peekTier1Account(accountId);
-  const model = account?.models.get(modelId);
-  return {
-    account_id: accountId,
-    model: modelId,
-    state: account?.accountDisabled ? 'disabled' : account && account.accountCooldownUntil > now ? 'cooldown' : modelDiagnosticState(model, now),
-    account_disabled: account?.accountDisabled ?? false,
-    account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,
-    account_consecutive_rate_limits: account?.consecutiveRateLimits ?? 0,
-    account_scope_ambiguous_429: account?.scopeAmbiguous429 ?? false,
-    in_flight: account?.inFlight ?? 0,
-    quota_state: account?.quotaState === 'exhausted_until' && (account?.quotaResetAt ?? 0) <= now ? 'normal' : (account?.quotaState ?? 'normal'),
-    quota_reset_at: account && account.quotaResetAt > now ? new Date(account.quotaResetAt).toISOString() : null,
-    failure_state: model?.failureState ?? FAILURE_STATE.NORMAL,
-    consecutive_failures: model?.consecutiveFailures ?? 0,
-    consecutive_rate_limits: model?.consecutiveRateLimits ?? 0,
-    consecutive_outliers: model?.consecutiveOutliers ?? 0,
-    half_open_successes: model?.halfOpenSuccesses ?? 0,
-    cooldown_remaining_ms: model && model.cooldownUntil > now ? model.cooldownUntil - now : 0,
-    cooldown_reason: model && model.cooldownUntil > now ? model.cooldownReason : null,
-    ttft_ewma_ms: model?.ttftEwma == null ? null : Math.round(model.ttftEwma),
-    sample_count: model?.sampleCount ?? 0,
-    last_observed_at: model && model.lastObservedAt > 0 ? new Date(model.lastObservedAt).toISOString() : null,
-    scope_ambiguous_429: model?.scopeAmbiguous429 ?? false,
-  };
+  return snapshotTier1RuntimeState(accountId, modelId, peekTier1Account(accountId), now);
 }
 
 export function snapshotTier1AccountRuntime(accountId: string, modelIds: ReadonlyArray<string> = [], now: number = Date.now()) {
-  const account = peekTier1Account(accountId);
-  const ids = new Set(modelIds);
-  for (const id of account?.models.keys() ?? []) ids.add(id);
-  const models = [...ids].sort().map((id) => snapshotTier1Runtime(accountId, id, now));
-  return {
-    state: account?.accountDisabled
-      ? 'disabled'
-      : account && account.accountCooldownUntil > now
-        ? 'cooldown'
-        : models.some((m) => m.state === 'observed_healthy')
-          ? 'observed_healthy'
-          : account
-            ? 'unknown'
-            : 'configured',
-    in_flight: account?.inFlight ?? 0,
-    account_disabled: account?.accountDisabled ?? false,
-    account_cooldown_remaining_ms: account && account.accountCooldownUntil > now ? account.accountCooldownUntil - now : 0,
-    consecutive_rate_limits: account?.consecutiveRateLimits ?? 0,
-    scope_ambiguous_429: account?.scopeAmbiguous429 ?? false,
-    models,
-  };
+  return snapshotTier1AccountRuntimeState(accountId, modelIds, peekTier1Account(accountId), now);
 }
 
-/**
- * A cooldown another isolate should honour: evidence that outlives this isolate
- * and is never cleared early. A credential rejection (401) or long-lived quota
- * on the account, or an escalated 403 refusal on one model. Short rate-limit
- * windows are not shared: a recovering sibling key may wake them early.
- */
-export type Tier1SharedCooldown = { node: string; model?: string; until: number; reason: string; quota?: boolean };
-
+export type { Tier1SharedCooldown } from './tier1-diagnostics.ts';
 export function tier1LongCooldowns(accountId: string, minRemainingMs: number, now: number = Date.now()): Tier1SharedCooldown[] {
-  const account = peekTier1Account(accountId);
-  if (!account) return [];
-  const out: Tier1SharedCooldown[] = [];
-  const accountReason = account.accountCooldownReason;
-  const isLongLived = accountReason === 'auth' || (accountReason === 'rate_limit' && account.accountCooldownIsQuota);
-  if (isLongLived && accountReason && account.accountCooldownUntil - now >= minRemainingMs) {
-    out.push({
-      node: accountId,
-      until: account.accountCooldownUntil,
-      reason: accountReason,
-      ...(account.accountCooldownIsQuota ? { quota: true } : {}),
-    });
-  }
-  for (const [modelId, model] of account.models) {
-    if (model.cooldownReason === 'auth' && model.cooldownUntil - now >= minRemainingMs) {
-      out.push({ node: accountId, model: modelId, until: model.cooldownUntil, reason: 'auth' });
-    }
-  }
-  return out;
+  return readTier1LongCooldowns(accountId, peekTier1Account(accountId), minRemainingMs, now);
 }
 
 /** Apply a cooldown another isolate shared. Never shortens a local one. */
