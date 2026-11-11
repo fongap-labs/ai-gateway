@@ -30,6 +30,15 @@ const native = {
   surfaces: ['images_generations'],
   models: { 'image-test': 'gpt-image-1' },
 };
+assert.equal(isImageGenerationProvider(' OpenAI-Image '), true);
+assert.equal(canRouteImageGeneration({ ...native, provider: ' OpenAI-Image ' }, 'image-test', '1024x1024'), true);
+const normalizedCloudflare = {
+  ...native,
+  provider: ' CLOUDFLARE-IMAGE ',
+  models: { 'image-test': '@cf/black-forest-labs/flux-1-schnell' },
+};
+assert.equal(canRouteImageGeneration(normalizedCloudflare, 'image-test', '1024x1024'), true);
+assert.equal(canRouteImageGeneration(normalizedCloudflare, 'image-test', '1024x1536'), false);
 assert.equal(canRouteImageGeneration({ ...native, auth: 'oauth' }, 'image-test', '1024x1024'), false);
 assert.equal(canRouteImageGeneration({ ...native, surfaces: ['chat_completions'] }, 'image-test', '1024x1024'), false);
 assert.equal(canRouteImageGeneration({ ...native, models: {} }, 'image-test', '1024x1024'), false);
