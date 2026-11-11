@@ -37,11 +37,17 @@ function configuredTargets(requested: string, modelsConfig: Record<string, Model
  * to code. Reversible configured fallback edges allow the requested model
  * to rejoin round two; one-way fallback never returns to its origin.
  */
-function isReversibleFallback(requested: string, modelsConfig: Record<string, ModelEntry>): boolean {
+function isOneWayFallback(requested: string, modelsConfig: Record<string, ModelEntry>): boolean {
+  const targets = configuredTargets(requested, modelsConfig);
+  // v0.1.5's four-level upgrade is the one-way family. Keep names opaque:
+  // a three-sibling chain without any reverse edge cannot revisit its source.
+  // Three-member fallback families recheck their requested model in round two,
+  // including when their configured siblings do not declare reciprocal edges.
   const requestedKey = keyOf(requested);
-  return configuredTargets(requested, modelsConfig).some((target) =>
+  const hasReverseEdge = targets.some((target) =>
     configuredTargets(target, modelsConfig).some((reverse) => keyOf(reverse) === requestedKey),
   );
+  return targets.length >= 3 && !hasReverseEdge;
 }
 export function buildModelFallbackRounds(
   requestedModel: string,
@@ -60,7 +66,7 @@ export function buildModelFallbackRounds(
     }
   }
   if (first.length <= 1) return [first];
-  const second = isReversibleFallback(requestedModel, modelsConfig) ? [...first] : first.slice(1);
+  const second = isOneWayFallback(requestedModel, modelsConfig) ? first.slice(1) : [...first];
   return second.length ? [first, second] : [first];
 }
 
@@ -102,7 +108,7 @@ export function buildModelFallbackPlan(
     rounds[0] ?? [requestedModel],
     normalizedBudget(maxAttempts),
     [requestedModel, ...configuredTargets(requestedModel, modelsConfig)],
-    isReversibleFallback(requestedModel, modelsConfig),
+    !isOneWayFallback(requestedModel, modelsConfig),
   );
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
