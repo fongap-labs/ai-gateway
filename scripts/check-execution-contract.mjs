@@ -12,11 +12,33 @@ import {
   parseExecutionResponse,
   serializeExecutionError,
 } from '../packages/contracts/execution.ts';
-import { centerResponseDeadlineMs } from '../src/config/timeouts.ts';
+import {
+  attemptBudgetWindowMs,
+  attemptFirstEventTimeoutMs,
+  attemptHeadersTimeoutMs,
+  centerResponseDeadlineMs,
+  requestSizeAllowanceMs,
+} from '../src/config/timeouts.ts';
 
 const now = Date.now();
 assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_750);
 assert.equal(centerResponseDeadlineMs(now + 100, now), now + 90);
+
+// The restored v0.1.5 reserve-aware request budget must not reduce the
+// first slow-but-healthy Code candidate to an equal share of all retries.
+assert.equal(attemptBudgetWindowMs(120_000, 8), 85_000, 'normal policy reserves 5s per later candidate, not 15s slices');
+assert.equal(attemptBudgetWindowMs(60_000, 8), 25_000, 'fast policy still gives the first candidate meaningful prefill time');
+assert.equal(attemptBudgetWindowMs(12_000, 8), 1_500, 'tight budgets collapse to a fair share without starving later attempts');
+assert.equal(attemptBudgetWindowMs(0, 8), 1, 'an exhausted allocation is still a bounded one-millisecond window');
+assert.equal(attemptBudgetWindowMs(120_000, 1), 120_000, 'one remaining candidate retains the entire remaining budget');
+assert.equal(attemptHeadersTimeoutMs(40_000, 85_000, 1), 40_000, 'header wait preserves the configured phase timeout');
+assert.equal(attemptHeadersTimeoutMs(40_000, 10_000, 1), 10_000, 'header wait never exceeds the allocated attempt window');
+assert.equal(attemptFirstEventTimeoutMs(45_000, 30_000, 1), 30_000, 'first event never exceeds the remaining attempt window');
+assert.equal(attemptFirstEventTimeoutMs(45_000, 85_000, 1), 45_000, 'first event preserves the configured phase timeout');
+assert.equal(requestSizeAllowanceMs(50_000), 0, 'small chat requests get no extra allowance');
+assert.equal(requestSizeAllowanceMs(200_000), 6_000, 'large Code context receives a bounded prefill allowance');
+assert.equal(requestSizeAllowanceMs(5_000_000), 45_000, 'large-context allowance remains hard capped');
+
 const key = 'local-test-center-key-32-characters-minimum';
 const invocation = {
   requestId: '12345678-1234-1234-1234-123456789abc',
