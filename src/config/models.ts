@@ -187,7 +187,9 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             !Array.isArray(declaredFallback) ||
             fallbackCaps.length !== declaredFallback.length + 1
           ) {
-            errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback_attempt_caps must contain one positive integer for requested model and each fallback`);
+            errors.push(
+              `AIG_MODELS_CONFIG: model "${name}": fallback_attempt_caps must contain one positive integer for requested model and each fallback`,
+            );
           } else {
             policy.fallback_attempt_caps = [...fallbackCaps] as number[];
           }
