@@ -71,6 +71,27 @@ assert.deepEqual(
   'interchangeable family retains v0.1.5 3/2/1 allocation',
 );
 
+// The three-member v0.1.5 fallback family remains revisitable even when
+// downstream model aliases are not configured to return to the source.
+const nonReciprocal = {
+  source: { policy: { fallback: ['peer-a', 'peer-b'] } },
+  'peer-a': { policy: { fallback: [] } },
+  'peer-b': { policy: { fallback: [] } },
+};
+assert.deepEqual(
+  buildModelFallbackRounds('source', new Set(Object.keys(nonReciprocal)), nonReciprocal),
+  [
+    ['source', 'peer-a', 'peer-b'],
+    ['source', 'peer-a', 'peer-b'],
+  ],
+  'three-member families retain v0.1.5 recheck behavior without naming assumptions',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('source', new Set(Object.keys(nonReciprocal)), 6, nonReciprocal)[0].map((pass) => pass.attemptCap),
+  [3, 2, 1],
+  'three-member families retain v0.1.5 attempt shares',
+);
+
 const CUTOVER_MODEL = 'cutover-contract-model';
 const MOCK_UPSTREAM_MODEL = 'mock-upstream-model';
 
