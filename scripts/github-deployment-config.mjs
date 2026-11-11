@@ -490,6 +490,7 @@ export async function verifyRemote(baseUrl, expectedBuild, { graceMs = 30_000, i
       readinessBody = await readiness.json().catch(() => null);
       if (!readiness.ok || readinessBody?.ready !== true) {
         lastError = new Error(`remote /health/ready is not ready (HTTP ${readiness.status}, status ${readinessBody?.status || 'unknown'})`);
+        lastError.status = readiness.status;
       } else if (expectedBuild !== undefined && readinessBody?.build !== expectedBuild) {
         lastError = new Error(
           `Remote /health/ready.build does not match the validated deployment SHA (got ${readinessBody?.build ?? 'unknown'}, expected ${expectedBuild})`,

@@ -11,10 +11,20 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha = /^[0-9a-f]{40}$/;
 const accountPattern = /^[a-f0-9]{32}$/i;
 const worker = 'ai-gateway';
-const schemaVersion = 1;
+const schemaVersion = 2;
 
 function sameIdentity(a, b) {
   return a.deployment_id === b.deployment_id && a.version_id === b.version_id;
+}
+
+export function deploymentBuildFromMessage(message) {
+  const match = /^action-worker:deploy:([a-f0-9]{40})$/i.exec(message ?? '');
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+export function legacyReadinessBuild(error, active) {
+  if (![401, 404].includes(error?.status)) return null;
+  return deploymentBuildFromMessage(active?.message);
 }
 
 export function parseActiveDeployment(body) {
@@ -42,9 +52,14 @@ export function parseActiveDeployment(body) {
   };
 }
 
-export function establishRecoveryBaseline(before, after, build, accountId) {
-  if (!accountPattern.test(accountId ?? '') || !sameIdentity(before, after) || !sha.test(build ?? '')) {
-    throw new Error('Healthy baseline identity changed or the build SHA is unverified.');
+export function establishRecoveryBaseline(before, after, build, accountId, readiness = 'verified') {
+  if (
+    !accountPattern.test(accountId ?? '') ||
+    !sameIdentity(before, after) ||
+    !sha.test(build ?? '') ||
+    !['verified', 'legacy'].includes(readiness)
+  ) {
+    throw new Error('Gateway baseline identity changed or its build SHA is unverified.');
   }
   return {
     schema_version: schemaVersion,
@@ -54,6 +69,7 @@ export function establishRecoveryBaseline(before, after, build, accountId) {
       deployment_id: before.deployment_id,
       version_id: before.version_id,
       build,
+      readiness,
     },
     published: null,
   };
@@ -103,7 +119,7 @@ export function confirmRestoredIdentity(snapshot, first, second, build) {
     !sameIdentity(first, second) ||
     first.version_id !== snapshot.previous.version_id ||
     first.deployment_id === snapshot.published.deployment_id ||
-    build !== snapshot.previous.build
+    (snapshot.previous.readiness === 'verified' ? build !== snapshot.previous.build : build !== null)
   ) {
     throw new Error('Cloudflare rollback and restored health are not proven.');
   }
@@ -117,6 +133,7 @@ function validSnapshot(snapshot) {
     uuid.test(snapshot.previous?.deployment_id ?? '') &&
     uuid.test(snapshot.previous?.version_id ?? '') &&
     sha.test(snapshot.previous?.build ?? '') &&
+    ['verified', 'legacy'].includes(snapshot.previous?.readiness) &&
     (snapshot.published === null ||
       (uuid.test(snapshot.published?.deployment_id ?? '') &&
         uuid.test(snapshot.published?.version_id ?? '') &&
@@ -181,11 +198,24 @@ async function main() {
 
   if (operation === 'snapshot') {
     const before = await active();
-    const build = await healthyBuild(undefined);
+    let build;
+    let readiness = 'verified';
+    try {
+      build = await healthyBuild(undefined);
+    } catch (error) {
+      build = legacyReadinessBuild(error, before);
+      if (!build) throw error;
+      readiness = 'legacy';
+      console.log('Legacy Gateway readiness is unavailable; Cloudflare metadata will establish its baseline.');
+    }
     const after = await active();
-    const snapshot = establishRecoveryBaseline(before, after, build, accountId);
+    const snapshot = establishRecoveryBaseline(before, after, build, accountId, readiness);
     saveSnapshot(filename, snapshot, true);
-    console.log('Previous healthy Gateway deployment and immutable version recorded.');
+    console.log(
+      readiness === 'verified'
+        ? 'Previous ready Gateway version and Cloudflare deployment identity recorded.'
+        : 'Legacy Gateway source SHA and Cloudflare deployment identity recorded.',
+    );
     return;
   }
 
@@ -205,10 +235,14 @@ async function main() {
     if (before.version_id !== snapshot.previous.version_id) {
       throw new Error('Rollback did not restore the recorded Worker version.');
     }
-    const restoredBuild = await healthyBuild(snapshot.previous.build);
+    const restoredBuild = snapshot.previous.readiness === 'verified' ? await healthyBuild(snapshot.previous.build) : null;
     const after = await active();
     confirmRestoredIdentity(snapshot, before, after, restoredBuild);
-    console.log('Previous Gateway version and its public health are independently verified.');
+    console.log(
+      snapshot.previous.readiness === 'verified'
+        ? 'Previous Gateway version and public readiness are independently verified.'
+        : 'Previous legacy Gateway version and source SHA are restored and verified through Cloudflare.',
+    );
   }
 }
 
