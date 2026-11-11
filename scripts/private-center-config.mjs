@@ -147,10 +147,7 @@ export function buildPrivateCenterConfig(worker, input) {
       if (!getProviderProfile(provider).imageInput) continue;
       imageInputNodeCount++;
       const mappings = record(node.models) ? node.models : {};
-      const mapsVisionModel =
-        Object.keys(mappings).length === 0
-          ? visionNames.size > 0
-          : Object.keys(mappings).some((logical) => visionNames.has(logical.toLowerCase()));
+      const mapsVisionModel = Object.keys(mappings).length === 0 ? visionNames.size > 0 : Object.keys(mappings).some((logical) => visionNames.has(logical.toLowerCase()));
       if (mapsVisionModel) mappedImageInputNodeCount++;
     }
 
