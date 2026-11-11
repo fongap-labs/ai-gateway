@@ -212,9 +212,9 @@ AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 
 已部署的 Git commit SHA 会被传入 Worker 构建。公开的 `/health/ready` 会暴露该构建标识；完整 `/health` 诊断仍要求授权访问。
 
-部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID，并通过公开的 `/health/ready` 验证其就绪状态和构建 SHA；仅保存版本 UUID、部署 UUID、构建 SHA，不保存 Token。无法取得健康旧版本或无法读取部署身份时，拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
+部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID。已有公开就绪端点的版本还会验证就绪状态和构建 SHA；首次升级时，若旧版本对 `/health/ready` 返回 401/404，则只接受带有 `action-worker:deploy:<SHA>` 注记的 Cloudflare 版本身份，并用该 SHA 记录回滚目标，不读取应用凭据。无法读取部署身份、源码 SHA 或旧服务明确报告未就绪时，仍拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
 
-部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务，并用旧构建 SHA 再次验证公开就绪端点。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
+部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务。若回滚目标是带有发布 SHA 注记的旧版本，则用 Cloudflare 版本身份验证回滚结果；已支持公开就绪端点的版本还会再次验证就绪状态。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
 
 **边界**：Cloudflare 版本切换接口不是条件原子写入；在回滚前读取与真正写入之间仍存在极短的外部并发发布窗口。中央单并发调度仅覆盖中央入口，无法为旁路发布提供分布式互斥。遇到已观察到的生产漂移必须拒绝回滚；在证明排他控制之前，这些源码合同不构成真实生产回滚验收。
 

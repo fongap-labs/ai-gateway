@@ -46,7 +46,8 @@ finish() {
   if [[ "$status" -ne 0 && "${#center_update_attempted[@]}" -gt 0 ]]; then
     printf 'ERROR: partial multi-Worker release; private center update(s) attempted: %s.\n' "${center_update_attempted[*]}" >&2
     if [[ "$gateway_rollback_verified" == "true" ]]; then
-      echo 'Gateway rollback identity and public health were verified; private centers may still be on the attempted source SHA.' >&2
+      echo 'Gateway rollback identity was verified; public readiness was verified when the restored version supports it.' >&2
+      echo 'Private centers may still be on the attempted source SHA.' >&2
     elif [[ "$gateway_update_attempted" == "true" ]]; then
       echo 'Gateway publication was attempted but no verified rollback is recorded; inspect exact Worker deployment identities before any retry or recovery.' >&2
     else
@@ -87,7 +88,9 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --worker "$center" --output "$config" --manifest "$manifest"
 done
 
-# Snapshot the currently healthy Gateway before the FIRST center mutation.
+# Snapshot the live Gateway identity before the FIRST center mutation.
+# Use public readiness when the current version supports it; during the first
+# readiness rollout, a tagged legacy version is identified through Cloudflare.
 # This guard does not make a multi-Worker rollout atomic; never report success
 # if a later center Secret inventory or Gateway health check fails.
 node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
@@ -172,7 +175,7 @@ if [[ "$health_ok" != "true" ]]; then
     exit 77
   fi
   gateway_rollback_verified=true
-  echo "Previous immutable Gateway version and public health restored; new deployment failed." >&2
+  echo "Previous Gateway version restored; public readiness was verified when supported. New deployment failed." >&2
   exit 1
 fi
 
