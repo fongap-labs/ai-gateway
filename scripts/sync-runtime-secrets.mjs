@@ -11,7 +11,6 @@ const centers = [
   ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ];
-const secretPattern = /^[A-Za-z0-9_-]{32,}$/;
 const accountPattern = /^[0-9a-f]{32}$/;
 
 function required(env, name) {

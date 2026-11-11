@@ -495,9 +495,7 @@ export async function verifyRemote(baseUrl, expectedBuild, { graceMs = 30_000, i
           `Remote /health/ready.build does not match the validated deployment SHA (got ${readinessBody?.build ?? 'unknown'}, expected ${expectedBuild})`,
         );
       } else if (!allowDegraded && readinessBody?.degraded === true) {
-        lastError = new Error(
-          'Remote /health/ready reports degraded capacity; fix the excluded nodes or set AIG_ALLOW_DEGRADED=true',
-        );
+        lastError = new Error('Remote /health/ready reports degraded capacity; fix the excluded nodes or set AIG_ALLOW_DEGRADED=true');
       } else {
         lastError = null;
         break;

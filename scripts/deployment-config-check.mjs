@@ -5,9 +5,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { KEY_GROUPS } from '../src/config/access-keys.ts';
-import { preflight } from '../apps/gateway/preflight.ts';
 import { detectRoute } from '../apps/gateway/policy/router.ts';
+import { preflight } from '../apps/gateway/preflight.ts';
+import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { redistributeUnusedTierAttempts } from '../src/request/tier-loop.ts';
 import {
   confirmPublishedIdentity,
@@ -369,10 +369,14 @@ assert.throws(
 );
 
 assert.equal(detectRoute('GET', '/health/ready'), 'readiness');
-const readinessResult = await preflight(new Request('https://gateway.example.test/health/ready'), {
-  AIG_BUILD_SHA: 'a'.repeat(40),
-  AIG_TIER1_NODES_01: '[]',
-}, {});
+const readinessResult = await preflight(
+  new Request('https://gateway.example.test/health/ready'),
+  {
+    AIG_BUILD_SHA: 'a'.repeat(40),
+    AIG_TIER1_NODES_01: '[]',
+  },
+  {},
+);
 assert.equal(readinessResult.ok, false);
 assert.equal(readinessResult.response.status, 503);
 const readinessBody = await readinessResult.response.json();
@@ -403,14 +407,14 @@ globalThis.fetch = async (input, init) => {
 };
 try {
   assert.equal(await verifyRemote('https://gateway.example.test/', 'b'.repeat(40)), 'b'.repeat(40));
-  assert.deepEqual(readinessCalls.map((call) => call.url), ['https://gateway.example.test/health/ready']);
+  assert.deepEqual(
+    readinessCalls.map((call) => call.url),
+    ['https://gateway.example.test/health/ready'],
+  );
   assert.equal(readinessCalls[0].headers.has('authorization'), false, 'public readiness uses no application credential');
   globalThis.fetch = async () => Response.json({ build: 'b'.repeat(40), status: 'degraded', ready: true, degraded: true });
   await assert.rejects(verifyRemote('https://gateway.example.test'), /degraded capacity/);
-  assert.equal(
-    await verifyRemote('https://gateway.example.test', undefined, { allowDegraded: true }),
-    'b'.repeat(40),
-  );
+  assert.equal(await verifyRemote('https://gateway.example.test', undefined, { allowDegraded: true }), 'b'.repeat(40));
 } finally {
   globalThis.fetch = previousFetch;
 }
