@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
+import { IMAGE_PROVIDER_IDS, isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
 import { getModelsConfigDiagnostics } from '../src/config/models.ts';
 import { getPoliciesConfigDiagnostics, isBuiltinPolicyName } from '../src/config/policies.ts';
@@ -108,7 +108,16 @@ export function buildPrivateCenterConfig(worker, input) {
   if (env.AIG_PROTOCOL_FALLBACKS) vars.AIG_PROTOCOL_FALLBACKS = env.AIG_PROTOCOL_FALLBACKS;
 
   let total = 0;
+  let configuredNodeCount = 0;
+  let imageGenerationNodeCount = 0;
+  let imageInputNodeCount = 0;
+  let mappedImageInputNodeCount = 0;
   const tiers = new Set();
+  const visionNames = new Set(
+    Object.entries(modelCatalog)
+      .filter(([, entry]) => record(entry) && record(entry.capabilities) && entry.capabilities.vision === true)
+      .map(([name]) => name.toLowerCase()),
+  );
   for (const [name, raw] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
     const match = shardName.exec(name);
     if (!match) continue;
@@ -124,22 +133,32 @@ export function buildPrivateCenterConfig(worker, input) {
       if (
         !record(item) ||
         typeof item.provider !== 'string' ||
+        !item.provider.trim() ||
         Object.hasOwn(item, 'auth') ||
         Object.keys(item).some((k) => /^(?:token|secret|password|api_key|credential)$/i.test(k))
       ) {
         throw new Error(`${name} contains an invalid or embedded-credential node.`);
       }
     }
+    configuredNodeCount += all.length;
+    for (const node of all) {
+      const provider = node.provider.trim().toLowerCase();
+      if (isImageGenerationProvider(provider)) imageGenerationNodeCount++;
+      if (!getProviderProfile(provider).imageInput) continue;
+      imageInputNodeCount++;
+      const mappings = record(node.models) ? node.models : {};
+      const mapsVisionModel =
+        Object.keys(mappings).length === 0
+          ? visionNames.size > 0
+          : Object.keys(mappings).some((logical) => visionNames.has(logical.toLowerCase()));
+      if (mapsVisionModel) mappedImageInputNodeCount++;
+    }
+
     const selected = all.flatMap((n) => {
       if (target.kind === 'generation') return isImageGenerationProvider(n.provider) ? [n] : [];
       if (target.kind === 'inference') return !isImageGenerationProvider(n.provider) ? [n] : [];
       if (!getProviderProfile(n.provider).imageInput) return [];
       const mappings = record(n.models) ? n.models : {};
-      const visionNames = new Set(
-        Object.entries(modelCatalog)
-          .filter(([, entry]) => record(entry) && record(entry.capabilities) && entry.capabilities.vision === true)
-          .map(([name]) => name.toLowerCase()),
-      );
       const selectedMappings = Object.fromEntries(Object.entries(mappings).filter(([logical]) => visionNames.has(logical.toLowerCase())));
       // A wildcard node serves the catalog, so retain it only when at least one
       // explicitly vision-enabled logical model exists.
@@ -159,7 +178,23 @@ export function buildPrivateCenterConfig(worker, input) {
       ),
     );
   }
-  if (!total) problems.push(`${worker} has no eligible node; do not publish an empty private center.`);
+  if (!total) {
+    let reason = 'configured nodes do not meet this center’s routing requirements';
+    if (configuredNodeCount === 0) {
+      reason = 'no Tier 1 or Tier 2 provider nodes are configured';
+    } else if (target.kind === 'generation' && imageGenerationNodeCount === 0) {
+      reason = `no node uses a supported image-generation provider (${IMAGE_PROVIDER_IDS.join(', ')})`;
+    } else if (target.kind === 'perception' && visionNames.size === 0) {
+      reason = 'AIG_MODELS_CONFIG declares no model with capabilities.vision=true';
+    } else if (target.kind === 'perception' && imageInputNodeCount === 0) {
+      reason = 'no configured provider node supports image input';
+    } else if (target.kind === 'perception' && mappedImageInputNodeCount === 0) {
+      reason = 'image-input provider nodes do not map a model declared with capabilities.vision=true; an empty models map is a wildcard';
+    } else if (target.kind === 'inference' && imageGenerationNodeCount === configuredNodeCount) {
+      reason = 'only image-generation provider nodes are configured; inference requires a non-image provider node';
+    }
+    problems.push(`${worker} has no eligible node: ${reason}; do not publish an empty private center.`);
+  }
   if (problems.length) throw new Error(problems.join(' '));
 
   const baseText = fs.readFileSync(path.join(root, target.base), 'utf8').replace(/^\s*\/\/.*$/gm, '');
