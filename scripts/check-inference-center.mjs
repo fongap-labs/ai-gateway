@@ -174,6 +174,17 @@ try {
   };
   const returnedByCenter = (status, code, disposition) =>
     new Response(null, { status, headers: { 'x-aig-result': disposition, 'x-aig-error-kind': code } });
+  // The legacy non-stream dispatcher used the whole logical attempt window
+  // for a slow Provider's response headers. Moving fetch into private Inference
+  // must not turn that into a second default 15-second timeout.
+  const bufferedWindow = await runCenterGatewayAttempt(async (incoming) => {
+    const upstreamDeadline = Number(incoming.headers.get('x-aig-upstream-headers-deadline-ms'));
+    const attemptDeadline = Number(incoming.headers.get('x-aig-deadline-ms'));
+    assert.ok(upstreamDeadline - Date.now() > 30_000, 'buffered Provider header deadline must retain the long attempt window');
+    assert.ok(upstreamDeadline <= attemptDeadline, 'center header cutoff must stay within the attempt budget');
+    return returnedByCenter(404, 'center_route_unavailable', 'skipped');
+  });
+  assert.equal(bufferedWindow.result.rotate, true, 'verified pre-dispatch refusal still allows another node');
   for (const [status, code, expectedStatus] of [
     [502, 'center_upstream_network', 502],
     [504, 'center_upstream_headers_timeout', 504],
