@@ -110,7 +110,6 @@ export function parseExecutionResponse(response: Response): {
   return { result, code, phase, verifiedPreDispatchRotation };
 }
 
-
 export type ExecutionInvocation = {
   requestId: string;
   nodeId: string;
