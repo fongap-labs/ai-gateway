@@ -127,7 +127,14 @@ export async function dispatchInferenceAttempt(
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
-  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(configuredHeadersMs, Math.max(1, c.attemptDeadlineMs - Date.now()), 1);
+  // Legacy non-stream attempts wait within the full attempt window rather than
+  // failing after the default streaming header timeout. A private center must
+  // preserve that policy instead of adding a second, shorter upstream cutoff.
+  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
+    hasBufferedResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
+    Math.max(1, c.attemptDeadlineMs - Date.now()),
+    1,
+  );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
   const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
