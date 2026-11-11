@@ -139,9 +139,9 @@ try {
   assert.equal(unboundState.dispatches, 0);
   assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
 
-  // Gateway regression: an "attempted" Provider fetch is not a proven
-  // pre-dispatch refusal. Neither lost upstream headers nor Service Binding
-  // rejection may silently replay the request or be called "center unavailable".
+  // Legacy/v0.1.5 scheduling regression: a failed Provider fetch rotates
+  // to another eligible node, bounded by the existing request retry budget.
+  // Missing private bindings still fail closed without direct Provider calls.
   const runCenterGatewayAttempt = async (fetch) => {
     const state = {
       attempted: new Set(),
@@ -174,35 +174,45 @@ try {
   };
   const returnedByCenter = (status, code, disposition) =>
     new Response(null, { status, headers: { 'x-aig-result': disposition, 'x-aig-error-kind': code } });
-  for (const [status, code, expectedStatus] of [
-    [502, 'center_upstream_network', 502],
-    [504, 'center_upstream_headers_timeout', 504],
+  // Preserve the old long wait for non-streaming requests after moving the
+  // physical Provider fetch from Gateway to Inference.
+  const bufferedWindow = await runCenterGatewayAttempt(async (incoming) => {
+    const headerDeadline = Number(incoming.headers.get('x-aig-upstream-headers-deadline-ms'));
+    const attemptDeadline = Number(incoming.headers.get('x-aig-deadline-ms'));
+    assert.ok(headerDeadline - Date.now() > 30_000, 'non-streaming request must keep its attempt-wide header budget');
+    assert.ok(headerDeadline <= attemptDeadline, 'private center deadline cannot exceed the attempt deadline');
+    return returnedByCenter(404, 'center_route_unavailable', 'skipped');
+  });
+  assert.equal(bufferedWindow.result.rotate, true);
+  assert.equal(bufferedWindow.state.logicalAttempts, 0);
+
+  for (const [status, code] of [
+    [502, 'center_upstream_network'],
+    [504, 'center_upstream_headers_timeout'],
   ]) {
     let calls = 0;
     const { result, state } = await runCenterGatewayAttempt(async () => {
       calls++;
       return returnedByCenter(status, code, 'attempted');
     });
-    assert.equal(calls, 1, 'unknown upstream outcome executes one Service Binding call only');
-    assert.equal(result.response?.status, expectedStatus);
-    assert.notEqual(result.rotate, true, 'unknown upstream outcome MUST NOT rotate');
-    assert.equal(state.logicalAttempts, 1, 'attempted Provider fetch is charged exactly once');
-    assert.equal((await result.response.clone().json()).error.details.gateway_code, 'gateway_inference_upstream_outcome_unknown');
+    assert.equal(calls, 1, 'one center dispatch per logical attempt');
+    assert.equal(result.rotate, true, 'legacy Provider failure must permit bounded candidate rotation');
+    assert.equal(state.logicalAttempts, 1, 'failed Provider dispatch is charged once');
+    assert.equal(state.dispatches, 1);
+    assert.equal(state.attempts.length, 1);
   }
   const skipped = await runCenterGatewayAttempt(async () => returnedByCenter(404, 'center_route_unavailable', 'skipped'));
-  assert.equal(skipped.result.rotate, true, 'only verified pre-dispatch may rotate');
+  assert.equal(skipped.result.rotate, true, 'verified pre-dispatch errors still rotate without charging');
   assert.equal(skipped.result.budgetCharged, false);
   assert.equal(skipped.state.logicalAttempts, 0);
   const afterDispatch = await runCenterGatewayAttempt(async () => returnedByCenter(504, 'center_execution_deadline', 'dispatched'));
-  assert.equal(afterDispatch.result.response?.status, 504);
-  assert.notEqual(afterDispatch.result.rotate, true);
-  assert.equal((await afterDispatch.result.response.clone().json()).error.details.gateway_code, 'gateway_inference_execution_timeout');
+  assert.equal(afterDispatch.result.rotate, true, 'legacy deadline failure rotates within the remaining request budget');
+  assert.equal(afterDispatch.state.logicalAttempts, 1);
   const bindingFailure = await runCenterGatewayAttempt(async () => {
-    throw new Error('Service Binding rejected after possible upstream execution');
+    throw new Error('Service Binding failed after dispatch');
   });
-  assert.equal(bindingFailure.result.response?.status, 502, 'transport uncertainty is not a verified center configuration outage');
-  assert.notEqual(bindingFailure.result.rotate, true);
-  assert.equal((await bindingFailure.result.response.clone().json()).error.details.gateway_code, 'gateway_inference_center_transport_error');
+  assert.equal(bindingFailure.result.rotate, true, 'legacy network failure rotates without bypassing the private center');
+  assert.equal(bindingFailure.state.logicalAttempts, 1);
 
   // A center-owned Gateway must be routable with NO static Provider secrets.
   // A public Gateway can route secretless metadata even when a private binding
