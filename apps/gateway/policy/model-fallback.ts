@@ -1,75 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Logical-model family fallback.
-//
-// This is deliberately separate from protocol fallback. Protocol fallback
-// changes the wire protocol/surface for the SAME logical model; model fallback
-// changes only the logical model while preserving the client route, request,
-// wall-clock budget, logical-attempt budget, and reliability machinery.
-//
-// The policy is intentionally bounded:
-//   Every logical family is identified by its final capability tier while all
-//   preceding segments remain the family prefix. For example,
-//   Code-Ultra -> Code-Max -> Code-Pro and
-//   Audit-Ultra -> Audit-Max -> Audit-Pro.
-//   Bare Ultra/Max/Pro use the same tier policy with an empty prefix.
-//   Selection: the requested model runs whenever it can take the request. When
-//   it is unavailable or busy, the freest sibling (lowest live Tier 1 score) runs
-//   next; plan order only breaks ties (see pickNextModelPass). The switch is
-//   invisible to the client: the response keeps the requested model name.
-//   Air may move upward to Pro -> Max -> Ultra inside the same family, but once
-//   it moves upward it never returns to Air.
-//   Fallback never crosses logical-family prefixes.
-//   Interchangeable families get at most two evaluation rounds. The second
-//   round exists only to re-check capacity that may have recovered while other
-//   model pools were being tried. There is never an unbounded cycle.
-//
-// `max_attempts` is always the request-wide hard ceiling. Family planning never
-// increases it. Small budgets widen across siblings first; extra budget then
-// deepens the requested model according to the established 3/2/1 preference.
+// Config-driven logical-model fallback. Model names are opaque identifiers.
+// AIG_MODELS_CONFIG.fallback owns eligible aliases and their declared order.
+// A model without explicit fallback does not acquire neighbors by its spelling.
+// At most two rounds run, bounded by the original request-wide attempt budget.
 
+import type { ModelEntry } from '../../../src/config/models.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
-const TIER_FALLBACK_ORDER: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  ultra: Object.freeze(['ultra', 'max', 'pro']),
-  max: Object.freeze(['max', 'pro', 'ultra']),
-  pro: Object.freeze(['pro', 'max', 'ultra']),
-  air: Object.freeze(['air', 'pro', 'max', 'ultra']),
-});
-
-type ModelFamily = {
-  requestedKey: string;
-  requestedTier: string;
-  template: readonly string[];
-};
-
-const THREE_MEMBER_FIRST_ROUND_CAPS = Object.freeze([3, 2, 1]);
-const AIR_FIRST_ROUND_CAPS = Object.freeze([3, 1, 1, 1]);
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
-
-export type ModelFallbackPass = {
-  model: string;
-  attemptCap: number | null;
-};
+export type ModelFallbackPass = { model: string; attemptCap: number | null };
 
 function keyOf(model: string): string {
   return model.trim().toLowerCase();
-}
-
-function resolveFamily(model: string): ModelFamily | null {
-  const requestedKey = keyOf(model);
-  const parts = requestedKey.split('-').filter(Boolean);
-  const requestedTier = parts.at(-1) ?? '';
-  const order = TIER_FALLBACK_ORDER[requestedTier];
-  if (!order) return null;
-
-  const prefix = parts.slice(0, -1).join('-');
-  return {
-    requestedKey,
-    requestedTier,
-    template: order.map((tier) => (prefix ? `${prefix}-${tier}` : tier)),
-  };
 }
 
 function catalogByKey(knownModels: ReadonlySet<string>): Map<string, string> {
@@ -81,32 +25,35 @@ function catalogByKey(knownModels: ReadonlySet<string>): Map<string, string> {
   return catalog;
 }
 
+function configuredTargets(requested: string, modelsConfig: Record<string, ModelEntry>): readonly string[] {
+  const exact = modelsConfig[requested];
+  if (exact) return exact.policy.fallback ?? [];
+  const key = keyOf(requested);
+  return Object.entries(modelsConfig).find(([name]) => keyOf(name) === key)?.[1].policy.fallback ?? [];
+}
+
 /**
- * Return the ordered, bounded model-evaluation rounds for one client model.
- * Model spelling/casing comes from the known-model catalog so the scheduler
- * always receives a real logical alias. Unknown models keep legacy behavior:
- * one pass, no model fallback.
+ * Only configured, callable aliases enter the fallback rounds. Recheck each
+ * sibling once but do not move back to the requested alias in round two.
+ * This preserves one-way Air-style fallback without identifying a name as Air.
  */
-export function buildModelFallbackRounds(requestedModel: string, knownModels: ReadonlySet<string>): string[][] {
-  const family = resolveFamily(requestedModel);
-  if (!family) return [[requestedModel]];
-  const { requestedKey, requestedTier, template } = family;
-
+export function buildModelFallbackRounds(
+  requestedModel: string,
+  knownModels: ReadonlySet<string>,
+  modelsConfig: Record<string, ModelEntry> = {},
+): string[][] {
   const catalog = catalogByKey(knownModels);
-  const firstRound: string[] = [];
-  for (const key of template) {
-    const resolved = key === requestedKey ? requestedModel : catalog.get(key);
-    if (resolved && !firstRound.includes(resolved)) firstRound.push(resolved);
+  const first = [requestedModel];
+  const seen = new Set([keyOf(requestedModel)]);
+  for (const target of configuredTargets(requestedModel, modelsConfig)) {
+    const key = keyOf(target);
+    const resolved = catalog.get(key);
+    if (resolved && !seen.has(key)) {
+      first.push(resolved);
+      seen.add(key);
+    }
   }
-
-  if (firstRound.length <= 1) return [firstRound.length ? firstRound : [requestedModel]];
-
-  // Air is one-way upward. A request that already moved to Pro/Max/Ultra must
-  // not later fall back down to Air. Other family members are mutually
-  // interchangeable and may therefore be re-evaluated once.
-  const secondRound = requestedTier === 'air' ? firstRound.filter((model) => keyOf(model) !== requestedKey) : [...firstRound];
-
-  return secondRound.length > 0 ? [firstRound, secondRound] : [firstRound];
+  return first.length > 1 ? [first, first.slice(1)] : [first];
 }
 
 function normalizedBudget(maxAttempts: number): number {
@@ -114,79 +61,41 @@ function normalizedBudget(maxAttempts: number): number {
   return Math.max(1, Math.trunc(maxAttempts));
 }
 
-function firstRoundPlan(requestedKey: string, template: readonly string[], round: readonly string[], maxAttempts: number): ModelFallbackPass[] {
-  // A budget smaller than the family width must not silently expose more
-  // sibling models than the operator allowed attempts for. Give one slot to
-  // each model in preference order first, then deepen the preferred models.
+function firstRoundPlan(round: readonly string[], maxAttempts: number): ModelFallbackPass[] {
+  // Widen first, then deepen. For a four-model family keep the 3/1/1/1
+  // attempt preference, and for a three-model family use 3/2/1.
   const visible = round.slice(0, Math.min(round.length, maxAttempts));
   const caps = visible.map(() => 1);
   let remaining = Math.max(0, maxAttempts - visible.length);
-  const preferredCaps = requestedKey === 'air' ? AIR_FIRST_ROUND_CAPS : THREE_MEMBER_FIRST_ROUND_CAPS;
-
-  for (const [i, model] of visible.entries()) {
-    if (remaining <= 0) break;
-    const templateIndex = template.indexOf(keyOf(model));
-    const target = templateIndex >= 0 ? (preferredCaps[templateIndex] ?? 1) : 1;
-    const currentCap = caps[i] ?? 1;
-    const extra = Math.min(remaining, Math.max(0, target - currentCap));
-    caps[i] = currentCap + extra;
+  const preference = round.length >= 4 ? [3, 1, 1, 1] : [3, 2, 1];
+  for (const [i] of visible.entries()) {
+    if (!remaining) break;
+    const current = caps[i] ?? 1;
+    const extra = Math.min(remaining, Math.max(0, (preference[i] ?? 1) - current));
+    caps[i] = current + extra;
     remaining -= extra;
   }
-
   return visible.map((model, i) => ({ model, attemptCap: caps[i] ?? 1 }));
 }
 
-/**
- * Return model passes with per-pass attempt caps.
- *
- * `attemptCap=null` means legacy behavior for an unknown/non-family model: the
- * request policy owns the whole attempt budget. Family members never enlarge
- * that budget. For a three-member family the first-round allocation evolves as
- * 1 -> 1/1 -> 1/1/1 -> 2/1/1 -> 3/1/1 -> 3/2/1. Any budget beyond the first
- * round can be used by the existing bounded re-check round.
- */
 export function buildModelFallbackPlan(
   requestedModel: string,
   knownModels: ReadonlySet<string>,
   maxAttempts: number = DEFAULT_FAMILY_ATTEMPT_BUDGET,
+  modelsConfig: Record<string, ModelEntry> = {},
 ): ModelFallbackPass[][] {
-  const family = resolveFamily(requestedModel);
-  const rounds = buildModelFallbackRounds(requestedModel, knownModels);
-  if (!family) return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
-
-  // A family with no configured sibling keeps the requested model's original
-  // single-model behaviour, and the request policy owns the attempt budget.
-  // This holds for bare families (Ultra/Max/Pro/Air) exactly as it does for
-  // prefixed ones (Code-Ultra/...): without a sibling there is nothing to
-  // spread the budget over, so the policy's own budget applies.
-  const hasConfiguredSibling = (rounds[0] ?? []).some((model) => keyOf(model) !== family.requestedKey);
-  if (!hasConfiguredSibling) {
-    return rounds.map((round) => round.map((model) => ({ model, attemptCap: null })));
-  }
-
-  const budget = normalizedBudget(maxAttempts);
-  const firstRound = rounds[0] ?? [requestedModel];
-  const first = firstRoundPlan(family.requestedTier, family.template, firstRound, budget);
-  const allowed = new Set(first.map((pass) => pass.model));
-  const out: ModelFallbackPass[][] = [first];
-
-  // Re-check only models that fit inside this policy's family width. The global
-  // request counter remains authoritative, so this round can consume only
-  // budget left unused by earlier passes.
-  if (rounds[1]?.length) {
-    const second = rounds[1].filter((model) => allowed.has(model)).map((model) => ({ model, attemptCap: 1 }));
-    if (second.length) out.push(second);
-  }
-  return out;
+  const rounds = buildModelFallbackRounds(requestedModel, knownModels, modelsConfig);
+  if ((rounds[0]?.length ?? 0) <= 1) return [[{ model: requestedModel, attemptCap: null }]];
+  const first = firstRoundPlan(rounds[0], normalizedBudget(maxAttempts));
+  const allowed = new Set(first.map(({ model }) => keyOf(model)));
+  const result: ModelFallbackPass[][] = [first];
+  const second = (rounds[1] ?? [])
+    .filter((model) => allowed.has(keyOf(model)))
+    .map((model) => ({ model, attemptCap: 1 }));
+  if (second.length) result.push(second);
+  return result;
 }
 
-/**
- * Pick the next pass to run from those still pending. The default (requested)
- * model wins whenever it can take the request. Otherwise the sibling with the
- * lowest live availability score (the freest one) goes next. `availabilityOf`
- * returns Infinity for a model that cannot take the request right now. Ties keep
- * plan order, and when nothing can take it the plan order is kept.
- */
 export function pickNextModelPass(
   pending: ReadonlyArray<ModelFallbackPass>,
   requestedModel: string,
@@ -206,23 +115,17 @@ export function pickNextModelPass(
   return best;
 }
 
-/** True when the requested model belongs to a configured fallback family. */
-export function hasModelFamilyFallback(requestedModel: string): boolean {
-  return resolveFamily(requestedModel) !== null;
+/** An explicit fallback list, not a model-name suffix, defines a family. */
+export function hasModelFamilyFallback(requestedModel: string, modelsConfig: Record<string, ModelEntry> = {}): boolean {
+  return configuredTargets(requestedModel, modelsConfig).length > 0;
 }
 
-/** Unique model candidates, preserving first-appearance order. */
-export function modelFallbackCandidates(requestedModel: string, knownModels: ReadonlySet<string>): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const round of buildModelFallbackRounds(requestedModel, knownModels)) {
-    for (const model of round) {
-      if (seen.has(model)) continue;
-      seen.add(model);
-      out.push(model);
-    }
-  }
-  return out;
+export function modelFallbackCandidates(
+  requestedModel: string,
+  knownModels: ReadonlySet<string>,
+  modelsConfig: Record<string, ModelEntry> = {},
+): string[] {
+  return [...new Set(buildModelFallbackRounds(requestedModel, knownModels, modelsConfig).flat())];
 }
 
 /**
