@@ -44,9 +44,7 @@ function isOneWayFallback(requested: string, modelsConfig: Record<string, ModelE
   // Three-member fallback families recheck their requested model in round two,
   // including when their configured siblings do not declare reciprocal edges.
   const requestedKey = keyOf(requested);
-  const hasReverseEdge = targets.some((target) =>
-    configuredTargets(target, modelsConfig).some((reverse) => keyOf(reverse) === requestedKey),
-  );
+  const hasReverseEdge = targets.some((target) => configuredTargets(target, modelsConfig).some((reverse) => keyOf(reverse) === requestedKey));
   return targets.length >= 3 && !hasReverseEdge;
 }
 export function buildModelFallbackRounds(
