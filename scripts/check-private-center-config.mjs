@@ -109,9 +109,34 @@ const noImageOrVision = {
 };
 assert.throws(
   () => preflightPrivateCenters(noImageOrVision),
-  (error) => /ai-generation-center has no eligible node/.test(error.message) && /ai-perception-center has no eligible node/.test(error.message),
+  (error) =>
+    /ai-generation-center has no eligible node: no node uses a supported image-generation provider/.test(error.message) &&
+    /ai-perception-center has no eligible node: AIG_MODELS_CONFIG declares no model with capabilities.vision=true/.test(error.message),
+);
+const unmappedVisionModel = {
+  ...env,
+  AIG_TIER1_NODES_01: JSON.stringify([
+    { id: 'text-only', provider: 'openai', base_url: 'https://provider.example.test/v1', models: { chat: 'physical-text' } },
+  ]),
+  AIG_TIER2_NODES_01: '[]',
+};
+assert.throws(
+  () => buildPrivateCenterConfig('ai-perception-center', unmappedVisionModel),
+  /image-input provider nodes do not map a model declared with capabilities.vision=true/,
 );
 const generation = buildPrivateCenterConfig('ai-generation-center', env);
+const normalizedGeneration = buildPrivateCenterConfig('ai-generation-center', {
+  ...env,
+  AIG_TIER1_NODES_01: JSON.stringify([
+    {
+      id: 'image-01',
+      provider: ' OpenAI-Image ',
+      base_url: 'https://provider.example.test/v1',
+      models: { image: 'physical-image' },
+    },
+  ]),
+});
+assert.equal(normalizedGeneration.nodeCount, 1, 'generation eligibility uses the normalized provider ID');
 const perception = buildPrivateCenterConfig('ai-perception-center', env);
 assert.equal(inference.nodeCount, 2);
 assert.deepEqual(inference.tiers, ['1', '2']);
@@ -170,6 +195,7 @@ for (const [name, environment, pattern] of [
     /Forbidden Secret or retired Variable/,
   ],
   ['ai-inference-center', { ...env, AIG_TIER1_NODES_01: '[{"auth":"oauth"}]' }, /embedded-credential node/],
+  ['ai-inference-center', { ...env, AIG_TIER1_NODES_01: '[{"provider":" "}]' }, /invalid or embedded-credential node/],
   ['ai-generation-center', { ...env, AIG_TIER1_NODES_01: '[]' }, /no eligible node/],
   ['ai-perception-center', { ...env, AIG_MODELS_CONFIG: '{}' }, /no eligible node/],
   ['ai-inference-center', { ...env, DEPLOY_SOURCE_SHA: 'main' }, /immutable 40-digit/],
