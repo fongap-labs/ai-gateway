@@ -561,6 +561,23 @@ assert.ok(diagnosticLogs[0].includes('model=retry-source=>retry-target->physical
 assert.ok(diagnosticLogs[0].includes('attempt_window_ms=5000'), 'timeout diagnostics expose the actual reserved attempt window');
 assert.ok(!diagnosticLogs[0].includes('physical-source'), 'the source model mapping must not be misattributed');
 
+recordOutcome(
+  diagnosticState,
+  diagnosticNode,
+  { kind: 'headers_timeout', action: 'neutral', counted: false, cooldownMs: 0 },
+  {
+    state: diagnosticState,
+    env: {},
+    logger: diagnosticState.logger,
+    requestId: 'legacy-outcome-diagnostic-test',
+    requestedModel: retrySource,
+    attemptSettlement: { observedUsage: null, settled: true },
+  },
+  { latencyMs: 2, status: 504 },
+);
+assert.equal(diagnosticState.attempts[1].effective_model, retrySource, 'legacy callers without descriptors retain the requested model');
+assert.equal(diagnosticState.attempts[1].upstream_model, 'physical-source', 'legacy callers retain their original physical model mapping');
+
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
