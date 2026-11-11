@@ -151,38 +151,50 @@ try {
   assert.equal(interrupted.headers.get('x-aig-error-kind'), 'center_conversion_invalid');
   assert.equal(attempts, 5);
 
-  globalThis.fetch = async () => {
-    attempts++;
-    const ongoing = {
-      id: 'cmpl-timeout',
-      object: 'chat.completion.chunk',
-      model: 'gpt-test-upstream',
-      choices: [{ index: 0, delta: { role: 'assistant', content: 'still generating' }, finish_reason: null }],
+  // Advance a controlled wall clock only after the private center dispatches
+  // its Provider request. A 250ms real-time deadline can expire before
+  // dispatch on busy CI runners and falsely turn the expected 504 into 502.
+  const realNow = Date.now;
+  let simulatedNow = realNow();
+  try {
+    Date.now = () => simulatedNow;
+    globalThis.fetch = async () => {
+      attempts++;
+      simulatedNow += 500; // Cross only the buffered-response deadline after dispatch.
+      const ongoing = {
+        id: 'cmpl-timeout',
+        object: 'chat.completion.chunk',
+        model: 'gpt-test-upstream',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'still generating' }, finish_reason: null }],
+      };
+      return new Response(
+        new ReadableStream({
+          start: (controller) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(ongoing)}\n\n`)),
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
     };
-    return new Response(
-      new ReadableStream({
-        start: (controller) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(ongoing)}\n\n`)),
+    const shortWindow = simulatedNow + 5_000;
+    const bufferedTimeout = await handleInferenceCenterRequest(
+      inbound({
+        deadlineMs: shortWindow,
+        upstreamHeadersDeadlineMs: simulatedNow + 3_000,
+        bufferedResponseDeadlineMs: simulatedNow + 250,
       }),
-      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      env,
     );
-  };
-  const shortWindow = Date.now() + 5_000;
-  const bufferedTimeout = await handleInferenceCenterRequest(
-    inbound({
-      deadlineMs: shortWindow,
-      upstreamHeadersDeadlineMs: Date.now() + 3_000,
-      bufferedResponseDeadlineMs: Date.now() + 250,
-    }),
-    env,
-  );
-  assert.equal(
-    bufferedTimeout.status,
-    504,
-    `buffered SSE deadline must be 504, received ${bufferedTimeout.status}; code=${bufferedTimeout.headers.get('x-aig-error-kind')}; result=${bufferedTimeout.headers.get('x-aig-result')}; elapsed-window-ms=${Date.now() - shortWindow + 5_000}`,
-  );
-  assert.equal(bufferedTimeout.headers.get('x-aig-result'), 'dispatched');
-  assert.equal(bufferedTimeout.headers.get('x-aig-error-kind'), 'center_execution_deadline');
-  assert.equal(attempts, 6);
+    assert.equal(
+      bufferedTimeout.status,
+      504,
+      `buffered SSE deadline must be 504, received ${bufferedTimeout.status}; code=${bufferedTimeout.headers.get('x-aig-error-kind')}; result=${bufferedTimeout.headers.get('x-aig-result')}`,
+    );
+    assert.equal(bufferedTimeout.headers.get('x-aig-result'), 'dispatched');
+    assert.equal(bufferedTimeout.headers.get('x-aig-error-kind'), 'center_execution_deadline');
+    assert.equal(attempts, 6);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(Date.now, realNow, 'the deadline test must restore the real clock');
 
   console.log('Inference v6 collects SSE, enforces separated deadlines, translates JSON, isolates raw usage, and fails closed on errors/budgets.');
 } finally {
