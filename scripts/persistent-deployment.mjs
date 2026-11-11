@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Deployment-only path: runtime provider and application secrets stay in Cloudflare.
-// This script reads only secret names from Wrangler; it never receives runtime secret values.
+// Prepare Gateway variables and verify its existing Cloudflare Secret names.
+// Provider keys are handled separately by the private center Secret plan.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -143,7 +143,7 @@ async function main() {
   const [command, ...argv] = process.argv.slice(2);
   if (command === 'preflight') {
     const { vars } = validateDeploymentInputs(process.env);
-    console.log(`Deployment preflight passed: ${Object.keys(vars).length} Worker variable(s); runtime secrets are not read from GitHub.`);
+    console.log(`Deployment preflight passed: ${Object.keys(vars).length} Worker variable(s); Gateway variables validated.`);
     return;
   }
   if (command === 'prepare') {
@@ -169,7 +169,7 @@ async function main() {
         `  D1: ${config.d1_databases ? 'configured' : 'disabled'}`,
         `  Tier 1 affinity KV: ${config.kv_namespaces ? 'configured' : 'disabled'}`,
         `  Analytics Engine: ${config.analytics_engine_datasets ? 'configured' : 'disabled'}`,
-        '  Runtime secrets: preserved in Cloudflare; not uploaded by this deployment',
+        '  Gateway application Secrets: preserved in Cloudflare',
         '',
       ].join('\n'),
     );

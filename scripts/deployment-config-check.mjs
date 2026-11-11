@@ -158,18 +158,22 @@ const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
   .map((line) => line.replace(/#.*/, '').trim())
   .filter(Boolean);
-assert.deepEqual(deploySecretScope.sort(), [
+const mandatoryDeploySecrets = [
   'AIG_GENERATION_AUTH_KEY',
   'AIG_INFERENCE_AUTH_KEY',
   'AIG_PERCEPTION_AUTH_KEY',
   'CLOUDFLARE_ACCOUNT_ID',
   'CLOUDFLARE_API_TOKEN',
-]);
+];
+const providerDeploySecrets = [1, 2].flatMap((tier) =>
+  Array.from({ length: 10 }, (_, index) => `AIG_TIER${tier}_CREDENTIALS_${String(index + 1).padStart(2, '0')}`),
+);
+assert.deepEqual(deploySecretScope.sort(), [...mandatoryDeploySecrets, ...providerDeploySecrets].sort());
 const deployRequired = read('.github/deploy.secrets.required')
   .split(/\r?\n/)
   .map((line) => line.trim())
   .filter(Boolean);
-assert.deepEqual(deployRequired.sort(), deploySecretScope);
+assert.deepEqual(deployRequired.sort(), mandatoryDeploySecrets);
 for (const runtimeSecret of [
   'AIG_TOKEN_ENCRYPTION_KEY',
   'AIG_ACCESS_KEY_AIR',
@@ -495,8 +499,9 @@ for (const [setting, expectedExit, message] of [
 }
 assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
 assert.match(deployScript, /sync-runtime-secrets/);
-assert.ok(deployScript.indexOf('sync-runtime-secrets.mjs preflight') < deployScript.indexOf('deployment-recovery.mjs snapshot'));
-assert.ok(deployScript.indexOf('sync-runtime-secrets.mjs reconcile') < deployScript.indexOf('persistent-deployment.mjs verify-secrets'));
+assert.ok(deployScript.indexOf('private-center-config.mjs prepare') < deployScript.indexOf('sync_runtime_secrets preflight'));
+assert.ok(deployScript.indexOf('sync_runtime_secrets preflight') < deployScript.indexOf('deployment-recovery.mjs snapshot'));
+assert.ok(deployScript.indexOf('sync_runtime_secrets reconcile') < deployScript.indexOf('persistent-deployment.mjs verify-secrets'));
 assert.match(deployScript, /secret list/);
 assert.doesNotMatch(deployScript, /--secrets-file|gateway-secrets\.json/);
 assert.match(deployScript, /cloudflare-wrangler\.mjs deploy/);
@@ -672,9 +677,22 @@ const opsKeys = {
   AIG_PERCEPTION_AUTH_KEY: 'p'.repeat(32),
   AIG_GENERATION_AUTH_KEY: 'g'.repeat(32),
 };
-const secretPlan = buildRuntimeSecretPlan(opsKeys);
+const privateConfigurations = Object.fromEntries(
+  [
+    ['ai-inference-center', [{ id: 'chat-01' }, { id: 'omni-01' }]],
+    ['ai-perception-center', [{ id: 'omni-01' }]],
+    ['ai-generation-center', [{ id: 'image-01' }]],
+  ].map(([name, nodes]) => [name, { name, vars: { AIG_TIER1_NODES_09: JSON.stringify(nodes) } }]),
+);
+const flatProviderKeys = { ...opsKeys, AIG_TIER1_CREDENTIALS_01: '{"chat-01":"text-key","omni-01":"vision-key","image-01":"image-key"}' };
+const secretPlan = buildRuntimeSecretPlan(flatProviderKeys, privateConfigurations);
+assert.throws(() => buildRuntimeSecretPlan(opsKeys, privateConfigurations), /ai-inference-center Tier 1 node chat-01.*ai-generation-center/);
+assert.throws(
+  () => buildRuntimeSecretPlan({ ...flatProviderKeys, AIG_TIER1_CREDENTIALS_02: '{"omni-01":"duplicate-key"}' }, privateConfigurations),
+  /node omni-01 is declared more than once/,
+);
 assert.deepEqual(secretPlan.workers, ['ai-gateway', 'ai-inference-center', 'ai-perception-center', 'ai-generation-center']);
-assert.equal(secretPlan.writes.length, 6);
+assert.equal(secretPlan.writes.length, 9);
 assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_INFERENCE_AUTH_KEY: '' }), /AIG_INFERENCE_AUTH_KEY/);
 assert.throws(() => buildRuntimeSecretPlan({ ...opsKeys, AIG_PERCEPTION_AUTH_KEY: opsKeys.AIG_INFERENCE_AUTH_KEY }), /must be distinct/);
 const mirrored = new Map(secretPlan.workers.map((worker) => [worker, new Map()]));
@@ -694,14 +712,18 @@ const fakeCloudflare = async (url, options) => {
   mirrored.get(worker).set(secret.name, secret.text);
   return Response.json({ success: true, result: { name: secret.name, type: 'secret_text' } });
 };
-assert.deepEqual(await synchronizeRuntimeSecrets(opsKeys, fakeCloudflare), { workers: 4, bindings: 6 });
+assert.deepEqual(await synchronizeRuntimeSecrets(flatProviderKeys, fakeCloudflare, privateConfigurations), { workers: 4, bindings: 9 });
+assert.deepEqual(JSON.parse(mirrored.get('ai-inference-center').get('AIG_TIER1_CREDENTIALS_01')), { 'chat-01': 'text-key', 'omni-01': 'vision-key' });
+assert.deepEqual(JSON.parse(mirrored.get('ai-perception-center').get('AIG_TIER1_CREDENTIALS_01')), { 'omni-01': 'vision-key' });
+assert.deepEqual(JSON.parse(mirrored.get('ai-generation-center').get('AIG_TIER1_CREDENTIALS_01')), { 'image-01': 'image-key' });
+assert.equal(mirrored.get('ai-gateway').has('AIG_TIER1_CREDENTIALS_01'), false);
 for (const [worker, name] of [
   ['ai-inference-center', 'AIG_INFERENCE_AUTH_KEY'],
   ['ai-perception-center', 'AIG_PERCEPTION_AUTH_KEY'],
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ])
   assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
-assert.equal(methods.filter((method) => method === 'PUT').length, 6);
+assert.equal(methods.filter((method) => method === 'PUT').length, 9);
 assert.equal(methods.includes('DELETE'), false);
 const rejectedMethods = [];
 await assert.rejects(

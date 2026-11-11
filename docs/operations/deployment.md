@@ -83,11 +83,11 @@ AI Gateway 只保留根清单 `.github/deploy.json`，其目标环境为 `produc
 
 已撤销旧 `inference-center-ops` 的源码部署合同，原 `product=inference-center` 不再有效。现有 `scripts/inference-center-deployment.mjs` 仅作为后续复用的构建配置准备工具，不能据此宣称中心已上线。
 
-运行时密钥边界已调整为：生产发布只需要 Cloudflare 发布凭据和私有中心绑定所需的内部认证密钥。Provider 密钥、网关访问密钥与 Tier 凭据保存在 Cloudflare Worker Secrets；普通代码部署只读取远端 Secret **名称**，不会读取或上传 Provider 与用户访问密钥。Cloudflare API Token 用于发布和 Cloudflare API 操作。
+生产发布使用同一个 `ai-gateway-ops` 环境中的 Cloudflare 发布凭据、内部认证密钥和 Provider 凭据分片。网关访问密钥保存在 Cloudflare Worker Secrets 中。
 
 ## 生产 Environment
 
-部署清单将执行作业绑定到名为 `production` 的 GitHub Environment。非敏感的运行时配置应放在 Variables 中；凭据应放在 Secrets 中。
+部署清单的目标为 `production`。Action Worker 使用 `ai-gateway-ops` GitHub Environment 读取扁平配置。节点和其他非敏感配置各自存为 Variables，凭据各自存为 Secrets。
 
 Action Worker 会导出解析后的 Variables，并且只暴露源码声明的部署 Secrets。`.github/deploy.secrets.allowed` 定义了应用密钥的最大暴露范围。在 `scripts/deploy.sh` 执行之前，中央控制凭据会被移除。
 
@@ -107,11 +107,12 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 生产 Environment 的 Secrets 包括：
 
 - `CLOUDFLARE_API_TOKEN`：部署 Worker、D1 迁移与绑定所需的 Cloudflare 发布凭据；
-- `AIG_INFERENCE_AUTH_KEY`、`AIG_PERCEPTION_AUTH_KEY`、`AIG_GENERATION_AUTH_KEY`：Gateway 与三个私有中心之间的内部服务认证密钥。
+- `AIG_INFERENCE_AUTH_KEY`、`AIG_PERCEPTION_AUTH_KEY`、`AIG_GENERATION_AUTH_KEY`：Gateway 与三个私有中心之间的内部服务认证密钥；
+- `AIG_TIER{1,2}_CREDENTIALS_01` 到 `_10`：每个已使用的分片为一个 Secret，值为 `{ "节点 ID": "Provider API Key" }` JSON 对象。
 
 `CLOUDFLARE_ACCOUNT_ID` 是非敏感账号标识，由中央策略映射到 `CLOUDFLARE_ACCOUNT_ID_SECONDARY`。由于 `resolve-secret-scope` 只对目标在 `.github/deploy.secrets.allowed` 中声明的名字应用别名，三个名称必须与 `.github/deploy.secrets.required` 一致。
 
-Provider、访问分组和 Tier 节点凭据保存在对应的 Cloudflare Worker Secrets 中。三个中心认证密钥只用于私有 Service Binding 的内部鉴权。
+部署预检按 Tier 与节点 ID 核对所有私有节点的凭据。私有中心仅接收本中心使用的节点凭据，三个中心认证密钥用于对应的 Service Binding。
 
 普通部署通过 `wrangler secret list` 只读取 Secret 名称和类型；Gateway 必须同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。缺少绑定或旧 Gateway Provider Token 时必须失败关闭，不进行发布；Cloudflare API Token 执行发布操作，普通代码部署不会将 Secret 值打包进 Wrangler 配置。
 
@@ -170,17 +171,17 @@ ORDER BY node, calls DESC
 3. 安装锁定的 Node 依赖；
 4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
 5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
-6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，记录已部署 Gateway 的 Cloudflare 版本后依序发布三个**非公开**中心；
-7. 只读取三个中心的 Cloudflare Secret 名称，核对内部认证及必要 Provider 分片，任一缺失则失败关闭，Gateway 新代码尚未发布；
+6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，校验所有节点的 Provider 凭据后记录 Gateway 的 Cloudflare 版本，依序发布三个**非公开**中心；
+7. 为三个中心同步各自的 Provider 分片及内部认证，随后核对 Cloudflare Secret 名称，确认同步完成才继续发布 Gateway；
 8. 核对 Gateway Secret 清单并阻断旧 OAuth / 已迁移 Provider 凭据遗留；
-9. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
+9. 不携带 `--secrets-file` 发布 Gateway 代码，保留 Cloudflare 中已有的应用访问密钥；
 10. 按精确源码 SHA 验证线上构建；
 11. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并通过 Cloudflare 核验已恢复的版本。
 
 
 **统一入口**：仍然只从 Action Worker 的 `手动 · 部署服务` 选择 `fongap-labs/ai-gateway`、`production`，或使用原来经过准入的自动部署触发。禁止另起一个私有中心代码发布工作流。
 
-**首次迁移提示**：Cloudflare Worker Secrets 不能从已有 Worker 中反读，且初次创建的私有中心可能尚无 Secret。统一部署可以先建立三个无公网入口的私有 Worker，但会在密钥清单核验处停止；应通过受保护的 `ai-gateway-ops` 为选中的 Worker 配置缺失 Secret，再用同一审核 SHA 重跑唯一源码部署入口。部署脚本在失败时报告已尝试更新的中心和 Gateway 阶段，但不会假设跨 Worker 原子性或自动回滚某个不明版本。恢复前须核实每个 Worker 的精确部署身份并选择兼容 SHA；不能声称只回滚 Gateway 就恢复整个拓扑。
+**首次迁移提示**：由同一次部署建立私有 Worker 并同步 `ai-gateway-ops` 中的 Provider 凭据。部署脚本在失败时报告已尝试更新的中心和 Gateway 阶段。恢复前须核实每个 Worker 的版本并选择兼容 SHA。
 
 Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
@@ -188,13 +189,7 @@ Cloudflare 是执行目标，而不是配置的规范编辑入口。
 
 Config 与 Secret 分片是相互独立（independent）的分区。运行时绑定依据是 **Tier + node id**，而非分片后缀的匹配。
 
-添加或轮换上游 key 的步骤：
-
-1. 将节点保留在两层配置对应的 `AIG_TIER{1,2}_NODES_XX` Variable 中，并与私有中心的节点 ID 和模型映射保持一致；
-2. 仅在对应的 Cloudflare 私有 Worker `ai-inference-center`、`ai-perception-center` 或 `ai-generation-center` 中，通过受控 Secret 管理通道更新 `AIG_TIER{1,2}_CREDENTIALS_XX`；**公开 `ai-gateway` 不得继续存有 Provider Token**；
-3. 在三个中心分别核对 Secret 名称、节点运行资格和内部健康，完成独立审批后才能更新 Gateway Service Binding；普通代码部署不得代替中心密钥迁移。
-
-不要将凭据放入节点 JSON 中。
+添加或轮换 Provider API Key 时，在 Action Worker 的 `ai-gateway-ops` 环境中更新同一 Tier 的 `AIG_TIER{1,2}_CREDENTIALS_XX` Secret。该 Secret 的 JSON 键使用节点 Variable 中的原始 `id`。分片编号可以独立分配，例如 `AIG_TIER1_NODES_09` 的节点可以在 `AIG_TIER1_CREDENTIALS_01` 中。同一个节点 ID 只能出现在一个凭据分片中。部署会根据中心路由筛选并同步对应条目。
 
 ## 网关访问分组
 
