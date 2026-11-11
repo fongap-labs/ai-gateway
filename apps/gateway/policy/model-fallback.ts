@@ -118,9 +118,13 @@ export function pickNextModelPass(
   return best;
 }
 
-/** An explicit fallback list, not a model-name suffix, defines a family. */
+/** An explicit fallback list defines family membership for its source and targets. */
 export function hasModelFamilyFallback(requestedModel: string, modelsConfig: Record<string, ModelEntry> = {}): boolean {
-  return configuredTargets(requestedModel, modelsConfig).length > 0;
+  if (configuredTargets(requestedModel, modelsConfig).length > 0) return true;
+  const requestedKey = keyOf(requestedModel);
+  return Object.values(modelsConfig).some((entry) =>
+    (entry.policy.fallback ?? []).some((target) => keyOf(target) === requestedKey),
+  );
 }
 
 export function modelFallbackCandidates(
