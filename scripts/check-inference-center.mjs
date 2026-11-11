@@ -139,6 +139,72 @@ try {
   assert.equal(unboundState.dispatches, 0);
   assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
 
+  // Gateway regression: an "attempted" Provider fetch is not a proven
+  // pre-dispatch refusal. Neither lost upstream headers nor Service Binding
+  // rejection may silently replay the request or be called "center unavailable".
+  const runCenterGatewayAttempt = async (fetch) => {
+    const state = {
+      attempted: new Set(),
+      attempts: [],
+      logicalAttempts: 0,
+      dispatches: 0,
+      failureKinds: {},
+      maxAttempts: 2,
+      requestId: unboundState.requestId,
+      requestedModel: 'chat-test',
+      logger: { info: () => {} },
+    };
+    const result = await attemptNode({
+      request: new Request('https://client.example/v1/chat/completions', { method: 'POST' }),
+      env: { ...env, AIG_INFERENCE_SERVICE: { fetch } },
+      node: { ...node, tier: 'tier-2', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: node.base_url, credential: providerSecret },
+      route: 'openai_chat',
+      reqDescriptor: { model: 'chat-test', surface: 'chat_completions', bodyChars: JSON.stringify(validBody).length },
+      bodyJson: validBody,
+      requestedModel: 'chat-test',
+      requestId: state.requestId,
+      state,
+      policy: { headersTimeoutMs: null },
+      limits: getLimits(env),
+      remainingDispatchableAttempts: 2,
+      failoverBudgetMs: 60_000,
+      requestStartMs: Date.now(),
+    });
+    return { result, state };
+  };
+  const returnedByCenter = (status, code, disposition) =>
+    new Response(null, { status, headers: { 'x-aig-result': disposition, 'x-aig-error-kind': code } });
+  for (const [status, code, expectedStatus] of [
+    [502, 'center_upstream_network', 502],
+    [504, 'center_upstream_headers_timeout', 504],
+  ]) {
+    let calls = 0;
+    const { result, state } = await runCenterGatewayAttempt(async () => {
+      calls++;
+      return returnedByCenter(status, code, 'attempted');
+    });
+    assert.equal(calls, 1, 'unknown upstream outcome executes one Service Binding call only');
+    assert.equal(result.response?.status, expectedStatus);
+    assert.notEqual(result.rotate, true, 'unknown upstream outcome MUST NOT rotate');
+    assert.equal(state.logicalAttempts, 1, 'attempted Provider fetch is charged exactly once');
+    assert.equal((await result.response.clone().json()).error.code, 'gateway_inference_upstream_outcome_unknown');
+  }
+  const skipped = await runCenterGatewayAttempt(async () => returnedByCenter(404, 'center_route_unavailable', 'skipped'));
+  assert.equal(skipped.result.rotate, true, 'only verified pre-dispatch may rotate');
+  assert.equal(skipped.result.budgetCharged, false);
+  assert.equal(skipped.state.logicalAttempts, 0);
+  const afterDispatch = await runCenterGatewayAttempt(async () => returnedByCenter(504, 'center_execution_deadline', 'dispatched'));
+  assert.equal(afterDispatch.result.response?.status, 504);
+  assert.notEqual(afterDispatch.result.rotate, true);
+  assert.equal((await afterDispatch.result.response.clone().json()).error.code, 'gateway_inference_execution_timeout');
+  const bindingFailure = await runCenterGatewayAttempt(async () => {
+    throw new Error('Service Binding rejected after possible upstream execution');
+  });
+  assert.equal(bindingFailure.result.response?.status, 502, 'transport uncertainty is not a verified center configuration outage');
+  assert.notEqual(bindingFailure.result.rotate, true);
+  assert.equal((await bindingFailure.result.response.clone().json()).error.code, 'gateway_inference_center_transport_error');
+
+
   // A center-owned Gateway must be routable with NO static Provider secrets.
   // A public Gateway can route secretless metadata even when a private binding
   // is missing; the dispatch layer must fail closed rather than use Provider keys.

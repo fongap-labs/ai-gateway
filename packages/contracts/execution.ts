@@ -21,6 +21,100 @@ export type ExecutionSurface = 'chat_completions' | 'responses' | 'messages' | '
 export type ExecutionInputSurface = Exclude<ExecutionSurface, 'images_generations'>;
 export type ExecutionDisposition = 'not-dispatched' | 'attempted' | 'dispatched';
 
+/** Stable internal wire markers. "attempted" does not prove an upstream request was rejected. */
+export const EXECUTION_WIRE_RESULT = {
+  NOT_DISPATCHED: 'not-dispatched',
+  SKIPPED: 'skipped',
+  ATTEMPTED: 'attempted',
+  DISPATCHED: 'dispatched',
+} as const;
+export type ExecutionWireResult = (typeof EXECUTION_WIRE_RESULT)[keyof typeof EXECUTION_WIRE_RESULT];
+
+/** Known cross-boundary errors that affect stage classification and retry decisions. */
+export const EXECUTION_ERROR_CODE = {
+  CENTER_ROUTE_UNAVAILABLE: 'center_route_unavailable',
+  CENTER_UPSTREAM_NETWORK: 'center_upstream_network',
+  CENTER_UPSTREAM_HEADERS_TIMEOUT: 'center_upstream_headers_timeout',
+  CENTER_EXECUTION_DEADLINE: 'center_execution_deadline',
+  CENTER_BODY_BUDGET_EXHAUSTED: 'center_body_budget_exhausted',
+  CENTER_CONVERSION_BUDGET_EXCEEDED: 'center_conversion_budget_exceeded',
+  GENERATION_OUTCOME_UNKNOWN: 'generation_outcome_unknown',
+  GATEWAY_INFERENCE_CENTER_UNAVAILABLE: 'gateway_inference_center_unavailable',
+  GATEWAY_INFERENCE_CENTER_TIMEOUT: 'gateway_inference_center_timeout',
+  GATEWAY_INFERENCE_CENTER_TRANSPORT_ERROR: 'gateway_inference_center_transport_error',
+  GATEWAY_INFERENCE_UPSTREAM_OUTCOME_UNKNOWN: 'gateway_inference_upstream_outcome_unknown',
+  GATEWAY_INFERENCE_EXECUTION_TIMEOUT: 'gateway_inference_execution_timeout',
+} as const;
+export type ExecutionErrorCode = (typeof EXECUTION_ERROR_CODE)[keyof typeof EXECUTION_ERROR_CODE];
+export type ExecutionPhase =
+  | 'pre-dispatch'
+  | 'upstream-network'
+  | 'upstream-headers'
+  | 'upstream-attempted'
+  | 'execution-deadline'
+  | 'upstream-dispatched'
+  | 'center-unconfirmed';
+
+const KNOWN_EXECUTION_CODES: ReadonlySet<string> = new Set(Object.values(EXECUTION_ERROR_CODE));
+
+/** Preserve the existing private error envelope (Inference includes retryable, Generation does not). */
+export function serializeExecutionError(
+  status: number,
+  code: string,
+  options: { retryable?: boolean; result?: ExecutionWireResult } = {},
+): Response {
+  const { retryable, result } = options;
+  const headers = new Headers({
+    'content-type': 'application/json',
+    'cache-control': 'no-store',
+    'x-aig-error-kind': code,
+  });
+  if (retryable !== undefined) headers.set('x-aig-retryable', String(retryable));
+  if (result !== undefined) headers.set('x-aig-result', result);
+  return new Response(JSON.stringify({ error: { code, ...(retryable !== undefined ? { retryable } : {}) } }), { status, headers });
+}
+
+/**
+ * Distinguish center transport from attempted Provider fetch and post-header
+ * execution. Only an authenticated, exact "skipped" signal can prove that
+ * a request was never dispatched; a missing or forged marker never can.
+ */
+export function parseExecutionResponse(response: Response): {
+  result: ExecutionWireResult | null;
+  code: ExecutionErrorCode | null;
+  phase: ExecutionPhase;
+  verifiedPreDispatchRotation: boolean;
+} {
+  const rawResult = response.headers.get('x-aig-result');
+  const result =
+    rawResult === EXECUTION_WIRE_RESULT.SKIPPED ||
+    rawResult === EXECUTION_WIRE_RESULT.NOT_DISPATCHED ||
+    rawResult === EXECUTION_WIRE_RESULT.ATTEMPTED ||
+    rawResult === EXECUTION_WIRE_RESULT.DISPATCHED
+      ? rawResult
+      : null;
+  const rawCode = response.headers.get('x-aig-error-kind');
+  const code = rawCode !== null && KNOWN_EXECUTION_CODES.has(rawCode) ? (rawCode as ExecutionErrorCode) : null;
+  const verifiedPreDispatchRotation =
+    result === EXECUTION_WIRE_RESULT.SKIPPED &&
+    ((response.status === 404 && code === EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE) ||
+      (response.status === 504 && code === EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT));
+  let phase: ExecutionPhase = 'center-unconfirmed';
+  if (result === EXECUTION_WIRE_RESULT.SKIPPED || result === EXECUTION_WIRE_RESULT.NOT_DISPATCHED) phase = 'pre-dispatch';
+  else if (result === EXECUTION_WIRE_RESULT.ATTEMPTED) {
+    phase =
+      code === EXECUTION_ERROR_CODE.CENTER_UPSTREAM_NETWORK
+        ? 'upstream-network'
+        : code === EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT
+          ? 'upstream-headers'
+          : 'upstream-attempted';
+  } else if (result === EXECUTION_WIRE_RESULT.DISPATCHED) {
+    phase = code === EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE ? 'execution-deadline' : 'upstream-dispatched';
+  }
+  return { result, code, phase, verifiedPreDispatchRotation };
+}
+
+
 export type ExecutionInvocation = {
   requestId: string;
   nodeId: string;

@@ -4,7 +4,7 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
-import { type ExecutionInputSurface, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import { type ExecutionInputSurface, type ExecutionInvocation, EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
@@ -121,7 +121,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   // This node is absent from the center's strictly validated physical pool.
   // Tell Gateway no Provider execution occurred so it may try another
   // metadata-visible node without falsely marking the Provider unhealthy.
-  if (!node) return preDispatchProblem(404, 'center_route_unavailable');
+  if (!node) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
 
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return problem(415, 'center_content_type_invalid');
@@ -137,7 +137,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   // charged the full read ceiling, so chunked uploads cannot evade admission.
   const releaseBody = centerBodyPool.admit(declaredSize, maxRequestBytes);
   if (!releaseBody) {
-    const rejected = problem(503, 'center_body_budget_exhausted', true);
+    const rejected = problem(503, EXECUTION_ERROR_CODE.CENTER_BODY_BUDGET_EXHAUSTED, true);
     rejected.headers.set('retry-after', '1');
     return rejected;
   }
@@ -170,7 +170,7 @@ async function executeAdmittedNative(
   if (options.center === 'perception') {
     const visionDeclared = modelRegistryEntry(env, invocation.logicalModel).catalog.capabilities.vision === true;
     if (!hasImageInput(clientBody) || !visionDeclared || !getProviderProfile(node.provider).imageInput) {
-      return preDispatchProblem(404, 'center_route_unavailable');
+      return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
     }
   }
 
@@ -230,7 +230,7 @@ async function executeAdmittedNative(
   const controller = new AbortController();
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   const remainingMs = upstreamHeadersDeadlineMs - Date.now();
-  if (remainingMs <= 0) return preDispatchProblem(504, 'center_upstream_headers_timeout');
+  if (remainingMs <= 0) return preDispatchProblem(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT);
   const timeoutId = setTimeout(() => controller.abort(), remainingMs);
   const onAbort = () => controller.abort();
   if (request.signal.aborted) onAbort();
@@ -242,14 +242,14 @@ async function executeAdmittedNative(
   } catch {
     if (request.signal.aborted) return problem(499, 'center_client_aborted');
     if (controller.signal.aborted) {
-      const timedOut = problem(504, 'center_upstream_headers_timeout', true);
-      timedOut.headers.set('x-aig-result', 'attempted');
+      const timedOut = problem(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, true);
+      timedOut.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.ATTEMPTED);
       return timedOut;
     }
     // A provider fetch was attempted, but no response headers were received.
     // The gateway may apply its existing bounded network-failure rotation.
-    const response = problem(502, 'center_upstream_network', true);
-    response.headers.set('x-aig-result', 'attempted');
+    const response = problem(502, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_NETWORK, true);
+    response.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.ATTEMPTED);
     return response;
   } finally {
     clearTimeout(timeoutId);
@@ -259,7 +259,7 @@ async function executeAdmittedNative(
   if (upstream.status >= 300 && upstream.status < 400) return problem(502, 'center_redirect_forbidden');
   const outgoing = new Headers({
     'cache-control': 'no-store',
-    'x-aig-result': 'dispatched',
+    'x-aig-result': EXECUTION_WIRE_RESULT.DISPATCHED,
     'x-aig-upstream-status': String(upstream.status),
   });
   const retryAfter = upstream.headers.get('retry-after');
@@ -284,13 +284,13 @@ async function executeAdmittedNative(
 
   const dispatchedConversionProblem = (code: string): Response => {
     const response = problem(502, code);
-    response.headers.set('x-aig-result', 'dispatched');
+    response.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.DISPATCHED);
     response.headers.set('x-aig-upstream-status', String(upstream.status));
     return response;
   };
   const dispatchedDeadlineProblem = (): Response => {
-    const response = problem(504, 'center_execution_deadline');
-    response.headers.set('x-aig-result', 'dispatched');
+    const response = problem(504, EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE);
+    response.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.DISPATCHED);
     response.headers.set('x-aig-upstream-status', String(upstream.status));
     return response;
   };
@@ -377,7 +377,7 @@ async function executeAdmittedNative(
         { status: upstream.status, headers: outgoing },
       );
     } catch (error) {
-      if (error instanceof ConversionBudgetStop) return dispatchedConversionProblem('center_conversion_budget_exceeded');
+      if (error instanceof ConversionBudgetStop) return dispatchedConversionProblem(EXECUTION_ERROR_CODE.CENTER_CONVERSION_BUDGET_EXCEEDED);
       if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       return dispatchedConversionProblem('center_conversion_invalid');
     }
@@ -391,7 +391,7 @@ async function executeAdmittedNative(
     } catch {
       if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       const response = problem(502, 'center_buffered_reply_invalid');
-      response.headers.set('x-aig-result', 'dispatched');
+      response.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.DISPATCHED);
       response.headers.set('x-aig-upstream-status', String(upstream.status));
       return response;
     }
