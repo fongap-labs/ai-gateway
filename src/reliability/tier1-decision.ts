@@ -70,4 +70,3 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
   }
   return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'default', reason: kind || 'unknown' };
 }
-
