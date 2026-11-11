@@ -2,11 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
-import {
-  TIER1_COOLDOWN_MAX_MS,
-  type Tier1FailureInput,
-  type Tier1Outcome,
-} from './tier1-definitions.ts';
+import { TIER1_COOLDOWN_MAX_MS, type Tier1FailureInput, type Tier1Outcome } from './tier1-definitions.ts';
 
 const TIER1_AUTH_DEFAULT_COOLDOWN_MS = RUNTIME_TUNABLES.find((entry) => entry.name === 'AIG_AUTH_FAILURE_COOLDOWN_MS')?.def ?? 0;
 
