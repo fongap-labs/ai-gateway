@@ -89,9 +89,7 @@ export function buildModelFallbackPlan(
   const first = firstRoundPlan(rounds[0], normalizedBudget(maxAttempts));
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
-  const second = (rounds[1] ?? [])
-    .filter((model) => allowed.has(keyOf(model)))
-    .map((model) => ({ model, attemptCap: 1 }));
+  const second = (rounds[1] ?? []).filter((model) => allowed.has(keyOf(model))).map((model) => ({ model, attemptCap: 1 }));
   if (second.length) result.push(second);
   return result;
 }
