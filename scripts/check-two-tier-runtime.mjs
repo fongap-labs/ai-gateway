@@ -12,6 +12,7 @@ import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
+import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
@@ -513,6 +514,29 @@ assert.equal(mixedRetryBody.error.details.retry_after_ms, Number(mixedRetry.head
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
 assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
+
+// A key-fingerprint flood must not trigger a 5000-entry eviction scan per
+// request. Keep the most recently used denial window and evict only the
+// oldest record (not an extra 10% of still-active rate limits).
+const rpmEpoch = 1_000_000;
+__resetKeyRpmForTests();
+for (let i = 0; i < 5_000; i++) {
+  assert.equal(admitKeyRequest(`group-${i}`, 1, rpmEpoch + i).ok, true);
+}
+assert.equal(admitKeyRequest('group-0', 1, rpmEpoch + 5_000).ok, false, 'an active group remains throttled');
+assert.equal(admitKeyRequest('group-5000', 1, rpmEpoch + 5_001).ok, true);
+assert.equal(getKeyRpmSnapshot('group-0', rpmEpoch + 5_002).used, 1, 'recently denied group retains its history');
+assert.equal(getKeyRpmSnapshot('group-1', rpmEpoch + 5_002).used, 0, 'only the oldest group is evicted');
+assert.equal(getKeyRpmSnapshot('group-2', rpmEpoch + 5_002).used, 1, 'no extra rate-limit histories are discarded');
+
+__resetKeyRpmForTests();
+for (let i = 0; i < 5_000; i++) recordAuthFailure(`invalid-${i}`, rpmEpoch + i);
+recordAuthFailure('invalid-0', rpmEpoch + 5_000);
+recordAuthFailure('invalid-5000', rpmEpoch + 5_001);
+assert.equal(admitAuthAttempt('invalid-0', 1, rpmEpoch + 5_002).ok, false, 'active invalid credential stays throttled');
+assert.equal(admitAuthAttempt('invalid-1', 1, rpmEpoch + 5_002).ok, true, 'only the oldest invalid fingerprint is evicted');
+assert.equal(admitAuthAttempt('invalid-2', 1, rpmEpoch + 5_002).ok, false, 'another invalid fingerprint remains throttled');
+__resetKeyRpmForTests();
 
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
