@@ -37,6 +37,35 @@ type AggregateRow = {
   upstreamMissing: number;
 };
 
+// One typed source of truth for the 20 metrics bound after the day/week
+// key. Both upserts intentionally share the same column order.
+const AGGREGATE_BIND_FIELDS = [
+  'input',
+  'output',
+  'cacheCreation',
+  'cacheRead',
+  'total',
+  'requests',
+  'reports',
+  'missing',
+  'upstreamInput',
+  'upstreamOutput',
+  'upstreamCacheCreation',
+  'upstreamCacheRead',
+  'upstreamTotal',
+  'upstreamAttempts',
+  'upstreamReports',
+  'upstreamMissing',
+  'upstreamEffectiveInput',
+  'upstreamObservedRead',
+  'upstreamObservedInput',
+  'upstreamReadReports',
+] as const satisfies ReadonlyArray<keyof AggregateRow>;
+
+function bindAggregate(stmt: D1PreparedStatement, key: string, aggregate: AggregateRow): D1PreparedStatement {
+  return stmt.bind(key, ...AGGREGATE_BIND_FIELDS.map((field) => aggregate[field]));
+}
+
 type AggregateSourceRow = {
   hour?: string;
   day?: string;
@@ -180,31 +209,7 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
     );
     const batch: D1PreparedStatement[] = [];
     for (const [day, aggregate] of byDay) {
-      batch.push(
-        upsertStmt.bind(
-          day,
-          aggregate.input,
-          aggregate.output,
-          aggregate.cacheCreation,
-          aggregate.cacheRead,
-          aggregate.total,
-          aggregate.requests,
-          aggregate.reports,
-          aggregate.missing,
-          aggregate.upstreamInput,
-          aggregate.upstreamOutput,
-          aggregate.upstreamCacheCreation,
-          aggregate.upstreamCacheRead,
-          aggregate.upstreamTotal,
-          aggregate.upstreamAttempts,
-          aggregate.upstreamReports,
-          aggregate.upstreamMissing,
-          aggregate.upstreamEffectiveInput,
-          aggregate.upstreamObservedRead,
-          aggregate.upstreamObservedInput,
-          aggregate.upstreamReadReports,
-        ),
-      );
+      batch.push(bindAggregate(upsertStmt, day, aggregate));
     }
     if (batch.length) await d1.batch(batch);
     return { aggregatedDays: batch.length };
@@ -277,31 +282,7 @@ export async function aggregateDailyToWeekly(env: GatewayEnv, now: number = Date
     );
     const batch: D1PreparedStatement[] = [];
     for (const [weekStart, aggregate] of byWeek) {
-      batch.push(
-        upsertStmt.bind(
-          weekStart,
-          aggregate.input,
-          aggregate.output,
-          aggregate.cacheCreation,
-          aggregate.cacheRead,
-          aggregate.total,
-          aggregate.requests,
-          aggregate.reports,
-          aggregate.missing,
-          aggregate.upstreamInput,
-          aggregate.upstreamOutput,
-          aggregate.upstreamCacheCreation,
-          aggregate.upstreamCacheRead,
-          aggregate.upstreamTotal,
-          aggregate.upstreamAttempts,
-          aggregate.upstreamReports,
-          aggregate.upstreamMissing,
-          aggregate.upstreamEffectiveInput,
-          aggregate.upstreamObservedRead,
-          aggregate.upstreamObservedInput,
-          aggregate.upstreamReadReports,
-        ),
-      );
+      batch.push(bindAggregate(upsertStmt, weekStart, aggregate));
     }
     if (batch.length) await d1.batch(batch);
     return { aggregatedWeeks: batch.length };
