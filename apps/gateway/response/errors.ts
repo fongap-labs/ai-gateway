@@ -223,11 +223,8 @@ export function buildExhaustedResponse(
       // A timeout may win the terminal-status tie even when several physical
       // candidates are cooling down after 429. Preserve the family's real
       // blocking window instead of telling the caller to retry after 1s.
-      const sawRateLimit =
-        (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      retryAfterSec = sawRateLimit
-        ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1)
-        : 1;
+      const sawRateLimit = (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
+      retryAfterSec = sawRateLimit ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1) : 1;
       state.logger.info('model-family failover plan exhausted by transient failures', {
         request_id: requestId,
         requested_model: requestedModel,

@@ -4,10 +4,10 @@
 
 import assert from 'node:assert/strict';
 import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';
-import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
+import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
@@ -452,7 +452,6 @@ assert.equal(tier1State.snapshotTier1AccountRuntime(quotaId, [stateModelId], quo
 tier1State.__resetTier1StateForTests();
 assert.equal(tier1Store.tier1Accounts.size, 0, 'reset clears the same store seen by diagnostics');
 
-
 // Mixed 429 + headers timeout must retain the cooldown of a configured
 // compatible-model fallback, even when the terminal-status tie selects 504.
 // Use opaque model names so the test cannot pass through hard-coded Code aliases.
@@ -508,10 +507,7 @@ const exhausted = (kinds) =>
 const mixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 });
 assert.equal(mixedRetry.status, 503);
 assert.equal(mixedRetry.headers.get('x-gateway-error-code'), 'gateway_attempt_budget_exhausted');
-assert.ok(
-  Number(mixedRetry.headers.get('retry-after')) >= 15,
-  'mixed 429/timeout exhaustion retains the configured fallback model cooldown',
-);
+assert.ok(Number(mixedRetry.headers.get('retry-after')) >= 15, 'mixed 429/timeout exhaustion retains the configured fallback model cooldown');
 const mixedRetryBody = await mixedRetry.json();
 assert.equal(mixedRetryBody.error.details.retry_after_ms, Number(mixedRetry.headers.get('retry-after')) * 1000);
 const timeoutRetry = exhausted({ headers_timeout: 8 });
