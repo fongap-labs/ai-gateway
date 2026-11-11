@@ -4,7 +4,13 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
-import { type ExecutionInputSurface, type ExecutionInvocation, EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../packages/contracts/execution.ts';
+import {
+  EXECUTION_ERROR_CODE,
+  EXECUTION_WIRE_RESULT,
+  type ExecutionInputSurface,
+  type ExecutionInvocation,
+  INFERENCE_TRANSLATED_OBJECT_FORMAT,
+} from '../../packages/contracts/execution.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';

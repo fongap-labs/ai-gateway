@@ -258,9 +258,7 @@ for (const [status, code, result] of [
 ]) {
   assert.equal(parseExecutionResponse(centerResult(status, code, result)).verifiedPreDispatchRotation, false);
 }
-const overDeadline = parseExecutionResponse(
-  centerResult(504, EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE, EXECUTION_WIRE_RESULT.DISPATCHED),
-);
+const overDeadline = parseExecutionResponse(centerResult(504, EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE, EXECUTION_WIRE_RESULT.DISPATCHED));
 assert.equal(overDeadline.phase, 'execution-deadline');
 assert.equal(overDeadline.verifiedPreDispatchRotation, false);
 assert.equal(parseExecutionResponse(new Response(null, { status: 503 })).phase, 'center-unconfirmed');

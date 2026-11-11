@@ -58,11 +58,7 @@ export type ExecutionPhase =
 const KNOWN_EXECUTION_CODES: ReadonlySet<string> = new Set(Object.values(EXECUTION_ERROR_CODE));
 
 /** Preserve the existing private error envelope (Inference includes retryable, Generation does not). */
-export function serializeExecutionError(
-  status: number,
-  code: string,
-  options: { retryable?: boolean; result?: ExecutionWireResult } = {},
-): Response {
+export function serializeExecutionError(status: number, code: string, options: { retryable?: boolean; result?: ExecutionWireResult } = {}): Response {
   const { retryable, result } = options;
   const headers = new Headers({
     'content-type': 'application/json',
