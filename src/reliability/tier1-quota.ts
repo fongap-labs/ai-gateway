@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 import type { Tier1AccountRuntime, Tier1QuotaState, Tier1ReleaseToken } from './tier1-definitions.ts';
-import { getTier1Account, tier1Accounts as accounts } from './tier1-store.ts';
+import { tier1Accounts as accounts, getTier1Account } from './tier1-store.ts';
 
 export function tier1QuotaState(accountId: string, now: number = Date.now()): Tier1QuotaState {
   const account = accounts.get(accountId);

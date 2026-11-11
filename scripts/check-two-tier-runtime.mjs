@@ -280,7 +280,6 @@ async function verifyStreamGuardAcceptsJsonFallback() {
 
 await verifyStreamGuardAcceptsJsonFallback();
 
-
 // State-module extraction regressions: one store, unchanged quota reservations,
 // fixed 429 scope, half-open transition, and read-only diagnostic snapshots.
 const tier1State = await import('../src/reliability/tier1-state.ts');
@@ -315,12 +314,16 @@ assert.equal(halfOpenModel.failureState, 'normal', 'two successes restore normal
 const quotaId = 'tier1-split-quota';
 const quotaNow = 100_000;
 assert.equal(
-  tier1State.recordTier1QuotaReport(quotaId, {
-    remainingRequests: 2,
-    limitRequests: 100,
-    resetAtMs: quotaNow + 60_000,
-    source: 'contract-test',
-  }, quotaNow),
+  tier1State.recordTier1QuotaReport(
+    quotaId,
+    {
+      remainingRequests: 2,
+      limitRequests: 100,
+      resetAtMs: quotaNow + 60_000,
+      source: 'contract-test',
+    },
+    quotaNow,
+  ),
   true,
 );
 assert.equal(tier1State.tier1QuotaState(quotaId, quotaNow), 'near_limit');

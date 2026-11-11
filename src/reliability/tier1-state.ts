@@ -31,20 +31,25 @@ import {
   type Tier1SharedCooldown,
 } from './tier1-definitions.ts';
 import { normalizeQuotaWindow } from './tier1-quota.ts';
-import {
-  getTier1Account,
-  getTier1Model,
-  getTier1ModelPerf,
-  resetTier1StoreForTests,
-  tier1Accounts as accounts,
-} from './tier1-store.ts';
+import { tier1Accounts as accounts, getTier1Account, getTier1Model, getTier1ModelPerf, resetTier1StoreForTests } from './tier1-store.ts';
 
+export { classifyTier1Failure } from './tier1-decision.ts';
+export type {
+  Tier1AccountRuntime,
+  Tier1FailureInput,
+  Tier1FailureState,
+  Tier1ModelRuntime,
+  Tier1Outcome,
+  Tier1QuotaState,
+  Tier1ReleaseToken,
+  Tier1SharedCooldown,
+} from './tier1-definitions.ts';
 export {
+  TIER1_5XX_BASE_MS,
+  TIER1_5XX_MAX_MS,
   TIER1_429_ACCOUNT_ESCALATION_MODELS,
   TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
   TIER1_429_PROBE_GATE_MS,
-  TIER1_5XX_BASE_MS,
-  TIER1_5XX_MAX_MS,
   TIER1_COOLDOWN_DEFAULT_MS,
   TIER1_COOLDOWN_MAX_MS,
   TIER1_EWMA_ALPHA,
@@ -60,17 +65,6 @@ export {
   TIER1_TIMEOUT_BASE_MS,
   TIER1_TIMEOUT_MAX_MS,
 } from './tier1-definitions.ts';
-export type {
-  Tier1AccountRuntime,
-  Tier1FailureInput,
-  Tier1FailureState,
-  Tier1ModelRuntime,
-  Tier1Outcome,
-  Tier1QuotaState,
-  Tier1ReleaseToken,
-  Tier1SharedCooldown,
-} from './tier1-definitions.ts';
-export { classifyTier1Failure } from './tier1-decision.ts';
 export { snapshotTier1AccountRuntime, snapshotTier1Runtime, tier1LongCooldowns } from './tier1-diagnostics.ts';
 export { recordTier1QuotaReport, recordTier1QuotaSignal, settleTier1Quota, tier1QuotaState } from './tier1-quota.ts';
 export { getTier1Account, getTier1Model, getTier1ModelPerf, tier1AccountInFlight } from './tier1-store.ts';
@@ -139,7 +133,6 @@ function rateLimitProbeBlocked(scope: RateLimitProbeScope, scopeInFlight: number
   if (!probeGate.v2) return true;
   return scopeInFlight > 0;
 }
-
 
 export function claimTier1Slot(
   node: RuntimeNode,
@@ -309,7 +302,6 @@ export function recordTier1Ttft(accountId: string, modelId: string, observedMs: 
   model.lastObservedAt = now;
   return true;
 }
-
 
 /**
  * A key of `provider` just recovered from a rate limit (on the account, or on `modelId`).
@@ -615,7 +607,6 @@ export function tier1HasDeferredCapacity(
   return false;
 }
 
-
 /** Apply a cooldown another isolate shared. Never shortens a local one. */
 export function adoptTier1Cooldown(entry: Tier1SharedCooldown, now: number = Date.now()): void {
   if (!(entry.until > now)) return;
@@ -638,7 +629,6 @@ export function adoptTier1Cooldown(entry: Tier1SharedCooldown, now: number = Dat
     account.rateLimitRecoveryUntil = 0;
   }
 }
-
 
 export function __resetTier1StateForTests(): void {
   resetTier1StoreForTests();
