@@ -262,6 +262,8 @@ prefill 时间随提示词变长，Claude Code 这类编码代理发来几十万
 
 非流式请求的上游回复在生成结束前不会发出响应头，所以对它而言「等响应头」就是「等整段生成」。若仍套用面向流式的 15 秒响应头超时，任何超过 15 秒的非流式补全都会在每个节点上超时，轮换完所有节点后以 504 收场。缓冲回复因此以 attempt 窗口（受请求预算与 attempt 截止时间约束）取代响应头超时；流式请求、经 IR 矩阵翻译的请求（上游被强制为流式）以及开启 `AIG_HAS_STREAM_GUARD` 的 Chat 请求仍使用响应头超时。
 
+私有 Inference 与 Perception 中心把 Gateway 的 Service Binding 等待上限和 Provider 响应头时限分开。中心会先结束 Provider 响应头等待并把明确的超时结果交回 Gateway，Gateway 才到自己的等待上限；中心内需要缓冲的转换也会在 attempt 截止前留出返回错误的余量。尚未收到 Provider 响应头的超时可按既有调度规则尝试其他节点。Provider 已响应、但缓冲转换耗尽预算时，返回不可重试的 504，因为 Provider 可能已经处理请求。Service Binding 自身未能返回结果时使用单独的 `gateway_inference_center_timeout` 错误。
+
 ## 流式生命周期
 
 首事件守卫定义了透明故障转移的边界：
