@@ -187,7 +187,7 @@ try {
     assert.equal(result.response?.status, expectedStatus);
     assert.notEqual(result.rotate, true, 'unknown upstream outcome MUST NOT rotate');
     assert.equal(state.logicalAttempts, 1, 'attempted Provider fetch is charged exactly once');
-    assert.equal((await result.response.clone().json()).error.code, 'gateway_inference_upstream_outcome_unknown');
+    assert.equal((await result.response.clone().json()).error.details.gateway_code, 'gateway_inference_upstream_outcome_unknown');
   }
   const skipped = await runCenterGatewayAttempt(async () => returnedByCenter(404, 'center_route_unavailable', 'skipped'));
   assert.equal(skipped.result.rotate, true, 'only verified pre-dispatch may rotate');
@@ -196,14 +196,13 @@ try {
   const afterDispatch = await runCenterGatewayAttempt(async () => returnedByCenter(504, 'center_execution_deadline', 'dispatched'));
   assert.equal(afterDispatch.result.response?.status, 504);
   assert.notEqual(afterDispatch.result.rotate, true);
-  assert.equal((await afterDispatch.result.response.clone().json()).error.code, 'gateway_inference_execution_timeout');
+  assert.equal((await afterDispatch.result.response.clone().json()).error.details.gateway_code, 'gateway_inference_execution_timeout');
   const bindingFailure = await runCenterGatewayAttempt(async () => {
     throw new Error('Service Binding rejected after possible upstream execution');
   });
   assert.equal(bindingFailure.result.response?.status, 502, 'transport uncertainty is not a verified center configuration outage');
   assert.notEqual(bindingFailure.result.rotate, true);
-  assert.equal((await bindingFailure.result.response.clone().json()).error.code, 'gateway_inference_center_transport_error');
-
+  assert.equal((await bindingFailure.result.response.clone().json()).error.details.gateway_code, 'gateway_inference_center_transport_error');
 
   // A center-owned Gateway must be routable with NO static Provider secrets.
   // A public Gateway can route secretless metadata even when a private binding
