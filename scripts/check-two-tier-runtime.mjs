@@ -3,6 +3,7 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
+import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
 import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
@@ -513,6 +514,52 @@ assert.equal(mixedRetryBody.error.details.retry_after_ms, Number(mixedRetry.head
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
 assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
+
+// An exhausted model-family pass must describe the actual dispatched model,
+// not the original model's unrelated physical mapping. No credentials or
+// request body are included in the per-attempt diagnostic record.
+const diagnosticNode = {
+  ...retryTargetNode,
+  id: 'tier2-effective-model-diagnostic',
+  models: { [retrySource]: 'physical-source', [retryTarget]: 'physical-target' },
+};
+const diagnosticLogs = [];
+const diagnosticState = {
+  ...retryState({}),
+  attempted: new Set(),
+  attempts: [],
+  logicalAttempts: 0,
+  dispatches: 0,
+  logger: { info: (message) => diagnosticLogs.push(message), error() {}, debug() {} },
+  nodes: [diagnosticNode],
+};
+recordOutcome(
+  diagnosticState,
+  diagnosticNode,
+  { kind: 'headers_timeout', action: 'neutral', counted: false, cooldownMs: 0 },
+  {
+    state: diagnosticState,
+    env: {},
+    logger: diagnosticState.logger,
+    requestId: 'attempt-model-diagnostic-test',
+    requestedModel: retrySource,
+    reqDescriptor: { model: retryTarget, route: 'openai_chat', protocol: 'openai', surface: 'chat_completions' },
+    upstreamProtocol: 'openai',
+    surface: 'chat_completions',
+    attemptStartMs: 10_000,
+    attemptDeadlineMs: 15_000,
+    attemptSettlement: { observedUsage: null, settled: true },
+  },
+  { latencyMs: 500, status: 504 },
+);
+assert.equal(diagnosticState.dispatches, 1);
+assert.equal(diagnosticState.attempts[0].effective_model, retryTarget);
+assert.equal(diagnosticState.attempts[0].upstream_model, 'physical-target');
+assert.equal(diagnosticState.attempts[0].attempt_window_ms, 5_000);
+assert.equal(diagnosticState.attempts[0].kind, 'headers_timeout');
+assert.ok(diagnosticLogs[0].includes('model=retry-source=>retry-target->physical-target'), 'fallback diagnostics use the dispatched model');
+assert.ok(diagnosticLogs[0].includes('attempt_window_ms=5000'), 'timeout diagnostics expose the actual reserved attempt window');
+assert.ok(!diagnosticLogs[0].includes('physical-source'), 'the source model mapping must not be misattributed');
 
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
