@@ -16,7 +16,7 @@ for (const name of ['openai', 'anthropic', 'google', 'openai-image', 'google-ima
 for (const [provider, acceptsImages] of [
   ['openai', true],
   ['anthropic', true],
-  ['google', false],
+  ['google', true],
   ['openai-image', false],
   ['google-image', false],
   ['cloudflare-image', false],
