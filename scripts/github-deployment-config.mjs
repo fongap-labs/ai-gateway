@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
+import { normalizeNodeConfigJsonText } from './node-config-json-normalizer.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VAR_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
@@ -78,35 +79,7 @@ function assertSize(name, value) {
   }
 }
 
-export function normalizeNodeConfigJsonText(text) {
-  const source = String(text ?? '');
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-    if (inString) {
-      out += ch;
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    if (ch === '、' || ch === '，') {
-      let j = i + 1;
-      while (j < source.length && /\s/.test(source[j])) j++;
-      if (source[j] !== '}' && source[j] !== ']') out += ',';
-      continue;
-    }
-    out += ch;
-  }
-  return out;
-}
+export { normalizeNodeConfigJsonText };
 
 export function normalizeRuntimeConfig(raw) {
   assertTwoTierBindingNames([...Object.keys(raw.vars ?? {}), ...Object.keys(raw.secrets ?? {})]);

@@ -10,6 +10,7 @@
 // Secrets.
 
 import { providerWire } from '../../src/providers/registry.ts';
+import { normalizeNodeConfigJsonText } from '../node-config-json-normalizer.mjs';
 import {
   DISCOVERY_LIMITS,
   enforceMaxModelCount,
@@ -27,41 +28,6 @@ function parseJson(text, label) {
   } catch (error) {
     throw new Error(`${label}: invalid JSON (${error.message})`);
   }
-}
-
-// Keep discovery aligned with the deployment bridge: Repository Variables are
-// often edited through a browser/IME, so an accidental Chinese ideographic or
-// full-width comma outside a JSON string must not break discovery when deploy
-// already accepts the same node shard. The repair is intentionally narrow and
-// never touches quoted string content.
-function normalizeNodeConfigJsonText(text) {
-  const source = String(text ?? '');
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-    if (inString) {
-      out += ch;
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    if (ch === '、' || ch === '，') {
-      let j = i + 1;
-      while (j < source.length && /\s/.test(source[j])) j++;
-      if (source[j] !== '}' && source[j] !== ']') out += ',';
-      continue;
-    }
-    out += ch;
-  }
-  return out;
 }
 
 function cleanBaseUrl(value) {
