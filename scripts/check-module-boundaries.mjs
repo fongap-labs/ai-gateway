@@ -964,7 +964,12 @@ assert.match(responseContract, /EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION = '6
 assert.match(centerDispatch, /returnCollectedObject = Boolean\(/, 'Gateway must request v6 for default nonstream Matrix calls');
 assert.match(centerDispatch, /gateway_inference_object_format_invalid/, 'Gateway must reject untagged v6 objects and SSE');
 assert.match(inferenceExecutor, /await collectMatrixObject\(/, 'Only private center may collect v6 SSE into a reply object');
-assert.match(inferenceExecutor, /center_conversion_budget_exceeded/, 'Center must signal v6 budget stop before returning a public object');
+assert.match(
+  inferenceV4Contract,
+  /CENTER_CONVERSION_BUDGET_EXCEEDED: 'center_conversion_budget_exceeded'/,
+  'The shared execution contract must declare the v6 budget stop code',
+);
+assert.match(inferenceExecutor, /EXECUTION_ERROR_CODE\.CENTER_CONVERSION_BUDGET_EXCEEDED/, 'Center must signal v6 budget stop using the shared code');
 assert.match(centerDispatch, /returnTranslatedObject = Boolean\(/, 'Gateway must verify tagged objects for both v3 and v6');
 assert.match(centerDispatch, /returnTranslatedObject &&\s*\(upstream.headers.get/, 'Gateway must reject untagged v3/v6 responses');
 assert.match(inferenceExecutor, /if \(invocation.returnObject && upstream.ok && content\?\.toLowerCase/, 'Inference must collect unexpected v3 SSE');

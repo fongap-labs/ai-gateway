@@ -5,7 +5,13 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
-import { type ExecutionInputSurface, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../../../packages/contracts/execution.ts';
+import {
+  EXECUTION_ERROR_CODE,
+  EXECUTION_WIRE_RESULT,
+  type ExecutionInputSurface,
+  INFERENCE_TRANSLATED_OBJECT_FORMAT,
+  parseExecutionResponse,
+} from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
@@ -22,9 +28,8 @@ import { recordTier1QuotaReport } from '../../../src/reliability/tier1-state.ts'
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { quotaFromCenter } from '../reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
-import type { InferenceCenter } from '../transport/inference-client-request.ts';
-import { invokeInferenceNode } from '../transport/inference-client-request.ts';
-import { invokePerceptionNode } from '../transport/perception-client-request.ts';
+import { type InferenceCenter, InferenceCenterUnavailable, invokeInferenceNode } from '../transport/inference-client-request.ts';
+import { invokePerceptionNode, PerceptionCenterUnavailable } from '../transport/perception-client-request.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
 import { handleSuccess } from './success.ts';
@@ -52,7 +57,11 @@ function stopForCenter(c: AttemptContext, status: number, code: string, center: 
       c.env,
       c.route,
       status,
-      status === 504 ? `${centerName} did not respond in time.` : `${centerName} is unavailable.`,
+      status === 504
+        ? `${centerName} did not finish before the execution deadline; upstream outcome is unknown.`
+        : status === 502
+          ? `${centerName} transport failed; upstream execution may already have started.`
+          : `${centerName} is unavailable.`,
       c.requestId,
       undefined,
       undefined,
@@ -160,7 +169,7 @@ export async function dispatchInferenceAttempt(
       body: outboundBody,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     clearTimeout(timer);
     detach();
     if (c.hedgeAbort?.signal.aborted) return hedgeLoserOutcome(c, node, 'center_headers');
@@ -168,12 +177,15 @@ export async function dispatchInferenceAttempt(
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - dispatchStartMs });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
     }
-    // An RPC failure is not evidence that the selected PROVIDER is unhealthy.
-    // Never retry by bypassing the private center: it may already have executed.
+    // A missing binding is verified pre-dispatch; an RPC rejection may follow
+    // a slow Provider execution. Neither permits direct Provider fallback.
+    if (error instanceof InferenceCenterUnavailable || error instanceof PerceptionCenterUnavailable) {
+      return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
+    }
     return stopForCenter(
       c,
-      hasTimedOut ? 504 : 503,
-      hasTimedOut ? 'gateway_inference_center_timeout' : 'gateway_inference_center_unavailable',
+      hasTimedOut ? 504 : 502,
+      hasTimedOut ? EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_TIMEOUT : EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_TRANSPORT_ERROR,
       center,
     );
   }
@@ -181,7 +193,7 @@ export async function dispatchInferenceAttempt(
   c.headersMs = Date.now() - dispatchStartMs;
   c.upstreamStatus = upstream.status;
 
-  const executionResult = upstream.headers.get('x-aig-result');
+  const execution = parseExecutionResponse(upstream);
   // A private center can resolve with a 499 after the caller aborts, rather
   // than rejecting its Service Binding promise. Client cancellation must
   // retain the same neutral 499 behavior in both completion paths; treating
@@ -192,22 +204,40 @@ export async function dispatchInferenceAttempt(
   }
   if (request.signal.aborted) {
     detach();
-    if (executionResult === 'dispatched') recordUndeliveredUpstreamAttempt(c, node);
+    if (execution.result === EXECUTION_WIRE_RESULT.DISPATCHED) recordUndeliveredUpstreamAttempt(c, node);
     recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: c.headersMs });
     return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
   }
-  const centerErrorKind = upstream.headers.get('x-aig-error-kind');
-  if (executionResult === 'attempted' && (centerErrorKind === 'center_upstream_network' || centerErrorKind === 'center_upstream_headers_timeout')) {
+  if (execution.result === EXECUTION_WIRE_RESULT.ATTEMPTED) {
+    // An upstream fetch with lost headers might have executed. Do not replay
+    // it on another node, even for network and response-header timeouts.
     detach();
-    const classified = classifyNetworkError(centerErrorKind === 'center_upstream_headers_timeout');
+    const headersTimedOut = execution.phase === 'upstream-headers';
+    const classified = classifyNetworkError(headersTimedOut);
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
-    return { rotate: true, kind: classified.kind };
+    return {
+      response: gatewayError(
+        request,
+        env,
+        route,
+        headersTimedOut ? 504 : 502,
+        'The upstream execution outcome is unknown; it was not replayed.',
+        c.requestId,
+        undefined,
+        undefined,
+        EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_UPSTREAM_OUTCOME_UNKNOWN,
+      ),
+    };
   }
-  if (executionResult === 'skipped' && upstream.status === 504 && centerErrorKind === 'center_upstream_headers_timeout') {
+  if (execution.verifiedPreDispatchRotation) {
     detach();
     return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
   }
-  if (executionResult === 'dispatched' && upstream.status === 504 && centerErrorKind === 'center_execution_deadline') {
+  if (
+    execution.result === EXECUTION_WIRE_RESULT.DISPATCHED &&
+    upstream.status === 504 &&
+    execution.code === EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE
+  ) {
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
@@ -221,23 +251,19 @@ export async function dispatchInferenceAttempt(
         c.requestId,
         undefined,
         undefined,
-        'gateway_inference_execution_timeout',
+        EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_EXECUTION_TIMEOUT,
       ),
     };
   }
   // Public Gateway sees metadata-only nodes. The private center may exclude
   // an invalid credential binding: this authenticated, exact pre-dispatch
   // signal lets the scheduler try another candidate without charging usage.
-  if (executionResult === 'skipped' && upstream.status === 404 && upstream.headers.get('x-aig-error-kind') === 'center_route_unavailable') {
-    detach();
-    return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
-  }
-  if (executionResult !== 'dispatched') {
+  if (execution.result !== EXECUTION_WIRE_RESULT.DISPATCHED) {
     detach();
     // A center-isolate memory refusal is request-local, not evidence of a bad
     // Provider or an unavailable center. Preserve the Gateway's retryable
     // body-budget 503 and never charge an upstream execution.
-    if (upstream.status === 503 && upstream.headers.get('x-aig-error-kind') === 'center_body_budget_exhausted') {
+    if (upstream.status === 503 && execution.code === EXECUTION_ERROR_CODE.CENTER_BODY_BUDGET_EXHAUSTED) {
       rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
       return {
         budgetCharged: false,
@@ -274,7 +300,7 @@ export async function dispatchInferenceAttempt(
     if (signal) recordTier1QuotaReport(node.id, signal);
   }
 
-  if (returnTranslatedObject && upstream.headers.get('x-aig-error-kind') === 'center_conversion_budget_exceeded' && upstream.status === 502) {
+  if (returnTranslatedObject && execution.code === EXECUTION_ERROR_CODE.CENTER_CONVERSION_BUDGET_EXCEEDED && upstream.status === 502) {
     detach();
     recordUndeliveredUpstreamAttempt(c, node);
     recordOutcome(state, node, classifyConversionBudget(), c, { latencyMs: c.headersMs, status: upstream.status });

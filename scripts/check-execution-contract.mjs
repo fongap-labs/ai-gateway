@@ -6,7 +6,11 @@ import {
   authorizeExecutionRequest,
   buildExecutionHeaders,
   EXECUTION_CONTRACT_VERSION,
+  EXECUTION_ERROR_CODE,
+  EXECUTION_WIRE_RESULT,
   parseExecutionInvocation,
+  parseExecutionResponse,
+  serializeExecutionError,
 } from '../packages/contracts/execution.ts';
 import { centerResponseDeadlineMs } from '../src/config/timeouts.ts';
 
@@ -210,3 +214,52 @@ v6WithoutObject.delete('x-aig-return-object');
 assert.equal(parseExecutionInvocation(makeRequest(v6WithoutObject), allowed, now), null);
 
 console.log('Execution contracts v1-v6: strict budgets, isolation, version and authorization validation passed.');
+
+// Error serialization retains the historical Inference and Generation envelope
+// shapes. The response parser must never infer dispatch from a missing marker.
+const inferenceProblem = serializeExecutionError(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, {
+  retryable: true,
+  result: EXECUTION_WIRE_RESULT.ATTEMPTED,
+});
+assert.deepEqual(await inferenceProblem.json(), { error: { code: 'center_upstream_headers_timeout', retryable: true } });
+assert.equal(inferenceProblem.headers.get('x-aig-retryable'), 'true');
+const generationProblem = serializeExecutionError(502, EXECUTION_ERROR_CODE.GENERATION_OUTCOME_UNKNOWN, {
+  result: EXECUTION_WIRE_RESULT.ATTEMPTED,
+});
+assert.deepEqual(await generationProblem.json(), { error: { code: 'generation_outcome_unknown' } });
+assert.equal(generationProblem.headers.get('x-aig-retryable'), null);
+
+function centerResult(status, code, result) {
+  return new Response(null, { status, headers: { 'x-aig-error-kind': code, 'x-aig-result': result } });
+}
+for (const [status, code, phase] of [
+  [502, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_NETWORK, 'upstream-network'],
+  [504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, 'upstream-headers'],
+  [502, 'unknown_error', 'upstream-attempted'],
+]) {
+  const parsed = parseExecutionResponse(centerResult(status, code, EXECUTION_WIRE_RESULT.ATTEMPTED));
+  assert.equal(parsed.phase, phase);
+  assert.equal(parsed.verifiedPreDispatchRotation, false, 'an attempted fetch may already have reached the Provider');
+}
+for (const [status, code] of [
+  [404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE],
+  [504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT],
+]) {
+  const parsed = parseExecutionResponse(centerResult(status, code, EXECUTION_WIRE_RESULT.SKIPPED));
+  assert.equal(parsed.phase, 'pre-dispatch');
+  assert.equal(parsed.verifiedPreDispatchRotation, true);
+}
+for (const [status, code, result] of [
+  [404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE, EXECUTION_WIRE_RESULT.ATTEMPTED],
+  [504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, EXECUTION_WIRE_RESULT.DISPATCHED],
+  [404, 'unknown_error', EXECUTION_WIRE_RESULT.SKIPPED],
+  [503, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE, EXECUTION_WIRE_RESULT.SKIPPED],
+  [404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE, 'forged-result'],
+]) {
+  assert.equal(parseExecutionResponse(centerResult(status, code, result)).verifiedPreDispatchRotation, false);
+}
+const overDeadline = parseExecutionResponse(centerResult(504, EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE, EXECUTION_WIRE_RESULT.DISPATCHED));
+assert.equal(overDeadline.phase, 'execution-deadline');
+assert.equal(overDeadline.verifiedPreDispatchRotation, false);
+assert.equal(parseExecutionResponse(new Response(null, { status: 503 })).phase, 'center-unconfirmed');
+console.log('Execution phases and error serialization: pre-dispatch proof, unknown outcomes, transport stages passed.');

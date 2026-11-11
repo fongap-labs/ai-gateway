@@ -5,6 +5,7 @@
 // Unknown outcomes and center faults are terminal; never retry behind the
 // user's back or silently use the legacy direct-provider path.
 
+import { EXECUTION_WIRE_RESULT, parseExecutionResponse } from '../../../packages/contracts/execution.ts';
 import { attemptBudgetWindowMs } from '../../../src/config/timeouts.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { classifyClientAbort, classifyUpstreamStatus, KIND } from '../../../src/reliability/classify.ts';
@@ -82,12 +83,12 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
   c.headersMs = Date.now() - startedAt;
   c.upstreamStatus = upstream.status;
 
-  const result = upstream.headers.get('x-aig-result');
-  if (result === 'attempted') {
+  const result = parseExecutionResponse(upstream).result;
+  if (result === EXECUTION_WIRE_RESULT.ATTEMPTED) {
     detach();
     return terminate(c, 502, 'gateway_generation_outcome_unknown', 'Image-generation outcome is unknown; not retried.', true);
   }
-  if (result !== 'dispatched') {
+  if (result !== EXECUTION_WIRE_RESULT.DISPATCHED) {
     detach();
     return terminate(c, 503, 'gateway_generation_center_rejected', 'Private image-generation center refused the request.');
   }
