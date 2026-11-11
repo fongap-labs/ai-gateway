@@ -151,10 +151,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         }
         const declaredFallback = cfg.fallback;
         if (declaredFallback !== undefined) {
-          if (
-            !Array.isArray(declaredFallback) ||
-            !declaredFallback.every((target) => typeof target === 'string' && !!target.trim())
-          ) {
+          if (!Array.isArray(declaredFallback) || !declaredFallback.every((target) => typeof target === 'string' && !!target.trim())) {
             errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback must be an array of non-empty model names`);
           } else {
             const names = (declaredFallback as string[]).map((target) => target.trim());
