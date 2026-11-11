@@ -14,8 +14,8 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { getLimits } from '../../src/config/timeouts.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
+import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
