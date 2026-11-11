@@ -33,10 +33,16 @@ function configuredTargets(requested: string, modelsConfig: Record<string, Model
 }
 
 /**
- * Only configured, callable aliases enter the fallback rounds. Recheck each
- * sibling once but do not move back to the requested alias in round two.
- * This preserves one-way Air-style fallback without identifying a name as Air.
+ * Restore the v0.1.5 bounded two-round policy without coupling model names
+ * to code. Reversible configured fallback edges allow the requested model
+ * to rejoin round two; one-way fallback never returns to its origin.
  */
+function isReversibleFallback(requested: string, modelsConfig: Record<string, ModelEntry>): boolean {
+  const requestedKey = keyOf(requested);
+  return configuredTargets(requested, modelsConfig).some((target) =>
+    configuredTargets(target, modelsConfig).some((reverse) => keyOf(reverse) === requestedKey),
+  );
+}
 export function buildModelFallbackRounds(
   requestedModel: string,
   knownModels: ReadonlySet<string>,
@@ -53,7 +59,9 @@ export function buildModelFallbackRounds(
       seen.add(key);
     }
   }
-  return first.length > 1 ? [first, first.slice(1)] : [first];
+  if (first.length <= 1) return [first];
+  const second = isReversibleFallback(requestedModel, modelsConfig) ? [...first] : first.slice(1);
+  return second.length ? [first, second] : [first];
 }
 
 function normalizedBudget(maxAttempts: number): number {
@@ -61,13 +69,15 @@ function normalizedBudget(maxAttempts: number): number {
   return Math.max(1, Math.trunc(maxAttempts));
 }
 
-function firstRoundPlan(round: readonly string[], maxAttempts: number, template: readonly string[]): ModelFallbackPass[] {
+function firstRoundPlan(round: readonly string[], maxAttempts: number, template: readonly string[], reversible: boolean): ModelFallbackPass[] {
   // Widen first, then deepen. For a four-model family keep the 3/1/1/1
   // attempt preference, and for a three-model family use 3/2/1.
   const visible = round.slice(0, Math.min(round.length, maxAttempts));
   const caps = visible.map(() => 1);
   let remaining = Math.max(0, maxAttempts - visible.length);
-  const preference = round.length >= 4 ? [3, 1, 1, 1] : [3, 2, 1];
+  // v0.1.5: reversible families reserve 3/2/1, one-way families
+  // reserve 3/1/1/1 regardless of how many sibling models are configured.
+  const preference = reversible ? [3, 2, 1] : [3, 1, 1, 1];
   for (const [i, model] of visible.entries()) {
     if (!remaining) break;
     const current = caps[i] ?? 1;
@@ -88,10 +98,12 @@ export function buildModelFallbackPlan(
 ): ModelFallbackPass[][] {
   const rounds = buildModelFallbackRounds(requestedModel, knownModels, modelsConfig);
   if ((rounds[0]?.length ?? 0) <= 1) return [[{ model: requestedModel, attemptCap: null }]];
-  const first = firstRoundPlan(rounds[0] ?? [requestedModel], normalizedBudget(maxAttempts), [
-    requestedModel,
-    ...configuredTargets(requestedModel, modelsConfig),
-  ]);
+  const first = firstRoundPlan(
+    rounds[0] ?? [requestedModel],
+    normalizedBudget(maxAttempts),
+    [requestedModel, ...configuredTargets(requestedModel, modelsConfig)],
+    isReversibleFallback(requestedModel, modelsConfig),
+  );
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
   const second = (rounds[1] ?? []).filter((model) => allowed.has(keyOf(model))).map((model) => ({ model, attemptCap: 1 }));
