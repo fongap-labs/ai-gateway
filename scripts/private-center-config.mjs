@@ -8,8 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
-import { getPoliciesConfigDiagnostics, isBuiltinPolicyName } from '../src/config/policies.ts';
 import { getModelsConfigDiagnostics } from '../src/config/models.ts';
+import { getPoliciesConfigDiagnostics, isBuiltinPolicyName } from '../src/config/policies.ts';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
