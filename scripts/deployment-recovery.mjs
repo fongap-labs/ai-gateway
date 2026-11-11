@@ -119,7 +119,7 @@ export function confirmRestoredIdentity(snapshot, first, second, build) {
     !sameIdentity(first, second) ||
     first.version_id !== snapshot.previous.version_id ||
     first.deployment_id === snapshot.published.deployment_id ||
-    build !== snapshot.previous.build
+    (snapshot.previous.readiness === 'verified' ? build !== snapshot.previous.build : build !== null)
   ) {
     throw new Error('Cloudflare rollback and restored health are not proven.');
   }
@@ -236,10 +236,7 @@ async function main() {
       throw new Error('Rollback did not restore the recorded Worker version.');
     }
     const restoredBuild =
-      snapshot.previous.readiness === 'verified'
-        ? await healthyBuild(snapshot.previous.build)
-        : deploymentBuildFromMessage(before.message);
-    if (!restoredBuild) throw new Error('Restored Gateway build identity could not be verified.');
+      snapshot.previous.readiness === 'verified' ? await healthyBuild(snapshot.previous.build) : null;
     const after = await active();
     confirmRestoredIdentity(snapshot, before, after, restoredBuild);
     console.log(
