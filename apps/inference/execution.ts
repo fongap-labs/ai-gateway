@@ -228,10 +228,7 @@ async function executeAdmittedNative(
   const headers = buildUpstreamHeadersFor(node.protocol, clientRequest, credential, invocation.requestId);
   const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
   const controller = new AbortController();
-  const upstreamHeadersDeadlineMs = Math.min(
-    invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs,
-    invocation.deadlineMs,
-  );
+  const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   const remainingMs = upstreamHeadersDeadlineMs - Date.now();
   if (remainingMs <= 0) return preDispatchProblem(504, 'center_upstream_headers_timeout');
   const timeoutId = setTimeout(() => controller.abort(), remainingMs);
@@ -297,10 +294,7 @@ async function executeAdmittedNative(
     response.headers.set('x-aig-upstream-status', String(upstream.status));
     return response;
   };
-  const bufferedResponseDeadlineMs = Math.min(
-    invocation.bufferedResponseDeadlineMs ?? invocation.deadlineMs,
-    invocation.deadlineMs,
-  );
+  const bufferedResponseDeadlineMs = Math.min(invocation.bufferedResponseDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   if (invocation.returnStream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;

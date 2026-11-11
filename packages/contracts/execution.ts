@@ -106,8 +106,10 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
     'x-aig-deadline-ms': String(invocation.deadlineMs),
     [authHeader]: authKey,
   });
-  if (invocation.upstreamHeadersDeadlineMs !== undefined) headers.set('x-aig-upstream-headers-deadline-ms', String(invocation.upstreamHeadersDeadlineMs));
-  if (invocation.bufferedResponseDeadlineMs !== undefined) headers.set('x-aig-buffered-response-deadline-ms', String(invocation.bufferedResponseDeadlineMs));
+  if (invocation.upstreamHeadersDeadlineMs !== undefined)
+    headers.set('x-aig-upstream-headers-deadline-ms', String(invocation.upstreamHeadersDeadlineMs));
+  if (invocation.bufferedResponseDeadlineMs !== undefined)
+    headers.set('x-aig-buffered-response-deadline-ms', String(invocation.bufferedResponseDeadlineMs));
   if (invocation.inputSurface) headers.set('x-aig-input-surface', invocation.inputSurface);
   if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
   if (invocation.returnObject) headers.set('x-aig-return-object', 'true');

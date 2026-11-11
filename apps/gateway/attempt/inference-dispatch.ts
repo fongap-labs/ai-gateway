@@ -118,14 +118,9 @@ export async function dispatchInferenceAttempt(
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
-  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
-    configuredHeadersMs,
-    Math.max(1, c.attemptDeadlineMs - Date.now()),
-    1,
-  );
+  const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(configuredHeadersMs, Math.max(1, c.attemptDeadlineMs - Date.now()), 1);
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
-  const bufferedResponseDeadlineMs =
-    returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
+  const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
   const controller = new AbortController();
   let hasTimedOut = false;
@@ -202,20 +197,13 @@ export async function dispatchInferenceAttempt(
     return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
   }
   const centerErrorKind = upstream.headers.get('x-aig-error-kind');
-  if (
-    executionResult === 'attempted' &&
-    (centerErrorKind === 'center_upstream_network' || centerErrorKind === 'center_upstream_headers_timeout')
-  ) {
+  if (executionResult === 'attempted' && (centerErrorKind === 'center_upstream_network' || centerErrorKind === 'center_upstream_headers_timeout')) {
     detach();
     const classified = classifyNetworkError(centerErrorKind === 'center_upstream_headers_timeout');
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
     return { rotate: true, kind: classified.kind };
   }
-  if (
-    executionResult === 'skipped' &&
-    upstream.status === 504 &&
-    centerErrorKind === 'center_upstream_headers_timeout'
-  ) {
+  if (executionResult === 'skipped' && upstream.status === 504 && centerErrorKind === 'center_upstream_headers_timeout') {
     detach();
     return rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
   }

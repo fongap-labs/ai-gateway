@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 // No network, secrets, Worker bindings or production deployment.
 import assert from 'node:assert/strict';
-import { centerResponseDeadlineMs } from '../src/config/timeouts.ts';
 import {
   authorizeExecutionRequest,
   buildExecutionHeaders,
   EXECUTION_CONTRACT_VERSION,
   parseExecutionInvocation,
 } from '../packages/contracts/execution.ts';
+import { centerResponseDeadlineMs } from '../src/config/timeouts.ts';
 
 const now = Date.now();
 assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_750);
