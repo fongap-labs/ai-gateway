@@ -27,62 +27,28 @@ const ALLOWED_FIELDS = new Set([
 type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } | null;
 type TierAttempts = { tier1?: number; tier2?: number } | null;
 
-const BUILTIN_POLICIES: Readonly<{
-  default: PolicyConfig;
-  fast: PolicyConfig;
-  'long-reasoning': PolicyConfig;
-  chat: PolicyConfig;
-  coding: PolicyConfig;
-}> = Object.freeze({
-  default: {
-    maxAttempts: 5,
-    tierAttempts: null,
-    hedge: { enabled: true, tiers: ['tier1'] },
-    headersTimeoutMs: null,
-    firstEventTimeoutMs: null,
-    failoverBudgetMs: null,
-    maxInFlight: null,
-  },
-  fast: {
-    maxAttempts: 4,
-    tierAttempts: null,
-    hedge: { enabled: false },
-    headersTimeoutMs: null,
-    firstEventTimeoutMs: null,
-    failoverBudgetMs: 60_000,
-    maxInFlight: null,
-  },
-  'long-reasoning': {
-    maxAttempts: 6,
-    tierAttempts: null,
-    hedge: { enabled: false },
-    headersTimeoutMs: 60_000,
-    firstEventTimeoutMs: 60_000,
-    failoverBudgetMs: 180_000,
-    maxInFlight: null,
-  },
-  // Prefer free Tier 1 capacity: use the maximum bounded attempt budget
-  // (up to seven free attempts plus one Tier 2 reserve when both tiers exist).
-  // Actual dispatches stop on success, exhausted free keys, cooldown, time budget
-  // or retry-admission pressure. Do not duplicate free requests with hedges.
-  chat: {
-    maxAttempts: 8,
-    tierAttempts: null,
-    hedge: { enabled: false },
-    headersTimeoutMs: null,
-    firstEventTimeoutMs: null,
-    failoverBudgetMs: null,
-    maxInFlight: null,
-  },
-  coding: {
-    maxAttempts: 8,
-    tierAttempts: null,
-    hedge: { enabled: false },
-    headersTimeoutMs: null,
-    firstEventTimeoutMs: null,
-    failoverBudgetMs: null,
-    maxInFlight: null,
-  },
+// Three canonical strategies; legacy names remain compatibility aliases for
+// existing operators, not additional scheduling algorithms.
+const fast: PolicyConfig = {
+  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
+  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 60_000, maxInFlight: null,
+};
+const normal: PolicyConfig = {
+  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
+  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 120_000, maxInFlight: null,
+};
+const deep: PolicyConfig = {
+  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
+  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 180_000, maxInFlight: null,
+};
+const BUILTIN_POLICIES: Readonly<Record<string, PolicyConfig>> = Object.freeze({
+  fast, normal, deep,
+  // Legacy spellings accept older deployed models without widening the
+  // canonical strategy surface.
+  default: normal,
+  chat: normal,
+  coding: normal,
+  'long-reasoning': deep,
 });
 
 /** Single shared policy-name source for runtime and private-center deployment gates. */
@@ -172,13 +138,13 @@ function analyzePolicies(env: Record<string, unknown>): { policies: Record<strin
           const rawMax = cfg.max_attempts;
           if (typeof rawMax !== 'number' || !Number.isInteger(rawMax) || rawMax < MIN_ATTEMPTS || rawMax > MAX_ATTEMPTS) {
             errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
-            attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
+            attempts = base?.maxAttempts ?? BUILTIN_POLICIES.normal.maxAttempts;
             isMaxAttemptsValid = false;
           } else {
             attempts = rawMax;
           }
         } else {
-          attempts = base?.maxAttempts ?? BUILTIN_POLICIES.default.maxAttempts;
+          attempts = base?.maxAttempts ?? BUILTIN_POLICIES.normal.maxAttempts;
         }
 
         if (tierAttempts && tierAttemptsValid && isMaxAttemptsValid) {
@@ -296,15 +262,8 @@ function parseMaxInFlight(value: unknown, policyName: string, errors: string[]):
 }
 
 export function getPolicy(modelName: string, modelsConfig: Record<string, ModelEntry>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
-  const explicitPolicy = modelsConfig[modelName]?.policy?.policy;
-  const normalized = modelName.trim().toLowerCase();
-  const tier = normalized.split('-').at(-1);
-  let inferredPolicy = 'default';
-  if (tier === 'air') {
-    inferredPolicy = 'fast';
-  } else if (tier && ['pro', 'max', 'ultra'].includes(tier)) {
-    inferredPolicy = 'long-reasoning';
-  }
-  const policyName = explicitPolicy || inferredPolicy;
-  return policiesConfig[policyName] ?? policiesConfig.default ?? BUILTIN_POLICIES.default;
+  // Model spelling is an opaque identifier: no tier/prefix inference.
+  const explicit = modelsConfig[modelName]?.policy?.policy;
+  const policyName = explicit || 'normal';
+  return policiesConfig[policyName] ?? policiesConfig.normal ?? BUILTIN_POLICIES.normal;
 }
