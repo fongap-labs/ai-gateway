@@ -21,7 +21,7 @@ const sizes: ReadonlySet<string> = new Set(['1024x1024', '1024x1536', '1536x1024
 const cloudflareModel = /^@cf\/[a-z0-9._-]+\/[a-z0-9._-]+$/;
 
 export function isImageGenerationProvider(provider: string): boolean {
-  return providers.has(provider);
+  return typeof provider === 'string' && providers.has(provider.trim().toLowerCase());
 }
 
 /**
@@ -30,7 +30,8 @@ export function isImageGenerationProvider(provider: string): boolean {
  * before doing one potentially billable Provider attempt.
  */
 export function canRouteImageGeneration(node: ImageRoutingNode, logicalModel: string, size: unknown): boolean {
-  if (!isImageGenerationProvider(node.provider) || node.auth === 'oauth') return false;
+  const provider = typeof node.provider === 'string' ? node.provider.trim().toLowerCase() : '';
+  if (!isImageGenerationProvider(provider) || node.auth === 'oauth') return false;
   if (!node.surfaces.includes('images_generations') || !Object.hasOwn(node.models, logicalModel)) return false;
   const physicalModel = node.models[logicalModel];
   if (!physicalModel || typeof physicalModel !== 'string' || !sizes.has(size as string)) return false;
@@ -41,7 +42,7 @@ export function canRouteImageGeneration(node: ImageRoutingNode, logicalModel: st
   } catch {
     return false;
   }
-  if (node.provider === 'cloudflare-image') {
+  if (provider === 'cloudflare-image') {
     return size === '1024x1024' && cloudflareModel.test(physicalModel);
   }
   return true;
