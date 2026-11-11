@@ -18,7 +18,7 @@ export function convertSseStream(
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let scanner: ReturnType<typeof createSseScanner> | undefined;
   let cancelled = false;
-  let finished = false;
+  let isFinished = false;
   let cleanup: Promise<void> | undefined;
   const decoder = new TextDecoder();
 
@@ -42,7 +42,7 @@ export function convertSseStream(
   return new ReadableStream({
     start(controller) {
       if (!body) {
-        finished = true;
+        isFinished = true;
         controller.error(new Error('Upstream stream body is not readable'));
         return;
       }
@@ -52,9 +52,9 @@ export function convertSseStream(
       });
     },
     async pull(controller) {
-      if (cancelled || finished || !reader || !scanner) return;
+      if (cancelled || isFinished || !reader || !scanner) return;
       try {
-        let reachedEnd = false;
+        let hasReachedEnd = false;
         // A single upstream chunk can contain several SSE events. Finish that
         // chunk, but never fetch another while the output queue is full.
         while (!cancelled && !isTerminal() && (controller.desiredSize ?? 0) > 0) {
@@ -64,19 +64,19 @@ export function convertSseStream(
             scanner.push(decoder.decode());
             scanner.flush();
             if (!isTerminal() && !onEnd?.(controller)) throw new Error('Upstream stream interrupted before terminal event');
-            reachedEnd = true;
+            hasReachedEnd = true;
             break;
           }
           scanner.push(decoder.decode(value, { stream: true }));
         }
-        if (!cancelled && (isTerminal() || reachedEnd)) {
-          finished = true;
+        if (!cancelled && (isTerminal() || hasReachedEnd)) {
+          isFinished = true;
           controller.close();
           await stopUpstream();
         }
       } catch (error) {
         if (!cancelled) {
-          finished = true;
+          isFinished = true;
           controller.error(error);
         }
         await stopUpstream();
