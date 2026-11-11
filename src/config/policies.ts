@@ -30,19 +30,36 @@ type TierAttempts = { tier1?: number; tier2?: number } | null;
 // Three canonical strategies; legacy names remain compatibility aliases for
 // existing operators, not additional scheduling algorithms.
 const fast: PolicyConfig = {
-  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
-  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 60_000, maxInFlight: null,
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 60_000,
+  maxInFlight: null,
 };
 const normal: PolicyConfig = {
-  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
-  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 120_000, maxInFlight: null,
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 120_000,
+  maxInFlight: null,
 };
 const deep: PolicyConfig = {
-  maxAttempts: 8, tierAttempts: null, hedge: { enabled: false },
-  headersTimeoutMs: null, firstEventTimeoutMs: null, failoverBudgetMs: 180_000, maxInFlight: null,
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 180_000,
+  maxInFlight: null,
 };
 const BUILTIN_POLICIES: Readonly<Record<string, PolicyConfig>> = Object.freeze({
-  fast, normal, deep,
+  fast,
+  normal,
+  deep,
   // Legacy spellings accept older deployed models without widening the
   // canonical strategy surface.
   default: normal,
