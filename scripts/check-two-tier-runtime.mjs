@@ -280,6 +280,69 @@ async function verifyStreamGuardAcceptsJsonFallback() {
 
 await verifyStreamGuardAcceptsJsonFallback();
 
+
+// State-module extraction regressions: one store, unchanged quota reservations,
+// fixed 429 scope, half-open transition, and read-only diagnostic snapshots.
+const tier1State = await import('../src/reliability/tier1-state.ts');
+const tier1Store = await import('../src/reliability/tier1-store.ts');
+assert.equal(tier1State.getTier1Account, tier1Store.getTier1Account, 'facade must use the one state store');
+assert.equal(tier1State.getTier1Model, tier1Store.getTier1Model, 'facade must use the same model objects');
+tier1State.__resetTier1StateForTests();
+const stateAccountId = 'tier1-split-contract';
+const stateModelId = 'split-model';
+const stateAccount = tier1State.getTier1Account(stateAccountId);
+assert.equal(stateAccount, tier1Store.tier1Accounts.get(stateAccountId));
+const rateLimitOutcome = tier1State.classifyTier1Failure({ kind: 'rate_limit', rateLimitScope: 'model', retryAfterMs: 30_000 });
+tier1State.applyTier1Outcome(stateAccountId, stateModelId, rateLimitOutcome, 10_000);
+assert.equal(tier1State.getTier1Model(stateAccountId, stateModelId).cooldownUntil, 40_000);
+assert.equal(tier1State.getTier1Model(stateAccountId, stateModelId).rateLimitRecoveryPending, true);
+assert.equal(tier1State.decideTier1RateLimitScope(stateAccountId, 'model-A', 11_000), 'model');
+assert.equal(tier1State.decideTier1RateLimitScope(stateAccountId, 'model-B', 11_001), 'account');
+const halfOpenId = 'tier1-split-half-open';
+const serverOutcome = tier1State.classifyTier1Failure({ kind: 'server' });
+for (let n = 0; n < tier1State.TIER1_FAILURE_THRESHOLD; n++) {
+  tier1State.applyTier1Outcome(halfOpenId, stateModelId, serverOutcome, 20_000 + n);
+}
+const halfOpenModel = tier1State.getTier1Model(halfOpenId, stateModelId);
+assert.equal(halfOpenModel.failureState, 'cooldown');
+const recoveryAt = halfOpenModel.cooldownUntil + 1;
+tier1State.maybeTransitionToHalfOpen(halfOpenId, stateModelId, recoveryAt);
+assert.equal(halfOpenModel.failureState, 'half_open');
+tier1State.recordTier1Success(halfOpenId, stateModelId, recoveryAt);
+assert.equal(halfOpenModel.failureState, 'half_open', 'one half-open success is insufficient');
+tier1State.recordTier1Success(halfOpenId, stateModelId, recoveryAt + 1);
+assert.equal(halfOpenModel.failureState, 'normal', 'two successes restore normal state');
+const quotaId = 'tier1-split-quota';
+const quotaNow = 100_000;
+assert.equal(
+  tier1State.recordTier1QuotaReport(quotaId, {
+    remainingRequests: 2,
+    limitRequests: 100,
+    resetAtMs: quotaNow + 60_000,
+    source: 'contract-test',
+  }, quotaNow),
+  true,
+);
+assert.equal(tier1State.tier1QuotaState(quotaId, quotaNow), 'near_limit');
+const quotaNode = {
+  id: quotaId,
+  provider: 'openai',
+  tier: 'tier-1',
+  protocol: 'openai',
+  surfaces: ['chat_completions'],
+  models: { [stateModelId]: 'physical-model' },
+};
+assert.equal(tier1State.claimTier1Slot(quotaNode, quotaNow, stateModelId), true);
+const quotaToken = tier1State.makeTier1ReleaseToken(quotaId, stateModelId);
+assert.equal(tier1Store.tier1Accounts.get(quotaId).quotaRemainingRequests, 1);
+tier1State.settleTier1Quota(quotaId, quotaToken, 5);
+assert.equal(tier1State.releaseTier1Slot(quotaId, quotaToken), true);
+assert.equal(tier1Store.tier1Accounts.get(quotaId).quotaRemainingRequests, 1, 'settled quota is not refunded');
+assert.equal(tier1State.snapshotTier1Runtime(quotaId, stateModelId, quotaNow).quota_state, 'near_limit');
+assert.equal(tier1State.snapshotTier1AccountRuntime(quotaId, [stateModelId], quotaNow).models.length, 1);
+tier1State.__resetTier1StateForTests();
+assert.equal(tier1Store.tier1Accounts.size, 0, 'reset clears the same store seen by diagnostics');
+
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
