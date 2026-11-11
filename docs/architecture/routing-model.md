@@ -44,7 +44,7 @@ OpenAI Chat Completions ↔ Anthropic Messages 回退仅在 native 路由耗尽�
   "beta": { "policy": "coding", "fallback": ["gamma"] },
   "gamma": { "policy": "coding", "fallback": [] },
   "fast": {
-    "policy": "chat",
+    "policy": "coding",
     "fallback": ["alpha", "beta", "gamma"],
     "fallback_mode": "one_way",
     "fallback_attempt_caps": [3, 1, 1, 1]
