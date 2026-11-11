@@ -34,6 +34,7 @@ import { readEnv } from './env.ts';
 const CAPABILITY_KEYS = ['tools', 'reasoning', 'vision', 'stream', 'ocr'];
 const ALLOWED_ENTRY_FIELDS = new Set([
   'policy',
+  'fallback',
   'capabilities',
   'reasoning_efforts',
   'modalities',
@@ -70,6 +71,8 @@ export type ModelCatalogFacts = {
  */
 export type ModelRuntimePolicy = {
   policy?: string;
+  /** Explicit ordered candidate aliases; never inferred from model name. */
+  fallback?: string[];
   visibility: string;
   ui_visible: boolean;
   display_order: number;
@@ -144,6 +147,25 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             policy.policy = cfg.policy.trim();
           } else {
             errors.push(`AIG_MODELS_CONFIG: model "${name}": policy must be a non-empty string`);
+          }
+        }
+        const declaredFallback = cfg.fallback;
+        if (declaredFallback !== undefined) {
+          if (
+            !Array.isArray(declaredFallback) ||
+            !declaredFallback.every((target) => typeof target === 'string' && !!target.trim())
+          ) {
+            errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback must be an array of non-empty model names`);
+          } else {
+            const names = (declaredFallback as string[]).map((target) => target.trim());
+            const normalized = names.map((target) => target.toLowerCase());
+            if (normalized.includes(name.trim().toLowerCase())) {
+              errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback cannot contain the requested model`);
+            }
+            if (new Set(normalized).size !== normalized.length) {
+              errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback contains duplicate model names`);
+            }
+            policy.fallback = names;
           }
         }
         const vis = cfg.visibility;
@@ -253,6 +275,16 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
           );
         }
         models[name.trim()] = { catalog, policy };
+      }
+    }
+  }
+  // Validate every target after parsing all declarations. Reciprocal
+  // fallbacks (Pro <-> Max) are intentional and bounded at request level.
+  const known = new Set(Object.keys(models).map((name) => name.toLowerCase()));
+  for (const [name, entry] of Object.entries(models)) {
+    for (const target of entry.policy.fallback ?? []) {
+      if (!known.has(target.toLowerCase())) {
+        errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback target "${target}" is not declared`);
       }
     }
   }
