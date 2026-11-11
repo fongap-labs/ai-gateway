@@ -114,7 +114,7 @@ Action Worker 会导出解析后的 Variables，并且只暴露源码声明的�
 
 部署预检按 Tier 与节点 ID 核对所有私有节点的凭据。私有中心仅接收本中心使用的节点凭据，三个中心认证密钥用于对应的 Service Binding。
 
-普通部署通过 `wrangler secret list` 只读取 Secret 名称和类型；Gateway 必须同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。缺少绑定或旧 Gateway Provider Token 时必须失败关闭，不进行发布；Cloudflare API Token 执行发布操作，普通代码部署不会将 Secret 值打包进 Wrangler 配置。
+普通部署通过 `wrangler secret list` 只读取 Secret 名称和类型；Gateway 必须同时具有 `AIG_INFERENCE_SERVICE`、`AIG_PERCEPTION_SERVICE`、`AIG_GENERATION_SERVICE` 私有绑定和对应内部认证 Secret，并且**不再持有任何 `AIG_TIER{1,2}_CREDENTIALS_XX` 上游 Provider 凭据**；三个能力中心分别持有自身所需的静态 Token Secret。发布前核对应用访问密钥名称。新 Gateway 版本按名称继承现用密钥，排除旧订阅和 Provider 分片。历史版本仍保留原绑定以便回滚。发布后再次校验实际密钥清单。
 
 部署前的静态预检验证变量与绑定；部署后使用无需网关访问密钥的 `GET /health/ready` 核对线上构建 SHA、就绪状态与降级标记。该端点只返回 `build`、`status`、`ready`、`degraded`，不含节点或诊断明细。默认拒绝降级容量；若节点被排除或就绪检查失败，部署会按受控流程回滚 Gateway。本版本**必须同时配置** Inference、Perception、Generation Service Binding 以及各自对应的中心认证 Secret。
 
@@ -173,9 +173,9 @@ ORDER BY node, calls DESC
 5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
 6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，校验所有节点的 Provider 凭据后记录 Gateway 的 Cloudflare 版本，依序发布三个**非公开**中心；
 7. 为三个中心同步各自的 Provider 分片及内部认证，随后核对 Cloudflare Secret 名称，确认同步完成才继续发布 Gateway；
-8. 核对 Gateway Secret 清单并阻断旧 OAuth / 已迁移 Provider 凭据遗留；
+8. 根据 Gateway Secret 清单生成继承计划，排除旧 OAuth 和已迁移的 Provider 凭据；
 9. 不携带 `--secrets-file` 发布 Gateway 代码，保留 Cloudflare 中已有的应用访问密钥；
-10. 按精确源码 SHA 验证线上构建；
+10. 验证线上 Gateway 的实际 Secret 清单与精确源码 SHA；
 11. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并通过 Cloudflare 核验已恢复的版本。
 
 

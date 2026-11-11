@@ -226,7 +226,8 @@ assert.ok(script('node scripts/deployment-recovery.mjs snapshot') > script('priv
 assert.ok(script('node scripts/deployment-recovery.mjs snapshot') < script('node scripts/cloudflare-wrangler.mjs deploy'));
 assert.ok(script('private-center-config.mjs verify-inventory') > script('node scripts/cloudflare-wrangler.mjs deploy'));
 assert.ok(script('private-center-config.mjs verify-inventory') < script('node scripts/persistent-deployment.mjs verify-secrets'));
-assert.ok(script('node scripts/persistent-deployment.mjs verify-secrets') < script('node scripts/deployment-recovery.mjs capture-published'));
+assert.ok(script('node scripts/persistent-deployment.mjs prepare-publish') < script('node scripts/deployment-recovery.mjs capture-published'));
+assert.ok(script('node scripts/deployment-recovery.mjs capture-published') < script('node scripts/persistent-deployment.mjs verify-secrets'));
 assert.ok(deployScript.includes('action-worker:center:$center:$DEPLOY_SOURCE_SHA'));
 assert.ok(!deployScript.includes('AIG_OPS_SECRET_VALUE'));
 assert.ok(!deployScript.includes('wrangler secret put'));

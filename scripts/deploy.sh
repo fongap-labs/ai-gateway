@@ -98,6 +98,16 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --worker "$center" --output "$config" --manifest "$manifest"
 done
 
+read_gateway_secret_names() {
+  node scripts/cloudflare-wrangler.mjs secret list \
+    --format json --config "$RUNNER_TEMP/wrangler.github.json" > "$RUNNER_TEMP/worker-secrets.json"
+}
+
+# Check the live Gateway's application Secret names before touching any Worker.
+read_gateway_secret_names
+node scripts/persistent-deployment.mjs check-secret-source \
+  --file "$RUNNER_TEMP/worker-secrets.json" --wrangler "$RUNNER_TEMP/wrangler.github.json"
+
 # Verify the protected environment covers every prepared private node before any write.
 sync_runtime_secrets preflight
 
@@ -133,19 +143,15 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --worker "$center" --inventory "$inventory" --manifest "$manifest"
 done
 
-# Wrangler returns names and types only; no secret values are downloaded.
-node scripts/cloudflare-wrangler.mjs secret list \
-  --format json \
-  --config "$RUNNER_TEMP/wrangler.github.json" \
-  > "$RUNNER_TEMP/worker-secrets.json"
-node scripts/persistent-deployment.mjs verify-secrets \
-  --file "$RUNNER_TEMP/worker-secrets.json" \
-  --wrangler "$RUNNER_TEMP/wrangler.github.json"
+# Plan inheritance from the live Secret names after center authentication sync.
+read_gateway_secret_names
+node scripts/persistent-deployment.mjs prepare-publish \
+  --file "$RUNNER_TEMP/worker-secrets.json" --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
 # The previous Gateway version was recorded before center publication.
 # Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
 # guard refuses to claim an unrelated/concurrent deploy as this job's publish.
-# Cloudflare preserves existing Worker Secrets across code-only deployments.
+# Only retained Secret names are inherited by the new version.
 gateway_update_attempted=true
 node scripts/cloudflare-wrangler.mjs deploy \
   --message "action-worker:deploy:$DEPLOY_SOURCE_SHA" \
@@ -154,18 +160,21 @@ node scripts/deployment-recovery.mjs capture-published "$recovery_evidence"
 
 health_ok=false
 for attempt in 1 2 3; do
-  if node scripts/persistent-deployment.mjs health-check --expected-build "$DEPLOYED_SHA"; then
+  if read_gateway_secret_names &&
+    node scripts/persistent-deployment.mjs verify-secrets \
+      --file "$RUNNER_TEMP/worker-secrets.json" --wrangler "$RUNNER_TEMP/wrangler.github.json" &&
+    node scripts/persistent-deployment.mjs health-check --expected-build "$DEPLOYED_SHA"; then
     health_ok=true
     break
   fi
   if [[ "$attempt" -lt 3 ]]; then
-    echo "Post-deploy health check attempt ${attempt}/3 failed; retrying in 5s."
+    echo "Post-deploy verification attempt ${attempt}/3 failed; retrying in 5s."
     sleep 5
   fi
 done
 
 if [[ "$health_ok" != "true" ]]; then
-  echo "Post-deploy health check failed; checking exact rollback eligibility." >&2
+  echo "Post-deploy Secret or readiness verification failed; checking exact rollback eligibility." >&2
   # Never default to Wrangler's unpinned previous-version selection, and never
   # overwrite a concurrent production deployment. Both decisions use live API.
   if ! rollback_version="$(node scripts/deployment-recovery.mjs rollback-target "$recovery_evidence")"; then
