@@ -20,8 +20,9 @@ import {
   recordPublishedDeployment,
 } from './deployment-recovery.mjs';
 import { buildGenerationCenterDeployment } from './generation-center-deployment.mjs';
-import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS, verifyRemote } from './github-deployment-config.mjs';
+import { buildWranglerConfig, DEFAULT_OPTIMAL_VARS, normalizeNodeConfigJsonText as deploymentNormalizeNodeJson, verifyRemote } from './github-deployment-config.mjs';
 import { buildInferenceCenterDeployment } from './inference-center-deployment.mjs';
+import { normalizeNodeConfigJsonText } from './node-config-json-normalizer.mjs';
 import { assertNodesArray, parseJsonFile } from './node-config-shards.mjs';
 import { planGatewaySecretInheritance, validateDeploymentInputs, validateRemoteSecretInventory } from './persistent-deployment.mjs';
 import { buildRuntimeSecretPlan, synchronizeRuntimeSecrets } from './sync-runtime-secrets.mjs';
@@ -29,6 +30,15 @@ import { buildRuntimeSecretPlan, synchronizeRuntimeSecrets } from './sync-runtim
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const config = JSON.parse(read('wrangler.jsonc'));
+
+assert.strictEqual(deploymentNormalizeNodeJson, normalizeNodeConfigJsonText, 'deployment and discovery must share one node JSON normalizer');
+const imeInput = '[{"id":"node，alpha"，"provider":"openai"}、{"id":"node-beta"}、]';
+assert.deepEqual(JSON.parse(normalizeNodeConfigJsonText(imeInput)), [
+  { id: 'node，alpha', provider: 'openai' },
+  { id: 'node-beta' },
+]);
+const quotedPunctuation = JSON.stringify({ description: 'literal 、， punctuation and escaped " quotes' });
+assert.equal(normalizeNodeConfigJsonText(quotedPunctuation), quotedPunctuation, 'quoted strings must remain byte-for-byte unchanged');
 
 assert.equal(config.keep_vars, true);
 assert.equal(config.main, 'src/index.ts');
