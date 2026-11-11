@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getPolicy, isBuiltinPolicyName, loadPoliciesConfig } from '../src/config/policies.ts';
+import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
+import { buildModelFallbackPlan, modelFallbackCandidates } from '../apps/gateway/policy/model-fallback.ts';
 import { buildPrivateCenterConfig, preflightPrivateCenters, verifyPrivateCenterSecretNames } from './private-center-config.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
@@ -21,6 +23,30 @@ const env = {
     { id: 'text-02', provider: 'anthropic', base_url: 'https://provider.example.test', models: { coding: 'physical-code' } },
   ]),
 };
+// Unknown model names do not imply a tier or fallback family.
+const named = {
+  'Write-Vivid': { policy: 'deep', fallback: ['Write-Basic'] },
+  'Write-Basic': { policy: 'normal', fallback: ['Write-Vivid'] },
+  Look: { policy: 'fast', fallback: [], capabilities: { vision: true }, modalities: { input: ['text', 'image'], output: ['text'] } },
+};
+const namedEnv = { AIG_MODELS_CONFIG: JSON.stringify(named) };
+assert.deepEqual(getModelsConfigDiagnostics(namedEnv), []);
+const namedModels = loadModelsConfig(namedEnv);
+const names = new Set(['Write-Vivid', 'Write-Basic', 'Look']);
+assert.deepEqual(modelFallbackCandidates('Write-Vivid', names, namedModels), ['Write-Vivid', 'Write-Basic']);
+assert.deepEqual(buildModelFallbackPlan('Write-Vivid', names, 8, namedModels)[0].map((p) => p.model), ['Write-Vivid', 'Write-Basic']);
+assert.deepEqual(modelFallbackCandidates('Write-Vivid', names), ['Write-Vivid'], 'No implicit model-name fallback');
+assert.deepEqual(modelFallbackCandidates('Look', names, namedModels), ['Look']);
+assert.ok(getModelsConfigDiagnostics({ AIG_MODELS_CONFIG: JSON.stringify({ X: { fallback: ['Y'] } }) }).some((e) => e.includes('not declared')));
+assert.ok(getModelsConfigDiagnostics({ AIG_MODELS_CONFIG: JSON.stringify({ X: { fallback: ['X'] } }) }).some((e) => e.includes('cannot contain')));
+assert.ok(getModelsConfigDiagnostics({ AIG_MODELS_CONFIG: JSON.stringify({ X: { fallback: ['Y', 'y'] }, Y: {} }) }).some((e) => e.includes('duplicate')));
+const canonical = loadPoliciesConfig({});
+assert.equal(canonical.fast.maxAttempts, 8);
+assert.equal(canonical.normal.failoverBudgetMs, 120000);
+assert.equal(canonical.deep.failoverBudgetMs, 180000);
+assert.deepEqual(canonical.normal.hedge, { enabled: false });
+assert.equal(getPolicy('Write-Vivid', namedModels, canonical).failoverBudgetMs, 180000);
+assert.equal(getPolicy('Write-Basic', namedModels, canonical).failoverBudgetMs, 120000);
 const withDeploySecret = buildPrivateCenterConfig('ai-inference-center', {
   ...env,
   AIG_DEPLOY_HEALTH_KEY: 'deployed-gateway-secret-must-not-enter-private-center',
