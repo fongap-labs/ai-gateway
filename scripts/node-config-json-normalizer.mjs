@@ -6,19 +6,19 @@
 export function normalizeNodeConfigJsonText(text) {
   const source = String(text ?? '');
   let out = '';
-  let inString = false;
-  let escaped = false;
+  let isInString = false;
+  let isEscaped = false;
   for (let i = 0; i < source.length; i++) {
     const ch = source[i];
-    if (inString) {
+    if (isInString) {
       out += ch;
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
+      if (isEscaped) isEscaped = false;
+      else if (ch === '\\') isEscaped = true;
+      else if (ch === '"') isInString = false;
       continue;
     }
     if (ch === '"') {
-      inString = true;
+      isInString = true;
       out += ch;
       continue;
     }
