@@ -513,9 +513,8 @@ assert.match(deployScript, /rollback "\$rollback_version"/);
 assert.equal(deployScript.includes('health-check || true'), false);
 assert.equal(deployScript.includes('cloudflare-wrangler.mjs rollback --config'), false);
 
-// Provider deployment identities are independent of the public /health build SHA.
-// Requiring both catches mistaken restores and prevents an unpinned Wrangler
-// rollback from selecting a different previously uploaded version.
+// Cloudflare identifies the exact rollback target even when the old Gateway
+// has no public build identity. A new publication still requires its source SHA.
 const baselineVersion = '11111111-1111-4111-8111-111111111111';
 const baselineDeployment = '22222222-2222-4222-8222-222222222222';
 const publishedVersion = '33333333-3333-4333-8333-333333333333';
@@ -523,7 +522,6 @@ const publishedDeployment = '44444444-4444-4444-8444-444444444444';
 const restoredDeployment = '55555555-5555-4555-8555-555555555555';
 const unrelatedVersion = '66666666-6666-4666-8666-666666666666';
 const knownAccount = 'a'.repeat(32);
-const knownBuild = 'b'.repeat(40);
 const deployedBuild = 'c'.repeat(40);
 const activeResponse = (deploymentId, versionId, message = null, percent = 100) => ({
   success: true,
@@ -564,9 +562,8 @@ for (const invalid of [
 ]) {
   assert.throws(() => parseActiveDeployment(invalid), /deployment|version/i);
 }
-const baselineRecord = establishRecoveryBaseline(baselineActive, baselineActive, knownBuild, knownAccount);
-assert.throws(() => establishRecoveryBaseline(baselineActive, publishedActive, knownBuild, knownAccount), /changed|unverified/);
-assert.throws(() => establishRecoveryBaseline(baselineActive, baselineActive, 'short', knownAccount), /changed|unverified/);
+const baselineRecord = establishRecoveryBaseline(baselineActive, knownAccount);
+assert.deepEqual(baselineRecord.previous, { deployment_id: baselineDeployment, version_id: baselineVersion });
 assert.throws(() => recordPublishedDeployment(baselineRecord, baselineActive, deployedBuild), /not verified/);
 assert.throws(() => recordPublishedDeployment(baselineRecord, restoredActive, deployedBuild), /not verified/);
 assert.throws(
@@ -584,13 +581,13 @@ assert.equal(confirmPublishedIdentity(withPublished, publishedActive), undefined
 assert.throws(() => recordPublishedDeployment(withPublished, publishedActive, deployedBuild), /not verified/);
 assert.throws(() => guardedRollbackTarget(withPublished, parseActiveDeployment(activeResponse(restoredDeployment, unrelatedVersion))), /drifted/);
 assert.throws(() => guardedRollbackTarget(withPublished, baselineActive), /drifted/);
-assert.equal(confirmRestoredIdentity(withPublished, restoredActive, restoredActive, knownBuild), undefined);
-for (const [first, second, build] of [
-  [publishedActive, publishedActive, knownBuild],
-  [restoredActive, restoredActive, deployedBuild],
-  [restoredActive, publishedActive, knownBuild],
+assert.equal(confirmRestoredIdentity(withPublished, restoredActive), undefined);
+for (const active of [
+  publishedActive,
+  parseActiveDeployment(activeResponse(restoredDeployment, unrelatedVersion)),
+  { ...restoredActive, deployment_id: publishedDeployment },
 ]) {
-  assert.throws(() => confirmRestoredIdentity(withPublished, first, second, build), /not proven/);
+  assert.throws(() => confirmRestoredIdentity(withPublished, active), /has not restored/);
 }
 let readCalls = 0;
 const readOnlyCloudflare = async (url, options) => {

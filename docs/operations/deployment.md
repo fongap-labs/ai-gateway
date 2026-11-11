@@ -170,12 +170,12 @@ ORDER BY node, calls DESC
 3. 安装锁定的 Node 依赖；
 4. 运行 `npm run validate:deploy` 与 `npm run check:deploy`；
 5. 准备只包含非敏感变量与绑定的 Wrangler 配置；
-6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，记录已部署 Gateway 的健康恢复基线后依序发布三个**非公开**中心；
+6. 在同一受保护流水线中生成 Inference、Perception、Generation 三个中心的配置，记录已部署 Gateway 的 Cloudflare 版本后依序发布三个**非公开**中心；
 7. 只读取三个中心的 Cloudflare Secret 名称，核对内部认证及必要 Provider 分片，任一缺失则失败关闭，Gateway 新代码尚未发布；
 8. 核对 Gateway Secret 清单并阻断旧 OAuth / 已迁移 Provider 凭据遗留；
 9. 不携带 `--secrets-file` 部署代码，保留 Cloudflare 中已有的运行时 Secrets；
 10. 按精确源码 SHA 验证线上构建；
-11. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并核验恢复版本和旧构建的公网健康。
+11. 若部署后验证失败，只在发布身份仍匹配时回滚到明确的历史版本 UUID，并通过 Cloudflare 核验已恢复的版本。
 
 
 **统一入口**：仍然只从 Action Worker 的 `手动 · 部署服务` 选择 `fongap-labs/ai-gateway`、`production`，或使用原来经过准入的自动部署触发。禁止另起一个私有中心代码发布工作流。
@@ -212,9 +212,9 @@ AIG_ACCESS_KEY_AGENT     + AIG_ACCESS_MODELS_AGENT
 
 已部署的 Git commit SHA 会被传入 Worker 构建。公开的 `/health/ready` 会暴露该构建标识；完整 `/health` 诊断仍要求授权访问。
 
-部署前由 `scripts/deployment-recovery.mjs` 只读核对当前 `ai-gateway` 的 100% 生产 Cloudflare 部署版本 UUID。已有公开就绪端点的版本还会验证就绪状态和构建 SHA；首次升级时，若旧版本对 `/health/ready` 返回 401/404，则只接受带有 `action-worker:deploy:<SHA>` 注记的 Cloudflare 版本身份，并用该 SHA 记录回滚目标，不读取应用凭据。无法读取部署身份、源码 SHA 或旧服务明确报告未就绪时，仍拒绝开始部署。Wrangler 新部署通过 `--message` 注记精确源码 SHA，发布后必须能读取匹配的版本及部署 UUID。
+部署前，`scripts/deployment-recovery.mjs` 使用 Cloudflare API Token 记录当前 `ai-gateway` 的部署和版本 UUID。回滚目标必须是当前承载 100% 流量的单一版本。旧 Worker 的公开就绪接口和源码 SHA 注记不参与这一步。Wrangler 为本次发布添加 `action-worker:deploy:<SHA>` 注记，发布后核对该注记、版本 UUID 和部署 UUID。
 
-部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先复核当前版本确实属于本次失败发布，再向 Wrangler 显式传入部署前记录的版本 UUID；回滚后再次确认 Cloudflare 正在以该版本 100% 服务。若回滚目标是带有发布 SHA 注记的旧版本，则用 Cloudflare 版本身份验证回滚结果；已支持公开就绪端点的版本还会再次验证就绪状态。失败、生产漂移、权限不足或无法验证的回滚均保持任务失败，绝不将恢复状态报告为成功。普通代码部署不上传 Worker Secret 值。
+部署后验证要求 `/health/ready` 返回的线上构建 SHA 与准入 SHA 一致，随后再核对 Cloudflare 当前 UUID 与本次发布记录一致，才允许成功审计。就绪检查失败时先确认当前版本仍属于本次发布，再向 Wrangler 传入部署前记录的版本 UUID。Cloudflare 必须确认该历史版本重新承载 100% 流量。即使成功恢复旧版本，发布任务仍为失败。普通代码部署不上传 Worker Secret 值。
 
 **边界**：Cloudflare 版本切换接口不是条件原子写入；在回滚前读取与真正写入之间仍存在极短的外部并发发布窗口。中央单并发调度仅覆盖中央入口，无法为旁路发布提供分布式互斥。遇到已观察到的生产漂移必须拒绝回滚；在证明排他控制之前，这些源码合同不构成真实生产回滚验收。
 
