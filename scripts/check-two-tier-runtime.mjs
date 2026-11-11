@@ -12,7 +12,13 @@ import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
-import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
+import {
+  __resetKeyRpmForTests,
+  admitAuthAttempt,
+  admitKeyRequest,
+  getKeyRpmSnapshot,
+  recordAuthFailure,
+} from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
