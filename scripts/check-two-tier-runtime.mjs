@@ -3,6 +3,7 @@
 // Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
+import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';
 import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
@@ -32,6 +33,36 @@ assert.deepEqual(
   redistributeUnusedTierAttempts({ ...originalCaps }, 2, 2, flexiblePolicy),
   originalCaps,
   'Token tier is terminal; no third tier can receive unused attempts',
+);
+
+// v0.1.5 family behavior, expressed through opaque model configuration:
+ // one-way upward fallback never returns; interchangeable models get two rounds.
+const fallbackModels = {
+  entry: { policy: { fallback: ['middle', 'high', 'last'] } },
+  middle: { policy: { fallback: ['high', 'last'] } },
+  high: { policy: { fallback: ['middle', 'last'] } },
+  last: { policy: { fallback: ['middle', 'high'] } },
+};
+const fallbackCatalog = new Set(Object.keys(fallbackModels));
+assert.deepEqual(
+  buildModelFallbackRounds('entry', fallbackCatalog, fallbackModels),
+  [['entry', 'middle', 'high', 'last'], ['middle', 'high', 'last']],
+  'one-way model fallback never returns to its origin',
+);
+assert.deepEqual(
+  buildModelFallbackRounds('middle', fallbackCatalog, fallbackModels),
+  [['middle', 'high', 'last'], ['middle', 'high', 'last']],
+  'reversible model fallback rechecks the requested model like v0.1.5',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('entry', fallbackCatalog, 6, fallbackModels)[0].map((step) => step.attemptCap),
+  [3, 1, 1, 1],
+  'one-way family retains v0.1.5 cap allocation',
+);
+assert.deepEqual(
+  buildModelFallbackPlan('middle', fallbackCatalog, 6, fallbackModels)[0].map((step) => step.attemptCap),
+  [3, 2, 1],
+  'interchangeable family retains v0.1.5 3/2/1 allocation',
 );
 
 const CUTOVER_MODEL = 'cutover-contract-model';
