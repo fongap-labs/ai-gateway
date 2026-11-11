@@ -146,10 +146,7 @@ const googleVisionPerception = buildPrivateCenterConfig('ai-perception-center', 
   AIG_TIER2_NODES_01: '[]',
 });
 assert.equal(googleVisionPerception.nodeCount, 1, 'Google Gemini image-input nodes may serve declared vision models');
-assert.deepEqual(
-  JSON.parse(googleVisionPerception.config.vars.AIG_TIER1_NODES_01)[0].models,
-  { vision: 'physical-google-vision' },
-);
+assert.deepEqual(JSON.parse(googleVisionPerception.config.vars.AIG_TIER1_NODES_01)[0].models, { vision: 'physical-google-vision' });
 assert.equal(inference.nodeCount, 2);
 assert.deepEqual(inference.tiers, ['1', '2']);
 assert.equal(generation.nodeCount, 1);
