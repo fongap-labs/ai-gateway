@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // No network, secrets, Worker bindings or production deployment.
 import assert from 'node:assert/strict';
+import { centerResponseDeadlineMs } from '../src/config/timeouts.ts';
 import {
   authorizeExecutionRequest,
   buildExecutionHeaders,
@@ -10,6 +11,8 @@ import {
 } from '../packages/contracts/execution.ts';
 
 const now = Date.now();
+assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_750);
+assert.equal(centerResponseDeadlineMs(now + 100, now), now + 90);
 const key = 'local-test-center-key-32-characters-minimum';
 const invocation = {
   requestId: '12345678-1234-1234-1234-123456789abc',
@@ -76,11 +79,18 @@ assert.equal(parseExecutionInvocation(makeRequest(downgraded), allowed, now), nu
 const v2WithoutConversion = new Headers(headers);
 v2WithoutConversion.set('x-aig-contract-version', '2');
 assert.equal(parseExecutionInvocation(makeRequest(v2WithoutConversion), allowed, now), null);
-const returnedObject = { ...translated, returnObject: true };
+const returnedObject = {
+  ...translated,
+  returnObject: true,
+  upstreamHeadersDeadlineMs: now + 10_000,
+  bufferedResponseDeadlineMs: now + 19_000,
+};
 const returnedHeaders = buildExecutionHeaders(returnedObject, 'x-aig-inference-auth', key);
 assert.equal(returnedHeaders.get('x-aig-contract-version'), '3');
 assert.equal(returnedHeaders.get('x-aig-return-object'), 'true');
 assert.deepEqual(parseExecutionInvocation(makeRequest(returnedHeaders), allowed, now), returnedObject);
+assert.equal(returnedHeaders.get('x-aig-upstream-headers-deadline-ms'), String(now + 10_000));
+assert.equal(returnedHeaders.get('x-aig-buffered-response-deadline-ms'), String(now + 19_000));
 for (const [name, value] of [
   ['x-aig-contract-version', '2'],
   ['x-aig-contract-version', '1'],
@@ -98,6 +108,17 @@ assert.equal(parseExecutionInvocation(makeRequest(v3WithoutPreference), allowed,
 const v3WithoutInput = new Headers(returnedHeaders);
 v3WithoutInput.delete('x-aig-input-surface');
 assert.equal(parseExecutionInvocation(makeRequest(v3WithoutInput), allowed, now), null);
+for (const [name, value] of [
+  ['x-aig-upstream-headers-deadline-ms', String(now - 1)],
+  ['x-aig-upstream-headers-deadline-ms', String(now + 20_001)],
+  ['x-aig-buffered-response-deadline-ms', String(now - 1)],
+  ['x-aig-buffered-response-deadline-ms', String(now + 20_001)],
+  ['x-aig-buffered-response-deadline-ms', 'not-a-deadline'],
+]) {
+  const invalid = new Headers(returnedHeaders);
+  invalid.set(name, value);
+  assert.equal(parseExecutionInvocation(makeRequest(invalid), allowed, now), null, `${name}=${value}`);
+}
 const v2WithObject = new Headers(translatedHeaders);
 v2WithObject.set('x-aig-return-object', 'true');
 assert.equal(parseExecutionInvocation(makeRequest(v2WithObject), allowed, now), null);

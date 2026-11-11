@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Internal execution contract v1-v6. This module is intentionally runtime-neutral:
+// Internal execution contract v1-v6 with optional phase deadlines. This module is intentionally runtime-neutral:
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
 
 import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
@@ -27,6 +27,10 @@ export type ExecutionInvocation = {
   logicalModel: string;
   surface: ExecutionSurface;
   deadlineMs: number;
+  /** Optional Provider response-header deadline, earlier than the overall request deadline. */
+  upstreamHeadersDeadlineMs?: number;
+  /** Optional buffered conversion deadline, leaving time to return a result through Service Binding. */
+  bufferedResponseDeadlineMs?: number;
   /** The original client shape when Inference performs cross-protocol conversion. */
   inputSurface?: ExecutionInputSurface;
   /** Absent unless the Gateway explicitly prefers a non-streaming upstream. */
@@ -102,6 +106,8 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
     'x-aig-deadline-ms': String(invocation.deadlineMs),
     [authHeader]: authKey,
   });
+  if (invocation.upstreamHeadersDeadlineMs !== undefined) headers.set('x-aig-upstream-headers-deadline-ms', String(invocation.upstreamHeadersDeadlineMs));
+  if (invocation.bufferedResponseDeadlineMs !== undefined) headers.set('x-aig-buffered-response-deadline-ms', String(invocation.bufferedResponseDeadlineMs));
   if (invocation.inputSurface) headers.set('x-aig-input-surface', invocation.inputSurface);
   if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
   if (invocation.returnObject) headers.set('x-aig-return-object', 'true');
@@ -139,12 +145,23 @@ export function parseExecutionInvocation(
   if (!/^\d{13}$/.test(rawDeadline)) return null;
   const deadlineMs = Number(rawDeadline);
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs <= nowMs || deadlineMs > nowMs + MAX_EXECUTION_DEADLINE_AHEAD_MS) return null;
+  const parseOptionalDeadline = (headerName: string): number | undefined | null => {
+    const raw = request.headers.get(headerName);
+    if (raw === null) return undefined;
+    if (!/^\d{13}$/.test(raw)) return null;
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value > nowMs && value <= deadlineMs ? value : null;
+  };
+  const upstreamHeadersDeadlineMs = parseOptionalDeadline('x-aig-upstream-headers-deadline-ms');
+  const bufferedResponseDeadlineMs = parseOptionalDeadline('x-aig-buffered-response-deadline-ms');
+  if (upstreamHeadersDeadlineMs === null || bufferedResponseDeadlineMs === null) return null;
   const rawInputSurface = request.headers.get('x-aig-input-surface');
   const preferNonstream = request.headers.get('x-aig-conversion-prefer-nonstream');
   const returnObject = request.headers.get('x-aig-return-object');
   const returnStream = request.headers.get('x-aig-return-stream');
   const displayModel = request.headers.get('x-aig-display-model');
   const rawStreamBudget = request.headers.get('x-aig-stream-budget');
+  if (bufferedResponseDeadlineMs !== undefined && returnObject !== 'true' && returnStream !== 'true') return null;
   const budgetCapable = version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION || version === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION;
   const streamBudget = budgetCapable && rawStreamBudget !== null ? parseInferenceStreamBudget(rawStreamBudget) : null;
   if (
@@ -156,7 +173,14 @@ export function parseExecutionInvocation(
   if (rawInputSurface === null) {
     if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
       return null;
-    return { requestId, nodeId, logicalModel, surface: rawSurface as ExecutionSurface, deadlineMs };
+    return {
+      requestId,
+      nodeId,
+      logicalModel,
+      surface: rawSurface as ExecutionSurface,
+      deadlineMs,
+      ...(upstreamHeadersDeadlineMs !== undefined ? { upstreamHeadersDeadlineMs } : {}),
+    };
   }
   if (
     (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
@@ -190,6 +214,8 @@ export function parseExecutionInvocation(
     logicalModel,
     surface: rawSurface as ExecutionSurface,
     deadlineMs,
+    ...(upstreamHeadersDeadlineMs !== undefined ? { upstreamHeadersDeadlineMs } : {}),
+    ...(bufferedResponseDeadlineMs !== undefined ? { bufferedResponseDeadlineMs } : {}),
     inputSurface: rawInputSurface as ExecutionInputSurface,
     ...(preferNonstream === 'true' ? { preferNonstream: true as const } : {}),
     ...(returnObject === 'true' ? { returnObject: true as const } : {}),

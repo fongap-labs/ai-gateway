@@ -32,6 +32,18 @@ export const QUOTA_RETRY_AFTER_MAX_MS = 6 * 3_600_000;
 export const MIN_ATTEMPT_HEADERS_MS = 20_000;
 export const MIN_ATTEMPT_FIRST_EVENT_MS = 5_000;
 
+// Let a private center finish its own timeout handling before Gateway aborts the
+// Service Binding request. The reserve shrinks for tight attempt windows.
+export const PRIVATE_CENTER_RESPONSE_RESERVE_MS = 250;
+
+export function centerResponseDeadlineMs(deadlineMs: number, nowMs: number = Date.now()): number {
+  const now = Math.floor(nowMs);
+  const deadline = Number.isFinite(deadlineMs) ? Math.floor(deadlineMs) : now + 1;
+  const remaining = Math.max(1, deadline - now);
+  const reserve = Math.min(PRIVATE_CENTER_RESPONSE_RESERVE_MS, Math.max(1, Math.floor(remaining / 10)));
+  return Math.max(now + 1, deadline - reserve);
+}
+
 // Reserve a small escape window for each later logical attempt instead of
 // dividing the whole request budget evenly up front. Five seconds is enough
 // for a healthy alternate to fail fast or begin producing output. When the

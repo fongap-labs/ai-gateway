@@ -228,8 +228,12 @@ async function executeAdmittedNative(
   const headers = buildUpstreamHeadersFor(node.protocol, clientRequest, credential, invocation.requestId);
   const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
   const controller = new AbortController();
-  const remainingMs = invocation.deadlineMs - Date.now();
-  if (remainingMs <= 0) return problem(408, 'center_deadline_expired');
+  const upstreamHeadersDeadlineMs = Math.min(
+    invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs,
+    invocation.deadlineMs,
+  );
+  const remainingMs = upstreamHeadersDeadlineMs - Date.now();
+  if (remainingMs <= 0) return preDispatchProblem(504, 'center_upstream_headers_timeout');
   const timeoutId = setTimeout(() => controller.abort(), remainingMs);
   const onAbort = () => controller.abort();
   if (request.signal.aborted) onAbort();
@@ -240,6 +244,11 @@ async function executeAdmittedNative(
     upstream = await fetch(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' });
   } catch {
     if (request.signal.aborted) return problem(499, 'center_client_aborted');
+    if (controller.signal.aborted) {
+      const timedOut = problem(504, 'center_upstream_headers_timeout', true);
+      timedOut.headers.set('x-aig-result', 'attempted');
+      return timedOut;
+    }
     // A provider fetch was attempted, but no response headers were received.
     // The gateway may apply its existing bounded network-failure rotation.
     const response = problem(502, 'center_upstream_network', true);
@@ -282,6 +291,16 @@ async function executeAdmittedNative(
     response.headers.set('x-aig-upstream-status', String(upstream.status));
     return response;
   };
+  const dispatchedDeadlineProblem = (): Response => {
+    const response = problem(504, 'center_execution_deadline');
+    response.headers.set('x-aig-result', 'dispatched');
+    response.headers.set('x-aig-upstream-status', String(upstream.status));
+    return response;
+  };
+  const bufferedResponseDeadlineMs = Math.min(
+    invocation.bufferedResponseDeadlineMs ?? invocation.deadlineMs,
+    invocation.deadlineMs,
+  );
   if (invocation.returnStream && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
@@ -300,14 +319,16 @@ async function executeAdmittedNative(
     if (!from || !to || !invocation.displayModel) return dispatchedConversionProblem('center_conversion_route_invalid');
     let raw: string;
     try {
-      raw = await readBufferedReplyText(upstream, invocation.deadlineMs);
+      raw = await readBufferedReplyText(upstream, bufferedResponseDeadlineMs);
     } catch {
+      if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       return dispatchedConversionProblem('center_buffered_reply_invalid');
     }
     try {
       const parsed: unknown = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return dispatchedConversionProblem('center_converted_object_invalid');
       const framed = buildFramedMatrixObjectFallback(parsed as Record<string, unknown>, from, to, invocation.displayModel);
+      if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       outgoing.set('content-type', framed.headers.get('content-type') ?? '');
       outgoing.set('x-aig-response-format', framed.headers.get('x-aig-response-format') ?? '');
       return new Response(framed.body, { status: upstream.status, headers: outgoing });
@@ -336,7 +357,7 @@ async function executeAdmittedNative(
           }
         : undefined);
     try {
-      const converted = await collectMatrixObject(upstream.body, from, to, invocation.requestId, request.signal, invocation.deadlineMs, {
+      const converted = await collectMatrixObject(upstream.body, from, to, invocation.requestId, request.signal, bufferedResponseDeadlineMs, {
         model: invocation.logicalModel,
         seedInputTokens: from === 'anthropic' ? estimateAnthropicInputTokens(clientBody) : 0,
         onUpstreamUsage: (usage) => {
@@ -344,6 +365,7 @@ async function executeAdmittedNative(
         },
         ...(collectedBudget ? { budget: collectedBudget } : {}),
       });
+      if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       if (
         !converted.reply.parts.some((part) => part.type === 'text' && part.text) &&
         !converted.reply.parts.some((part) => part.type === 'tool_call')
@@ -362,6 +384,7 @@ async function executeAdmittedNative(
       );
     } catch (error) {
       if (error instanceof ConversionBudgetStop) return dispatchedConversionProblem('center_conversion_budget_exceeded');
+      if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       return dispatchedConversionProblem('center_conversion_invalid');
     }
   }
@@ -370,8 +393,9 @@ async function executeAdmittedNative(
     // successful objects for Gateway to decode using its legacy Matrix path.
     let raw: string;
     try {
-      raw = await readBufferedReplyText(upstream, invocation.deadlineMs);
+      raw = await readBufferedReplyText(upstream, bufferedResponseDeadlineMs);
     } catch {
+      if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
       const response = problem(502, 'center_buffered_reply_invalid');
       response.headers.set('x-aig-result', 'dispatched');
       response.headers.set('x-aig-upstream-status', String(upstream.status));
@@ -381,6 +405,7 @@ async function executeAdmittedNative(
       const native: unknown = JSON.parse(raw);
       if (native && typeof native === 'object' && !Array.isArray(native)) {
         const translated = translatedObject(native as Record<string, unknown>, invocation, outgoing, upstream.status);
+        if (Date.now() >= bufferedResponseDeadlineMs) return dispatchedDeadlineProblem();
         if (translated) return translated;
       }
     } catch {

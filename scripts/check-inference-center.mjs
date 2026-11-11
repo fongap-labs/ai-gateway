@@ -34,6 +34,7 @@ function request(body = validBody, overrides = {}) {
       'x-aig-model': 'chat-test',
       'x-aig-surface': 'chat_completions',
       'x-aig-deadline-ms': String(Date.now() + 90_000),
+      'x-aig-upstream-headers-deadline-ms': String(Date.now() + 80_000),
       'x-aig-inference-auth': internalKey,
       'content-length': String(new Blob([json]).size),
       ...overrides,
@@ -261,7 +262,24 @@ try {
   assert.equal(heldCalls, 2);
   assert.equal(attempts, attemptsAfterLarge + 2, 'only two admitted requests reach physical execution');
 
-  console.log('Private inference center auth, native mapping, network classification and fail-closed contract passed.');
+  globalThis.fetch = async (_url, options) => {
+    attempts++;
+    return new Promise((_, reject) => {
+      const abort = () => reject(new Error('provider response headers timed out'));
+      if (options.signal.aborted) abort();
+      else options.signal.addEventListener('abort', abort, { once: true });
+    });
+  };
+  const headerTimeout = await handleInferenceCenterRequest(
+    request(validBody, { 'x-aig-upstream-headers-deadline-ms': String(Date.now() + 200) }),
+    env,
+  );
+  assert.equal(headerTimeout.status, 504);
+  assert.equal(headerTimeout.headers.get('x-aig-result'), 'attempted');
+  assert.equal(headerTimeout.headers.get('x-aig-error-kind'), 'center_upstream_headers_timeout');
+  assert.equal(attempts, attemptsAfterLarge + 3, 'a Provider header timeout remains an explicit attempted outcome');
+
+  console.log('Private inference center auth, native mapping, network/header-timeout classification and fail-closed contract passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }

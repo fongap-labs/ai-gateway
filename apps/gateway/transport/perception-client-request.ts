@@ -34,6 +34,8 @@ export function buildPerceptionRequest(env: GatewayEnv, invocation: InferenceInv
       logicalModel: invocation.logicalModel,
       surface: invocation.surface,
       deadlineMs: invocation.deadlineMs,
+      upstreamHeadersDeadlineMs: invocation.upstreamHeadersDeadlineMs,
+      bufferedResponseDeadlineMs: invocation.bufferedResponseDeadlineMs,
       inputSurface: invocation.inputSurface,
       preferNonstream: invocation.preferNonstream,
       returnObject: invocation.returnObject,
