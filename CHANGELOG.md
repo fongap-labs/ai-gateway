@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 修复: 将 Google Gemini OpenAI 兼容聊天接口标记为支持图像输入，避免已映射视觉模型的 Google 节点被私有感知中心预检排除；补充回归测试。
+- 修复: 将 Google Gemini OpenAI 兼容聊天接口标记为支持图像输入，避免已映射视觉模型的 Google 节点被私有感知中心预检排除；同步 Action Worker 中央测试包的端到端路由回归契约。
 
 - 修复: 统一规范化图像 Provider ID，补充私有中心发布预检的节点资格原因；继续阻断空中心发布。
 
