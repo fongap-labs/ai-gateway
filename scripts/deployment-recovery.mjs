@@ -206,7 +206,9 @@ async function main() {
       build = legacyReadinessBuild(error, before);
       if (!build) throw error;
       readiness = 'legacy';
-      console.log('Legacy Gateway readiness is unavailable; Cloudflare deployment metadata will establish its baseline.');
+      console.log(
+        'Legacy Gateway readiness is unavailable; Cloudflare metadata will establish its baseline.',
+      );
     }
     const after = await active();
     const snapshot = establishRecoveryBaseline(before, after, build, accountId, readiness);
