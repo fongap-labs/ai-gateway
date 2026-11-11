@@ -12,6 +12,7 @@
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
+import { loadModelsConfig } from '../../../src/config/models.ts';
 import { parseRetryAfterMs } from '../../../src/config/timeouts.ts';
 import { anthropicErrorTypeForStatus } from '../../../src/protocol/anthropic.ts';
 import { corsHeaders, shouldNotRetryHeaders, trimDiagnostic } from '../../../src/protocol/http.ts';
@@ -219,8 +220,14 @@ export function buildExhaustedResponse(
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
       message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry shortly.`;
-      retryAfterSec =
-        originalStatus === 429 ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, knownModels_) ?? 1) : 1;
+      // A timeout may win the terminal-status tie even when several physical
+      // candidates are cooling down after 429. Preserve the family's real
+      // blocking window instead of telling the caller to retry after 1s.
+      const sawRateLimit =
+        (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
+      retryAfterSec = sawRateLimit
+        ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1)
+        : 1;
       state.logger.info('model-family failover plan exhausted by transient failures', {
         request_id: requestId,
         requested_model: requestedModel,
@@ -287,9 +294,12 @@ function earliestFamilyBlockingRetryAfterSec(
   reqDescriptor: RequestDescriptor,
   requestedModel: string,
   now: number,
+  env: GatewayEnv,
   knownModels?: ReadonlySet<string>,
 ): number | undefined {
-  const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels) : [requestedModel];
+  // Fallback membership is explicitly configured, never inferred from a
+  // logical model's name. The cooldown hint must inspect those aliases too.
+  const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels, loadModelsConfig(env)) : [requestedModel];
   let minSec = Infinity;
   for (const model of models) {
     const wait = earliestBlockingRetryAfterSec(tiers, { ...reqDescriptor, model }, now, knownModels);
