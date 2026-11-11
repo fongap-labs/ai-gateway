@@ -194,6 +194,7 @@ try {
   } finally {
     Date.now = realNow;
   }
+  assert.equal(Date.now, realNow, 'the deadline test must restore the real clock');
 
   console.log('Inference v6 collects SSE, enforces separated deadlines, translates JSON, isolates raw usage, and fails closed on errors/budgets.');
 } finally {
