@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
-import { isBuiltinPolicyName } from '../src/config/policies.ts';
+import { getPoliciesConfigDiagnostics, isBuiltinPolicyName } from '../src/config/policies.ts';
+import { getModelsConfigDiagnostics } from '../src/config/models.ts';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,7 +79,7 @@ export function buildPrivateCenterConfig(worker, input) {
     throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
   }
   // Policy overrides are optional in the shared runtime. Built-in policies
-  // default, fast, long-reasoning, chat and coding work without a Variable.
+  // fast, normal and deep work without a Variable; old spellings remain aliases.
   // A custom model policy is NEVER silently mapped to a built-in default.
   if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim()) {
     throw new Error('AIG_MODELS_CONFIG is required for private center release.');
@@ -86,7 +87,10 @@ export function buildPrivateCenterConfig(worker, input) {
   const modelCatalog = checkedJson(env.AIG_MODELS_CONFIG, 'AIG_MODELS_CONFIG');
   const hasPolicyOverride = typeof env.AIG_POLICIES_CONFIG === 'string' && env.AIG_POLICIES_CONFIG.trim().length > 0;
   const policyOverrides = hasPolicyOverride ? checkedJson(env.AIG_POLICIES_CONFIG, 'AIG_POLICIES_CONFIG') : {};
-  const problems = [];
+  const problems = [
+    ...getModelsConfigDiagnostics({ AIG_MODELS_CONFIG: env.AIG_MODELS_CONFIG }),
+    ...getPoliciesConfigDiagnostics({ ...(hasPolicyOverride ? { AIG_POLICIES_CONFIG: env.AIG_POLICIES_CONFIG } : {}) }),
+  ];
   const referencedPolicies = new Set(
     Object.values(modelCatalog)
       .filter((entry) => record(entry) && typeof entry.policy === 'string' && entry.policy.trim())
