@@ -30,13 +30,7 @@ const privateRequest = new Request('https://perception.internal/internal/execute
 const providerRequest = buildProviderForwardRequest(privateRequest);
 assert.equal(providerRequest.method, 'POST');
 assert.equal(providerRequest.url, 'https://inference.internal/execute');
-assert.deepEqual([...providerRequest.headers.keys()].sort(), [
-  'accept',
-  'anthropic-beta',
-  'anthropic-version',
-  'content-type',
-  'idempotency-key',
-]);
+assert.deepEqual([...providerRequest.headers.keys()].sort(), ['accept', 'anthropic-beta', 'anthropic-version', 'content-type', 'idempotency-key']);
 for (const name of ['accept', 'anthropic-beta', 'anthropic-version', 'content-type', 'idempotency-key']) {
   assert.equal(providerRequest.headers.get(name), privateRequest.headers.get(name));
 }
