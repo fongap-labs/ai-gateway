@@ -435,17 +435,15 @@ const burstRequests = Array.from({ length: 12 }, (_, i) =>
 try {
   await Promise.race([
     admissionBurstReady,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Hard count gate or another scheduler prevented twelve concurrent arrivals')), 8_000)),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Hard count gate or another scheduler prevented twelve concurrent arrivals')), 8_000),
+    ),
   ]);
   const activity = snapshotIsolateRequestActivity();
   assert.equal(admitBurstArrivals, 12);
   assert.ok(activity.peak >= 12, 'all twelve in-flight requests must be admitted despite legacy count=1');
   assert.equal(activity.active, 12);
-  const metrics = await metricsResponse(
-    new Request('https://gateway.example.invalid/metrics'),
-    admissionBurstEnv,
-    'admission-metrics',
-  ).text();
+  const metrics = await metricsResponse(new Request('https://gateway.example.invalid/metrics'), admissionBurstEnv, 'admission-metrics').text();
   assert.ok(metrics.includes('gateway_isolate_handlers_active{} 12'), 'active handler gauge must report real concurrent work');
 } finally {
   resolveAdmissionBurst();
