@@ -404,6 +404,9 @@ async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   });
   const result = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
   assert.equal(result.status, 200, `Cross-model ${failureStatus} must recover: ${await result.clone().text()}`);
+  assert.equal(result.headers.get('x-gateway-failover'), 'true', 'success must prove a real previous Provider failure');
+  assert.equal(result.headers.get('x-gateway-dispatches'), '2', 'success evidence must count both physical attempts');
+  assert.equal(result.headers.get('x-gateway-attempts'), '2');
   assert.equal((await result.json()).choices?.[0]?.message?.content, 'recovered');
   assert.deepEqual(actualDispatches, [freeNode, paidNode], 'exactly one physical attempt per model across both tiers');
 }
