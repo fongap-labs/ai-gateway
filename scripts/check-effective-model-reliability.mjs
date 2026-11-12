@@ -162,7 +162,11 @@ recordOutcome(
   makeContext(endpointState),
   { status: 404, latencyMs: 20 },
 );
-assert.equal(endpointState.attempted.has('same-endpoint-b'), true, 'equivalent free key should not re-dispatch a missing endpoint');
+assert.equal(
+  endpointState.attempted.has('same-endpoint-b'),
+  true,
+  'equivalent free key should not re-dispatch a missing endpoint',
+);
 for (const id of ['different-endpoint', 'different-model', 'paid-same-endpoint', 'different-surface']) {
   assert.equal(endpointState.attempted.has(id), false, id + ' must remain eligible');
 }
@@ -178,6 +182,16 @@ recordOutcome(
   { status: 404, latencyMs: 20 },
 );
 assert.equal(missingModelState.attempted.has('same-endpoint-b'), false, 'model-missing must not suppress a separate key');
+const throttleState = makeState();
+throttleState.nodes = endpointPeers;
+recordOutcome(
+  throttleState,
+  endpointPeers[0],
+  classifyUpstreamStatus(429, new Headers({ 'retry-after': '3' }), {}, Date.now(), 'rate limit'),
+  makeContext(throttleState),
+  { status: 429, latencyMs: 20 },
+);
+assert.equal(throttleState.attempted.has('same-endpoint-b'), false, '429 must not suppress a separate free key');
 
 __resetTier1StateForTests();
 const success = makeState();
