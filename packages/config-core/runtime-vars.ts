@@ -209,11 +209,12 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // (default) keeps the legacy admission byte-for-byte: no isolate concurrency
   // cap, chunked bodies charged and read at AIG_REQUEST_BODY_MAX_BYTES, the
   // resolved policy's max_attempts, and an AIG_REQUEST_HEDGE_MAX default of 1.
-  // true enables: AIG_ISOLATE_MAX_IN_FLIGHT, the AIG_CHUNKED_BODY_MAX_BYTES
-  // charge/read cap for Content-Length-less bodies, per-mode logical-attempt
-  // ceilings (AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS), and
-  // switches the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set
-  // AIG_REQUEST_HEDGE_MAX always wins on both sides of the flag).
+  // true enables: the AIG_CHUNKED_BODY_MAX_BYTES charge/read cap for
+  // Content-Length-less bodies, per-mode logical-attempt ceilings
+  // (AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS), and switches
+  // the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set value
+  // always wins). AIG_ISOLATE_MAX_IN_FLIGHT is a deprecated, read-only
+  // compatibility value and never caps request count in either mode.
   { name: 'AIG_REQUEST_ADMISSION', def: false },
   // Observability / persistence cost guards. false (default) keeps every
   // documented default byte-for-byte: KV affinity writes ON, every token-usage
