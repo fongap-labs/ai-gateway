@@ -30,6 +30,9 @@ export const SHARED_COOLDOWN_MIN_MS = 5 * 60_000;
 const REFRESH_MS = 5 * 60_000;
 const READ_TIMEOUT_MS = 50;
 const MIN_KV_TTL_SECONDS = 60;
+// Failed writes are retried only after a bounded backoff on the next real
+// cooldown outcome. Never schedule background probes or unbounded retries.
+export const SHARED_COOLDOWN_WRITE_RETRY_MS = 60_000;
 
 type CooldownKV = {
   get(key: string): Promise<string | null | undefined>;
@@ -40,6 +43,8 @@ let known: Tier1SharedCooldown[] = [];
 let readAt = Number.NEGATIVE_INFINITY;
 let isWriting = false;
 let isDirty = false;
+let isWriteRetryPending = false;
+let writeRetryAfter = 0;
 // Per-isolate counters only. Observing them never performs KV or D1 I/O.
 const kvStats = { reads: 0, readFailures: 0, writes: 0, writeFailures: 0 };
 
@@ -83,7 +88,9 @@ const entryKey = (entry: Tier1SharedCooldown): string => `${entry.node}\u0000${e
 // probe the key once more when the old deadline passes.
 function isNews(entry: Tier1SharedCooldown): boolean {
   const current = known.find((candidate) => entryKey(candidate) === entryKey(entry));
-  return !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
+  // A failed flush did not publish this cache even if the in-memory entry
+  // already exists. Allow the same long cooldown to be resent after backoff.
+  return isWriteRetryPending || !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
 }
 
 // Union by (node, model), keeping the later deadline, without expired entries.
@@ -127,7 +134,7 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
 /** Publish any long cooldown this account now carries. Writes are coalesced. */
 export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLike | undefined, accountId: string, now: number = Date.now()): void {
   const kv = kvOf(env);
-  if (!kv) return;
+  if (!kv || now < writeRetryAfter) return;
   const fresh = tier1LongCooldowns(accountId, SHARED_COOLDOWN_MIN_MS, now).filter(isNews);
   if (fresh.length === 0) return;
   known = merge(known, fresh, now);
@@ -164,13 +171,18 @@ async function flush(kv: CooldownKV): Promise<void> {
       try {
         await kv.put(SHARED_COOLDOWNS_KEY, JSON.stringify(known), { expirationTtl: ttl });
         kvStats.writes++;
+        isWriteRetryPending = false;
+        writeRetryAfter = 0;
       } catch {
         kvStats.writeFailures++;
         throw new Error('Shared cooldown KV write failed');
       }
     } while (isDirty);
   } catch {
-    /* sharing is advisory; the local cooldown still applies */
+    // Keep local protection; it is not proof that the KV write succeeded.
+    // Back off rather than spending the Workers Free KV budget on every 429.
+    isWriteRetryPending = true;
+    writeRetryAfter = Date.now() + SHARED_COOLDOWN_WRITE_RETRY_MS;
   } finally {
     isWriting = false;
   }
@@ -181,6 +193,8 @@ export function __resetSharedTier1CooldownsForTests(): void {
   readAt = Number.NEGATIVE_INFINITY;
   isWriting = false;
   isDirty = false;
+  isWriteRetryPending = false;
+  writeRetryAfter = 0;
   kvStats.reads = 0;
   kvStats.readFailures = 0;
   kvStats.writes = 0;

@@ -666,6 +666,47 @@ assert.equal(kvReads, before, 'reading metrics must not cause more KV requests')
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
+// A transient KV failure must not poison the isolate-local "already shared"
+// cache. Retry only after one minute, on a subsequent real cooldown event.
+const retryClock = Date.now();
+adoptTier1Cooldown({ node: 'retry-account', until: retryClock + 900_000, reason: 'auth' }, retryClock);
+let retryWrites = 0;
+let storedCooldown = null;
+const retryKv = {
+  async get() {
+    return storedCooldown;
+  },
+  async put(_key, value) {
+    retryWrites++;
+    if (retryWrites === 1) throw new Error('transient KV write failure');
+    storedCooldown = value;
+  },
+};
+const retryTasks = [];
+const retryContext = {
+  waitUntil(task) {
+    retryTasks.push(task);
+  },
+};
+const sharedRetryEnv = { TIER1_AFFINITY: retryKv };
+shareLongTier1Cooldowns(sharedRetryEnv, retryContext, 'retry-account', retryClock);
+await Promise.all(retryTasks);
+assert.equal(retryWrites, 1);
+assert.equal(snapshotSharedTier1Cooldowns().writeFailures, 1);
+assert.equal(snapshotSharedTier1Cooldowns().writes, 0);
+shareLongTier1Cooldowns(sharedRetryEnv, retryContext, 'retry-account', retryClock + 1_000);
+assert.equal(retryWrites, 1, 'a failed KV write must not be retried on each request');
+shareLongTier1Cooldowns(sharedRetryEnv, retryContext, 'retry-account', retryClock + 61_000);
+await Promise.all(retryTasks);
+assert.equal(retryWrites, 2, 'next eligible cooldown event retries after backoff');
+assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
+assert.equal(snapshotSharedTier1Cooldowns().writeFailures, 1);
+assert.equal(JSON.parse(storedCooldown ?? '[]')[0]?.node, 'retry-account');
+shareLongTier1Cooldowns(sharedRetryEnv, retryContext, 'retry-account', retryClock + 62_000);
+assert.equal(retryWrites, 2, 'successfully shared cooldown must not be rewritten');
+__resetSharedTier1CooldownsForTests();
+__resetTier1StateForTests();
+
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
