@@ -49,6 +49,19 @@ applyTier1Outcome('free-key-1', 'Code-Ultra', timeout, t + TIER1_FAILURE_STREAK_
 assert.equal(getTier1Model('free-key-1', 'Code-Ultra').consecutiveFailures, 1);
 assert.equal(getTier1Model('free-key-1', 'Code-Ultra').cooldownUntil, 0);
 
+// A half-open 429 must still respect the original adaptive rate-limit wait:
+__resetTier1StateForTests();
+const recovering = getTier1Model('free-key-1', 'Code-Ultra');
+recovering.failureState = 'half_open';
+applyTier1Outcome(
+  'free-key-1',
+  'Code-Ultra',
+  classifyTier1Failure({ kind: 'rate_limit', rateLimitScope: 'model' }, { retryAfterMs: 15_000 }),
+  t,
+);
+assert.equal(recovering.cooldownUntil, t + 15_000);
+assert.equal(recovering.failureState, 'cooldown');
+
 const rejected = classifyUpstreamStatus(422, new Headers(), {}, t, 'unprocessable');
 assert.equal(rejected.action, 'stop');
 assert.equal(rejected.counted, false);
