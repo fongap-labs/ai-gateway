@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: AGENT 聊天请求可声明 `generate_image` 并选择 `tool_choice:auto`，由文本模型决定是否生成图片，实际生成仍由 Generation Center 单次执行。
+
 - 新增: Chat 中经 AGENT 授权显式选择 `generate_image` 工具，可通过 Generation Center 生成图片并返回普通或流式回复。
 
 - 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
