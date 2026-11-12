@@ -231,6 +231,7 @@ export function recordOutcome(
     `dispatch request=${c?.requestId ?? state.requestId} logical_attempt=${state.logicalAttempts}/${state.maxAttempts}` +
       ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}` +
       ` protocol=${c?.upstreamProtocol ?? node.protocol} surface=${c?.surface ?? ''} tier=${node.tier}` +
+      `${c?.traceparent ? ` trace_span_id=${c.traceparent.split('-')[2]}` : ''}` +
       ` model=${state.requestedModel}${effectiveModel !== state.requestedModel ? `=>${effectiveModel}` : ''}->${physicalModel}` +
       ` hedged=${hedged} kind=${classification.kind} status=${status} counted=${classification.counted}` +
       ` headers_ms=${headersMs ?? -1}${ttftWaitMs !== undefined ? ` ttft_wait_ms=${ttftWaitMs}` : ''}` +
