@@ -16,8 +16,8 @@
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
-import { getLimits } from '../../src/config/timeouts.ts';
 import { modelRegistryEntry } from '../../src/config/registry.ts';
+import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
@@ -180,7 +180,9 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       ? [[{ model: requestedModel, attemptCap: null }]]
       : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts, loadModelsConfig(env));
   const modelPlan = imageInputRequired
-    ? configuredPlan.map((round) => round.filter((pass) => modelRegistryEntry(env, pass.model).catalog.capabilities.vision === true)).filter((round) => round.length > 0)
+    ? configuredPlan
+        .map((round) => round.filter((pass) => modelRegistryEntry(env, pass.model).catalog.capabilities.vision === true))
+        .filter((round) => round.length > 0)
     : configuredPlan;
   if (imageInputRequired && modelPlan.length === 0) {
     return gatewayError(
