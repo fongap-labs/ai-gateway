@@ -4,6 +4,9 @@
 // One physical inference Provider attempt only. No client-level admission,
 // model family retries, Tier scheduling or public routing in this module.
 
+import { loadExecutionConfig } from '../../packages/config-core/nodes.ts';
+import { collectKnownModels, modelRegistryEntry } from '../../packages/config-core/registry.ts';
+import { getLimits } from '../../packages/config-core/timeouts.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -12,8 +15,10 @@ import {
 } from '../../packages/contracts/execution.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
+import { streamUsageEnabled } from '../../packages/contracts/provider-usage.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
+import type { RuntimeNode } from '../../packages/contracts/runtime-node.ts';
 import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
@@ -25,18 +30,13 @@ import { replyFromNativeObject, replyToObject } from '../../packages/conversion-
 import { collectMatrixObject, type MatrixStreamBudget } from '../../packages/conversion-core/matrix/stream.ts';
 import { protocolForSurface } from '../../packages/conversion-core/surface-protocol.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
+import { estimateAnthropicInputTokens } from '../../packages/protocol-core/anthropic.ts';
+import { withUsageStreamOptions } from '../../packages/protocol-core/openai.ts';
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
+import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../packages/transport/http.ts';
 import { dispatchProviderAttempt } from '../../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../../packages/transport/provider-forward-request.ts';
-import { loadExecutionConfig } from '../../src/config/nodes.ts';
-import { collectKnownModels, modelRegistryEntry } from '../../src/config/registry.ts';
-import { getLimits } from '../../src/config/timeouts.ts';
-import { estimateAnthropicInputTokens } from '../../src/protocol/anthropic.ts';
-import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit, readBufferedReplyText } from '../../src/protocol/http.ts';
-import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
-import { streamUsageEnabled } from '../../src/providers/registry.ts';
-import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
-import type { RuntimeNode } from '../../src/types/node.ts';
+import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../packages/transport/provider-routing.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 // The physical center uses the same clamped maximum as Gateway preflight.

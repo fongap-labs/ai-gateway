@@ -31,23 +31,4 @@ export function providerWire(provider: string): ProviderWire {
   return getProviderAdapter(provider).wire;
 }
 
-export function streamUsageEnabled(
-  node: { protocol?: string; surfaces?: ReadonlyArray<string>; provider?: string },
-  env: Record<string, unknown> = {},
-): boolean {
-  const mode = String(env?.AIG_USAGE_INCLUDE_MODE ?? '')
-    .trim()
-    .toLowerCase();
-  if (mode === 'off') return false;
-  if (mode === 'on') return true;
-  if (!getProviderAdapter(String(node?.provider ?? '')).streamUsage) return false;
-  if (!Array.isArray(node?.surfaces) || !node.surfaces.includes('chat_completions')) return false;
-  const offList = String(env?.AIG_USAGE_EXCLUDE_PROVIDERS ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  const provider = String(node?.provider ?? '')
-    .trim()
-    .toLowerCase();
-  return !(provider && offList.includes(provider));
-}
+export { streamUsageEnabled } from '../../packages/contracts/provider-usage.ts';

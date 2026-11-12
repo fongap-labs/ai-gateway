@@ -1,0 +1,286 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fongap Labs
+//
+// AIG_POLICIES_CONFIG: policy name -> request/failover policy. Optional.
+// `max_attempts` is the hard request-wide logical-attempt ceiling. Tier order
+// is fixed (tier-1 -> tier-2); there is one allocation model and no
+// configurable cross-tier budget splitter.
+
+import type { PolicyConfig } from '../contracts/policy.ts';
+import { readEnv } from './env.ts';
+import type { ModelEntry } from './models.ts';
+import { getLimits } from './timeouts.ts';
+
+const MIN_ATTEMPTS = 1;
+const MAX_ATTEMPTS = 8;
+const TIER_KEYS = ['tier1', 'tier2'];
+const ALLOWED_FIELDS = new Set([
+  'max_attempts',
+  'tier_attempts',
+  'hedge',
+  'headers_timeout_ms',
+  'first_event_timeout_ms',
+  'failover_budget_ms',
+  'max_in_flight',
+]);
+
+type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } | null;
+type TierAttempts = { tier1?: number; tier2?: number } | null;
+
+// Three canonical strategies; legacy names remain compatibility aliases for
+// existing operators, not additional scheduling algorithms.
+const fast: PolicyConfig = {
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 60_000,
+  maxInFlight: null,
+};
+const normal: PolicyConfig = {
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 120_000,
+  maxInFlight: null,
+};
+const deep: PolicyConfig = {
+  maxAttempts: 8,
+  tierAttempts: null,
+  hedge: { enabled: false },
+  headersTimeoutMs: null,
+  firstEventTimeoutMs: null,
+  failoverBudgetMs: 180_000,
+  maxInFlight: null,
+};
+const BUILTIN_POLICIES: Readonly<Record<string, PolicyConfig>> = Object.freeze({
+  fast,
+  normal,
+  deep,
+  // Legacy spellings accept older deployed models without widening the
+  // canonical strategy surface.
+  default: normal,
+  chat: normal,
+  coding: normal,
+  'long-reasoning': deep,
+});
+
+/** Single shared policy-name source for runtime and private-center deployment gates. */
+export function isBuiltinPolicyName(name: string): boolean {
+  return Object.hasOwn(BUILTIN_POLICIES, name);
+}
+
+let cachedEnv: Record<string, unknown> | undefined;
+let cached: { policies: Record<string, PolicyConfig>; errors: string[] } | undefined;
+
+export function loadPoliciesConfig(env: Record<string, unknown>): Record<string, PolicyConfig> {
+  return analyzePolicies(env).policies;
+}
+
+export function getPoliciesConfigDiagnostics(env: Record<string, unknown>): string[] {
+  return analyzePolicies(env).errors;
+}
+
+function analyzePolicies(env: Record<string, unknown>): { policies: Record<string, PolicyConfig>; errors: string[] } {
+  if (cachedEnv === env && cached) return cached;
+  cachedEnv = env;
+  const raw = readEnv(env, 'AIG_POLICIES_CONFIG');
+  const errors: string[] = [];
+  const policies: Record<string, PolicyConfig> = { ...BUILTIN_POLICIES };
+
+  if (raw) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`AIG_POLICIES_CONFIG invalid JSON (${msg}); built-ins used`);
+      cached = { policies, errors };
+      return cached;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      errors.push('AIG_POLICIES_CONFIG must be a JSON object { name: { max_attempts, tier_attempts?, hedge? } }');
+    } else {
+      for (const [name, config] of Object.entries(parsed as Record<string, unknown>)) {
+        if (!name.trim()) {
+          errors.push('AIG_POLICIES_CONFIG: empty policy name (keys must be non-empty strings)');
+          continue;
+        }
+        if (!config || typeof config !== 'object' || Array.isArray(config)) {
+          errors.push(`AIG_POLICIES_CONFIG: "${name}" must be an object`);
+          continue;
+        }
+
+        const cfg = config as Record<string, unknown>;
+        for (const field of Object.keys(cfg)) {
+          if (!ALLOWED_FIELDS.has(field)) {
+            errors.push(`AIG_POLICIES_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_FIELDS].join(', ')})`);
+          }
+        }
+
+        const key = name.trim();
+        const base = policies[key];
+        const tierErrorsBefore = errors.length;
+        const tierAttempts = cfg.tier_attempts === undefined ? (base?.tierAttempts ?? null) : parseTierAttempts(cfg.tier_attempts, key, errors);
+        const tierAttemptsValid = errors.length === tierErrorsBefore;
+        const hedge = cfg.hedge === undefined ? (base?.hedge ?? null) : parseHedge(cfg.hedge, key, errors);
+        const headersTimeoutMs =
+          cfg.headers_timeout_ms === undefined ? (base?.headersTimeoutMs ?? null) : parseHeadersTimeoutMs(cfg.headers_timeout_ms, key, errors);
+        const firstEventTimeoutMs =
+          cfg.first_event_timeout_ms === undefined
+            ? (base?.firstEventTimeoutMs ?? null)
+            : parseFirstEventTimeoutMs(cfg.first_event_timeout_ms, key, errors);
+        const failoverBudgetMs =
+          cfg.failover_budget_ms === undefined ? (base?.failoverBudgetMs ?? null) : parseFailoverBudgetMs(cfg.failover_budget_ms, key, errors);
+        const effectiveFailoverBudgetMs = failoverBudgetMs ?? getLimits(env).failoverBudgetMs;
+        if (headersTimeoutMs !== null && headersTimeoutMs > effectiveFailoverBudgetMs) {
+          errors.push(
+            `AIG_POLICIES_CONFIG: "${key}": headers_timeout_ms (${headersTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`,
+          );
+        }
+        if (firstEventTimeoutMs !== null && firstEventTimeoutMs > effectiveFailoverBudgetMs) {
+          errors.push(
+            `AIG_POLICIES_CONFIG: "${key}": first_event_timeout_ms (${firstEventTimeoutMs}) exceeds effective failover budget (${effectiveFailoverBudgetMs})`,
+          );
+        }
+        const maxInFlight = cfg.max_in_flight === undefined ? (base?.maxInFlight ?? null) : parseMaxInFlight(cfg.max_in_flight, key, errors);
+
+        let attempts: number;
+        let isMaxAttemptsValid = true;
+        if (cfg.max_attempts !== undefined) {
+          const rawMax = cfg.max_attempts;
+          if (typeof rawMax !== 'number' || !Number.isInteger(rawMax) || rawMax < MIN_ATTEMPTS || rawMax > MAX_ATTEMPTS) {
+            errors.push(`AIG_POLICIES_CONFIG: "${key}": max_attempts must be an integer between ${MIN_ATTEMPTS} and ${MAX_ATTEMPTS}`);
+            attempts = base?.maxAttempts ?? normal.maxAttempts;
+            isMaxAttemptsValid = false;
+          } else {
+            attempts = rawMax;
+          }
+        } else {
+          attempts = base?.maxAttempts ?? normal.maxAttempts;
+        }
+
+        if (tierAttempts && tierAttemptsValid && isMaxAttemptsValid) {
+          const tierAttemptsTotal = Object.values(tierAttempts).reduce((sum, value) => sum + (value ?? 0), 0);
+          if (tierAttemptsTotal > attempts) {
+            errors.push(`AIG_POLICIES_CONFIG: "${key}": tier_attempts total exceeds max_attempts (${tierAttemptsTotal} > ${attempts})`);
+          }
+        }
+
+        policies[key] = {
+          maxAttempts: attempts,
+          tierAttempts,
+          hedge,
+          headersTimeoutMs,
+          firstEventTimeoutMs,
+          failoverBudgetMs,
+          maxInFlight,
+        };
+      }
+    }
+  }
+
+  cached = { policies, errors };
+  return cached;
+}
+
+function parseHedge(value: unknown, policyName: string, errors: string[]): HedgePolicy {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge must be an object { enabled?, delay_ms?, tiers? }`);
+    return null;
+  }
+  const rec = value as Record<string, unknown>;
+  const out: { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } = { enabled: true };
+  if (rec.enabled !== undefined) {
+    if (typeof rec.enabled !== 'boolean') errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.enabled must be a boolean`);
+    else out.enabled = rec.enabled;
+  }
+  if (rec.delay_ms !== undefined) {
+    if (typeof rec.delay_ms !== 'number' || !Number.isInteger(rec.delay_ms) || rec.delay_ms < 0) {
+      errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.delay_ms must be a non-negative integer`);
+    } else {
+      out.delayMs = rec.delay_ms;
+    }
+  }
+  if (rec.tiers !== undefined) {
+    if (!Array.isArray(rec.tiers) || !rec.tiers.every((t) => typeof t === 'string' && TIER_KEYS.includes(t))) {
+      errors.push(`AIG_POLICIES_CONFIG: "${policyName}": hedge.tiers must be an array of "tier1", "tier2"`);
+    } else {
+      out.tiers = rec.tiers;
+    }
+  }
+  return out;
+}
+
+function parseTierAttempts(value: unknown, policyName: string, errors: string[]): TierAttempts {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts must be an object { tier1, tier2 }`);
+    return null;
+  }
+  const out: { tier1?: number; tier2?: number } = {};
+  let hasAnyTierAttempt = false;
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!TIER_KEYS.includes(key)) {
+      errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts.${key} is not a valid tier (allowed: ${TIER_KEYS.join(', ')})`);
+      continue;
+    }
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0 || val > MAX_ATTEMPTS) {
+      errors.push(`AIG_POLICIES_CONFIG: "${policyName}" tier_attempts.${key} must be an integer between 0 and ${MAX_ATTEMPTS}`);
+      continue;
+    }
+    out[key as 'tier1' | 'tier2'] = val;
+    hasAnyTierAttempt = true;
+  }
+  return hasAnyTierAttempt ? out : null;
+}
+
+function parseHeadersTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 5_000 || value > 600_000) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": headers_timeout_ms must be an integer between 5000 and 600000`);
+    return null;
+  }
+  return value;
+}
+
+function parseFailoverBudgetMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1_000 || value > 900_000) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": failover_budget_ms must be an integer between 1000 and 900000`);
+    return null;
+  }
+  return value;
+}
+
+function parseFirstEventTimeoutMs(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 5_000 || value > 600_000) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": first_event_timeout_ms must be an integer between 5000 and 600000`);
+    return null;
+  }
+  return value;
+}
+
+// `max_in_flight` is an explicit Tier 1 local safety ceiling. Current config
+// accepts JSON numbers only; there is no string coercion compatibility path.
+function parseMaxInFlight(value: unknown, policyName: string, errors: string[]): number | null {
+  if (value === undefined || value === null || value === 0) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    errors.push(`AIG_POLICIES_CONFIG: "${policyName}": max_in_flight must be a non-negative integer number`);
+    return null;
+  }
+  return value;
+}
+
+export function getPolicy(modelName: string, modelsConfig: Record<string, ModelEntry>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
+  // Model spelling is an opaque identifier: no tier/prefix inference.
+  const explicit = modelsConfig[modelName]?.policy?.policy;
+  const policyName = explicit || 'normal';
+  return policiesConfig[policyName] ?? policiesConfig.normal ?? normal;
+}

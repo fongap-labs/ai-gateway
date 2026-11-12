@@ -180,10 +180,39 @@ for (const [legacy, owner, symbols] of [
     assert.ok(code.includes(`function ${symbol}(`), `${owner} must implement ${symbol}`);
   }
 }
-const legacyTransportFacade = readFileSync(join(root, 'src/transport/index.ts'), 'utf8');
-assert.ok(legacyTransportFacade.includes("from '../../packages/transport/openai-native.ts'"));
-assert.ok(legacyTransportFacade.includes("from '../../packages/transport/anthropic-native.ts'"));
-assert.doesNotMatch(legacyTransportFacade, /from ['"]\.\/(?:openai|anthropic)\.ts['"]/);
+// All private execution dependencies must have an independent packages/ owner.
+// The old src/ entrypoints retain their export identity but cannot hold runtime logic.
+for (const [legacy, canonical] of [
+  ['src/config/env.ts', 'packages/config-core/env.ts'],
+  ['src/config/models.ts', 'packages/config-core/models.ts'],
+  ['src/config/nodes.ts', 'packages/config-core/nodes.ts'],
+  ['src/config/policies.ts', 'packages/config-core/policies.ts'],
+  ['src/config/protocol-fallbacks.ts', 'packages/config-core/protocol-fallbacks.ts'],
+  ['src/config/registry.ts', 'packages/config-core/registry.ts'],
+  ['src/config/runtime-vars.ts', 'packages/config-core/runtime-vars.ts'],
+  ['src/config/timeouts.ts', 'packages/config-core/timeouts.ts'],
+  ['src/protocol/anthropic.ts', 'packages/protocol-core/anthropic.ts'],
+  ['src/protocol/http.ts', 'packages/transport/http.ts'],
+  ['src/protocol/openai.ts', 'packages/protocol-core/openai.ts'],
+  ['src/transport/index.ts', 'packages/transport/provider-routing.ts'],
+  ['src/types/node.ts', 'packages/contracts/runtime-node.ts'],
+  ['src/types/scheduler.ts', 'packages/contracts/scheduler.ts'],
+  ['src/types/policy.ts', 'packages/contracts/policy.ts'],
+  ['src/types/upstream-processing.ts', 'packages/contracts/upstream-processing.ts'],
+  ['src/utils/trim.ts', 'packages/config-core/trim.ts'],
+]) {
+  const facade = readFileSync(join(root, legacy), 'utf8');
+  const owner = readFileSync(join(root, canonical), 'utf8');
+  assert.match(facade, /export \* from /, `Legacy module must remain a facade: ${legacy}`);
+  assert.doesNotMatch(facade, /export (?:async )?(?:function|class|const|interface) /, `Legacy module retained implementation: ${legacy}`);
+  assert.doesNotMatch(owner, /from ['"][^'"]*\/(?:src|apps)\//, `Neutral owner imports application or src: ${canonical}`);
+}
+const legacyProviderRegistry = readFileSync(join(root, 'src/providers/registry.ts'), 'utf8');
+assert.match(legacyProviderRegistry, /streamUsageEnabled \} from '..\/..\/packages\/contracts\/provider-usage.ts'/);
+const neutralProviderUsage = readFileSync(join(root, 'packages/contracts/provider-usage.ts'), 'utf8');
+assert.match(neutralProviderUsage, /getProviderProfile\(/, 'Usage hint policy must be driven by credential-free provider profiles');
+const physicalExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+assert.doesNotMatch(physicalExecutor, /from ['"][^'"]*\/src\//, 'Private executor must never import src implementation modules');
 
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
@@ -725,7 +754,7 @@ assert.doesNotMatch(
   /runTierLoop|dispatchWithHedge|loadGatewayConfig/,
   'Neutral provider transport cannot own policy or retries',
 );
-const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
+const nodeConfigSource = readFileSync(join(root, 'packages/config-core/nodes.ts'), 'utf8');
 assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
 assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
 assert.match(nodeConfigSource, /const isGatewayInferenceCenterOwned = shouldRequireClientKey;/, 'Gateway must always be metadata-only');

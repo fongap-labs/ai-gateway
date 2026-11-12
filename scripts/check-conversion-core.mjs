@@ -47,6 +47,40 @@ for (const unit of [
   }
 }
 
+// No stale src implementation is allowed to diverge from the shared config,
+// HTTP transport or protocol owners. Keep singleton caches and Error classes identical.
+for (const [legacy, canonical] of [
+  ['src/config/env.ts', 'packages/config-core/env.ts'],
+  ['src/config/models.ts', 'packages/config-core/models.ts'],
+  ['src/config/nodes.ts', 'packages/config-core/nodes.ts'],
+  ['src/config/policies.ts', 'packages/config-core/policies.ts'],
+  ['src/config/protocol-fallbacks.ts', 'packages/config-core/protocol-fallbacks.ts'],
+  ['src/config/registry.ts', 'packages/config-core/registry.ts'],
+  ['src/config/runtime-vars.ts', 'packages/config-core/runtime-vars.ts'],
+  ['src/config/timeouts.ts', 'packages/config-core/timeouts.ts'],
+  ['src/protocol/anthropic.ts', 'packages/protocol-core/anthropic.ts'],
+  ['src/protocol/http.ts', 'packages/transport/http.ts'],
+  ['src/protocol/openai.ts', 'packages/protocol-core/openai.ts'],
+  ['src/transport/index.ts', 'packages/transport/provider-routing.ts'],
+  ['src/types/upstream-processing.ts', 'packages/contracts/upstream-processing.ts'],
+  ['src/utils/trim.ts', 'packages/config-core/trim.ts'],
+]) {
+  const oldOwner = await import(`../${legacy}`);
+  const newOwner = await import(`../${canonical}`);
+  assert.deepEqual(Object.keys(oldOwner).sort(), Object.keys(newOwner).sort(), `Shared export set drift: ${legacy}`);
+  for (const key of Object.keys(newOwner)) {
+    assert.equal(oldOwner[key], newOwner[key], `Shared runtime identity drift: ${legacy}.${key}`);
+  }
+}
+const providerRegistry = await import('../src/providers/registry.ts');
+const usageContract = await import('../packages/contracts/provider-usage.ts');
+assert.equal(providerRegistry.streamUsageEnabled, usageContract.streamUsageEnabled);
+for (const provider of ['openai', 'google', 'anthropic', 'unknown-provider']) {
+  const node = { provider, protocol: 'openai', surfaces: ['chat_completions'] };
+  assert.equal(providerRegistry.streamUsageEnabled(node), usageContract.streamUsageEnabled(node));
+  assert.equal(providerRegistry.streamUsageEnabled(node, { AIG_USAGE_INCLUDE_MODE: 'off' }), false);
+}
+
 const { ConversionError, parseToolArguments } = await import('../packages/conversion-core/validation.ts');
 const { MatrixDiag } = await import('../packages/conversion-core/diag.ts');
 const { createMatrixBudget, ConversionBudgetStop } = await import('../packages/conversion-core/budget.ts');

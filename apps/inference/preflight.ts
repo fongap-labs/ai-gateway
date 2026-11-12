@@ -5,7 +5,7 @@
 import type { InferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import { convertMatrixRequest, isMatrixPair } from '../../packages/conversion-core/matrix/request.ts';
 import { ConversionError, isRecord } from '../../packages/conversion-core/validation.ts';
-import { BodyTooLargeError, readBodyTextWithLimit } from '../../src/protocol/http.ts';
+import { BodyTooLargeError, readBodyTextWithLimit } from '../../packages/transport/http.ts';
 import { problem } from './response.ts';
 
 const MAX_PREFLIGHT_BYTES = 2 * 1024 * 1024;
