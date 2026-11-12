@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 功能: 支持在 `AIG_MODELS_CONFIG` 中为纯文本模型显式声明 `vision_delegate`；经原有鉴权、模型授权与 Perception 私有链路先识别图片，再把受限视觉描述交给原请求模型。仅支持 Chat 图像输入，不改变模型回退链，也不自动启用生产配置。
+- 新增: 可通过 `AIG_MODELS_CONFIG` 显式配置 `vision_delegate`，让纯文本模型先用 Omni 经 Perception 识图，再由原模型回答；保留鉴权与原有回退链。
 
 - 修复: 上游明确返回端点不存在（404）后，本次请求跳过同 Tier、同 Provider 地址、协议、请求类型和物理模型的重复 Key 派发；保留其他上游、模型与付费资源回退，增加 404 与 429 区分回归测试。
 
