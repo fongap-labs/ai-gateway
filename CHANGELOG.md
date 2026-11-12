@@ -4,6 +4,8 @@
 
 - 新增: Responses 的 inline input_image 可经 Omni 识图后交回原模型，保持原生 Responses 返回；拒绝不支持的 file_id 图片。
 
+- 修复: 成功请求仅在有已确认的上游失败记录时标记故障转移，排除预派发跳过和 Hedge 取消。
+
 - 新增: AGENT 聊天请求可声明 `generate_image` 并选择 `tool_choice:auto`，由文本模型决定是否生成图片，实际生成仍由 Generation Center 单次执行。
 
 - 维护: 增加 503、422 跨模型及跨 Tier 回退验证，并在真正失败后恢复的成功响应中提供匿名派发数和回退证据。
