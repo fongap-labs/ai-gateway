@@ -231,7 +231,11 @@ export function makeNodeStreamTrack(
       if (outcome !== 'interrupted') return;
       recordStreamInterrupted(d.reason);
       if (tier1) {
-        applyTier1Outcome(node.id, c.reqDescriptor?.model ?? c.state?.requestedModel, classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }));
+        applyTier1Outcome(
+          node.id,
+          c.reqDescriptor?.model ?? c.state?.requestedModel,
+          classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }),
+        );
         releaseTier1Slot(node.id, c.tier1ReleaseToken);
         bumpNodeCounters(node.id, { requests: 1, failures: 1 });
       } else {
