@@ -456,7 +456,6 @@ const exhaustedReply = await handleRequest(exhaustedReq, exhaustedEnv, { waitUnt
 assert.ok(exhaustedReply.status >= 400, 'a truly unavailable pool cannot claim success');
 assert.equal(exhaustedDispatches, 1, 'a used Key must not be retried merely because max_attempts is eight');
 
-
 async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   const source = `primary-${failureStatus}`;
   const fallback = `fallback-${failureStatus}`;
