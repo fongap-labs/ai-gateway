@@ -81,13 +81,10 @@ __resetTier1StateForTests();
 // A previous transient Tier 1 failure is NOT a license to send a later
 // last-resort dispatch when a newer outcome has ruled out that candidate.
 const staleAfter429 = makeState();
-recordOutcome(
-  staleAfter429,
-  node,
-  classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
-  makeContext(staleAfter429),
-  { status: 503, latencyMs: 120 },
-);
+recordOutcome(staleAfter429, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'), makeContext(staleAfter429), {
+  status: 503,
+  latencyMs: 120,
+});
 assert.equal(staleAfter429.sameNodeRetry?.nodeId, node.id);
 recordOutcome(
   staleAfter429,
