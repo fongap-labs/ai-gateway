@@ -43,6 +43,26 @@ content-type: application/json
 有效图片响应在中心被标准化为 OpenAI `images/generations` 的 `data[].b64_json` 结构，网关不再扫描或解码 Base64。原生 OpenAI 图片 JSON 继续流式转发；Google/Cloudflare 使用原本的有界转换上限。元数据保留 `x-aig-generation-normalized` 内部标志，仅由网关消费后剔除。上游真实 Token 用量未知时不推算。
 
 ## 离线受控配置准备
+## 普通 Chat 客户端的显式绘图工具
+
+普通对话的文字不会被网关自动理解成付费生成请求。客户端明确声明 `generate_image` 函数并使用 `tool_choice` 强制选择它时，**已授权 AGENT 后端**可以经标准 `/v1/chat/completions` 调用生成中心，而不是把生成请求转发给 Max 文本 Provider。示例：
+
+```json
+{
+  "model": "Max",
+  "messages": [{ "role": "user", "content": "Draw a square" }],
+  "tools": [{ "type": "function", "function": { "name": "generate_image", "parameters": { "type": "object", "properties": {} } } }],
+  "tool_choice": { "type": "function", "function": { "name": "generate_image" } },
+  "metadata": { "aig_image_model": "Image-Creator", "aig_image_size": "1024x1024" },
+  "stream": false
+}
+```
+
+AGENT Key 必须同时被授权调用原 Chat 模型与独立内部图片模型。图片任务由已有 `AIG_GENERATION_SERVICE` 与 `AIG_GENERATION_AUTH_KEY` 执行，不引入新环境变量。Chat 回答的 `content` 是带 Base64 Data URI 的 Markdown 图片；**客户端必须支持 Data URI 图片渲染**。如果客户端不支持此输出格式，仍应直接调用 `/v1/images/generations` 并由客户端显示返回的图片。
+
+网关禁止根据聊天自然语言自动触发付费生成；没有选择工具时普通 Chat 的模型路由不变。工具被选择但调用者不是 AGENT、没有声明函数、没有明确模型、带图片编辑输入、内部中心不可用或 Provider 返回未知结果，均返回明确错误且不盲目重复生成。流式客户端在生成完成后收到合成 Chat SSE，服务端生成本身仍是同步单次提交。
+
+## 离线受控配置准备
 
 新增 `scripts/generation-center-deployment.mjs` 可在受保护的本地/Runner 环境以 `prepare --config PATH --secrets PATH` 方式生成候选 `wrangler` 配置和 Secret 文件，只允许在 `RUNNER_TEMP` 下写入权限为 `0600` 的临时文件；**不执行 Cloudflare 发布，也不上传 Secret**。所需环境包括明确的 `DEPLOY_SOURCE_SHA`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、独立高熵 `AIG_GENERATION_AUTH_KEY`、两层图片节点分片、私有凭据分片、模型注册与策略配置。任何 Tier 3、旧会员 OAuth 或非图片 Provider 节点一律拒绝。
 
