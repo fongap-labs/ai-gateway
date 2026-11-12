@@ -16,6 +16,9 @@ export const TIER1_NEUTRAL_TTFT_MS = 800; // scheduling fallback, never persiste
 // TTFT scoring: bounded multiplicative demotion (not a raw latency sort).
 export const TIER1_SCORE_BASE = 1000;
 export const TIER1_TTFT_WEIGHT = 0.25;
+// One slow first response is weak evidence. Restore full TTFT ranking only
+// after a small number of real, successfully observed requests.
+export const TIER1_TTFT_CONFIDENCE_SAMPLES = 2;
 export const TIER1_TTFT_FACTOR_MIN = 0.85;
 export const TIER1_TTFT_FACTOR_MAX = 1.5;
 
@@ -73,7 +76,8 @@ function ttftFactor(accountId: string, modelId: string, candidates: ReadonlyArra
   }
   const baseline = tier1TtftBaseline(modelId, candidates);
   const ratio = metric.ttftEwma / Math.max(1, baseline);
-  return Math.min(TIER1_TTFT_FACTOR_MAX, Math.max(TIER1_TTFT_FACTOR_MIN, 1 + TIER1_TTFT_WEIGHT * (ratio - 1)));
+  const confidence = Math.min(1, metric.sampleCount / TIER1_TTFT_CONFIDENCE_SAMPLES);
+  return Math.min(TIER1_TTFT_FACTOR_MAX, Math.max(TIER1_TTFT_FACTOR_MIN, 1 + TIER1_TTFT_WEIGHT * confidence * (ratio - 1)));
 }
 
 function upstreamModelOf(node: RuntimeNode, logicalModel: string): string {
