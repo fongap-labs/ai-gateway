@@ -94,6 +94,36 @@ try {
   fakePreference.headers.set('x-aig-conversion-prefer-nonstream', 'false');
   assert.equal((await handleInferenceCenterRequest(fakePreference, env)).status, 400);
   assert.equal(executed.length, 2, 'invalid preference must fail at ticket validation');
+
+  // The private Center never trusts a Gateway preflight approval: it must
+  // revalidate the original request, reject native-only tool loss, and make
+  // zero additional physical Provider attempts.
+  const nativeToolName = 'private-provider-tool-must-not-leak';
+  const nativeOnly = {
+    ...message,
+    tools: [{ type: 'web_search_20250305', name: nativeToolName }],
+  };
+  const rejectedNative = await handleInferenceCenterRequest(inbound(nativeOnly), env);
+  assert.equal(rejectedNative.status, 422);
+  assert.equal((await rejectedNative.json()).error.code, 'center_conversion_semantic_loss');
+  assert.equal(executed.length, 2, 'semantic-loss refusal happens before Provider dispatch');
+
+  // A portable function tool remains callable when an optional native
+  // server-side tool is dropped. The client may still use its local tool.
+  const mixedTools = {
+    ...nativeOnly,
+    tools: [
+      { name: 'local_lookup', input_schema: { type: 'object', properties: {} } },
+      { type: 'web_search_20250305', name: nativeToolName },
+    ],
+  };
+  const acceptedMixed = await handleInferenceCenterRequest(inbound(mixedTools), env);
+  assert.equal(acceptedMixed.status, 200);
+  assert.equal(executed.length, 3, 'portable tools remain eligible for a physical attempt');
+  assert.equal(executed[2].content.tools.length, 1, 'native-only tools never reach the translated Provider');
+  assert.equal(executed[2].content.tools[0].function.name, 'local_lookup');
+  assert.equal(JSON.stringify(executed[2].content).includes(nativeToolName), false);
+
   console.log('Inference center executes cross-protocol conversion with validated metadata and no leaked credentials.');
 } finally {
   globalThis.fetch = originalFetch;
