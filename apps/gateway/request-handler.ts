@@ -43,7 +43,7 @@ import { makeTier1Rng } from './scheduling/tier-policy.ts';
 import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from './scheduling/tier1-affinity.ts';
 import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
-import { preprocessChatImages } from './vision-preprocess.ts';
+import { preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
 
 // A streaming attempt on a model that still has a sibling after it gives up
 // after this long when the upstream stays silent. Only the last model in the
@@ -214,7 +214,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   // It requires explicit configuration and authorization for the vision alias.
   const visualDelegate = loadModelsConfig(env)[requestedModel]?.policy.vision_delegate;
   if (
-    route === 'openai_chat' &&
+    (route === 'openai_chat' || route === 'openai_responses') &&
     hasImageInput(bodyJson) &&
     modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true &&
     visualDelegate
@@ -250,14 +250,15 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
         'gateway_vision_preprocess_unavailable',
       );
     }
-    const visualResult = await preprocessChatImages({
+    const preprocess = route === 'openai_responses' ? preprocessResponsesImages : preprocessChatImages;
+    const visualResult = await preprocess({
       request,
       body: bodyJson,
       visionModel: delegateModel,
       remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-      // The synthesized image request is bounded and derived from this already
-      // admitted body. Re-enter preflight, authorization and scheduler, but do
-      // not charge the same image a second time to the isolate body gate.
+      // An internal vision request is derived from the admitted body.
+      // Keep normal preflight and authorization but do not charge it twice
+      // to the isolate body admission budget.
       execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
     });
     if (!visualResult.ok) {

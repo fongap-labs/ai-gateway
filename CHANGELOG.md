@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: Responses 的 inline input_image 可经 Omni 识图后交回原模型，保持原生 Responses 返回；拒绝不支持的 file_id 图片。
+
 - 修复: Chat 绘图结果根据图片真实格式输出 PNG、JPEG、WebP 或 GIF，并拒绝无效图片数据，避免错误显示和重复付费。
 
 - 修复: 成功请求仅在有已确认的上游失败记录时标记故障转移，排除预派发跳过和 Hedge 取消。
