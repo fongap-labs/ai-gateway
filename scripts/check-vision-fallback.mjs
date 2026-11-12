@@ -19,7 +19,14 @@ const image = {
   },
 };
 
-async function exercise({ allowFallback, provider = 'openai', bindCenter = true, expectedStatus, expectedCode, includeUnsupportedVisionSibling = false }) {
+async function exercise({
+  allowFallback,
+  provider = 'openai',
+  bindCenter = true,
+  expectedStatus,
+  expectedCode,
+  includeUnsupportedVisionSibling = false,
+}) {
   const providerCalls = [];
   const centerCalls = [];
   const nodes = [
