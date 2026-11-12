@@ -7,8 +7,8 @@
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
-import { trimDiagnostic } from '../../../src/protocol/http.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
+import { trimDiagnostic } from '../../../src/protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
   ADAPTIVE_429_QUOTA_STEPS_MS,
@@ -65,8 +65,11 @@ export function rotateWithNeutralEnd(
     recordNeutralEnd(node.id);
   }
   noteFailure(state, reason);
-  logLazy(state.logger, 'info', () =>
-    `dispatch request=${c.requestId ?? state.requestId} logical_attempt=${isPreDispatch ? state.logicalAttempts + 1 : state.logicalAttempts}/${state.maxAttempts}` +
+  logLazy(
+    state.logger,
+    'info',
+    () =>
+      `dispatch request=${c.requestId ?? state.requestId} logical_attempt=${isPreDispatch ? state.logicalAttempts + 1 : state.logicalAttempts}/${state.maxAttempts}` +
       ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}` +
       ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? ''} tier=${node.tier ?? ''}` +
       ` model=${state.requestedModel}->${upstreamModelOf(node, state.requestedModel)}` +
@@ -104,8 +107,11 @@ export function hedgeLoserOutcome(c: AttemptContext, node: RuntimeNode, phase: s
     bumpNodeCounters(node.id, { requests: 1 });
   } else recordNeutralEnd(node.id);
   const latency = latencyMs ?? (c.attemptStartMs ? Date.now() - c.attemptStartMs : -1);
-  logLazy(c.state.logger, 'info', () =>
-    `hedge loser: request=${c.requestId} node=${node.id} phase=${phase}` + ` reason=cancelled_after_peer_commit neutral=true latency_ms=${latency}`,
+  logLazy(
+    c.state.logger,
+    'info',
+    () =>
+      `hedge loser: request=${c.requestId} node=${node.id} phase=${phase}` + ` reason=cancelled_after_peer_commit neutral=true latency_ms=${latency}`,
   );
   return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
 }
@@ -228,8 +234,11 @@ export function recordOutcome(
   }
 
   noteFailure(state, classification.kind);
-  logLazy(state.logger, 'info', () =>
-    `dispatch request=${c?.requestId ?? state.requestId} logical_attempt=${state.logicalAttempts}/${state.maxAttempts}` +
+  logLazy(
+    state.logger,
+    'info',
+    () =>
+      `dispatch request=${c?.requestId ?? state.requestId} logical_attempt=${state.logicalAttempts}/${state.maxAttempts}` +
       ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}` +
       ` protocol=${c?.upstreamProtocol ?? node.protocol} surface=${c?.surface ?? ''} tier=${node.tier}` +
       `${c?.traceparent ? ` trace_span_id=${c.traceparent.split('-')[2]}` : ''}` +
