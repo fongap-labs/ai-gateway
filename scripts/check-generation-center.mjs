@@ -466,7 +466,6 @@ try {
   assert.equal(physicalCalls, 5);
   globalThis.fetch = imageFetch;
 
-
   // The Chat image bridge must not label JPEG as PNG or turn non-image
   // Provider data into a broken Markdown attachment. Never replay on error.
   imageToolData = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48]).toString(
