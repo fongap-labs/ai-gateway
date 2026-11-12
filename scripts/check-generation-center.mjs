@@ -96,7 +96,12 @@ try {
       enterSpan(name, action) {
         const attrs = {};
         observedSpans.push({ name, attrs });
-        return action({ isTraced: true, setAttribute: (key, value) => { attrs[key] = value; } });
+        return action({
+          isTraced: true,
+          setAttribute: (key, value) => {
+            attrs[key] = value;
+          },
+        });
       },
     },
   };
