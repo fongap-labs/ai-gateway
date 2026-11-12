@@ -8,13 +8,13 @@ export function readEnv(env: Record<string, unknown>, name: string): string | un
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-export function getBool(env: Record<string, unknown>, name: string, fallback: boolean = false): boolean {
+export function getBool(env: Record<string, unknown>, name: string, isFallback: boolean = false): boolean {
   const raw = readEnv(env, name);
-  if (raw === undefined) return fallback;
+  if (raw === undefined) return isFallback;
   const normalized = raw.toLowerCase();
   if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
   if (['false', '0', 'no', 'off'].includes(normalized)) return false;
-  return fallback;
+  return isFallback;
 }
 
 export function clampInt(value: string | undefined, min: number, max: number, fallback: number): number {
