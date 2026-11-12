@@ -6,9 +6,9 @@
 // Every request is non-dispatching. No Cloudflare access, Provider calls or real keys.
 
 import assert from 'node:assert/strict';
+import { handleGenerationCenterRequest } from '../apps/generation/index.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
-import { handleGenerationCenterRequest } from '../apps/generation/index.ts';
 
 const keys = {
   AIG_INFERENCE_AUTH_KEY: 'offline-inference-key-000000000000000000000001',
