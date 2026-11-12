@@ -1,6 +1,7 @@
 {
   "Air": {
     "policy": "fast",
+    "vision_delegate": "Omni",
     "fallback": [
       "Pro",
       "Max",
@@ -9,6 +10,7 @@
   },
   "Pro": {
     "policy": "normal",
+    "vision_delegate": "Omni",
     "fallback": [
       "Max",
       "Ultra"
@@ -16,6 +18,7 @@
   },
   "Max": {
     "policy": "normal",
+    "vision_delegate": "Omni",
     "fallback": [
       "Pro",
       "Ultra"
@@ -23,6 +26,7 @@
   },
   "Ultra": {
     "policy": "deep",
+    "vision_delegate": "Omni",
     "fallback": [
       "Max",
       "Pro"
@@ -30,6 +34,7 @@
   },
   "Code-Air": {
     "policy": "fast",
+    "vision_delegate": "Omni",
     "fallback": [
       "Code-Pro",
       "Code-Max",
@@ -38,6 +43,7 @@
   },
   "Code-Pro": {
     "policy": "normal",
+    "vision_delegate": "Omni",
     "fallback": [
       "Code-Max",
       "Code-Ultra"
@@ -45,6 +51,7 @@
   },
   "Code-Max": {
     "policy": "normal",
+    "vision_delegate": "Omni",
     "fallback": [
       "Code-Pro",
       "Code-Ultra"
@@ -52,6 +59,7 @@
   },
   "Code-Ultra": {
     "policy": "deep",
+    "vision_delegate": "Omni",
     "fallback": [
       "Code-Max",
       "Code-Pro"

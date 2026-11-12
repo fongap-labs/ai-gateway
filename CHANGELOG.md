@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 可通过 `AIG_MODELS_CONFIG` 显式配置 `vision_delegate`，让纯文本模型先用 Omni 经 Perception 识图，再由原模型回答；保留鉴权与原有回退链。
+
 - 维护: 补齐 Gateway 到私有 Generation Center 再到模拟图片 Provider 的端到端合同测试，检查授权隔离、图片模型路由与单次付费派发，不调用真实上游。
 
 - 修复: 上游明确返回模型或端点不可用的 422 时，按 Key 与物理模型局部失败尝试其他可用节点；对请求体不合法的 422 保持立即停止，防止无效重试。
