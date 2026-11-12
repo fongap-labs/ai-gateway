@@ -76,7 +76,10 @@ function ttftFactor(accountId: string, modelId: string, candidates: ReadonlyArra
   }
   const baseline = tier1TtftBaseline(modelId, candidates);
   const ratio = metric.ttftEwma / Math.max(1, baseline);
-  const confidence = Math.min(1, metric.sampleCount / TIER1_TTFT_CONFIDENCE_SAMPLES);
+  // Do not damp unmistakable speed differences: one very slow affinity key
+  // must still escape to a much faster peer on its first real observation.
+  const clearDifference = ratio <= 0.5 || ratio >= 1.5;
+  const confidence = clearDifference ? 1 : Math.min(1, metric.sampleCount / TIER1_TTFT_CONFIDENCE_SAMPLES);
   return Math.min(TIER1_TTFT_FACTOR_MAX, Math.max(TIER1_TTFT_FACTOR_MIN, 1 + TIER1_TTFT_WEIGHT * confidence * (ratio - 1)));
 }
 
