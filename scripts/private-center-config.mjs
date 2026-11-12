@@ -10,6 +10,7 @@ import { IMAGE_PROVIDER_IDS, isImageGenerationProvider } from '../packages/contr
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
 import { getModelsConfigDiagnostics } from '../src/config/models.ts';
 import { getPoliciesConfigDiagnostics, isBuiltinPolicyName } from '../src/config/policies.ts';
+import { applyNativeTraceSampling } from './native-trace-sampling.mjs';
 import { classifyDeployTarget } from './wrangler-deploy-guards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -197,6 +198,7 @@ export function buildPrivateCenterConfig(worker, input) {
   const base = JSON.parse(baseText);
   const config = {
     ...base,
+    observability: applyNativeTraceSampling(base.observability ?? { enabled: true }, input.AIG_TRACE_HEAD_SAMPLE_RATE),
     name: worker,
     main: path.join(root, target.entry),
     workers_dev: false,
