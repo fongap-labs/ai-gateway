@@ -284,6 +284,14 @@ assert.equal(buildWranglerConfig({}).services, undefined);
 assert.equal(buildWranglerConfig({}).observability.traces, undefined, 'tracing remains off by default');
 const sampledGateway = buildWranglerConfig({}, '', '', '', '0.05');
 assert.deepEqual(sampledGateway.observability.traces, { enabled: true, head_sampling_rate: 0.05 });
+assert.deepEqual(buildWranglerConfig({}, '', '', '', '0.05', 'my_trace_sink').observability.traces, {
+  enabled: true,
+  head_sampling_rate: 0.05,
+  destinations: ['my_trace_sink'],
+});
+assert.throws(() => buildWranglerConfig({}, '', '', '', '', 'my_trace_sink'), /AIG_TRACE_EXPORT_DESTINATION/);
+assert.throws(() => buildWranglerConfig({}, '', '', '', '0', 'my_trace_sink'), /AIG_TRACE_EXPORT_DESTINATION/);
+assert.throws(() => buildWranglerConfig({}, '', '', '', '0.05', '../malicious'), /AIG_TRACE_EXPORT_DESTINATION/);
 assert.equal(sampledGateway.vars.AIG_TRACE_HEAD_SAMPLE_RATE, undefined, 'deployment-only sampling never becomes a Worker variable');
 assert.deepEqual(buildWranglerConfig({}, '', '', '', '0').observability.traces, { enabled: false });
 assert.deepEqual(buildWranglerConfig({}, '', '', '', '1').observability.traces, { enabled: true, head_sampling_rate: 1 });
