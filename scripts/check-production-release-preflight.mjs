@@ -59,7 +59,7 @@ const generation = {
 };
 const perception = {
   name: 'ai-perception-center',
-  main: path.join(ROOT, 'src/perception/perception-center-entry.ts'),
+  main: path.join(ROOT, 'apps/perception/index.ts'),
   workers_dev: false,
   keep_vars: false,
   vars: { ...centerVars },
