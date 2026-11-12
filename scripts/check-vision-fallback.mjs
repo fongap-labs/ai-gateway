@@ -259,21 +259,16 @@ try {
       }),
     });
   const responsesImage = { type: 'input_image', image_url: image.image_url.url };
-  const responsesResult = await handleRequest(
-    responsesImageRequest(responsesImage),
-    bridgeEnv,
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+  const responsesResult = await handleRequest(responsesImageRequest(responsesImage), bridgeEnv, { waitUntil() {}, passThroughOnException() {} });
   assert.equal(responsesResult.status, 200, await responsesResult.clone().text());
   assert.equal((await responsesResult.json()).output?.[0]?.content?.[0]?.text, 'A red square is shown.');
   assert.deepEqual(bridgeCenterCalls, ['perception', 'inference', 'perception', 'inference']);
   assert.deepEqual(bridgeProviderCalls, ['upstream-vision-model', 'upstream-text-model', 'upstream-vision-model', 'upstream-text-model']);
 
-  const unsupportedFile = await handleRequest(
-    responsesImageRequest({ type: 'input_image', file_id: 'file-123' }),
-    bridgeEnv,
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+  const unsupportedFile = await handleRequest(responsesImageRequest({ type: 'input_image', file_id: 'file-123' }), bridgeEnv, {
+    waitUntil() {},
+    passThroughOnException() {},
+  });
   assert.equal(unsupportedFile.status, 400, 'unsupported image file IDs must not be silently dropped or fetched');
   assert.equal(bridgeProviderCalls.length, 4, 'no Provider dispatch on unsupported file ID');
 
