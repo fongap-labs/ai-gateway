@@ -145,6 +145,24 @@ export function recordOutcome(
   // client requested. Diagnostics must name the model actually sent upstream.
   const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   const physicalModel = upstreamModelOf(node, effectiveModel);
+  // A confirmed endpoint 404 is a route failure, not a quota failure.
+  // In this request only, do not probe other free keys pointing at the exact
+  // same Provider URL, protocol, surface and physical model. Paid Tier 2
+  // remains eligible, as do other URLs/models and subsequent requests.
+  if (classification.kind === KIND.ENDPOINT_NOT_FOUND) {
+    for (const peer of state.nodes ?? []) {
+      if (
+        peer.tier === node.tier &&
+        peer.provider === node.provider &&
+        peer.baseUrl === node.baseUrl &&
+        peer.protocol === node.protocol &&
+        peer.surfaces.includes(c.surface ?? c.reqDescriptor?.surface) &&
+        upstreamModelOf(peer, effectiveModel) === physicalModel
+      ) {
+        state.attempted.add(peer.id);
+      }
+    }
+  }
   const attemptWindowMs =
     c.attemptDeadlineMs !== undefined && c.attemptStartMs !== undefined ? Math.max(0, c.attemptDeadlineMs - c.attemptStartMs) : undefined;
   let tier1RateLimitStage: number | null = null;
