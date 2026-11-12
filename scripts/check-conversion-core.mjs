@@ -25,6 +25,28 @@ for (const unit of ['ir', 'budget', 'diag', 'result', 'validation']) {
   }
 }
 
+// Matrix translations must remain reference-identical across the neutral owner,
+// the Inference compatibility facade, and the historical src API.
+for (const unit of [
+  'anthropic-stream',
+  'anthropic',
+  'chat-stream',
+  'chat',
+  'framed-stream',
+  'request',
+  'response',
+  'responses-stream',
+  'responses',
+  'stream',
+]) {
+  const canonical = await import(`../packages/conversion-core/matrix/${unit}.ts`);
+  const facade = await import(`../apps/inference/conversion/${unit}.ts`);
+  assert.deepEqual(Object.keys(facade).sort(), Object.keys(canonical).sort(), `Matrix facade export drift: ${unit}`);
+  for (const name of Object.keys(canonical)) {
+    assert.equal(facade[name], canonical[name], `Matrix implementation identity drift: ${unit}.${name}`);
+  }
+}
+
 const { ConversionError, parseToolArguments } = await import('../packages/conversion-core/validation.ts');
 const { MatrixDiag } = await import('../packages/conversion-core/diag.ts');
 const { createMatrixBudget, ConversionBudgetStop } = await import('../packages/conversion-core/budget.ts');
