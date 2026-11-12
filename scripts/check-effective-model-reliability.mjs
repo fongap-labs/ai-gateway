@@ -82,24 +82,30 @@ __resetTier1StateForTests();
 // last-resort dispatch when a newer outcome has ruled out that candidate.
 const staleAfter429 = makeState();
 recordOutcome(
-  staleAfter429, node,
+  staleAfter429,
+  node,
   classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
-  makeContext(staleAfter429), { status: 503, latencyMs: 120 },
+  makeContext(staleAfter429),
+  { status: 503, latencyMs: 120 },
 );
 assert.equal(staleAfter429.sameNodeRetry?.nodeId, node.id);
 recordOutcome(
-  staleAfter429, node,
+  staleAfter429,
+  node,
   classifyUpstreamStatus(429, new Headers({ 'Retry-After': '240' }), {}, Date.now(), 'quota exhausted'),
-  makeContext(staleAfter429), { status: 429, latencyMs: 70 },
+  makeContext(staleAfter429),
+  { status: 429, latencyMs: 70 },
 );
 assert.equal(staleAfter429.sameNodeRetry, null, 'a later rate limit must cancel an older same-key retry');
 
 __resetTier1StateForTests();
 const staleAfterRefusal = makeState();
 recordOutcome(
-  staleAfterRefusal, node,
+  staleAfterRefusal,
+  node,
   classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
-  makeContext(staleAfterRefusal), { status: 503, latencyMs: 120 },
+  makeContext(staleAfterRefusal),
+  { status: 503, latencyMs: 120 },
 );
 rotateWithNeutralEnd(staleAfterRefusal, node, KIND.AUTH, makeContext(staleAfterRefusal), true);
 assert.equal(staleAfterRefusal.sameNodeRetry, null, 'a pre-dispatch rejection must cancel an older retry');
@@ -108,15 +114,19 @@ assert.equal(staleAfterRefusal.dispatches, 1, 'pre-dispatch rejection must not b
 __resetTier1StateForTests();
 const staleAfterTierChange = makeState();
 recordOutcome(
-  staleAfterTierChange, node,
+  staleAfterTierChange,
+  node,
   classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
-  makeContext(staleAfterTierChange), { status: 503, latencyMs: 120 },
+  makeContext(staleAfterTierChange),
+  { status: 503, latencyMs: 120 },
 );
 const tokenNode = { ...node, id: 'token-node', tier: 'tier-2' };
 recordOutcome(
-  staleAfterTierChange, tokenNode,
+  staleAfterTierChange,
+  tokenNode,
   classifyUpstreamStatus(429, new Headers({ 'Retry-After': '15' }), {}, Date.now(), 'rate limit'),
-  makeContext(staleAfterTierChange), { status: 429, latencyMs: 70 },
+  makeContext(staleAfterTierChange),
+  { status: 429, latencyMs: 70 },
 );
 assert.equal(staleAfterTierChange.sameNodeRetry, null, 'a later Tier 2 failure must not resurrect an older Tier 1 attempt');
 
