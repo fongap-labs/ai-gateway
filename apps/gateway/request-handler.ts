@@ -14,9 +14,10 @@
 // returned to the client; after that point transparent failover is forbidden.
 
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
+import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
-import { modelRegistryEntry } from '../../src/config/registry.ts';
+import { modelRegistryEntry, servesModel } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
@@ -197,6 +198,30 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       'gateway_image_input_unsupported',
     );
   }
+  // A vision declaration alone does not make a Provider endpoint image-capable.
+  // Detect a provider-profile mismatch before scheduling so it cannot consume
+  // attempts or return a misleading capacity / cooldown error.
+  const visionProviderConfigured =
+    !imageInputRequired ||
+    modelPlan.some((round) =>
+      round.some(({ model }) =>
+        config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, model, knownModels)),
+      ),
+    );
+  if (!visionProviderConfigured) {
+    return gatewayError(
+      request,
+      env,
+      route,
+      400,
+      'No image-capable Provider is configured for the requested model or its explicitly configured fallbacks.',
+      requestId,
+      undefined,
+      undefined,
+      'gateway_image_provider_unsupported',
+    );
+  }
+
   const familyModels = new Set(modelPlan.flat().map((pass) => pass.model.trim().toLowerCase()));
   const familyFallback = familyModels.size > 1;
 
