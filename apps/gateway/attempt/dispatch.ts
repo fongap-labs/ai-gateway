@@ -5,6 +5,7 @@
 // An unavailable center always fails closed, never to a direct Provider.
 
 import { hasImageInput } from '../../../packages/contracts/image-input.ts';
+import { withNativeSpan } from '../../../packages/contracts/native-tracing.ts';
 import { getProviderProfile } from '../../../packages/contracts/provider-profiles.ts';
 import { createInternalTraceparent } from '../../../packages/contracts/trace-context.ts';
 import { modelRegistryEntry } from '../../../src/config/registry.ts';
@@ -23,6 +24,21 @@ export { isBufferedUpstreamReply } from './attempt-mode.ts';
 // Every Provider call is charged once, including hedge losers. The Gateway
 // owns the request-level attempt/hedge budget; centers execute one attempt.
 export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
+  return withNativeSpan(
+    c.ctx,
+    'aig.gateway.attempt',
+    { requestId: c.requestId, nodeId: c.node.id, model: c.reqDescriptor.model, center: 'gateway', phase: 'dispatch' },
+    () => attemptNodeUntraced(c),
+    (span, outcome) => {
+      span.setAttribute('aig.result', outcome.response?.ok ? 'ok' : (outcome.kind ?? 'other'));
+      span.setAttribute('aig.status', outcome.response?.status ?? c.upstreamStatus ?? 0);
+      if (c.headersMs !== undefined && c.headersMs >= 0) span.setAttribute('aig.headers_ms', c.headersMs);
+      if (c.traceparent) span.setAttribute('aig.span_id', c.traceparent.split('-')[2] ?? '');
+    },
+  );
+}
+
+async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
   const outcome = await dispatchAttempt(c);
   if (outcome.budgetCharged !== false) {
     recordAttemptEvent(c.env, {

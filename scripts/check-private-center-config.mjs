@@ -58,6 +58,19 @@ const withCenterSecret = buildPrivateCenterConfig('ai-inference-center', {
 });
 assert.equal(Object.hasOwn(withCenterSecret.config.vars, 'AIG_INFERENCE_AUTH_KEY'), false);
 const inference = buildPrivateCenterConfig('ai-inference-center', env);
+
+assert.equal(inference.config.observability.traces, undefined, 'native tracing is off by default');
+for (const name of ['ai-inference-center', 'ai-perception-center', 'ai-generation-center']) {
+  const sampled = buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0.05' });
+  assert.deepEqual(sampled.config.observability.traces, { enabled: true, head_sampling_rate: 0.05 });
+  const exported = buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0.05', AIG_TRACE_EXPORT_DESTINATION: 'my_trace_sink' });
+  assert.deepEqual(exported.config.observability.traces, { enabled: true, head_sampling_rate: 0.05, destinations: ['my_trace_sink'] });
+  assert.equal(exported.config.vars.AIG_TRACE_EXPORT_DESTINATION, undefined);
+  assert.equal(sampled.config.vars.AIG_TRACE_HEAD_SAMPLE_RATE, undefined, 'sampling is deployment-only');
+  assert.deepEqual(buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0' }).config.observability.traces, { enabled: false });
+  assert.throws(() => buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '1.5' }), /AIG_TRACE_HEAD_SAMPLE_RATE/);
+}
+
 assert.deepEqual(preflightPrivateCenters(env), { workers: 3 });
 // AIG_POLICIES_CONFIG is optional when models use the same built-in policies as the Gateway.
 const withBuiltinPolicies = { ...env, AIG_POLICIES_CONFIG: '' };

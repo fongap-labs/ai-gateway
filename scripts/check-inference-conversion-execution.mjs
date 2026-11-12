@@ -75,8 +75,27 @@ try {
     );
   };
 
-  const converted = await handleInferenceCenterRequest(initial, env);
+  const centerSpans = [];
+  const nativeCtx = {
+    tracing: {
+      enterSpan(name, action) {
+        const attributes = {};
+        centerSpans.push({ name, attributes });
+        return action({
+          isTraced: true,
+          setAttribute: (key, value) => {
+            attributes[key] = value;
+          },
+        });
+      },
+    },
+  };
+  const converted = await handleInferenceCenterRequest(initial, env, nativeCtx);
   assert.equal(converted.status, 200);
+  assert.equal(centerSpans.length, 1);
+  assert.equal(centerSpans[0].name, 'aig.inference.execute');
+  assert.equal(centerSpans[0].attributes['aig.center'], 'inference');
+  assert.equal(centerSpans[0].attributes['http.response.status_code'], 200);
   assert.equal(converted.headers.get('x-aig-result'), 'dispatched');
   assert.equal(executed.length, 1);
   assert.ok(executed[0].url.endsWith('/chat/completions'));
