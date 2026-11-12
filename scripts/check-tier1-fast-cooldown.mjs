@@ -28,7 +28,7 @@ assert.equal(model.consecutiveFailures, 1);
 assert.equal(model.cooldownUntil, 0);
 applyTier1Outcome('free-key-1', 'Code-Ultra', timeout, t + 1);
 assert.equal(model.consecutiveFailures, 2);
-assert.equal(model.failureState, 'normal');
+assert.equal(model.failureState, 'cooldown');
 assert.ok(model.cooldownUntil >= t + 1 + TIER1_FAST_COOLDOWN_MS);
 assert.equal(getTier1Model('free-key-1', 'General-Ultra').cooldownUntil, 0);
 assert.equal(getTier1Model('free-key-2', 'Code-Ultra').cooldownUntil, 0);
