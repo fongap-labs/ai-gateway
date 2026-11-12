@@ -280,6 +280,17 @@ assert.equal(centerBindingConfig.vars.AIG_INFERENCE_ACTIVE, 'true');
 assert.equal(buildWranglerConfig({}).vars.AIG_INFERENCE_ACTIVE, undefined);
 assert.equal(buildWranglerConfig({ AIG_INFERENCE_ACTIVE: 'true' }).vars.AIG_INFERENCE_ACTIVE, undefined);
 assert.equal(buildWranglerConfig({}).services, undefined);
+
+assert.equal(buildWranglerConfig({}).observability.traces, undefined, 'tracing remains off by default');
+const sampledGateway = buildWranglerConfig({}, '', '', '', '0.05');
+assert.deepEqual(sampledGateway.observability.traces, { enabled: true, head_sampling_rate: 0.05 });
+assert.equal(sampledGateway.vars.AIG_TRACE_HEAD_SAMPLE_RATE, undefined, 'deployment-only sampling never becomes a Worker variable');
+assert.deepEqual(buildWranglerConfig({}, '', '', '', '0').observability.traces, { enabled: false });
+assert.deepEqual(buildWranglerConfig({}, '', '', '', '1').observability.traces, { enabled: true, head_sampling_rate: 1 });
+for (const invalid of ['-0.1', '1.01', 'NaN', 'Infinity', '5%', '1e-2', 'oops']) {
+  assert.throws(() => buildWranglerConfig({}, '', '', '', invalid), /AIG_TRACE_HEAD_SAMPLE_RATE/);
+}
+
 assert.throws(() => buildWranglerConfig({ AIG_INFERENCE_TARGET: 'other-center' }));
 const generationBound = buildWranglerConfig({ AIG_GENERATION_TARGET: 'ai-generation-center' });
 assert.deepEqual(generationBound.services, [{ binding: 'AIG_GENERATION_SERVICE', service: 'ai-generation-center' }]);
