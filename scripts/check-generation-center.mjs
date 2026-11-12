@@ -5,6 +5,7 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
+import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
@@ -236,6 +237,71 @@ try {
   assert.equal(imageGatewayWithSecret.nodes[0].credential, '', 'Gateway must not retain a center-owned image key');
   assert.equal(loadExecutionConfig(env).nodes[0].credential, secret, 'private Generation Center owns its Provider key');
 
+  // Full client -> Gateway -> private Generation Center -> mocked image
+  // Provider contract. This deliberately never calls a real paid API.
+  const gatewayImageEnv = { ...imageEnv };
+  delete gatewayImageEnv.AIG_TIER1_CREDENTIALS_01;
+  let centerCalls = 0;
+  let physicalCalls = 0;
+  gatewayImageEnv.AIG_GENERATION_SERVICE = {
+    async fetch(centerRequest) {
+      centerCalls += 1;
+      assert.equal(centerRequest.headers.get('authorization'), null, 'client Authorization must never reach Generation Center');
+      assert.equal(centerRequest.headers.get('x-aig-generation-auth'), internalKey);
+      assert.equal(centerRequest.headers.get('x-aig-node-id'), 'image-1');
+      return handleGenerationCenterRequest(centerRequest, imageEnv);
+    },
+  };
+  globalThis.fetch = async (url, options) => {
+    physicalCalls += 1;
+    assert.equal(String(url), 'https://api.openai.com/v1/images/generations');
+    assert.equal(new Headers(options.headers).get('authorization'), 'Bearer upstream-mock-secret');
+    const providerBody = JSON.parse(options.body);
+    assert.equal(providerBody.model, 'gpt-image-1');
+    assert.equal(providerBody.prompt, 'Draw a square');
+    return new Response(JSON.stringify({ created: 1, data: [{ b64_json: 'aGVsbG8=' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const gatewayCtx = { waitUntil() {}, passThroughOnException() {} };
+  function gatewayImageRequest(key, path = '/v1/images/generations', body = { model: imageModel, prompt: 'Draw a square', size: '1024x1024' }) {
+    return new Request(`https://gateway.example.invalid${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+  const generated = await handleRequest(gatewayImageRequest('backend-agent-test-key'), gatewayImageEnv, gatewayCtx);
+  const generatedBody = await generated.json();
+  assert.equal(generated.status, 200, JSON.stringify(generatedBody));
+  assert.deepEqual(generatedBody.data, [{ b64_json: 'aGVsbG8=' }]);
+  assert.equal(centerCalls, 1, 'image tool must reach Generation Center exactly once');
+  assert.equal(physicalCalls, 1, 'image generation must invoke its Provider exactly once');
+
+  const untrustedClient = await handleRequest(gatewayImageRequest('frontend-air-test-key'), gatewayImageEnv, gatewayCtx);
+  assert.equal(untrustedClient.status, 403, 'normal chat keys cannot silently invoke a paid image tool');
+  assert.equal(centerCalls, 1);
+  assert.equal(physicalCalls, 1);
+
+  const imageAsChat = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', {
+      model: imageModel,
+      messages: [{ role: 'user', content: 'Draw a square' }],
+    }),
+    gatewayImageEnv,
+    gatewayCtx,
+  );
+  assert.equal(imageAsChat.status, 400, 'an image-only model cannot be dispatched through the text endpoint');
+  assert.equal(physicalCalls, 1);
+
+  const disconnectedGateway = { ...gatewayImageEnv };
+  delete disconnectedGateway.AIG_GENERATION_SERVICE;
+  const missingCenter = await handleRequest(gatewayImageRequest('backend-agent-test-key'), disconnectedGateway, gatewayCtx);
+  assert.equal(missingCenter.status, 503, 'missing private Generation Center must fail without a Provider request');
+  assert.equal(physicalCalls, 1);
+
+  console.log('Full Gateway -> Generation Center -> mocked Provider, authorization, and zero-retry contracts passed.');
   console.log('Private generation center contracts passed.');
 } finally {
   globalThis.fetch = originalFetch;
