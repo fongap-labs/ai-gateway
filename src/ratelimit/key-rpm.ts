@@ -27,7 +27,6 @@
 
 type KeyStateEntry = {
   stamps: number[];
-  lastSeen: number;
   cap: number;
 };
 
@@ -38,14 +37,15 @@ const MAX_TRACKED_KEYS = 5_000;
 
 const keyState: Map<string, KeyStateEntry> = new Map();
 
-function evictStale(now: number): void {
-  if (keyState.size <= MAX_TRACKED_KEYS) return;
-  // Drop the entry with the smallest lastSeen (oldest un-observed key).
-  let oldest: [string, KeyStateEntry] | null = null;
-  for (const [k, v] of keyState) {
-    if (oldest === null || v.lastSeen < oldest[1].lastSeen) oldest = [k, v];
-  }
-  if (oldest) keyState.delete(oldest[0]);
+// Map iteration order provides an exact last-touch ordering without a 5000-
+// entry scan on every new key under a fingerprint flood. A denied attempt still
+// counts as a touch; it must not reset its existing RPM timestamps.
+function touchEntry<T>(entries: Map<string, T>, key: string, value: T): void {
+  entries.delete(key);
+  entries.set(key, value);
+  if (entries.size <= MAX_TRACKED_KEYS) return;
+  const oldest = entries.keys().next();
+  if (!oldest.done) entries.delete(oldest.value);
 }
 
 function pruneWindow(stamps: number[], now: number): void {
@@ -68,13 +68,9 @@ function pruneWindow(stamps: number[], now: number): void {
 export function admitKeyRequest(groupFingerprint: string, cap: number, now: number = Date.now()): KeyAdmissionVerdict {
   if (!cap || cap <= 0) return { ok: true };
   let entry = keyState.get(groupFingerprint);
-  if (!entry) {
-    entry = { stamps: [], lastSeen: now, cap };
-    keyState.set(groupFingerprint, entry);
-    evictStale(now);
-  }
+  if (!entry) entry = { stamps: [], cap };
+  touchEntry(keyState, groupFingerprint, entry);
   pruneWindow(entry.stamps, now);
-  entry.lastSeen = now;
   entry.cap = cap;
   if (entry.stamps.length >= cap) {
     const oldest = entry.stamps[0];
@@ -94,19 +90,9 @@ export function admitKeyRequest(groupFingerprint: string, cap: number, now: numb
 // clearAuthFailures() and never consumes the budget.
 type AuthFailureEntry = {
   stamps: number[];
-  lastSeen: number;
 };
 
 const authFailureState: Map<string, AuthFailureEntry> = new Map();
-
-function evictStaleAuthFailure(): void {
-  if (authFailureState.size <= MAX_TRACKED_KEYS) return;
-  let oldest: [string, AuthFailureEntry] | null = null;
-  for (const [k, v] of authFailureState) {
-    if (oldest === null || v.lastSeen < oldest[1].lastSeen) oldest = [k, v];
-  }
-  if (oldest) authFailureState.delete(oldest[0]);
-}
 
 /**
  * Check whether an attempt from `fingerprint` may proceed to authorization.
@@ -139,13 +125,9 @@ export function hasTrackedAuthFailures(): boolean {
 /** Charge one failed authorization attempt against `fingerprint`'s window. */
 export function recordAuthFailure(fingerprint: string, now: number = Date.now()): void {
   let entry = authFailureState.get(fingerprint);
-  if (!entry) {
-    entry = { stamps: [], lastSeen: now };
-    authFailureState.set(fingerprint, entry);
-    evictStaleAuthFailure();
-  }
+  if (!entry) entry = { stamps: [] };
+  touchEntry(authFailureState, fingerprint, entry);
   pruneWindow(entry.stamps, now);
-  entry.lastSeen = now;
   entry.stamps.push(now);
 }
 
