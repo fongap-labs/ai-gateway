@@ -8,8 +8,8 @@ import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNo
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
-import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
 import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.ts';
+import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
 
 const privateRequest = new Request('https://perception.internal/internal/execute', {
   method: 'POST',
