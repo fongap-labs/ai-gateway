@@ -146,42 +146,25 @@ export async function loadUpstreamSummary(
   const splitInput = (input: number, cacheRead: number): number => Math.max(0, input - cacheRead);
   const getCacheRatio = (reports: number, cacheRead: number, input: number): number | null => (reports > 0 && input > 0 ? cacheRead / input : null);
 
-  let totalsRow: UpstreamTotalsRow | null = null;
-  let hasTotalsObservation = true;
-  try {
-    totalsRow = await d1
-      .prepare(
-        `SELECT
-         upstream_effective_input_tokens,
-         upstream_output_tokens,
-         upstream_cache_read_input_tokens,
-         upstream_cache_observed_read_tokens,
-         upstream_cache_observed_input_tokens,
-         upstream_cache_read_reports,
-         upstream_total_tokens,
-         total_tokens,
-         requests,
-         updated_at,
-         upstream_attempts,
-         upstream_usage_reports,
-         upstream_usage_missing
-       FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
-      )
-      .first<UpstreamTotalsRow>();
-  } catch {
-    // Rolling-deploy compatibility with schema <= 0009. Before 0010 every
-    // recognized cache-read field was Anthropic-style and additive, so the
-    // historical effective-input value can be reconstructed exactly.
-    hasTotalsObservation = false;
+  // Both D1 reads are independent after buffered writes have been flushed.
+  // Keep schema-compatibility fallbacks inside each task, then join once.
+  const totalsTask = (async () => {
+    let totalsRow: UpstreamTotalsRow | null = null;
+    let hasTotalsObservation = true;
     try {
       totalsRow = await d1
         .prepare(
           `SELECT
-           upstream_input_tokens,
+           upstream_effective_input_tokens,
            upstream_output_tokens,
-           upstream_cache_creation_input_tokens,
            upstream_cache_read_input_tokens,
+           upstream_cache_observed_read_tokens,
+           upstream_cache_observed_input_tokens,
+           upstream_cache_read_reports,
            upstream_total_tokens,
+           total_tokens,
+           requests,
+           updated_at,
            upstream_attempts,
            upstream_usage_reports,
            upstream_usage_missing
@@ -189,34 +172,35 @@ export async function loadUpstreamSummary(
         )
         .first<UpstreamTotalsRow>();
     } catch {
-      /* hourly fallback below */
+      // Rolling-deploy compatibility with schema <= 0009. Before 0010 every
+      // recognized cache-read field was Anthropic-style and additive, so the
+      // historical effective-input value can be reconstructed exactly.
+      hasTotalsObservation = false;
+      try {
+        totalsRow = await d1
+          .prepare(
+            `SELECT
+             upstream_input_tokens,
+             upstream_output_tokens,
+             upstream_cache_creation_input_tokens,
+             upstream_cache_read_input_tokens,
+             upstream_total_tokens,
+             upstream_attempts,
+             upstream_usage_reports,
+             upstream_usage_missing
+           FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
+          )
+          .first<UpstreamTotalsRow>();
+      } catch {
+        /* hourly fallback below */
+      }
     }
-  }
+    return { totalsRow, hasTotalsObservation };
+  })();
 
-  let hourlyRow: UpstreamWindowRow | null | undefined;
-  let hasHourlyObservation = true;
-  try {
-    hourlyRow = await d1
-      .prepare(
-        `SELECT
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS today_total,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS today_attempts,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS h24_total,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS h24_attempts,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_effective_input_tokens END), 0) AS h24_input,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_read_input_tokens END), 0) AS h24_cache_read,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_observed_read_tokens END), 0) AS h24_cache_observed_read,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_observed_input_tokens END), 0) AS h24_cache_observed_input,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_read_reports END), 0) AS h24_cache_read_reports,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_output_tokens END), 0) AS h24_output,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS d7_total,
-       COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS d7_attempts
-       FROM ${TABLE}`,
-      )
-      .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
-      .first<UpstreamWindowRow>();
-  } catch {
-    hasHourlyObservation = false;
+  const hourlyTask = (async () => {
+    let hourlyRow: UpstreamWindowRow | null | undefined;
+    let hasHourlyObservation = true;
     try {
       hourlyRow = await d1
         .prepare(
@@ -225,20 +209,50 @@ export async function loadUpstreamSummary(
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS today_attempts,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS h24_total,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS h24_attempts,
-         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_input_tokens END), 0) AS h24_input_raw,
-         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_creation_input_tokens END), 0) AS h24_cache_creation,
+         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_effective_input_tokens END), 0) AS h24_input,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_read_input_tokens END), 0) AS h24_cache_read,
+         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_observed_read_tokens END), 0) AS h24_cache_observed_read,
+         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_observed_input_tokens END), 0) AS h24_cache_observed_input,
+         COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_read_reports END), 0) AS h24_cache_read_reports,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_output_tokens END), 0) AS h24_output,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS d7_total,
          COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS d7_attempts
          FROM ${TABLE}`,
         )
-        .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
+        .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
         .first<UpstreamWindowRow>();
-    } catch (e) {
-      return { available: false, error: `loadUpstreamSummary: ${asMessage(e)}` };
+    } catch {
+      hasHourlyObservation = false;
+      try {
+        hourlyRow = await d1
+          .prepare(
+            `SELECT
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS today_total,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS today_attempts,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS h24_total,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS h24_attempts,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_input_tokens END), 0) AS h24_input_raw,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_creation_input_tokens END), 0) AS h24_cache_creation,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_cache_read_input_tokens END), 0) AS h24_cache_read,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_output_tokens END), 0) AS h24_output,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_total_tokens END), 0) AS d7_total,
+           COALESCE(SUM(CASE WHEN hour >= ? THEN upstream_attempts END), 0) AS d7_attempts
+           FROM ${TABLE}`,
+          )
+          .bind(todayStart, todayStart, h24Start, h24Start, h24Start, h24Start, h24Start, h24Start, d7Start, d7Start)
+          .first<UpstreamWindowRow>();
+      } catch (e) {
+        return { hourlyRow, hasHourlyObservation, error: `loadUpstreamSummary: ${asMessage(e)}` };
+      }
     }
-  }
+    return { hourlyRow, hasHourlyObservation, error: null as string | null };
+  })();
+
+  const [totalsRead, hourlyRead] = await Promise.all([totalsTask, hourlyTask]);
+  if (hourlyRead.error) return { available: false, error: hourlyRead.error };
+  const { totalsRow, hasTotalsObservation } = totalsRead;
+  const { hourlyRow, hasHourlyObservation } = hourlyRead;
+
   if (!hourlyRow || typeof hourlyRow !== 'object') return null;
 
   let total = 0,
