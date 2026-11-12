@@ -237,6 +237,7 @@ export function recordOutcome(
     });
   }
 
+  noteFailure(state, classification.kind);
   // Only the most recent real failure can authorize the last-resort same-key
   // retry. Otherwise a later 429, refusal, paid-tier failure or model change
   // can accidentally revive an earlier failed key and create useless work.
