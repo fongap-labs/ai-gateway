@@ -5,8 +5,8 @@
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
-import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
+import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
 
 const original = 'Code-Max';
 const vision = 'Vision-Explicit';
@@ -196,13 +196,22 @@ globalThis.fetch = async (_input, init) => {
     assert.equal(body.model, 'upstream-text-model');
     assert.equal(JSON.stringify(body).includes('image_url'), false);
   }
-  return new Response(JSON.stringify({
-    id: 'mock-bridge',
-    object: 'chat.completion',
-    created: 1,
-    model: body.model,
-    choices: [{ index: 0, message: { role: 'assistant', content: body.model === 'upstream-vision-model' ? 'A red square.' : 'A red square is shown.' }, finish_reason: 'stop' }],
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(
+    JSON.stringify({
+      id: 'mock-bridge',
+      object: 'chat.completion',
+      created: 1,
+      model: body.model,
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: body.model === 'upstream-vision-model' ? 'A red square.' : 'A red square is shown.' },
+          finish_reason: 'stop',
+        },
+      ],
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
 };
 try {
   const result = await handleRequest(bridgeRequest(), bridgeEnv, { waitUntil() {}, passThroughOnException() {} });
@@ -212,7 +221,7 @@ try {
 
   const unauthorized = { ...bridgeEnv, AIG_ACCESS_MODELS_AIR: original };
   const denied = await handleRequest(bridgeRequest(), unauthorized, { waitUntil() {}, passThroughOnException() {} });
-  assert.equal(denied.status, 403, 'an unauthorized vision alias must never be used behind the caller\'s back');
+  assert.equal(denied.status, 403, "an unauthorized vision alias must never be used behind the caller's back");
   assert.equal((await denied.json()).error?.details?.gateway_code, 'gateway_vision_preprocess_unauthorized');
   assert.equal(bridgeProviderCalls.length, 2, 'unauthorized delegate must not dispatch');
 } finally {
