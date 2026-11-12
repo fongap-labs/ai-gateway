@@ -214,7 +214,6 @@ assert.match(neutralProviderUsage, /getProviderProfile\(/, 'Usage hint policy mu
 const physicalExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
 assert.doesNotMatch(physicalExecutor, /from ['"][^'"]*\/src\//, 'Private executor must never import src implementation modules');
 
-
 // Public request policy and cache implementations are Gateway-owned. The
 // former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [
