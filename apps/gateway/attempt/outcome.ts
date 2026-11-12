@@ -153,15 +153,15 @@ export function recordOutcome(
       releaseTier1Slot(node.id, c.tier1ReleaseToken);
     }
     if (classification.action !== 'neutral') {
-      const upstreamModel = upstreamModelOf(node, state.requestedModel);
+      const upstreamModel = upstreamModelOf(node, effectiveModel);
       let tier1RetryAfterMs = classification.retryAfterMs || 0;
       const tier1RateLimitClass: string | undefined = classification.rateLimitWindow;
-      if (classification.requestTooLarge) recordTier1Oversize(node.id, state.requestedModel, c?.reqDescriptor?.bodyChars ?? 0);
+      if (classification.requestTooLarge) recordTier1Oversize(node.id, effectiveModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
         // A 429 is blamed on the model that got it; the whole key is blamed only
         // when a second model on it is limited too. Each scope has its own ladder.
-        const observedScope = decideTier1RateLimitScope(node.id, state.requestedModel);
+        const observedScope = decideTier1RateLimitScope(node.id, effectiveModel);
         // A long-lived allowance (quota wording, or a multi-minute wait hint) is
         // account-wide by nature: cool the whole key on the FIRST such 429 instead
         // of letting every model climb its own ladder against one shared pool.
@@ -175,7 +175,7 @@ export function recordOutcome(
         // being a long-lived allowance. A quota-classified one (explicit horizon
         // wording or a long stated wait) climbs the long-allowance ladder and
         // already cools the whole key.
-        const ladderModel = tier1RateLimitScope === 'model' ? state.requestedModel : '';
+        const ladderModel = tier1RateLimitScope === 'model' ? effectiveModel : '';
         const isWindowLadder = classification.rateLimitWindow === 'window';
         const isQuotaLadder = classification.rateLimitWindow === 'quota';
         const ladderSteps = isWindowLadder
@@ -205,14 +205,14 @@ export function recordOutcome(
         tier1RateLimitScope ? { ...classification, rateLimitScope: tier1RateLimitScope, rateLimitClass: tier1RateLimitClass } : classification,
         { retryAfterMs: tier1RetryAfterMs },
       );
-      const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : state.requestedModel;
+      const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : effectiveModel;
       // One timestamp for both, so a cooldown exactly at the sharing threshold is shared.
       const outcomeAt = Date.now();
       applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
       shareLongTier1Cooldowns(c.env, c.ctx, node.id, outcomeAt);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
       if (!state.hasRetriedSameNode && !c?.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)) {
-        state.sameNodeRetry = { nodeId: node.id, model: state.requestedModel, latencyMs: Math.max(0, latencyMs) };
+        state.sameNodeRetry = { nodeId: node.id, model: effectiveModel, latencyMs: Math.max(0, latencyMs) };
       }
     }
   } else if (classification.modelScoped) {

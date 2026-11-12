@@ -98,11 +98,11 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   detach();
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
   if (node.tier === 'tier-1') {
-    recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
+    recordTier1Ttft(node.id, c.reqDescriptor?.model ?? state.requestedModel, c.ttftMs);
     // The first SSE event is the v2 recovery-probe evidence for a stream: a
     // key past its rate-limit cooldown that answers here is healthy, and the
     // single-flight window opens immediately (no-op under the legacy gate).
-    commitTier1RecoveryProbe(node.id, state.requestedModel);
+    commitTier1RecoveryProbe(node.id, c.reqDescriptor?.model ?? state.requestedModel);
   } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);

@@ -348,8 +348,51 @@ async function verifyTier1FailureFallsBack(status) {
   assert.ok(responseText.includes('ok'));
 }
 
+await verifyTier1FailureFallsBack(400);
 await verifyTier1FailureFallsBack(429);
+await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
+await verifyTier1FailureFallsBack(504);
+
+// Preserve legacy 400-as-node-incompatibility routing (tested above), but
+// a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
+async function verifyTerminalClientError(status) {
+  const freeId = `free-terminal-${status}`;
+  const dispatched = [];
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    AIG_TIER1_NODES_01: JSON.stringify([node(freeId)]),
+    AIG_TIER2_NODES_01: JSON.stringify([node(`token-terminal-${status}`)]),
+    AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({
+      default: { max_attempts: 4, tier_attempts: { tier1: 2, tier2: 2 }, hedge: { enabled: false } },
+    }),
+    AIG_INFERENCE_SERVICE: {
+      async fetch(request) {
+        dispatched.push(request.headers.get('x-aig-node-id'));
+        return new Response(JSON.stringify({ error: { message: 'mock invalid input' } }), {
+          status,
+          headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+        });
+      },
+    },
+  };
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'test invalid input' }] }),
+  });
+  const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(response.status, status, `Provider ${status} must remain terminal: ${await response.clone().text()}`);
+  assert.deepEqual(dispatched, [freeId], `Provider ${status} must not consume fallback dispatches`);
+  const payload = await response.json();
+  assert.equal(payload.error?.details?.attempts, 1, 'error details must reflect exactly one physical dispatch');
+  assert.equal(payload.error?.details?.dispatches, 1);
+}
+
+await verifyTerminalClientError(422);
 
 async function verifyStreamGuardAcceptsJsonFallback() {
   const physicalRequests = [];
