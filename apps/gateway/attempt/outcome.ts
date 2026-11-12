@@ -65,6 +65,9 @@ export function rotateWithNeutralEnd(
     recordNeutralEnd(node.id);
   }
   noteFailure(state, reason);
+  // A later pre-dispatch rejection must not leave an older transient key
+  // eligible for a speculative retry after this request's route has changed.
+  if (isPreDispatch) state.sameNodeRetry = null;
   const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   logLazy(
     state.logger,
@@ -215,9 +218,6 @@ export function recordOutcome(
       applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
       shareLongTier1Cooldowns(c.env, c.ctx, node.id, outcomeAt);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
-      if (!state.hasRetriedSameNode && !c?.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)) {
-        state.sameNodeRetry = { nodeId: node.id, model: effectiveModel, latencyMs: Math.max(0, latencyMs) };
-      }
     }
   } else if (classification.modelScoped) {
     recordModelMissing(node.id, effectiveModel, classification.cooldownMs || 0);
@@ -238,6 +238,15 @@ export function recordOutcome(
   }
 
   noteFailure(state, classification.kind);
+  // Only the most recent real failure can authorize the last-resort same-key
+  // retry. Otherwise a later 429, refusal, paid-tier failure or model change
+  // can accidentally revive an earlier failed key and create useless work.
+  if (classification.action !== 'neutral') {
+    state.sameNodeRetry =
+      !state.hasRetriedSameNode && node.tier === 'tier-1' && !c.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)
+        ? { nodeId: node.id, model: effectiveModel, latencyMs: Math.max(0, latencyMs) }
+        : null;
+  }
   logLazy(
     state.logger,
     'info',
