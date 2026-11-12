@@ -213,6 +213,19 @@ globalThis.fetch = async (_input, init) => {
     assert.equal(body.model, 'upstream-text-model');
     assert.equal(JSON.stringify(body).includes('image_url'), false);
   }
+  if (body.model === 'upstream-text-model' && Array.isArray(body.input)) {
+    return new Response(
+      JSON.stringify({
+        id: 'resp-bridge',
+        object: 'response',
+        status: 'completed',
+        created_at: 1,
+        model: body.model,
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A red square is shown.' }] }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
   return new Response(
     JSON.stringify({
       id: 'mock-bridge',
@@ -236,11 +249,39 @@ try {
   assert.deepEqual(bridgeCenterCalls, ['perception', 'inference']);
   assert.deepEqual(bridgeProviderCalls, ['upstream-vision-model', 'upstream-text-model']);
 
+  const responsesImageRequest = (block) =>
+    new Request('https://gateway.example.invalid/v1/responses', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: original,
+        input: [{ role: 'user', content: [{ type: 'input_text', text: 'What is shown?' }, block] }],
+      }),
+    });
+  const responsesImage = { type: 'input_image', image_url: image.image_url.url };
+  const responsesResult = await handleRequest(
+    responsesImageRequest(responsesImage),
+    bridgeEnv,
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(responsesResult.status, 200, await responsesResult.clone().text());
+  assert.equal((await responsesResult.json()).output?.[0]?.content?.[0]?.text, 'A red square is shown.');
+  assert.deepEqual(bridgeCenterCalls, ['perception', 'inference', 'perception', 'inference']);
+  assert.deepEqual(bridgeProviderCalls, ['upstream-vision-model', 'upstream-text-model', 'upstream-vision-model', 'upstream-text-model']);
+
+  const unsupportedFile = await handleRequest(
+    responsesImageRequest({ type: 'input_image', file_id: 'file-123' }),
+    bridgeEnv,
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(unsupportedFile.status, 400, 'unsupported image file IDs must not be silently dropped or fetched');
+  assert.equal(bridgeProviderCalls.length, 4, 'no Provider dispatch on unsupported file ID');
+
   const unauthorized = { ...bridgeEnv, AIG_ACCESS_MODELS_AIR: original };
   const denied = await handleRequest(bridgeRequest(), unauthorized, { waitUntil() {}, passThroughOnException() {} });
   assert.equal(denied.status, 403, "an unauthorized vision alias must never be used behind the caller's back");
   assert.equal((await denied.json()).error?.details?.gateway_code, 'gateway_vision_preprocess_unauthorized');
-  assert.equal(bridgeProviderCalls.length, 2, 'unauthorized delegate must not dispatch');
+  assert.equal(bridgeProviderCalls.length, 4, 'unauthorized delegate must not dispatch');
 } finally {
   globalThis.fetch = bridgeOriginalFetch;
 }
