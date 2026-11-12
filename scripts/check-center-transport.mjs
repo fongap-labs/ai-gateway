@@ -8,6 +8,33 @@ import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNo
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
+import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
+
+const privateRequest = new Request('https://perception.internal/internal/execute', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    accept: 'text/event-stream',
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'prompt-caching-2024-07-31',
+    'idempotency-key': 'mock-request-id',
+    authorization: 'Bearer private-secret',
+    cookie: 'private-cookie',
+    'x-api-key': 'private-key',
+    'x-aig-inference-auth': 'private-inference-secret',
+    'x-aig-perception-auth': 'private-perception-secret',
+    traceparent: 'private-trace',
+    'x-custom-header': 'not-allowed',
+  },
+});
+const providerRequest = buildProviderForwardRequest(privateRequest);
+assert.equal(providerRequest.method, 'POST');
+assert.equal(providerRequest.url, 'https://inference.internal/execute');
+assert.deepEqual([...providerRequest.headers.keys()].sort(), ['accept', 'anthropic-beta', 'anthropic-version', 'content-type', 'idempotency-key']);
+for (const name of ['accept', 'anthropic-beta', 'anthropic-version', 'content-type', 'idempotency-key']) {
+  assert.equal(providerRequest.headers.get(name), privateRequest.headers.get(name));
+}
+assert.equal(providerRequest.body, null, 'Provider header adapter must not copy request bodies');
 
 // Gateway owns both private Center clients. The old paths remain lightweight
 // compatibility exports only; no execution, HTTP or secret policy may drift

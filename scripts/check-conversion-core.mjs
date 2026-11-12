@@ -2,6 +2,18 @@
 // SPDX-License-Identifier: MIT
 // Runtime identity and compatibility for the provider-neutral conversion core.
 import assert from 'node:assert/strict';
+import { protocolForSurface } from '../packages/conversion-core/surface-protocol.ts';
+
+// The physical Inference and Perception executors must share one neutral surface map.
+for (const [surface, expected] of [
+  ['chat_completions', 'openai_chat'],
+  ['responses', 'openai_responses'],
+  ['messages', 'anthropic'],
+  ['images_generations', null],
+  ['unknown', null],
+]) {
+  assert.equal(protocolForSurface(surface), expected, `Execution surface map mismatch: ${surface}`);
+}
 
 for (const unit of ['ir', 'budget', 'diag', 'result', 'validation']) {
   const packageModule = await import(`../packages/conversion-core/${unit}.ts`);

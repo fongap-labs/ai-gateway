@@ -7,7 +7,6 @@
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
-  type ExecutionInputSurface,
   type ExecutionInvocation,
   INFERENCE_TRANSLATED_OBJECT_FORMAT,
 } from '../../packages/contracts/execution.ts';
@@ -20,8 +19,10 @@ import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
+import { protocolForSurface } from '../../packages/conversion-core/surface-protocol.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
+import { buildProviderForwardRequest } from '../../packages/transport/provider-forward-request.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels, modelRegistryEntry } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
@@ -42,19 +43,6 @@ import { preDispatchProblem, problem } from './response.ts';
 const centerBodyPool = createBodyAdmissionPool();
 type Invocation = ExecutionInvocation;
 type ExecutionOptions = { center?: 'perception' };
-
-function protocolForSurface(surface: ExecutionInputSurface | Invocation['surface']): IrProtocol | null {
-  switch (surface) {
-    case 'chat_completions':
-      return 'openai_chat';
-    case 'responses':
-      return 'openai_responses';
-    case 'messages':
-      return 'anthropic';
-    default:
-      return null;
-  }
-}
 
 // Only authenticated v5 stream tickets carry explicit, validated budgets.
 // v4 streams remain byte-for-byte unchanged and cannot silently inherit one.
@@ -106,16 +94,6 @@ function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocat
   if (!knownModels.has(invocation.logicalModel)) return null;
   if (Object.keys(node.models).length > 0 && !Object.hasOwn(node.models, invocation.logicalModel)) return null;
   return node;
-}
-
-function forwardedRequest(request: Request): Request {
-  const headers = new Headers();
-  for (const name of ['content-type', 'accept', 'anthropic-version', 'anthropic-beta', 'idempotency-key']) {
-    const value = request.headers.get(name);
-    if (value) headers.set(name, value);
-  }
-  // No client or internal authentication headers survive this allowlist.
-  return new Request('https://inference.internal/execute', { method: 'POST', headers });
 }
 
 export async function executeNative(request: Request, env: GatewayEnv, invocation: Invocation, options: ExecutionOptions = {}): Promise<Response> {
@@ -210,7 +188,7 @@ async function executeAdmittedNative(
     }
   }
   const physicalModel = node.models[invocation.logicalModel] ?? invocation.logicalModel;
-  const clientRequest = forwardedRequest(request);
+  const clientRequest = buildProviderForwardRequest(request);
   if (physicalModel !== invocation.logicalModel) {
     outboundBody = { ...outboundBody, model: physicalModel };
     isMutated = true;
