@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 增加真实网关调度入口的 503 与模型不存在 422 跨模型、跨 Tier 故障转移回归，核查实际派发顺序和调用次数。
+
 - 新增: Chat 中经 AGENT 授权显式选择 `generate_image` 工具，可通过 Generation Center 生成图片并返回普通或流式回复。
 
 - 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
