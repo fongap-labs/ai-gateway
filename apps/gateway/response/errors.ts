@@ -88,6 +88,21 @@ export function gatewayError(
   const diagnosticHeaders = responsesDiagnosticHeaders(details, extraHeaders) ?? {};
   const retryable = isRetryable || status === 429 || status === 503;
   diagnosticHeaders['x-gateway-retryable'] = String(retryable);
+  // SDKs must not immediately replay an already exhausted model-family
+  // request against a pool whose earliest recovery is still many seconds
+  // away. Retry-After remains the eventual recovery hint; this separate
+  // header only disables blind automatic retries of the entire request.
+  // Limit this override to mixed timeout/rate-limit failures. Pure 429 exhaustion
+  // retains its established SDK Retry-After contract and remains retryable.
+  // It does NOT change Key eligibility, circuit state or Provider quota.
+  const kinds = details?.failure_kinds;
+  const hadHeadersTimeout =
+    kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
+  const deferredFamilyRetry =
+    gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED &&
+    hadHeadersTimeout &&
+    parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
+  if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
   if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
   if (gatewayCode === GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED || gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
     diagnosticHeaders['x-gateway-budget-exhausted'] = 'true';
@@ -226,6 +241,9 @@ export function buildExhaustedResponse(
       // blocking window instead of telling the caller to retry after 1s.
       const sawRateLimit = (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
       retryAfterSec = sawRateLimit ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1) : 1;
+      if (retryAfterSec >= 5) {
+        message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry after the advertised delay.`;
+      }
       state.logger.info('model-family failover plan exhausted by transient failures', {
         request_id: requestId,
         requested_model: requestedModel,
