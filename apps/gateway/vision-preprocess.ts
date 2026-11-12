@@ -4,6 +4,8 @@
 // Explicit, authorized Chat image prepass. The Gateway reuses its normal
 // scheduler and Perception binding through one bounded internal subrequest;
 // it never calls a Provider directly or changes the requested text model.
+import { readBodyTextBounded } from '../../src/protocol/http.ts';
+
 type ImagePart = { type: 'image_url'; image_url: string | { url: string } };
 type ChatMessage = { role: string; content: unknown; [key: string]: unknown };
 type PreprocessFailure = { ok: false; status: number; code: string; message: string; cause?: string };
@@ -123,7 +125,9 @@ export async function preprocessChatImages({
   }
   let observations: unknown;
   try {
-    const json = (await result.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
+    const reply = await readBodyTextBounded(result, 256 * 1024, safeDeadline);
+    if (reply.isTruncated || !reply.text) throw new Error('vision reply exceeded bounded read');
+    const json = JSON.parse(reply.text) as { choices?: Array<{ message?: { content?: unknown } }> };
     observations = json.choices?.[0]?.message?.content;
   } catch {
     // Never turn a malformed preprocessor response into a text-only answer.
@@ -145,4 +149,87 @@ export async function preprocessChatImages({
     content: Array.isArray(content) ? [...content, { type: 'text', text: note }] : String(content ?? '') + note,
   };
   return { ok: true, body: { ...body, messages: rewritten } };
+}
+
+/**
+ * Use the same bounded, authorized Perception prepass for Responses
+ * input_image blocks. The final request stays a native Responses request:
+ * only inline image blocks become input_text visual observations.
+ * File-ID images fail closed because there is no authorized file resolver.
+ */
+export async function preprocessResponsesImages(args: {
+  request: Request;
+  body: Record<string, unknown>;
+  visionModel: string;
+  remainingMs: number;
+  execute: (internalRequest: Request) => Promise<Response>;
+}): Promise<PreprocessResult> {
+  const fail = (): PreprocessFailure => ({
+    ok: false,
+    status: 400,
+    code: 'gateway_vision_preprocess_shape_unsupported',
+    message: 'Responses vision preprocessing requires 1–8 inline input_image URL blocks in user messages.',
+  });
+  const input = args.body.input;
+  if (!Array.isArray(input)) return fail();
+  const images: ImagePart[] = [];
+  const text: string[] = [];
+  let lastUserIndex = -1;
+  let unsupportedImage = false;
+  const rewritten = input.map((entry: unknown, index: number) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+    const item = entry as Record<string, unknown>;
+    if (!Array.isArray(item.content)) return entry;
+    const isUser = item.role === 'user';
+    if (isUser) lastUserIndex = index;
+    const content = item.content.map((part: unknown) => {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) return part;
+      const value = part as Record<string, unknown>;
+      if (value.type === 'input_text' && isUser && typeof value.text === 'string') text.push(value.text);
+      if (value.type !== 'input_image') return part;
+      if (!isUser) {
+        unsupportedImage = true;
+        return part;
+      }
+      const raw = value.image_url;
+      const url =
+        typeof raw === 'string'
+          ? raw
+          : raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? (raw as Record<string, unknown>).url
+            : null;
+      if (typeof url !== 'string' || !url.trim() || value.file_id) {
+        unsupportedImage = true;
+        return part;
+      }
+      images.push({ type: 'image_url', image_url: { url } });
+      return { type: 'input_text', text: '[Image attachment; see visual observations below.]' };
+    });
+    return { ...item, content };
+  });
+  if (unsupportedImage || lastUserIndex < 0 || images.length < 1 || images.length > 8) return fail();
+  const visualResult = await preprocessChatImages({
+    ...args,
+    body: {
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: text.join('\n').slice(-1_000) || 'Describe the attached image accurately.' }, ...images],
+        },
+      ],
+    },
+  });
+  if (!visualResult.ok) return visualResult;
+  const chatMessages = visualResult.body.messages;
+  if (!Array.isArray(chatMessages)) return fail();
+  const chatContent = (chatMessages[0] as Record<string, unknown>)?.content;
+  if (!Array.isArray(chatContent)) return fail();
+  const note = (chatContent[chatContent.length - 1] as Record<string, unknown>)?.text;
+  if (typeof note !== 'string' || !note.includes('Visual observations')) return fail();
+  const user = rewritten[lastUserIndex] as Record<string, unknown>;
+  rewritten[lastUserIndex] = {
+    ...user,
+    content: [...(user.content as unknown[]), { type: 'input_text', text: note }],
+  };
+  return { ok: true, body: { ...args.body, input: rewritten } };
 }
