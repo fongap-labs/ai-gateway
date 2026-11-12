@@ -3,12 +3,12 @@
 
 // Private multimodal execution entrypoint with its own auth and Service Binding.
 
-import { executeNative } from '../inference/execution.ts';
-import { problem } from '../inference/response.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { executeNative } from '../inference/execution.ts';
+import { problem } from '../inference/response.ts';
 
 const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
 
