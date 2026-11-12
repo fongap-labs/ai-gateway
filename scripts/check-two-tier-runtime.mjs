@@ -17,13 +17,13 @@ import { getLimits } from '../src/config/timeouts.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
-import { adoptTier1Cooldown, __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import {
   __resetSharedTier1CooldownsForTests,
   hydrateSharedTier1Cooldowns,
   shareLongTier1Cooldowns,
   snapshotSharedTier1Cooldowns,
 } from '../src/reliability/tier1-shared-cooldowns.ts';
+import { __resetTier1StateForTests, adoptTier1Cooldown } from '../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
@@ -644,7 +644,11 @@ const now = Date.now();
 adoptTier1Cooldown({ node: 'metric-test-account', until: now + 600_000, reason: 'auth' }, now);
 shareLongTier1Cooldowns(
   kvEnv,
-  { waitUntil(task) { tasks.push(task); } },
+  {
+    waitUntil(task) {
+      tasks.push(task);
+    },
+  },
   'metric-test-account',
   now,
 );
