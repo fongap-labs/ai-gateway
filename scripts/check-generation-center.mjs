@@ -90,8 +90,22 @@ try {
     traceparent: internalParent,
     tracestate: 'client=private',
   });
-  const ok = await handleGenerationCenterRequest(forged, env);
+  const observedSpans = [];
+  const nativeCtx = {
+    tracing: {
+      enterSpan(name, action) {
+        const attrs = {};
+        observedSpans.push({ name, attrs });
+        return action({ isTraced: true, setAttribute: (key, value) => { attrs[key] = value; } });
+      },
+    },
+  };
+  const ok = await handleGenerationCenterRequest(forged, env, nativeCtx);
   assert.equal(ok.status, 200);
+  assert.equal(observedSpans.length, 1);
+  assert.equal(observedSpans[0].name, 'aig.generation.execute');
+  assert.equal(observedSpans[0].attrs['aig.center'], 'generation');
+  assert.equal(observedSpans[0].attrs['http.response.status_code'], 200);
   assert.equal(ok.headers.get('x-aig-generation-normalized'), 'true');
   assert.equal(ok.headers.get('x-aig-result'), 'dispatched');
   assert.equal(requests, 1);
