@@ -2,6 +2,14 @@
 
 生产配置由 GitHub Actions 下发到 Cloudflare Workers。非敏感的账号配置应放在仓库 Variables 中；凭据应放在 Secrets 中。Cloudflare Dashboard 不是日常配置的规范来源。
 
+## 原生追踪（默认关闭）
+
+Cloudflare Workers 已内置 OpenTelemetry 自动追踪和自定义 Span。本仓库在 Gateway、Inference、Perception、Generation 的执行边界记录仅含请求 ID、模型、节点、阶段、状态和耗时的 Span，不记录请求正文或密钥。
+
+部署任务可显式设置 **`AIG_TRACE_HEAD_SAMPLE_RATE=0.01`**，使四个 Worker 的 Wrangler 配置各自以 1% 采样开启原生追踪；不设置则保持现有仅记录日志的状态，`0` 表示关闭，非法值会在发布预检中拒绝。该值仅用于生成部署配置，不下发为 Worker 运行时变量。
+
+如已在 Cloudflare Observability 中创建 OpenTelemetry 追踪目标，可额外设置 **`AIG_TRACE_EXPORT_DESTINATION=<destination-name>`**；它要求正数采样比例，否则拒绝。未指定目标时仅使用 Cloudflare 内置追踪存储。两项均为部署侧非 Secret 参数，无需分别配置四套。生产仍须按现有审批门禁部署，配置生成不意味着已切换生产。低比例采样只保证**部分**请求被采集，不保证所有跨 Worker 调用均出现在同一条完整 Trace 中；可以按内部 `aig.request_id` 关联已采集 Span。
+
 ## 配置来源
 
 | 来源 | 用途 |
