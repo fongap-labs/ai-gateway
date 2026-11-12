@@ -395,7 +395,7 @@ async function verifyFreeKeyRotation(failureStatus) {
         const nodeId = request.headers.get('x-aig-node-id');
         dispatches.push(nodeId);
         if (dispatches.length === 1) {
-          return new Response(JSON.stringify({ error: { message: `Tier 1 key rejected with ${failureStatus}` } }), {
+          return new Response(JSON.stringify({ error: { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` } }), {
             status: failureStatus,
             headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
           });
@@ -426,6 +426,7 @@ async function verifyFreeKeyRotation(failureStatus) {
 }
 await verifyFreeKeyRotation(429);
 await verifyFreeKeyRotation(503);
+await verifyFreeKeyRotation(422);
 
 // An attempt budget of eight is a ceiling, not a target. If the only Key
 // returns 503, the gateway must terminate after ONE physical dispatch.
