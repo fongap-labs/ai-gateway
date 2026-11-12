@@ -469,15 +469,19 @@ try {
 
   // The Chat image bridge must not label JPEG as PNG or turn non-image
   // Provider data into a broken Markdown attachment. Never replay on error.
-  imageToolData = Buffer.from([
-    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48,
-  ]).toString('base64');
+  imageToolData = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48]).toString(
+    'base64',
+  );
   const jpegImage = await handleRequest(gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody()), toolEnv, gatewayCtx);
   assert.equal(jpegImage.status, 200);
   assert.equal((await jpegImage.json()).choices[0].message.content, `![Generated image](data:image/jpeg;base64,${imageToolData})`);
   const beforeInvalidImage = physicalCalls;
   imageToolData = 'aGVsbG8=';
-  const invalidImage = await handleRequest(gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody()), toolEnv, gatewayCtx);
+  const invalidImage = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody()),
+    toolEnv,
+    gatewayCtx,
+  );
   assert.equal(invalidImage.status, 502, 'non-image base64 must not be sent to client as image/png');
   assert.equal(invalidImage.headers.get('x-gateway-error-code'), 'gateway_image_tool_reply_invalid');
   assert.equal(physicalCalls, beforeInvalidImage + 1, 'an invalid generated image must never be re-generated automatically');
