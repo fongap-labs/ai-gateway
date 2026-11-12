@@ -4,13 +4,14 @@
 // Private multimodal execution entrypoint with its own auth and Service Binding.
 
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
-import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { authorizeExecutionRequest, parseExecutionInvocation, serializeExecutionError } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { executeNative } from '../inference/execution.ts';
-import { problem } from '../inference/response.ts';
 
 const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
+// Retain the existing Inference error envelope while the shared physical executor is extracted.
+const problem = (status: number, code: string): Response => serializeExecutionError(status, code, { retryable: false });
 
 export async function handlePerceptionCenterRequest(request: Request, env: GatewayEnv, ctx?: ExecutionContextLike): Promise<Response> {
   if (!authorizeExecutionRequest(request, env.AIG_PERCEPTION_AUTH_KEY, 'x-aig-perception-auth')) return problem(403, 'center_unauthorized');
