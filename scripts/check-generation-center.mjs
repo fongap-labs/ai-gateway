@@ -5,9 +5,9 @@
 // Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
+import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
-import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
