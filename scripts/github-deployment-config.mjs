@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { KEY_GROUPS } from '../src/config/access-keys.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { RUNTIME_VAR_NAMES } from '../src/config/runtime-vars.ts';
+import { applyNativeTraceSampling } from './native-trace-sampling.mjs';
 import { normalizeNodeConfigJsonText } from './node-config-json-normalizer.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -366,7 +367,7 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_FAILOVER_BUDGET_MS: '90000',
 };
 
-export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '') {
+export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '', traceSampleRate = '') {
   const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
   const generationTarget = String(vars.AIG_GENERATION_TARGET ?? '').trim();
@@ -381,6 +382,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
   delete runtimeVars.AIG_INFERENCE_ACTIVE;
   delete runtimeVars.AIG_GENERATION_ACTIVE;
   delete runtimeVars.AIG_PERCEPTION_ACTIVE;
+  delete runtimeVars.AIG_TRACE_HEAD_SAMPLE_RATE;
   if (inferenceTarget) runtimeVars.AIG_INFERENCE_ACTIVE = 'true';
   if (generationTarget) runtimeVars.AIG_GENERATION_ACTIVE = 'true';
   if (perceptionTarget) runtimeVars.AIG_PERCEPTION_ACTIVE = 'true';
@@ -390,7 +392,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     compatibility_date: '2026-08-06',
     workers_dev: false,
     keep_vars: false,
-    observability: { enabled: true },
+    observability: applyNativeTraceSampling({ enabled: true }, traceSampleRate),
     triggers: { crons: ['0 3 * * *'] },
     vars: { ...DEFAULT_OPTIMAL_VARS, ...runtimeVars },
     ...(inferenceTarget || perceptionTarget || generationTarget
@@ -528,7 +530,13 @@ async function main() {
     fs.writeFileSync(
       wrangler,
       JSON.stringify(
-        buildWranglerConfig(runtime.vars, process.env.AIG_USAGE_D1_ID, process.env.AIG_AFFINITY_KV_ID, process.env.AIG_ANALYTICS_DATASET),
+        buildWranglerConfig(
+          runtime.vars,
+          process.env.AIG_USAGE_D1_ID,
+          process.env.AIG_AFFINITY_KV_ID,
+          process.env.AIG_ANALYTICS_DATASET,
+          process.env.AIG_TRACE_HEAD_SAMPLE_RATE,
+        ),
         null,
         2,
       ),
