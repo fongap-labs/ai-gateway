@@ -506,7 +506,7 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
   const fastCooldown = outcome.counted === true && model.consecutiveFailures === 2 && !halfOpenFailure;
   if (halfOpenFailure || thresholdReached || fastCooldown || rateLimited || (outcome.cooldownMs ?? 0) > 0) {
     const cooldownMs =
-      halfOpenFailure || thresholdReached
+      !rateLimited && (halfOpenFailure || thresholdReached)
         ? Math.max(TIER1_CIRCUIT_COOLDOWN_FLOOR_MS, modelCooldownMs(model, outcome))
         : fastCooldown
           ? Math.max(TIER1_FAST_COOLDOWN_MS, modelCooldownMs(model, outcome))
