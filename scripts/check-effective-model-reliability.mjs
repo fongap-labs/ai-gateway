@@ -155,18 +155,11 @@ const endpointPeers = [
 ];
 const endpointState = makeState();
 endpointState.nodes = endpointPeers;
-recordOutcome(
-  endpointState,
-  endpointPeers[0],
-  classifyUpstreamStatus(404, new Headers(), {}, Date.now(), 'Not Found'),
-  makeContext(endpointState),
-  { status: 404, latencyMs: 20 },
-);
-assert.equal(
-  endpointState.attempted.has('same-endpoint-b'),
-  true,
-  'equivalent free key should not re-dispatch a missing endpoint',
-);
+recordOutcome(endpointState, endpointPeers[0], classifyUpstreamStatus(404, new Headers(), {}, Date.now(), 'Not Found'), makeContext(endpointState), {
+  status: 404,
+  latencyMs: 20,
+});
+assert.equal(endpointState.attempted.has('same-endpoint-b'), true, 'equivalent free key should not re-dispatch a missing endpoint');
 for (const id of ['different-endpoint', 'different-model', 'paid-same-endpoint', 'different-surface']) {
   assert.equal(endpointState.attempted.has(id), false, id + ' must remain eligible');
 }
