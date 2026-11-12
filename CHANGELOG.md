@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 新增已部署 Gateway 的真实文本、Omni 识图、Perception 委托、故障转移及显式图片生成验收脚本；付费请求默认关闭。
+
 - 修复: 带图片请求先排除不支持视觉的 Provider；明确不支持工具或流式能力的模型在派发前跳过，不再重复尝试不兼容节点。
 
 - 新增: Chat 中经 AGENT 授权显式选择 `generate_image` 工具，可通过 Generation Center 生成图片并返回普通或流式回复。
