@@ -34,3 +34,9 @@ export function childTraceparent(parent: string | null, requestId: string): stri
   if (!parsed || parsed.traceId !== traceIdForRequest(requestId)) return null;
   return `00-${parsed.traceId}-${freshSpanId()}-${parsed.flags}`;
 }
+
+/** Reuse only a same-request internal span, never client-supplied context. */
+export function validatedInternalTraceparent(requestId: string, supplied?: string): string | null {
+  const parsed = parseTraceparent(supplied ?? null);
+  return parsed && parsed.traceId === traceIdForRequest(requestId) ? (supplied ?? null) : createInternalTraceparent(requestId);
+}
