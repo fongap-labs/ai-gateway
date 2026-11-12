@@ -9,6 +9,7 @@ import { TIER_ORDER } from '../apps/gateway/policy/router.ts';
 import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
+import { hasConfirmedUpstreamFailure } from '../apps/gateway/response/failover-evidence.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
@@ -287,6 +288,16 @@ for (const method of ['GET', 'POST']) {
     assert.equal(terminal.response.headers.get('set-cookie'), null, 'OAuth cookies must not be created');
   }
 }
+
+// An extra physical dispatch does not by itself prove failure recovery.
+// A loser of a speculative hedge, a pre-dispatch refusal or an unrelated
+// successful attempt must not advertise x-gateway-failover.
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 503, kind: 'server' }]), true);
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 0, kind: 'network' }]), true);
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: false, status: 422, kind: 'client' }]), false);
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 0, kind: 'cancelled_after_peer_commit' }]), false);
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 0, kind: 'client_abort' }]), false);
+assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 200, kind: 'ok' }]), false);
 
 const twoTierPolicy = {
   ...base,
