@@ -367,7 +367,7 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_FAILOVER_BUDGET_MS: '90000',
 };
 
-export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '', traceSampleRate = '') {
+export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '', traceSampleRate = '', traceExportDestination = '') {
   const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
   const generationTarget = String(vars.AIG_GENERATION_TARGET ?? '').trim();
@@ -383,6 +383,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
   delete runtimeVars.AIG_GENERATION_ACTIVE;
   delete runtimeVars.AIG_PERCEPTION_ACTIVE;
   delete runtimeVars.AIG_TRACE_HEAD_SAMPLE_RATE;
+  delete runtimeVars.AIG_TRACE_EXPORT_DESTINATION;
   if (inferenceTarget) runtimeVars.AIG_INFERENCE_ACTIVE = 'true';
   if (generationTarget) runtimeVars.AIG_GENERATION_ACTIVE = 'true';
   if (perceptionTarget) runtimeVars.AIG_PERCEPTION_ACTIVE = 'true';
@@ -392,7 +393,7 @@ export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', 
     compatibility_date: '2026-08-06',
     workers_dev: false,
     keep_vars: false,
-    observability: applyNativeTraceSampling({ enabled: true }, traceSampleRate),
+    observability: applyNativeTraceSampling({ enabled: true }, traceSampleRate, traceExportDestination),
     triggers: { crons: ['0 3 * * *'] },
     vars: { ...DEFAULT_OPTIMAL_VARS, ...runtimeVars },
     ...(inferenceTarget || perceptionTarget || generationTarget
@@ -536,6 +537,7 @@ async function main() {
           process.env.AIG_AFFINITY_KV_ID,
           process.env.AIG_ANALYTICS_DATASET,
           process.env.AIG_TRACE_HEAD_SAMPLE_RATE,
+          process.env.AIG_TRACE_EXPORT_DESTINATION,
         ),
         null,
         2,
