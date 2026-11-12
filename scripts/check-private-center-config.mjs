@@ -67,10 +67,7 @@ for (const name of ['ai-inference-center', 'ai-perception-center', 'ai-generatio
   assert.deepEqual(exported.config.observability.traces, { enabled: true, head_sampling_rate: 0.05, destinations: ['my_trace_sink'] });
   assert.equal(exported.config.vars.AIG_TRACE_EXPORT_DESTINATION, undefined);
   assert.equal(sampled.config.vars.AIG_TRACE_HEAD_SAMPLE_RATE, undefined, 'sampling is deployment-only');
-  assert.deepEqual(
-    buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0' }).config.observability.traces,
-    { enabled: false },
-  );
+  assert.deepEqual(buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0' }).config.observability.traces, { enabled: false });
   assert.throws(() => buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '1.5' }), /AIG_TRACE_HEAD_SAMPLE_RATE/);
 }
 
