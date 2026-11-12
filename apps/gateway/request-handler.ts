@@ -299,9 +299,13 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     .map((round) =>
       round.filter(({ model }) => {
         const capabilities = modelRegistryEntry(env, model).catalog.capabilities;
+        // Only explicit operator declarations are authoritative for tools and
+        // streams. Registry defaults are conservative discovery hints, not a
+        // reason to reject Claude/Codex tool calls or native pass-through.
+        const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
         if (imageInputRequired && capabilities.vision !== true) return false;
-        if (requiresTools && capabilities.tools === false) return false;
-        if (clientWantsStream && capabilities.stream === false) return false;
+        if (requiresTools && declared?.tools === false) return false;
+        if (clientWantsStream && declared?.stream === false) return false;
         return true;
       }),
     )
