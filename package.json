@@ -50,7 +50,7 @@
     "check:perception-contract": "node scripts/check-perception-center.mjs",
     "check:contracts": "node scripts/check-execution-contract.mjs",
     "check:boundaries": "node scripts/check-module-boundaries.mjs",
-    "check:transport": "node scripts/check-center-transport.mjs && node scripts/check-center-auth.mjs",
+    "check:transport": "node scripts/check-center-transport.mjs && node scripts/check-center-auth.mjs && node scripts/check-private-center-live-probe.mjs",
     "check:inference-contract": "node scripts/check-inference-center.mjs",
     "check:image-capabilities": "node scripts/check-image-capabilities.mjs",
     "check:provider-profiles": "node scripts/check-provider-profiles.mjs",
