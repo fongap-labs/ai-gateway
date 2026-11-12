@@ -180,15 +180,42 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   // the original Code/General alias remains responsible for answering.
   // It requires explicit configuration and authorization for the vision alias.
   const visualDelegate = loadModelsConfig(env)[requestedModel]?.policy.vision_delegate;
-  if (route === 'openai_chat' && hasImageInput(bodyJson) && modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true && visualDelegate) {
+  if (
+    route === 'openai_chat' &&
+    hasImageInput(bodyJson) &&
+    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true &&
+    visualDelegate
+  ) {
     const delegateModel = [...knownModels].find((model) => model.toLowerCase() === visualDelegate.toLowerCase());
     if (!delegateModel || authorizeModel(delegateModel, knownModels, pre.authResult).allowed !== true) {
-      return gatewayError(request, env, route, 403, 'The configured vision preprocessor is not authorized for this key.', requestId, undefined, undefined, 'gateway_vision_preprocess_unauthorized');
+      return gatewayError(
+        request,
+        env,
+        route,
+        403,
+        'The configured vision preprocessor is not authorized for this key.',
+        requestId,
+        undefined,
+        undefined,
+        'gateway_vision_preprocess_unauthorized',
+      );
     }
     const delegateConfig = modelRegistryEntry(env, delegateModel);
-    if (delegateConfig.catalog.capabilities.vision !== true ||
-        !config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, delegateModel, knownModels))) {
-      return gatewayError(request, env, route, 503, 'No image-capable node is available for the configured vision preprocessor.', requestId, undefined, undefined, 'gateway_vision_preprocess_unavailable');
+    if (
+      delegateConfig.catalog.capabilities.vision !== true ||
+      !config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, delegateModel, knownModels))
+    ) {
+      return gatewayError(
+        request,
+        env,
+        route,
+        503,
+        'No image-capable node is available for the configured vision preprocessor.',
+        requestId,
+        undefined,
+        undefined,
+        'gateway_vision_preprocess_unavailable',
+      );
     }
     const visualResult = await preprocessChatImages({
       request,
@@ -203,7 +230,17 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     bodyJson = visualResult.body;
     rawBody = undefined; // Original image JSON must never reach a text-only node.
     if (hasImageInput(bodyJson)) {
-      return gatewayError(request, env, route, 400, 'Image content could not be safely converted to visual observations.', requestId, undefined, undefined, 'gateway_vision_preprocess_shape_unsupported');
+      return gatewayError(
+        request,
+        env,
+        route,
+        400,
+        'Image content could not be safely converted to visual observations.',
+        requestId,
+        undefined,
+        undefined,
+        'gateway_vision_preprocess_shape_unsupported',
+      );
     }
   }
   // An image may only move to a model explicitly listed in the requested
