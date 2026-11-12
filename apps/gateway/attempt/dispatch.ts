@@ -48,7 +48,7 @@ async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
       tier: c.node.tier,
       model: c.reqDescriptor.model,
       outcome: outcome.response?.ok ? 'ok' : (outcome.kind ?? (outcome.response?.status === 499 ? 'client_abort' : 'client')),
-      role: c.hedgedAttempt ? 'hedge' : c.state.hasRetriedSameNode ? 'retry' : 'primary',
+      role: c.hedgedAttempt ? 'hedge' : c.state.logicalAttempts > 0 ? 'retry' : 'primary',
       route: c.route,
       status: c.upstreamStatus ?? 0,
       headersMs: c.headersMs ?? -1,
