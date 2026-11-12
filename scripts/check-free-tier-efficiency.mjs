@@ -48,10 +48,7 @@ for (let i = 1; i < TIER1_TTFT_CONFIDENCE_SAMPLES; i++) {
   assert.equal(recordTier1Ttft('warming', model, 1_800), true);
 }
 const matureScore = calculateTier1Score(nodes[1], model, nodes);
-assert.ok(
-  matureScore > firstScore,
-  'one slow sample must not penalize a new free key as strongly as established evidence',
-);
+assert.ok(matureScore > firstScore, 'one slow sample must not penalize a new free key as strongly as established evidence');
 __resetTier1StateForTests();
 
 console.log('Free Tier 1 429 recovery and TTFT-confidence contracts passed offline.');
