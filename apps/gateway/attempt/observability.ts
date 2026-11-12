@@ -64,7 +64,7 @@ export function observeUpstreamAttemptUsage(c: AttemptContext, usage: unknown): 
 export function recordTier1NonStreamTtft(c: AttemptContext, node: RuntimeNode, data: unknown, isMeaningful: (data: unknown) => boolean): void {
   if (node.tier !== 'tier-1' || !isMeaningful(data)) return;
   c.ttftMs = Date.now() - (c.attemptStartMs ?? Date.now());
-  recordTier1Ttft(node.id, c.state.requestedModel, c.ttftMs);
+  recordTier1Ttft(node.id, c.reqDescriptor?.model ?? c.state.requestedModel, c.ttftMs);
 }
 
 export function recordTokens(c: AttemptContext, node: RuntimeNode, usage: unknown): void {
@@ -157,7 +157,7 @@ export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reaso
 
 export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {
   if (node.tier === 'tier-1') {
-    const logicalModel = c.state.requestedModel;
+    const logicalModel = c.reqDescriptor?.model ?? c.state.requestedModel;
     const rateLimited = () =>
       getTier1Account(node.id).consecutiveRateLimits > 0 || (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits ?? 0) > 0;
     const wasRateLimited = rateLimited();
@@ -231,7 +231,7 @@ export function makeNodeStreamTrack(
       if (outcome !== 'interrupted') return;
       recordStreamInterrupted(d.reason);
       if (tier1) {
-        applyTier1Outcome(node.id, c.state?.requestedModel, classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }));
+        applyTier1Outcome(node.id, c.reqDescriptor?.model ?? c.state?.requestedModel, classifyTier1Failure({ kind: classifyStreamInterrupted().kind, streamReason: d.reason }));
         releaseTier1Slot(node.id, c.tier1ReleaseToken);
         bumpNodeCounters(node.id, { requests: 1, failures: 1 });
       } else {
