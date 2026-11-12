@@ -736,8 +736,15 @@ const sharedNativeOwner = readFileSync(join(root, 'packages/execution-core/nativ
 const sharedResponseOwner = readFileSync(join(root, 'packages/execution-core/response.ts'), 'utf8');
 assert.match(inferenceExecutionFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
 assert.match(inferenceResponseFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/response\.ts'/);
-for (const [legacy, source] of [['execution', inferenceExecutionFacade], ['response', inferenceResponseFacade]]) {
-  assert.doesNotMatch(source, /^import |^export (?:async )?(?:function|const|class) /m, `Inference ${legacy} legacy path cannot retain runtime implementation`);
+for (const [legacy, source] of [
+  ['execution', inferenceExecutionFacade],
+  ['response', inferenceResponseFacade],
+]) {
+  assert.doesNotMatch(
+    source,
+    /^import |^export (?:async )?(?:function|const|class) /m,
+    `Inference ${legacy} legacy path cannot retain runtime implementation`,
+  );
 }
 assert.match(sharedNativeOwner, /export async function executeNative\(/, 'Neutral executor must own the physical invocation');
 assert.match(sharedResponseOwner, /export function preDispatchProblem\(/, 'Neutral error envelope must preserve pre-dispatch result classification');
