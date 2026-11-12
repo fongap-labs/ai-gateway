@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 维护: 将 Matrix 的 10 个 Chat/Responses/Messages 请求、对象、SSE 与私有帧转换实现统一迁入中立 `packages/conversion-core/matrix`，保留旧导出身份、既有调度与流式合同；推理执行器和预检直接使用中立模块，并补充兼容性及边界测试。
+- 维护: 将 10 个 Matrix 编解码器迁入中立模块，旧路径纯转发，保留流式合同与导出身份，补充边界回归测试。
 
 - 维护: 将 Inference 与 Perception 复用的单次上游物理尝试抽到中立传输模块，保持既有 502/504/499 和已尝试/未派发标记及超时/取消语义，补充离线 Mock 回归；不更改 Tier 调度或部署。
 
