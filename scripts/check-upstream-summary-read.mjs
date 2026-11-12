@@ -64,8 +64,14 @@ __resetUsageBufferForTests();
 const pending = loadUpstreamSummary({ TOKEN_STATS_DB: gatedD1 }, now);
 for (let i = 0; i < 4; i++) await Promise.resolve();
 assert.deepEqual(readCalls, ['totals', 'hourly'], 'both independent reads must start before either D1 result arrives');
-totalsGate.resolve(currentTotals);
+let resolvedBeforeTotals = false;
+void pending.then(() => {
+  resolvedBeforeTotals = true;
+});
 hourlyGate.resolve(currentHourly);
+for (let i = 0; i < 3; i++) await Promise.resolve();
+assert.equal(resolvedBeforeTotals, false, 'summary must wait for cumulative and hourly results');
+totalsGate.resolve(currentTotals);
 const summary = await pending;
 assert.equal(summary?.available, true);
 assert.deepEqual(summary.today, { total: 7, requests: 1 });
