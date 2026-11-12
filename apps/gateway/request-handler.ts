@@ -27,7 +27,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './cache/edge-cache.ts';
-import { isExplicitImageToolCall, runExplicitImageTool } from './chat-image-tool.ts';
+import { isAutomaticImageToolCall, isExplicitImageToolCall, runAutomaticImageTool, runExplicitImageTool } from './chat-image-tool.ts';
 import { runFallbackChain } from './fallback.ts';
 import { authorizeModel } from './policy/model-authz.ts';
 import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from './policy/model-fallback.ts';
@@ -172,6 +172,21 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       requestedModel,
       requestId,
       execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+    });
+  }
+
+  if (route === 'openai_chat' && isAutomaticImageToolCall(bodyJson)) {
+    return runAutomaticImageTool({
+      request,
+      env,
+      body: bodyJson,
+      auth: pre.authResult,
+      knownModels,
+      requestedModel,
+      requestId,
+      deadlineMs: requestStartMs + failoverBudgetMs,
+      executeChat: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      executeImage: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
     });
   }
 
