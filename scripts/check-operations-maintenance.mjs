@@ -12,14 +12,24 @@ const sourceRows = [
     hour: hour(FIXED_NOW),
     input_tokens: 5,
     output_tokens: 2,
+    cache_creation_input_tokens: 1,
+    cache_read_input_tokens: 2,
     total_tokens: 7,
     requests: 1,
     usage_reports: 1,
+    usage_missing: 1,
     upstream_input_tokens: 6,
     upstream_output_tokens: 2,
+    upstream_cache_creation_input_tokens: 3,
+    upstream_cache_read_input_tokens: 2,
     upstream_total_tokens: 8,
     upstream_attempts: 2,
     upstream_usage_reports: 2,
+    upstream_usage_missing: 2,
+    upstream_effective_input_tokens: 4,
+    upstream_cache_observed_read_tokens: 1,
+    upstream_cache_observed_input_tokens: 5,
+    upstream_cache_read_reports: 1,
   },
   {
     hour: hour(FIXED_NOW - HOUR_MS),
@@ -107,6 +117,36 @@ try {
   assert.equal(firstDaily[0].upstream_attempts, 5, 'physical upstream attempts are included in rollups');
   assert.equal(firstWeekly[0].input_tokens, 12);
   assert.equal(firstWeekly[0].upstream_attempts, 5);
+
+  // Every hourly metric retains its SQL column position through both
+  // materializations. Distinct values catch a shifted positional bind even
+  // if daily and weekly accidentally shift together.
+  const expectedMetrics = {
+    input_tokens: 12,
+    output_tokens: 5,
+    cache_creation_input_tokens: 1,
+    cache_read_input_tokens: 2,
+    total_tokens: 17,
+    requests: 3,
+    usage_reports: 3,
+    usage_missing: 1,
+    upstream_input_tokens: 14,
+    upstream_output_tokens: 5,
+    upstream_cache_creation_input_tokens: 3,
+    upstream_cache_read_input_tokens: 2,
+    upstream_total_tokens: 19,
+    upstream_attempts: 5,
+    upstream_usage_reports: 5,
+    upstream_usage_missing: 2,
+    upstream_effective_input_tokens: 4,
+    upstream_cache_observed_read_tokens: 1,
+    upstream_cache_observed_input_tokens: 5,
+    upstream_cache_read_reports: 1,
+  };
+  for (const [field, expected] of Object.entries(expectedMetrics)) {
+    assert.equal(firstDaily[0][field], expected, `daily aggregate: ${field}`);
+    assert.equal(firstWeekly[0][field], expected, `weekly aggregate: ${field}`);
+  }
 
   await scheduled({}, { TOKEN_STATS_DB: d1 });
   assert.deepEqual([...d1.tables.get('token_usage_daily').values()], firstDaily, 'repeated daily maintenance upserts instead of double-counting');
