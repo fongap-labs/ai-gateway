@@ -17,6 +17,7 @@ import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
 import { __resetIsolateConcurrencyForTests, snapshotIsolateRequestActivity } from '../src/ratelimit/isolate-concurrency.ts';
+import { __resetBodyBudgetForTests, admitRequestBody } from '../src/ratelimit/body-budget.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import {
@@ -455,6 +456,18 @@ assert.deepEqual(
   'request count alone must not trigger gateway_concurrency_exhausted',
 );
 assert.equal(snapshotIsolateRequestActivity().active, 0, 'all activity counters must release after response headers');
+
+__resetBodyBudgetForTests();
+const largeBodyReservation = admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024);
+assert.ok(largeBodyReservation, 'one 20 MiB body is admitted under the independent 32 MiB memory budget');
+assert.equal(
+  admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024),
+  null,
+  'removing request-count rejection must never disable the 32 MiB body-memory budget',
+);
+largeBodyReservation();
+assert.ok(admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024), 'releasing byte budget restores capacity');
+__resetBodyBudgetForTests();
 
 async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   const source = `primary-${failureStatus}`;
