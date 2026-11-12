@@ -71,8 +71,11 @@ async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
     c.state.dispatches++;
     if (!c.hedgedAttempt) c.state.logicalAttempts++;
     const effectiveModel = c.reqDescriptor.model;
-    logLazy(c.logger, 'debug', () =>
-      `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}` +
+    logLazy(
+      c.logger,
+      'debug',
+      () =>
+        `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}` +
         ` dispatch=${c.state.dispatches} node=${c.node.id} provider=${c.node.provider}` +
         ` protocol=${c.upstreamProtocol ?? c.node.protocol} surface=${c.surface} tier=${c.node.tier}` +
         `${c.traceparent ? ` trace_span_id=${c.traceparent.split('-')[2]}` : ''}` +
