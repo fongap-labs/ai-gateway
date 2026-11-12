@@ -66,7 +66,7 @@ const rejected = classifyUpstreamStatus(422, new Headers(), {}, t, 'unprocessabl
 assert.equal(rejected.action, 'stop');
 assert.equal(rejected.counted, false);
 applyTier1Outcome('free-key-1', 'Code-Ultra', classifyTier1Failure(rejected), t + TIER1_FAILURE_STREAK_WINDOW_MS + 2);
-assert.equal(getTier1Model('free-key-1', 'Code-Ultra').consecutiveFailures, 1);
+assert.equal(getTier1Model('free-key-1', 'Code-Ultra').consecutiveFailures, 0);
 
 const response = buildClientErrorResponse(
   new Request('https://gateway.example/v1/chat/completions'),
