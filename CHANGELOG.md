@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: AIG_COST_GUARDS 开启时将未显式配置的 D1 模型明细采样默认值设为 1%，保留全局准确统计和显式 AIG_TOKEN_D1_SAMPLE_PCT 覆盖。
+
 - 维护: 为已鉴权的 /health 增加按需触发的私有中心实时连通性探测，覆盖三中心 Service Binding 与密钥匹配，不执行 Provider 请求，也不新增部署变量。
 
 - 维护: 为三个私有中心增加只读 Service Binding 与认证联合合同检查；Inference、Generation 检查私有健康接口，Perception 使用无效执行合同验证拒绝路径，确保不会请求 Provider。
