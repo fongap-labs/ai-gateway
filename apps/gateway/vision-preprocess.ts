@@ -192,12 +192,7 @@ export async function preprocessResponsesImages(args: {
         return part;
       }
       const raw = value.image_url;
-      const url =
-        typeof raw === 'string'
-          ? raw
-          : raw && typeof raw === 'object' && !Array.isArray(raw)
-            ? (raw as Record<string, unknown>).url
-            : null;
+      const url = typeof raw === 'string' ? raw : raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).url : null;
       if (typeof url !== 'string' || !url.trim() || value.file_id) {
         hasUnsupportedImage = true;
         return part;
