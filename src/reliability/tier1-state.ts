@@ -505,11 +505,12 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
   const thresholdReached = outcome.counted === true && model.consecutiveFailures >= TIER1_FAILURE_THRESHOLD;
   const fastCooldown = outcome.counted === true && model.consecutiveFailures === 2 && !halfOpenFailure;
   if (halfOpenFailure || thresholdReached || fastCooldown || rateLimited || (outcome.cooldownMs ?? 0) > 0) {
-    const cooldownMs = halfOpenFailure || thresholdReached
-      ? Math.max(TIER1_CIRCUIT_COOLDOWN_FLOOR_MS, modelCooldownMs(model, outcome))
-      : fastCooldown
-        ? Math.max(TIER1_FAST_COOLDOWN_MS, modelCooldownMs(model, outcome))
-        : modelCooldownMs(model, outcome);
+    const cooldownMs =
+      halfOpenFailure || thresholdReached
+        ? Math.max(TIER1_CIRCUIT_COOLDOWN_FLOOR_MS, modelCooldownMs(model, outcome))
+        : fastCooldown
+          ? Math.max(TIER1_FAST_COOLDOWN_MS, modelCooldownMs(model, outcome))
+          : modelCooldownMs(model, outcome);
     // A sibling already in flight must not shorten the current cooldown.
     model.cooldownUntil = Math.max(model.cooldownUntil, now + cooldownMs);
     model.cooldownReason = outcome.reason;
