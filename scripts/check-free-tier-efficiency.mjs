@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { classifyUpstreamStatus, rateLimitWindowOf } from '../src/reliability/classify.ts';
-import { __resetTier1StateForTests, recordTier1Ttft } from '../src/reliability/tier1-state.ts';
+import { __resetTier1StateForTests, recordTier1QuotaReport, recordTier1QuotaSignal, recordTier1Ttft, tier1QuotaState } from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
 
 assert.equal(rateLimitWindowOf('quota exceeded'), 'quota');
@@ -43,6 +43,21 @@ for (let i = 0; i < TIER1_TTFT_CONFIDENCE_SAMPLES; i++) {
 }
 assert.equal(recordTier1Ttft('warming', model, 1_800), true);
 const firstScore = calculateTier1Score(nodes[1], model, nodes);
+const healthyFreeScore = calculateTier1Score(nodes[0], model, nodes);
+const now = Date.now();
+// A nearly depleted *but still usable* free key must not be artificially
+// demoted when it may still complete the next request.
+assert.equal(recordTier1QuotaSignal('baseline', { remainingRatio: 0.01, resetAtMs: now + 60_000 }, now), true);
+assert.equal(tier1QuotaState('baseline', now), 'near_limit');
+assert.equal(calculateTier1Score(nodes[0], model, nodes), healthyFreeScore);
+assert.equal(
+  recordTier1QuotaReport('baseline', { remainingRequests: 1, limitRequests: 100, resetAtMs: now + 60_000 }, now),
+  true,
+);
+assert.equal(tier1QuotaState('baseline', now), 'near_limit');
+assert.equal(calculateTier1Score(nodes[0], model, nodes), healthyFreeScore);
+assert.equal(recordTier1QuotaSignal('baseline', { remainingRatio: 0, resetAtMs: now + 60_000 }, now), true);
+assert.equal(tier1QuotaState('baseline', now), 'exhausted_until');
 assert.ok(firstScore > 1_000, 'observed slow node should have a bounded TTFT penalty');
 for (let i = 1; i < TIER1_TTFT_CONFIDENCE_SAMPLES; i++) {
   assert.equal(recordTier1Ttft('warming', model, 1_800), true);
