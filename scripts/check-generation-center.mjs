@@ -301,6 +301,86 @@ try {
   assert.equal(missingCenter.status, 503, 'missing private Generation Center must fail without a Provider request');
   assert.equal(physicalCalls, 1);
 
+  // A normal Chat endpoint can explicitly request the same Generation tool.
+  // There is no keyword guessing: selection, schema and image alias are
+  // intentional, and a non-AGENT caller must never spend image credits.
+  const toolEnv = {
+    ...gatewayImageEnv,
+    AIG_ACCESS_MODELS_AGENT: `Max,${imageModel}`,
+    AIG_TIER1_NODES_01: JSON.stringify([
+      { id: 'image-1', provider: 'openai-image', base_url: 'https://api.openai.com', models: { [imageModel]: 'gpt-image-1' } },
+      { id: 'chat-model', provider: 'openai', base_url: 'https://mock.example/v1', models: { Max: 'upstream-max' } },
+    ]),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [imageModel]: {
+        policy: 'default',
+        visibility: 'internal',
+        ui_visible: false,
+        group: 'image',
+        modalities: { input: ['text'], output: ['image'] },
+      },
+      Max: { policy: 'default', capabilities: { tools: true } },
+    }),
+  };
+  function toolChatBody(extra = {}) {
+    return {
+      model: 'Max',
+      messages: [{ role: 'user', content: 'Draw a square' }],
+      tools: [{ type: 'function', function: { name: 'generate_image', parameters: { type: 'object', properties: {} } } }],
+      tool_choice: { type: 'function', function: { name: 'generate_image' } },
+      metadata: { aig_image_model: imageModel, aig_image_size: '1024x1024' },
+      ...extra,
+    };
+  }
+  const chatGenerated = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody()),
+    toolEnv,
+    gatewayCtx,
+  );
+  assert.equal(chatGenerated.status, 200, await chatGenerated.clone().text());
+  assert.equal(chatGenerated.headers.get('x-gateway-image-tool'), 'true');
+  const chatOutput = await chatGenerated.json();
+  assert.equal(chatOutput.model, 'Max');
+  assert.equal(chatOutput.choices[0].message.content, '![Generated image](data:image/png;base64,aGVsbG8=)');
+  assert.equal(physicalCalls, 2, 'Chat bridge must generate exactly one image without a text-model dispatch');
+  assert.equal(centerCalls, 2);
+
+  const chatStreamed = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody({ stream: true })),
+    toolEnv,
+    gatewayCtx,
+  );
+  assert.equal(chatStreamed.status, 200);
+  assert.match(chatStreamed.headers.get('content-type') || '', /text\/event-stream/);
+  const streamedText = await chatStreamed.text();
+  assert.match(streamedText, /data: \[DONE\]/);
+  assert.match(streamedText, /data:image\/png;base64/);
+  assert.equal(physicalCalls, 3);
+
+  const imageToolDenied = await handleRequest(
+    gatewayImageRequest('frontend-air-test-key', '/v1/chat/completions', toolChatBody()),
+    toolEnv,
+    gatewayCtx,
+  );
+  assert.equal(imageToolDenied.status, 403);
+  assert.equal(physicalCalls, 3, 'ordinary chat keys cannot initiate billable image generation');
+
+  const undeclaredTool = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody({ tools: [] })),
+    toolEnv,
+    gatewayCtx,
+  );
+  assert.equal(undeclaredTool.status, 400);
+  assert.equal(physicalCalls, 3);
+
+  const missingImageModel = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/chat/completions', toolChatBody({ metadata: {} })),
+    toolEnv,
+    gatewayCtx,
+  );
+  assert.equal(missingImageModel.status, 400);
+  assert.equal(physicalCalls, 3);
+
   console.log('Full Gateway -> Generation Center -> mocked Provider, authorization, and zero-retry contracts passed.');
   console.log('Private generation center contracts passed.');
 } finally {

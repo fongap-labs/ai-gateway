@@ -4,6 +4,8 @@
 
 - 维护: 新增已部署 Gateway 的真实文本、Omni 识图、Perception 委托、故障转移及显式图片生成验收脚本；付费请求默认关闭。
 
+- 新增: Chat 中经 AGENT 授权显式选择 `generate_image` 工具，可通过 Generation Center 生成图片并返回普通或流式回复。
+
 - 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
 
 - 新增: 可通过 `AIG_MODELS_CONFIG` 显式配置 `vision_delegate`，让纯文本模型先用 Omni 经 Perception 识图，再由原模型回答；保留鉴权与原有回退链。
