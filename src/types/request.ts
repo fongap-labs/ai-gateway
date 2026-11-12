@@ -193,6 +193,8 @@ export type AttemptContext = {
   ctx: ExecutionContextLike;
   logger: GatewayLogger;
   requestId: string;
+  /** W3C parent span generated independently for this physical attempt. */
+  traceparent?: string;
   route: string;
   node: RuntimeNode;
   requestedModel: string;

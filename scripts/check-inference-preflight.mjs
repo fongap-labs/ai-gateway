@@ -3,6 +3,7 @@
 // Private conversion admission: six protocol pairs, fail-closed and no Provider.
 import assert from 'node:assert/strict';
 import { buildInferencePreflightHeaders, INFERENCE_PREFLIGHT_PATH } from '../packages/contracts/conversion-preflight.ts';
+import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
 import { ConversionError } from '../packages/conversion-core/validation.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
@@ -13,7 +14,12 @@ const key = 'local-inference-preflight-contract-auth-key-32';
 const requestId = '12345678-1234-4234-8234-123456789012';
 const client = new Request('https://gateway.invalid/v1/messages', {
   method: 'POST',
-  headers: { authorization: 'Bearer private-client-token', cookie: 'session=private' },
+  headers: {
+    authorization: 'Bearer private-client-token',
+    cookie: 'session=private',
+    traceparent: '00-ffffffffffffffffffffffffffffffff-0123456789abcdef-01',
+    tracestate: 'client=secret',
+  },
 });
 const bodyByProtocol = {
   openai_chat: { model: 'test-model', messages: [{ role: 'user', content: 'hello' }] },
@@ -31,6 +37,10 @@ const env = {
       assert.equal(request.headers.has('authorization'), false);
       assert.equal(request.headers.has('cookie'), false);
       assert.equal(request.headers.get('x-aig-inference-auth'), key);
+      assert.equal(parseTraceparent(request.headers.get('traceparent'))?.traceId, traceIdForRequest(requestId));
+      assert.equal(request.headers.has('tracestate'), false);
+      assert.notEqual(request.headers.get('traceparent'), client.headers.get('traceparent'));
+
       return handleInferenceCenterRequest(request, env);
     },
   },

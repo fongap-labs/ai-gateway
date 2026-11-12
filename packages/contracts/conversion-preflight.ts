@@ -4,6 +4,7 @@
 // Private, read-only conversion preflight. No Provider, node or tier dispatch.
 import type { ConversionResult } from '../conversion-core/result.ts';
 import { MAX_EXECUTION_DEADLINE_AHEAD_MS } from './execution.ts';
+import { createInternalTraceparent } from './trace-context.ts';
 
 export const INFERENCE_PREFLIGHT_PATH = '/internal/conversion/preflight' as const;
 export const INFERENCE_PREFLIGHT_VERSION = '1' as const;
@@ -14,13 +15,16 @@ export type ConversionPreflightRejection = { ok: false; code: 'conversion_not_su
 export type ConversionPreflightResult = ConversionPreflightApproval | ConversionPreflightRejection;
 
 export function buildInferencePreflightHeaders(invocation: InferencePreflightInvocation, key: string): Headers {
-  return new Headers({
+  const headers = new Headers({
     'content-type': 'application/json',
     'x-aig-inference-auth': key,
     'x-aig-preflight-version': INFERENCE_PREFLIGHT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-deadline-ms': String(invocation.deadlineMs),
   });
+  const traceparent = createInternalTraceparent(invocation.requestId);
+  if (traceparent) headers.set('traceparent', traceparent);
+  return headers;
 }
 
 export function parseInferencePreflightInvocation(request: Request, nowMs = Date.now()): InferencePreflightInvocation | null {

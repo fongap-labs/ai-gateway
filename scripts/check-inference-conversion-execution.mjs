@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Cross-protocol physical requests run inside the private Inference Center.
 import assert from 'node:assert/strict';
+import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { buildInferenceRequest } from '../src/inference/inference-client-request.ts';
 
@@ -25,7 +26,13 @@ const env = {
 const message = { model: 'chat-test', max_tokens: 128, messages: [{ role: 'user', content: 'Hello' }] };
 const clientRequest = new Request('https://gateway.invalid/v1/messages', {
   method: 'POST',
-  headers: { authorization: 'Bearer client-secret', cookie: 'private=value', 'x-api-key': 'client-secret' },
+  headers: {
+    authorization: 'Bearer client-secret',
+    cookie: 'private=value',
+    'x-api-key': 'client-secret',
+    traceparent: '00-ffffffffffffffffffffffffffffffff-0123456789abcdef-01',
+    tracestate: 'client=private',
+  },
 });
 function inbound(body = message, inputSurface = 'messages', preferNonstream = undefined) {
   return buildInferenceRequest(env, {
@@ -43,6 +50,10 @@ function inbound(body = message, inputSurface = 'messages', preferNonstream = un
 
 const initial = inbound();
 assert.equal(initial.headers.get('x-aig-input-surface'), 'messages');
+const internalSpan = parseTraceparent(initial.headers.get('traceparent'));
+assert.equal(internalSpan?.traceId, traceIdForRequest('12345678-1234-4234-8234-123456789012'));
+assert.notEqual(initial.headers.get('traceparent'), clientRequest.headers.get('traceparent'));
+assert.equal(initial.headers.has('tracestate'), false);
 assert.equal(initial.headers.has('authorization'), false);
 assert.equal(initial.headers.has('cookie'), false);
 assert.equal(initial.headers.has('x-api-key'), false);
@@ -74,10 +85,16 @@ try {
   assert.deepEqual(executed[0].content.messages, [{ role: 'user', content: 'Hello' }]);
   assert.equal(executed[0].headers.has('x-aig-input-surface'), false);
   assert.equal(executed[0].headers.has('x-aig-inference-auth'), false);
+  const providerSpan = parseTraceparent(executed[0].headers.get('traceparent'));
+  assert.equal(providerSpan?.traceId, internalSpan?.traceId);
+  assert.notEqual(providerSpan?.spanId, internalSpan?.spanId, 'private Center creates its own Provider child span');
+  assert.equal(executed[0].headers.has('tracestate'), false);
 
   const preferred = await handleInferenceCenterRequest(inbound(message, 'messages', true), env);
   assert.equal(preferred.status, 200);
   assert.equal(executed.length, 2);
+  assert.equal(parseTraceparent(executed[1].headers.get('traceparent'))?.traceId, internalSpan?.traceId);
+  assert.notEqual(executed[1].headers.get('traceparent'), executed[0].headers.get('traceparent'));
   assert.notEqual(executed[1].content.stream, true, 'explicit non-streaming preference must survive conversion');
 
   const invalid = await handleInferenceCenterRequest(inbound({ ...message, unknown_field: true }), env);

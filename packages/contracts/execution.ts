@@ -5,6 +5,7 @@
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
 
 import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
+import { validatedInternalTraceparent } from './trace-context.ts';
 
 export const EXECUTION_CONTRACT_VERSION = '1' as const;
 export const EXECUTION_TRANSLATION_CONTRACT_VERSION = '2' as const;
@@ -112,6 +113,8 @@ export function parseExecutionResponse(response: Response): {
 
 export type ExecutionInvocation = {
   requestId: string;
+  /** Server-generated parent span; untrusted client trace headers are excluded. */
+  traceparent?: string;
   nodeId: string;
   logicalModel: string;
   surface: ExecutionSurface;
@@ -205,6 +208,8 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   if (invocation.returnStream) headers.set('x-aig-return-stream', 'true');
   if (invocation.streamBudget) headers.set('x-aig-stream-budget', serializeInferenceStreamBudget(invocation.streamBudget));
   if (invocation.displayModel) headers.set('x-aig-display-model', invocation.displayModel);
+  const traceparent = validatedInternalTraceparent(invocation.requestId, invocation.traceparent);
+  if (traceparent) headers.set('traceparent', traceparent);
   return headers;
 }
 

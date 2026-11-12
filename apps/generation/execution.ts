@@ -9,6 +9,7 @@ import { isImageGenerationProvider } from '../../packages/contracts/image-capabi
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';
@@ -103,6 +104,8 @@ export async function execute(request: Request, env: GatewayEnv, invocation: Inv
     headers: { 'content-type': 'application/json', accept: 'application/json' },
   });
   const headers = buildUpstreamHeadersFor(node.protocol, safeClientRequest, node.credential, invocation.requestId);
+  const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
+  if (providerTraceparent) headers.set('traceparent', providerTraceparent);
   if (prepared.auth === 'google-key') {
     headers.delete('authorization');
     headers.set('x-goog-api-key', node.credential);

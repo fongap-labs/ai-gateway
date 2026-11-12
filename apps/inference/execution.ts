@@ -15,6 +15,7 @@ import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
@@ -232,6 +233,8 @@ async function executeAdmittedNative(
   }
 
   const headers = buildUpstreamHeadersFor(node.protocol, clientRequest, credential, invocation.requestId);
+  const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
+  if (providerTraceparent) headers.set('traceparent', providerTraceparent);
   const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
   const controller = new AbortController();
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);

@@ -14,6 +14,7 @@ type GenerationService = ExecutionTransport;
 export type GenerationInvocation = {
   request: Request;
   requestId: string;
+  traceparent?: string;
   node: RuntimeNode;
   logicalModel: string;
   deadlineMs: number;
@@ -42,6 +43,7 @@ export function buildGenerationRequest(env: GatewayEnv, invocation: GenerationIn
   const headers = buildExecutionHeaders(
     {
       requestId: invocation.requestId,
+      traceparent: invocation.traceparent,
       nodeId: invocation.node.id,
       logicalModel: invocation.logicalModel,
       surface: 'images_generations',

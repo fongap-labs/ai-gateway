@@ -160,6 +160,7 @@ export async function dispatchInferenceAttempt(
     upstream = await invokeNode(env, {
       request,
       requestId: c.requestId,
+      traceparent: c.traceparent,
       node,
       logicalModel: effectiveModel,
       surface: c.surface ?? reqDescriptor.surface,
