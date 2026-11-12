@@ -60,8 +60,8 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   // (see ratelimit/isolate-concurrency.ts). Bodyless requests — health, metrics,
   // the dashboard — pass uncounted so monitoring survives a burst. Legacy mode
   // keeps the byte-for-byte behavior: no gate is armed at all.
-  const releaseConcurrency =
-    limits.requestAdmission && limits.isolateMaxInFlight > 0 && request.body !== null ? admitIsolateRequest(limits.isolateMaxInFlight) : () => {};
+  const useConcurrencyGate = limits.requestAdmission && limits.isolateMaxInFlight > 0 && request.body !== null;
+  const releaseConcurrency = useConcurrencyGate ? admitIsolateRequest(limits.isolateMaxInFlight) : () => {};
   if (!releaseConcurrency) {
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
     return gatewayError(
@@ -111,7 +111,9 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   let isConcurrencyOwnedByResponse = false;
   try {
     const response = await handleAdmittedRequest(request, env, ctx);
-    const responseWithRelease = releaseIsolateRequestAfterResponse(response, releaseConcurrency);
+    // With the optional concurrency cap disabled, preserve the original stream
+    // rather than wrapping every SSE response in a second ReadableStream.
+    const responseWithRelease = useConcurrencyGate ? releaseIsolateRequestAfterResponse(response, releaseConcurrency) : response;
     isConcurrencyOwnedByResponse = true;
     return responseWithRelease;
   } finally {
