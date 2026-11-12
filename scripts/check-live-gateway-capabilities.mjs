@@ -18,7 +18,9 @@ for (let index = 2; index < process.argv.length; index++) {
   options[arg.slice(2)] = process.argv[++index];
 }
 if (!options.url || !options['chat-model']) {
-  throw new Error('Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--delegate-model Code-Max] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]');
+  throw new Error(
+    'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--delegate-model Code-Max] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
+  );
 }
 const base = new URL(options.url);
 if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash) {
@@ -103,9 +105,15 @@ try {
     );
   }
   if (options['failover-model']) {
-    const summary = await checkedRequest('failover', textKey, '/v1/chat/completions', chat(options['failover-model'], 'Reply exactly: ok'), (reply) => {
-      if (!reply?.choices?.[0]?.message?.content) throw new Error('Failover check returned no text.');
-    });
+    const summary = await checkedRequest(
+      'failover',
+      textKey,
+      '/v1/chat/completions',
+      chat(options['failover-model'], 'Reply exactly: ok'),
+      (reply) => {
+        if (!reply?.choices?.[0]?.message?.content) throw new Error('Failover check returned no text.');
+      },
+    );
     if (options['expect-dispatches']) {
       const count = Number(summary.dispatches);
       if (!summary.dispatches || !Number.isInteger(count) || count < Number(options['expect-dispatches'])) {
@@ -123,12 +131,19 @@ try {
       metadata: { aig_image_model: options['image-model'], aig_image_size: '1024x1024' },
       stream: false,
     };
-    await checkedRequest('chat-image-tool', agentKey, '/v1/chat/completions', toolBody, (reply, response) => {
-      if (response.headers.get('x-gateway-image-tool') !== 'true') throw new Error('Chat request never entered image tool.');
-      if (!String(reply?.choices?.[0]?.message?.content || '').startsWith('![Generated image](data:image/png;base64,')) {
-        throw new Error('Chat image tool returned no image data.');
-      }
-    }, 150_000);
+    await checkedRequest(
+      'chat-image-tool',
+      agentKey,
+      '/v1/chat/completions',
+      toolBody,
+      (reply, response) => {
+        if (response.headers.get('x-gateway-image-tool') !== 'true') throw new Error('Chat request never entered image tool.');
+        if (!String(reply?.choices?.[0]?.message?.content || '').startsWith('![Generated image](data:image/png;base64,')) {
+          throw new Error('Chat image tool returned no image data.');
+        }
+      },
+      150_000,
+    );
     if (options['run-direct-image']) {
       await checkedRequest(
         'generation-direct',
@@ -142,8 +157,16 @@ try {
       );
     }
   }
-  console.log(JSON.stringify({ result: 'PASS', checks: results.length, billable_image_calls: options['run-image'] ? (options['run-direct-image'] ? 2 : 1) : 0 }));
+  console.log(
+    JSON.stringify({
+      result: 'PASS',
+      checks: results.length,
+      billable_image_calls: options['run-image'] ? (options['run-direct-image'] ? 2 : 1) : 0,
+    }),
+  );
 } catch (error) {
-  console.error(JSON.stringify({ result: 'FAIL', message: error instanceof Error ? error.message : String(error), checks_completed: results.length }));
+  console.error(
+    JSON.stringify({ result: 'FAIL', message: error instanceof Error ? error.message : String(error), checks_completed: results.length }),
+  );
   process.exitCode = 1;
 }
