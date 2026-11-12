@@ -8,7 +8,7 @@
 const options = {};
 for (let index = 2; index < process.argv.length; index++) {
   const arg = process.argv[index];
-  if (arg === '--run-image' || arg === '--run-direct-image') {
+  if (arg === '--run-image' || arg === '--run-direct-image' || arg === '--run-auto-image') {
     options[arg.slice(2)] = true;
     continue;
   }
@@ -27,6 +27,7 @@ if (base.protocol !== 'https:' || base.username || base.password || base.pathnam
   throw new Error('--url must be an HTTPS origin with no credentials, path, query or fragment.');
 }
 if (options['run-direct-image'] && !options['run-image']) throw new Error('--run-direct-image requires --run-image.');
+if (options['run-auto-image'] && !options['run-image']) throw new Error('--run-auto-image requires --run-image.');
 if (options['run-image'] && !options['image-model']) throw new Error('--run-image requires --image-model.');
 if (options['expect-dispatches'] && !options['failover-model']) throw new Error('--expect-dispatches requires --failover-model.');
 
@@ -144,6 +145,23 @@ try {
       },
       150_000,
     );
+    if (options['run-auto-image']) {
+      await checkedRequest(
+        'chat-auto-image-tool',
+        agentKey,
+        '/v1/chat/completions',
+        { ...toolBody, tool_choice: 'auto' },
+        (reply, response) => {
+          if (response.headers.get('x-gateway-image-tool') !== 'true') {
+            throw new Error('Auto tool selection never executed Generation Center; verify the staging model supports function tools.');
+          }
+          if (!String(reply?.choices?.[0]?.message?.content || '').startsWith('![Generated image](data:image/')) {
+            throw new Error('Automatic Chat image tool returned no image data.');
+          }
+        },
+        150_000,
+      );
+    }
     if (options['run-direct-image']) {
       await checkedRequest(
         'generation-direct',
@@ -161,7 +179,7 @@ try {
     JSON.stringify({
       result: 'PASS',
       checks: results.length,
-      billable_image_calls: options['run-image'] ? (options['run-direct-image'] ? 2 : 1) : 0,
+      billable_image_calls: options['run-image'] ? 1 + Number(!!options['run-direct-image']) + Number(!!options['run-auto-image']) : 0,
     }),
   );
 } catch (error) {
