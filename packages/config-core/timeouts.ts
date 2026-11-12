@@ -426,7 +426,7 @@ export function getLimits(env: Record<string, unknown>): Limits {
       readEnv(env, 'AIG_TOKEN_D1_SAMPLE_PCT'),
       LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.min,
       LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.max,
-      LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.def,
+      costGuards ? 1 : LIMITS.AIG_TOKEN_D1_SAMPLE_PCT.def,
     ),
     logLevelDefault: costGuards ? 'warn' : 'info',
     hotPathGuards,

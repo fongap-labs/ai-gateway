@@ -10,6 +10,7 @@ import { preflight } from '../apps/gateway/preflight.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
+import { getLimits } from '../src/config/timeouts.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
@@ -17,6 +18,18 @@ import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnap
 import { getNodeState } from '../src/reliability/node-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
+
+// Cost protection changes only defaults, never an operator's explicit choice.
+// Global delivered-success and usage-coverage evidence remains unsampled.
+assert.equal(getLimits({}).tokenD1SamplePct, 100);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'false' }).tokenD1SamplePct, 100);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true' }).tokenD1SamplePct, 1);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true', AIG_TOKEN_D1_SAMPLE_PCT: '0' }).tokenD1SamplePct, 0);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true', AIG_TOKEN_D1_SAMPLE_PCT: '37' }).tokenD1SamplePct, 37);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true', AIG_TOKEN_D1_SAMPLE_PCT: '100' }).tokenD1SamplePct, 100);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'false', AIG_TOKEN_D1_SAMPLE_PCT: '37' }).tokenD1SamplePct, 37);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true' }).tier1AffinityWrite, false);
+assert.equal(getLimits({ AIG_COST_GUARDS: 'true', AIG_AFFINITY_WRITE: '1' }).tier1AffinityWrite, true);
 
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
