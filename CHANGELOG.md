@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
+
 - 新增: 可通过 `AIG_MODELS_CONFIG` 显式配置 `vision_delegate`，让纯文本模型先用 Omni 经 Perception 识图，再由原模型回答；保留鉴权与原有回退链。
 
 - 维护: 补齐 Gateway 到私有 Generation Center 再到模拟图片 Provider 的端到端合同测试，检查授权隔离、图片模型路由与单次付费派发，不调用真实上游。
