@@ -133,7 +133,7 @@ export function assertReleaseTopology(plan) {
     perception,
     'Perception',
     'ai-perception-center',
-    'src/perception/perception-center-entry.ts',
+    'apps/perception/index.ts',
     'AIG_PERCEPTION_AUTH_KEY',
     sha,
     perceptionNames,
