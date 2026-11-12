@@ -40,6 +40,16 @@
 
 `health-check.*`、`models-check.*` 与 `metrics-check.*` 是刻意保持精简的、平台原生的 Shell/PowerShell 探针。它们保持独立，是为了让凭据可以通过交互方式输入，而不引入跨平台的交互式依赖，也不为三个简单端点引入大型抽象。
 
+## 真实网关能力验收
+
+`check-live-gateway-capabilities.mjs` 向**已经部署的** HTTPS Gateway 发真实请求，不使用模拟 Provider，也不会进行部署或修改配置。用例包括文本模型、可选 Omni 直连、可选普通模型经 Perception 识图、可选实际故障转移和显式付费生成。需在受控环境提供原有 `AIG_ACCESS_KEY_MAX` / `AIG_ACCESS_KEY_AGENT` 等访问 Key；脚本不会输出 Key 或图片数据。
+
+```bash
+node scripts/check-live-gateway-capabilities.mjs --url https://<gateway-host> --chat-model Max --vision-model Omni --delegate-model Code-Max
+```
+
+真实付费图片请求**默认不执行**。在确认成本和权限后，才增加 `--run-image --image-model Image-Creator`（只执行一次图片生成）；`--run-direct-image` 会再增加一次明确的直接图片调用。故障转移检查可使用 `--failover-model Code-Max --expect-dispatches 2`，但仅应在部署了可控失败节点的测试环境执行，并要求响应包含真实物理派发计数；如果缺少证据，脚本会报错，不将单次成功冒充故障转移成功。
+
 ## Provider Discovery
 
 `scripts/provider-discovery/` 是只读的建议性子系统，负责能力快照、归一化、差异比较、运行时一致性检查、报告生成以及 SSRF 防护。它不会修改运行时节点配置，也不会加入 AI 请求的热路径。

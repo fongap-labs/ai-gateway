@@ -149,11 +149,11 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     exposeUpstreamInfo,
     requestDescriptor: reqDescriptor,
     config,
-    tiers,
+    tiers: configuredTiers,
     policy,
     failoverBudgetMs,
     knownModels,
-    feasibility,
+    feasibility: initialFeasibility,
   } = pre;
 
   let bodyJson = initialBodyJson;
@@ -293,15 +293,38 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   // Never silently strip an image, infer vision from the provider name, or
   // treat an image-generation route as image understanding.
   const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
+  // Provider profiles are a hard per-node gate for image-bearing requests.
+  // Preflight intentionally uses the unfiltered pool so a text model can
+  // preprocess its image with Omni before this dispatch-specific check.
+  const tiers: TierMap<RuntimeNode[]> = imageInputRequired
+    ? {
+        1: configuredTiers[1].filter((node) => getProviderProfile(node.provider).imageInput),
+        2: configuredTiers[2].filter((node) => getProviderProfile(node.provider).imageInput),
+      }
+    : configuredTiers;
+  const feasibility = imageInputRequired
+    ? evaluateRouteFeasibility({ route, requestedModel, requestDescriptor: reqDescriptor, tiers, knownModels, env })
+    : initialFeasibility;
+  const requiresTools = Array.isArray(bodyJson.tools) && bodyJson.tools.length > 0;
   const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
       : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts, loadModelsConfig(env));
-  const modelPlan = imageInputRequired
-    ? configuredPlan
-        .map((round) => round.filter((pass) => modelRegistryEntry(env, pass.model).catalog.capabilities.vision === true))
-        .filter((round) => round.length > 0)
-    : configuredPlan;
+  const modelPlan = configuredPlan
+    .map((round) =>
+      round.filter(({ model }) => {
+        const capabilities = modelRegistryEntry(env, model).catalog.capabilities;
+        // Only explicit operator declarations are authoritative for tools and
+        // streams. Registry defaults are conservative discovery hints, not a
+        // reason to reject Claude/Codex tool calls or native pass-through.
+        const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
+        if (imageInputRequired && capabilities.vision !== true) return false;
+        if (requiresTools && declared?.tools === false) return false;
+        if (clientWantsStream && declared?.stream === false) return false;
+        return true;
+      }),
+    )
+    .filter((round) => round.length > 0);
   if (imageInputRequired && modelPlan.length === 0) {
     return gatewayError(
       request,
@@ -315,13 +338,26 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       'gateway_image_input_unsupported',
     );
   }
+  if (modelPlan.length === 0) {
+    return gatewayError(
+      request,
+      env,
+      route,
+      400,
+      'The requested tools or streaming mode are unsupported by the model and its configured fallbacks.',
+      requestId,
+      undefined,
+      undefined,
+      'gateway_model_capability_unsupported',
+    );
+  }
   // A vision declaration alone does not make a Provider endpoint image-capable.
   // Detect a provider-profile mismatch before scheduling so it cannot consume
   // attempts or return a misleading capacity / cooldown error.
   const visionProviderConfigured =
     !imageInputRequired ||
     modelPlan.some((round) =>
-      round.some(({ model }) => config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, model, knownModels))),
+      round.some(({ model }) => TIER_ORDER.some((tierNumber) => tiers[tierNumber].some((node) => servesModel(node, model, knownModels)))),
     );
   if (!visionProviderConfigured) {
     return gatewayError(
