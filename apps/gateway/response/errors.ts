@@ -92,9 +92,18 @@ export function gatewayError(
   // request against a pool whose earliest recovery is still many seconds
   // away. Retry-After remains the eventual recovery hint; this separate
   // header only disables blind automatic retries of the entire request.
+  // Limit this override to mixed timeout/rate-limit failures. Pure 429 exhaustion
+  // retains its established SDK Retry-After contract and remains retryable.
   // It does NOT change Key eligibility, circuit state or Provider quota.
+  const kinds = details?.failure_kinds;
+  const hadHeadersTimeout =
+    kinds !== null &&
+    typeof kinds === 'object' &&
+    !Array.isArray(kinds) &&
+    Number((kinds as Record<string, unknown>).headers_timeout) > 0;
   const deferredFamilyRetry =
     gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED &&
+    hadHeadersTimeout &&
     parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
   if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
