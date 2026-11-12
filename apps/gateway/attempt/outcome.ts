@@ -36,16 +36,6 @@ import { shareLongTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.t
 import { upstreamModelOf } from '../response/response-helpers.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 
-// Failures that say nothing about the next request to the same Tier 1 key. When
-// the request plan runs out, the most recent one of these may be retried once.
-const SAME_NODE_RETRY_KINDS: ReadonlySet<FailureKind> = new Set([
-  KIND.SERVER,
-  KIND.NETWORK,
-  KIND.HEADERS_TIMEOUT,
-  KIND.FIRST_EVENT_TIMEOUT,
-  KIND.STREAM_INTERRUPTED,
-]);
-
 export function rotateWithNeutralEnd(
   state: LoopState,
   node: RuntimeNode,
@@ -65,9 +55,6 @@ export function rotateWithNeutralEnd(
     recordNeutralEnd(node.id);
   }
   noteFailure(state, reason);
-  // A later pre-dispatch rejection must not leave an older transient key
-  // eligible for a speculative retry after this request's route has changed.
-  if (isPreDispatch) state.sameNodeRetry = null;
   const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   logLazy(
     state.logger,
@@ -257,15 +244,6 @@ export function recordOutcome(
   }
 
   noteFailure(state, classification.kind);
-  // Only the most recent real failure can authorize the last-resort same-key
-  // retry. Otherwise a later 429, refusal, paid-tier failure or model change
-  // can accidentally revive an earlier failed key and create useless work.
-  if (classification.action !== 'neutral') {
-    state.sameNodeRetry =
-      !state.hasRetriedSameNode && node.tier === 'tier-1' && !c.conversionContext && SAME_NODE_RETRY_KINDS.has(classification.kind)
-        ? { nodeId: node.id, model: effectiveModel, latencyMs: Math.max(0, latencyMs) }
-        : null;
-  }
   logLazy(
     state.logger,
     'info',

@@ -89,7 +89,7 @@ assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 1);
 assert.equal(getTier1Model(node.id, source).consecutiveFailures, 0);
 assert.equal(state.attempts[0].effective_model, effective);
 assert.equal(state.attempts[0].upstream_model, 'physical-max');
-assert.equal(state.sameNodeRetry.model, effective);
+assert.equal(state.attempted.has(node.id), true, 'the failed Key is excluded from this request even with unused attempt slots');
 
 // The same failure class on another pass must not poison the original alias.
 recordOutcome(state, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary unavailable'), makeContext(state), {
@@ -100,14 +100,14 @@ assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 2);
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
 __resetTier1StateForTests();
-// A previous transient Tier 1 failure is NOT a license to send a later
-// last-resort dispatch when a newer outcome has ruled out that candidate.
+// Later failures and pre-dispatch rejections must not resurrect an attempted Key.
+// A request with no new candidates now stops rather than replaying the Key.
 const staleAfter429 = makeState();
 recordOutcome(staleAfter429, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'), makeContext(staleAfter429), {
   status: 503,
   latencyMs: 120,
 });
-assert.equal(staleAfter429.sameNodeRetry?.nodeId, node.id);
+assert.equal(staleAfter429.attempted.has(node.id), true);
 recordOutcome(
   staleAfter429,
   node,
@@ -115,7 +115,7 @@ recordOutcome(
   makeContext(staleAfter429),
   { status: 429, latencyMs: 70 },
 );
-assert.equal(staleAfter429.sameNodeRetry, null, 'a later rate limit must cancel an older same-key retry');
+assert.equal(staleAfter429.failureKinds.rate_limit, 1, '429 must remain classified without reopening a spent Key');
 
 __resetTier1StateForTests();
 const staleAfterRefusal = makeState();
@@ -127,7 +127,7 @@ recordOutcome(
   { status: 503, latencyMs: 120 },
 );
 rotateWithNeutralEnd(staleAfterRefusal, node, KIND.AUTH, makeContext(staleAfterRefusal), true);
-assert.equal(staleAfterRefusal.sameNodeRetry, null, 'a pre-dispatch rejection must cancel an older retry');
+assert.equal(staleAfterRefusal.attempted.has(node.id), true, 'pre-dispatch refusal must keep the Key excluded');
 assert.equal(staleAfterRefusal.dispatches, 1, 'pre-dispatch rejection must not be charged as a Provider call');
 
 __resetTier1StateForTests();
@@ -147,7 +147,7 @@ recordOutcome(
   makeContext(staleAfterTierChange),
   { status: 429, latencyMs: 70 },
 );
-assert.equal(staleAfterTierChange.sameNodeRetry, null, 'a later Tier 2 failure must not resurrect an older Tier 1 attempt');
+assert.equal(staleAfterTierChange.attempted.has(node.id), true, 'an older Tier 1 failure must remain excluded');
 
 __resetTier1StateForTests();
 const throttled = makeState();

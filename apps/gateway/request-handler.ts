@@ -596,37 +596,9 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     }
   }
 
-  // Last resort: the plan is spent, but an unused logical attempt remains and the
-  // most recent transient failure was a native Tier 1 attempt. Retry that one key
-  // once, when the remaining wall clock is at least what the failed attempt took.
-  // A 429, refusal or invalid request never becomes a candidate, and a key whose
-  // circuit has opened meanwhile is no longer eligible.
-  const retry = state.sameNodeRetry;
-  if (
-    retry &&
-    route !== 'openai_images' &&
-    !state.hasRetriedSameNode &&
-    !state.retryShed &&
-    state.logicalAttempts < requestPolicy.maxAttempts &&
-    failoverBudgetMs - (Date.now() - requestStartMs) > retry.latencyMs &&
-    !request.signal?.aborted &&
-    state.retrySlot?.tryAcquire() !== false
-  ) {
-    state.hasRetriedSameNode = true;
-    state.sameNodeRetry = null;
-    state.requestedModel = retry.model;
-    state.attempted = new Set(config.nodes.filter((node) => node.id !== retry.nodeId).map((node) => node.id));
-    const retryLoopCtx: LoopContext = { ...loopCtx, feasibility: feasibilityForModel(retry.model), futureAttemptReserve: 0 };
-    logLazy(
-      logger,
-      'info',
-      () =>
-        `same-node retry request=${requestId} node=${retry.nodeId} model=${retry.model} logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
-    );
-    const retryResult = await runTierLoop(retryLoopCtx, { ...reqDescriptor, model: retry.model }, null);
-    if (retryResult) return deliver(retryResult, retryLoopCtx);
-  }
-
+  // The compatible candidate pool has been exhausted. Never replay an
+  // already-tried Key+model merely to spend unused max_attempts; a later
+  // request may probe recovery after the existing cooldown has elapsed.
   state.requestedModel = requestedModel;
   return buildExhaustedResponse(
     request,

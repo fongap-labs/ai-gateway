@@ -469,6 +469,93 @@ largeBodyReservation();
 assert.ok(admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024), 'releasing byte budget restores capacity');
 __resetBodyBudgetForTests();
 
+async function verifyFreeKeyRotation(failureStatus) {
+  const first = `tier1-rotate-a-${failureStatus}`;
+  const second = `tier1-rotate-b-${failureStatus}`;
+  const dispatches = [];
+  const env = {
+    AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    AIG_TIER1_NODES_01: JSON.stringify([node(first), node(second)]),
+    AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, tier_attempts: { tier1: 2 }, hedge: { enabled: false } } }),
+    AIG_INFERENCE_SERVICE: {
+      async fetch(request) {
+        const nodeId = request.headers.get('x-aig-node-id');
+        dispatches.push(nodeId);
+        if (dispatches.length === 1) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}`,
+              },
+            }),
+            {
+              status: failureStatus,
+              headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+            },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-tier1-rotate',
+            object: 'chat.completion',
+            created: 1,
+            model: CUTOVER_MODEL,
+            choices: [{ index: 0, message: { role: 'assistant', content: 'recovered' }, finish_reason: 'stop' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+        );
+      },
+    },
+  };
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${base.AIG_ACCESS_KEY_AIR}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'rotate Key on failure' }] }),
+  });
+  const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(dispatches.length, 2, 'one failing Tier 1 key is followed by one other Key');
+  assert.notEqual(dispatches[0], dispatches[1], 'never replay the same physical Key in a single request');
+  assert.deepEqual(new Set(dispatches), new Set([first, second]), 'no Tier 2 node is needed when alternate free Key exists');
+}
+await verifyFreeKeyRotation(429);
+await verifyFreeKeyRotation(503);
+await verifyFreeKeyRotation(422);
+
+// An attempt budget of eight is a ceiling, not a target. If the only Key
+// returns 503, the gateway must terminate after ONE physical dispatch.
+let exhaustedDispatches = 0;
+const exhaustedEnv = {
+  AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
+  AIG_ACCESS_MODELS_AIR: '*',
+  AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+  AIG_TIER1_NODES_01: JSON.stringify([node('only-failing-tier1')]),
+  AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 8, tier_attempts: { tier1: 8 }, hedge: { enabled: false } } }),
+  AIG_INFERENCE_SERVICE: {
+    async fetch(request) {
+      // A conversion-preflight RPC is not a physical Key/Provider dispatch.
+      // Only /internal/execute carries a selected node identity.
+      if (request.headers.get('x-aig-node-id')) exhaustedDispatches++;
+      return new Response(JSON.stringify({ error: { message: 'temporary upstream failure' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+      });
+    },
+  },
+};
+const exhaustedReq = new Request('https://gateway.example.invalid/v1/chat/completions', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${base.AIG_ACCESS_KEY_AIR}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'stop after pool exhaustion' }] }),
+});
+const exhaustedReply = await handleRequest(exhaustedReq, exhaustedEnv, { waitUntil() {}, passThroughOnException() {} });
+assert.ok(exhaustedReply.status >= 400, 'a truly unavailable pool cannot claim success');
+assert.equal(exhaustedDispatches, 1, 'a used Key must not be retried merely because max_attempts is eight');
+
 async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   const source = `primary-${failureStatus}`;
   const fallback = `fallback-${failureStatus}`;
