@@ -5,6 +5,7 @@
 // arbitrary conversational text. The client must select the declared function
 // and an authorized internal image model.
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
+import { generatedImageMime } from '../../packages/contracts/image-media.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
@@ -133,9 +134,13 @@ export async function runExplicitImageTool({
   if (typeof image !== 'string' || !image || image.length > MAX_IMAGE_TOOL_REPLY) {
     return fail(502, 'Image tool returned no valid image.', 'gateway_image_tool_reply_invalid');
   }
+  const mediaType = generatedImageMime(image);
+  if (!mediaType) {
+    return fail(502, 'Image tool returned unsupported or invalid image data.', 'gateway_image_tool_reply_invalid');
+  }
   // Explicit Chat integration uses Markdown data URI. Clients must opt into
   // rendering it; ordinary Chat requests and tool invocation remain distinct.
-  const content = `![Generated image](data:image/png;base64,${image})`;
+  const content = `![Generated image](data:${mediaType};base64,${image})`;
   const completion = {
     id: `chatcmpl-image-${crypto.randomUUID()}`,
     object: 'chat.completion',
