@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: Chat 绘图结果根据图片真实格式输出 PNG、JPEG、WebP 或 GIF，并拒绝无效图片数据，避免错误显示和重复付费。
+
 - 新增: AGENT 聊天请求可声明 `generate_image` 并选择 `tool_choice:auto`，由文本模型决定是否生成图片，实际生成仍由 Generation Center 单次执行。
 
 - 维护: 增加 503、422 跨模型及跨 Tier 回退验证，并在真正失败后恢复的成功响应中提供匿名派发数和回退证据。
