@@ -59,6 +59,7 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
     upstream = await invokeGenerationNode(env, {
       request,
       requestId,
+      traceparent: c.traceparent,
       node,
       logicalModel: effectiveModel,
       deadlineMs: c.attemptDeadlineMs,
