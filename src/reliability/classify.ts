@@ -234,6 +234,12 @@ export function classifyUpstreamStatus(
   if (status === 422 && looksLikeModelMissing(body)) {
     return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
   }
+  // OpenAI-compatible routers may encode a missing endpoint as HTTP 422 with
+  // a machine-readable endpoint_not_found code. Treat only this explicit
+  // signal as route-local; malformed payloads and all other 422s still stop.
+  if (status === 422 && /\bendpoint[_ -]?not[_ -]?found\b/i.test(String(body || ''))) {
+    return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+  }
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
