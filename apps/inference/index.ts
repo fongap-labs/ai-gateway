@@ -2,17 +2,17 @@
 // Copyright (c) 2026 Fongap Labs
 
 // Private inference HTTP entrypoint: contract authentication, endpoint dispatch.
-// Provider selection, OAuth resolution and the single physical fetch live in
-// execution.ts; do not add a second scheduler here.
+// Physical Provider execution lives in the shared execution core;
+// never add Tier scheduling or a second Provider call here.
 
 import { INFERENCE_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
-import { executeNative } from './execution.ts';
+import { executeNative } from '../../packages/execution-core/native.ts';
+import { problem } from '../../packages/execution-core/response.ts';
 import { handleInferencePreflight } from './preflight.ts';
-import { problem } from './response.ts';
 
 const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
 

@@ -2,17 +2,15 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
-import { executeNative as legacyExecuteNative } from '../apps/inference/execution.ts';
-import { preDispatchProblem } from '../apps/inference/response.ts';
-import { executeNative as sharedExecuteNative } from '../packages/execution-core/native.ts';
-import { preDispatchProblem as sharedPreDispatchProblem } from '../packages/execution-core/response.ts';
+import { executeNative } from '../packages/execution-core/native.ts';
+import { preDispatchProblem, problem } from '../packages/execution-core/response.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
 
-assert.equal(legacyExecuteNative, sharedExecuteNative, 'The Inference app must only re-export the neutral physical executor');
-assert.equal(preDispatchProblem, sharedPreDispatchProblem, 'Old and new private error exports must share one implementation');
+assert.equal(typeof executeNative, 'function', 'Both centers must use a single neutral physical executor');
+assert.equal(problem(403, 'center_unauthorized').status, 403, 'Neutral private errors retain their status contract');
 
 const internalKey = 'local-inference-center-contract-test-key-32';
 const providerSecret = 'test-provider-credential-not-a-real-key';

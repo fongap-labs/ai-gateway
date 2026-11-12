@@ -61,7 +61,10 @@ assert.match(source, /x-aig-perception-auth/);
 assert.match(source, /executeNative\(request, env, invocation, \{ center: 'perception' \}\)/);
 assert.doesNotMatch(source, /AIG_INFERENCE_AUTH_KEY|AIG_GENERATION_AUTH_KEY|\/internal\/health/);
 const runtime = read('packages/execution-core/native.ts');
-assert.match(read('apps/inference/execution.ts'), /export \* from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
+assert.match(source, /from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
+assert.match(source, /from '\.\.\/\.\.\/packages\/execution-core\/response\.ts'/);
+assert.match(read('apps/inference/index.ts'), /from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
+assert.doesNotMatch(source, /from '\.\.\/inference\//, 'Perception cannot use an Inference application module');
 assert.match(runtime, /options\.center === 'perception'/);
 assert.match(runtime, /hasImageInput\(clientBody\)/);
 assert.match(runtime, /getProviderProfile\(node\.provider\)\.imageInput/);
@@ -85,6 +88,20 @@ const env = {
   AIG_PERCEPTION_AUTH_KEY: 'local-contract-test-perception-key-0123456789',
   AIG_GENERATION_AUTH_KEY: 'local-contract-test-generation-key-0123456789',
 };
+// Both private entrypoints must return an identical fail-closed error
+// without forwarding malformed or unauthenticated requests to a Provider.
+const { handleInferenceCenterRequest } = await import('../apps/inference/index.ts');
+const { handlePerceptionCenterRequest } = await import('../apps/perception/index.ts');
+const unsignedRequest = new Request('https://center.internal/internal/execute', { method: 'POST' });
+const [inferenceRejected, perceptionRejected] = await Promise.all([
+  handleInferenceCenterRequest(unsignedRequest, env),
+  handlePerceptionCenterRequest(unsignedRequest, env),
+]);
+assert.equal(inferenceRejected.status, 403);
+assert.equal(perceptionRejected.status, 403);
+assert.deepEqual(await inferenceRejected.json(), await perceptionRejected.json(), 'Private center error envelopes must remain identical');
+assert.equal(inferenceRejected.headers.get('x-aig-result'), perceptionRejected.headers.get('x-aig-result'));
+
 assert.throws(
   () =>
     validateRemoteSecretInventory(
