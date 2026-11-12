@@ -11,6 +11,18 @@ import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailov
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
+// A physical-model rejection is local to its route, while malformed
+// client payloads must not trigger speculative cross-Provider replay.
+const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'No endpoints found for model physical-max');
+assert.equal(missing422.kind, KIND.MODEL_MISSING);
+assert.equal(missing422.action, 'rotate');
+assert.equal(missing422.modelScoped, true);
+const invalid422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'invalid request body: required field missing');
+assert.equal(invalid422.kind, KIND.CLIENT);
+assert.equal(invalid422.action, 'stop');
+const unavailable503 = classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporarily unavailable');
+assert.equal(unavailable503.action, 'rotate');
+
 const source = 'Code-Ultra';
 const effective = 'Code-Max';
 const node = {
