@@ -21,7 +21,7 @@ import { modelRegistryEntry, servesModel } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
-import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
+import { trackIsolateRequest } from '../../src/ratelimit/isolate-concurrency.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
@@ -56,27 +56,10 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   // clamped values per env object, so this costs one map lookup in steady state.
   const limits = getLimits(env);
   configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
-  // AIG_REQUEST_ADMISSION: cap concurrent body-carrying requests per isolate
-  // (see ratelimit/isolate-concurrency.ts). Bodyless requests — health, metrics,
-  // the dashboard — pass uncounted so monitoring survives a burst. Legacy mode
-  // keeps the byte-for-byte behavior: no gate is armed at all.
-  const useConcurrencyGate = limits.requestAdmission && limits.isolateMaxInFlight > 0 && request.body !== null;
-  const releaseConcurrency = useConcurrencyGate ? admitIsolateRequest(limits.isolateMaxInFlight) : () => {};
-  if (!releaseConcurrency) {
-    const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
-    return gatewayError(
-      request,
-      env,
-      route,
-      503,
-      'Gateway is busy with concurrent requests; retry shortly.',
-      crypto.randomUUID(),
-      undefined,
-      { 'retry-after': '1' },
-      'gateway_concurrency_exhausted',
-      true,
-    );
-  }
+  // Keep isolate activity observable without enforcing an arbitrary number
+  // of concurrent requests. The byte-budget below remains a hard memory gate
+  // regardless of AIG_ISOLATE_MAX_IN_FLIGHT (legacy variable, now ignored).
+  const releaseActivity = request.body !== null ? trackIsolateRequest() : () => {};
   // Concurrent large bodies can exhaust the isolate's memory; past the budget the
   // client is asked to retry instead (see ratelimit/body-budget.ts).
   // A request without a body is charged nothing, whatever its Content-Length says.
@@ -93,7 +76,7 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
         : limits.maxBodyBytes;
   const releaseBody = admitRequestBody(declaredLength, worstCaseBodyBytes);
   if (!releaseBody) {
-    releaseConcurrency();
+    releaseActivity();
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
     return gatewayError(
       request,
@@ -108,17 +91,13 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
       true,
     );
   }
-  let isConcurrencyOwnedByResponse = false;
   try {
-    const response = await handleAdmittedRequest(request, env, ctx);
-    // With the optional concurrency cap disabled, preserve the original stream
-    // rather than wrapping every SSE response in a second ReadableStream.
-    const responseWithRelease = useConcurrencyGate ? releaseIsolateRequestAfterResponse(response, releaseConcurrency) : response;
-    isConcurrencyOwnedByResponse = true;
-    return responseWithRelease;
+    return await handleAdmittedRequest(request, env, ctx);
   } finally {
+    // Count only the Gateway execution stage. Existing stream metrics observe
+    // active downstream SSE connections; do not wrap or buffer SSE to count it.
     releaseBody();
-    if (!isConcurrencyOwnedByResponse) releaseConcurrency();
+    releaseActivity();
   }
 }
 

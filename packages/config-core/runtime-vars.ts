@@ -45,11 +45,11 @@ export const RUNTIME_TUNABLES = [
   { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 60_000 },
   { name: 'AIG_HEDGE_DELAY_MS', type: 'int', min: 0, max: 600_000, def: 3_000 },
   { name: 'AIG_REQUEST_HEDGE_MAX', type: 'int', min: 0, max: 3, def: 1 },
-  // (AIG_REQUEST_ADMISSION) Optional per-isolate hard cap for body-carrying
-  // requests. Disabled by default: the independent bounded request-body pool
-  // and retry budget remain active, without rejecting a short burst solely
-  // because several streaming responses are still open. Operators may set
-  // a positive cap if their workload needs additional isolate protection.
+  // Legacy read-only compatibility tunable. This is intentionally IGNORED by
+  // request admission: concurrency count is telemetry-only, and memory byte
+  // admission plus retry-budget limits remain the resource safeguards.
+  // Keep the name for existing deployment variable compatibility; do not
+  // re-enable hard count-based HTTP 503 through it.
   { name: 'AIG_ISOLATE_MAX_IN_FLIGHT', type: 'int', min: 0, max: 512, def: 0 },
   // (AIG_REQUEST_ADMISSION) Worst-case charge AND read ceiling for a request
   // body without a usable Content-Length (chunked transfer): its true size is
@@ -209,11 +209,12 @@ export const RUNTIME_BOOL_VARS: RuntimeBoolVar[] = [
   // (default) keeps the legacy admission byte-for-byte: no isolate concurrency
   // cap, chunked bodies charged and read at AIG_REQUEST_BODY_MAX_BYTES, the
   // resolved policy's max_attempts, and an AIG_REQUEST_HEDGE_MAX default of 1.
-  // true enables: AIG_ISOLATE_MAX_IN_FLIGHT, the AIG_CHUNKED_BODY_MAX_BYTES
-  // charge/read cap for Content-Length-less bodies, per-mode logical-attempt
-  // ceilings (AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS), and
-  // switches the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set
-  // AIG_REQUEST_HEDGE_MAX always wins on both sides of the flag).
+  // true enables: the AIG_CHUNKED_BODY_MAX_BYTES charge/read cap for
+  // Content-Length-less bodies, per-mode logical-attempt ceilings
+  // (AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS), and switches
+  // the AIG_REQUEST_HEDGE_MAX DEFAULT from 1 to 0 (an explicitly set value
+  // always wins). AIG_ISOLATE_MAX_IN_FLIGHT is a deprecated, read-only
+  // compatibility value and never caps request count in either mode.
   { name: 'AIG_REQUEST_ADMISSION', def: false },
   // Observability / persistence cost guards. false (default) keeps every
   // documented default byte-for-byte: KV affinity writes ON, every token-usage
