@@ -148,9 +148,10 @@ assert.match(sharedProtocolTypes, /export type Protocol = 'openai' \| 'anthropic
 assert.match(sharedProtocolTypes, /export type Surface = import\('\.\/execution\.ts'\)\.ExecutionSurface/);
 assert.match(sharedQuotaSignal, /export function extractQuotaSignal\(/);
 assert.ok(sharedQuotaSignal.includes("from './protocol.ts'"));
-for (const center of ['apps/inference/execution.ts', 'apps/generation/execution.ts']) {
+for (const center of ['packages/execution-core/native.ts', 'apps/generation/execution.ts']) {
   const source = readFileSync(join(root, center), 'utf8');
-  assert.ok(source.includes("from '../../packages/contracts/quota-signal.ts'"), `${center} must use shared quota parser`);
+  const quotaImport = center.startsWith('packages/') ? "from '../contracts/quota-signal.ts'" : "from '../../packages/contracts/quota-signal.ts'";
+  assert.ok(source.includes(quotaImport), `${center} must use shared quota parser`);
   assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/src\/reliability\/quota-signal\.ts['"]/);
 }
 const gatewayCenterQuota = readFileSync(join(root, 'apps/gateway/reliability/center-quota.ts'), 'utf8');
@@ -211,7 +212,7 @@ const legacyProviderRegistry = readFileSync(join(root, 'src/providers/registry.t
 assert.match(legacyProviderRegistry, /streamUsageEnabled \} from '..\/..\/packages\/contracts\/provider-usage.ts'/);
 const neutralProviderUsage = readFileSync(join(root, 'packages/contracts/provider-usage.ts'), 'utf8');
 assert.match(neutralProviderUsage, /getProviderProfile\(/, 'Usage hint policy must be driven by credential-free provider profiles');
-const physicalExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const physicalExecutor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 assert.doesNotMatch(physicalExecutor, /from ['"][^'"]*\/src\//, 'Private executor must never import src implementation modules');
 
 // Public request policy and cache implementations are Gateway-owned. The
@@ -317,7 +318,7 @@ for (const obsolete of [
 for (const owned of [
   'apps/gateway/preflight.ts',
   'apps/gateway/attempt/inference-dispatch.ts',
-  'apps/inference/execution.ts',
+  'packages/execution-core/native.ts',
   'src/providers/registry.ts',
   'src/providers/types.ts',
   'src/types/node.ts',
@@ -727,9 +728,25 @@ assert.doesNotMatch(
 assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
 assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
 assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
+// The neutral physical executor is the unique implementation; the old
+// Inference file is an export-only compatibility facade for existing imports.
+const inferenceExecutionFacade = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const inferenceResponseFacade = readFileSync(join(root, 'apps/inference/response.ts'), 'utf8');
+const sharedNativeOwner = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
+const sharedResponseOwner = readFileSync(join(root, 'packages/execution-core/response.ts'), 'utf8');
+assert.match(inferenceExecutionFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
+assert.match(inferenceResponseFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/response\.ts'/);
+for (const [legacy, source] of [['execution', inferenceExecutionFacade], ['response', inferenceResponseFacade]]) {
+  assert.doesNotMatch(source, /^import |^export (?:async )?(?:function|const|class) /m, `Inference ${legacy} legacy path cannot retain runtime implementation`);
+}
+assert.match(sharedNativeOwner, /export async function executeNative\(/, 'Neutral executor must own the physical invocation');
+assert.match(sharedResponseOwner, /export function preDispatchProblem\(/, 'Neutral error envelope must preserve pre-dispatch result classification');
+assert.doesNotMatch(sharedNativeOwner, /from ['"][^'"]*\/(?:apps|src)\//, 'Neutral executor must not import application implementations');
+assert.doesNotMatch(sharedResponseOwner, /from ['"][^'"]*\/(?:apps|src)\//, 'Neutral response must not import application implementations');
 for (const center of ['inference', 'generation']) {
   const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
-  const executor = readFileSync(join(root, 'apps', center, 'execution.ts'), 'utf8');
+  const executorPath = center === 'inference' ? 'packages/execution-core/native.ts' : 'apps/generation/execution.ts';
+  const executor = readFileSync(join(root, executorPath), 'utf8');
   assert.doesNotMatch(
     entry,
     /getProviderAdapter|resolveSubscriptionCredential|await fetch\(/,
@@ -943,12 +960,12 @@ assert.doesNotMatch(
   'Inference stream codec must not own Gateway commit/failover',
 );
 
-const inferenceExecutor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const inferenceExecutor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const centerDispatch = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'Inference must execute the physical protocol request conversion');
 assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
-const responseCenter = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const responseCenter = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const responseGateway = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 const responseContract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
 assert.match(responseCenter, /replyFromNativeObject\(upstreamProtocol, native\)/, 'Inference must decode native reply objects before forwarding');
@@ -1003,7 +1020,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame contract cannot import legacy Gateway source');
 
 const inferenceV4Contract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
-const inferenceV4Executor = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const inferenceV4Executor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const inferenceV4Dispatcher = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
@@ -1025,7 +1042,7 @@ assert.doesNotMatch(
 );
 assert.match(inferenceV4Success, /responseFormat !== INFERENCE_TRANSLATED_OBJECT_FORMAT/, 'Gateway must reject untagged converted objects');
 assert.match(inferenceV4Success, /responseFormat !== INFERENCE_FRAMED_STREAM_FORMAT/, 'Gateway must reject unframed converted SSE');
-const centerBudget = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
+const centerBudget = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const budgetGateway = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const budgetSettlement = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference must enforce v5 stream budgets');
