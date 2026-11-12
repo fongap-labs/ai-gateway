@@ -33,8 +33,8 @@ for (const file of retired) {
 function read(path) {
   return readFileSync(join(root, path), 'utf8');
 }
-const runtimeVars = read('src/config/runtime-vars.ts');
-const nodeType = read('src/types/node.ts');
+const runtimeVars = read('packages/config-core/runtime-vars.ts');
+const nodeType = read('packages/contracts/runtime-node.ts');
 const providers = read('src/providers/types.ts');
 const deployment = read('scripts/github-deployment-config.mjs');
 for (const [file, source] of [
@@ -52,7 +52,7 @@ assert.ok(!providers.includes('subscription?:'), 'Provider registry may not expo
 const preflight = read('apps/gateway/preflight.ts');
 assert.ok(preflight.includes("pathname.startsWith('/oauth/')"), 'Legacy OAuth routes must fail closed');
 assert.ok(preflight.includes('status: 404') || preflight.includes('404'), 'Retired OAuth onboarding must return 404');
-const nodeConfig = read('src/config/nodes.ts');
+const nodeConfig = read('packages/config-core/nodes.ts');
 assert.ok(nodeConfig.includes("Object.hasOwn(rawNode, 'auth')"), 'Old OAuth node input must be explicitly rejected');
 assert.ok(nodeConfig.includes("status: 'invalid'"), 'Migration errors must invalidate the whole node configuration');
 console.log('No legacy Tier 2 member-subscription runtime remains; deprecated configuration and routes fail closed.');
