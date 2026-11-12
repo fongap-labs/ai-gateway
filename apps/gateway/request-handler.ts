@@ -13,8 +13,10 @@
 // Streaming rule: the first-event guard runs BEFORE any streaming Response is
 // returned to the client; after that point transparent failover is forbidden.
 
+import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
+import { modelRegistryEntry } from '../../src/config/registry.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
@@ -168,11 +170,33 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   }
 
   const requestPolicy = policy;
-  // Images are never silently substituted with text or sibling model aliases.
-  const modelPlan =
+  // An image may only move to a model explicitly listed in the requested
+  // model's configured fallback chain, and only if that model declares vision.
+  // Never silently strip an image, infer vision from the provider name, or
+  // treat an image-generation route as image understanding.
+  const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
+  const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
       : buildModelFallbackPlan(requestedModel, knownModels, requestPolicy.maxAttempts, loadModelsConfig(env));
+  const modelPlan = imageInputRequired
+    ? configuredPlan
+        .map((round) => round.filter((pass) => modelRegistryEntry(env, pass.model).catalog.capabilities.vision === true))
+        .filter((round) => round.length > 0)
+    : configuredPlan;
+  if (imageInputRequired && modelPlan.length === 0) {
+    return gatewayError(
+      request,
+      env,
+      route,
+      400,
+      'Image input is unavailable for the requested model and its explicitly configured fallback models.',
+      requestId,
+      undefined,
+      undefined,
+      'gateway_image_input_unsupported',
+    );
+  }
   const familyModels = new Set(modelPlan.flat().map((pass) => pass.model.trim().toLowerCase()));
   const familyFallback = familyModels.size > 1;
 
