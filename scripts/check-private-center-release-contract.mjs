@@ -35,7 +35,7 @@ const config = {
   },
   perception: {
     name: 'ai-perception-center',
-    main: 'src/perception/perception-center-entry.ts',
+    main: 'apps/perception/index.ts',
     workers_dev: false,
     vars: { AIG_BUILD_SHA: sha, AIG_TIER1_NODES_01: inferenceNodes },
   },
