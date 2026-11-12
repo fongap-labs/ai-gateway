@@ -97,10 +97,7 @@ export function gatewayError(
   // It does NOT change Key eligibility, circuit state or Provider quota.
   const kinds = details?.failure_kinds;
   const hadHeadersTimeout =
-    kinds !== null &&
-    typeof kinds === 'object' &&
-    !Array.isArray(kinds) &&
-    Number((kinds as Record<string, unknown>).headers_timeout) > 0;
+    kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
   const deferredFamilyRetry =
     gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED &&
     hadHeadersTimeout &&
