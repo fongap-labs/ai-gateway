@@ -222,7 +222,10 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       body: bodyJson,
       visionModel: delegateModel,
       remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-      execute: (subrequest) => handleRequest(subrequest, env, ctx),
+      // The synthesized image request is bounded and derived from this already
+      // admitted body. Re-enter preflight, authorization and scheduler, but do
+      // not charge the same image a second time to the isolate body gate.
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
     });
     if (!visualResult.ok) {
       return gatewayError(
