@@ -12,6 +12,7 @@ import {
   parseExecutionResponse,
   serializeExecutionError,
 } from '../packages/contracts/execution.ts';
+import { childTraceparent, createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import {
   attemptBudgetWindowMs,
   attemptFirstEventTimeoutMs,
@@ -59,6 +60,32 @@ assert.equal(authorizeExecutionRequest(request, 'short', 'x-aig-inference-auth')
 assert.equal(authorizeExecutionRequest(request, key, 'authorization'), false);
 assert.equal(headers.has('authorization'), false);
 assert.equal(headers.has('cookie'), false);
+
+// W3C version 00: each center attempt uses a fresh span, all siblings share
+// the Gateway-generated UUID-derived trace ID. Client context is untrusted.
+const expectedTraceId = traceIdForRequest(invocation.requestId);
+const trace = parseTraceparent(headers.get('traceparent'));
+assert.equal(trace?.traceId, expectedTraceId);
+assert.equal(trace?.flags, '00', 'unconfigured sampling must not claim a recorded trace');
+const sibling = parseTraceparent(createInternalTraceparent(invocation.requestId));
+assert.equal(sibling?.traceId, expectedTraceId);
+assert.notEqual(sibling?.spanId, trace?.spanId);
+const child = parseTraceparent(childTraceparent(headers.get('traceparent'), invocation.requestId));
+assert.equal(child?.traceId, expectedTraceId);
+assert.notEqual(child?.spanId, trace?.spanId);
+assert.equal(child?.flags, trace?.flags);
+assert.equal(parseTraceparent('00-00000000000000000000000000000000-0123456789abcdef-00'), null);
+assert.equal(parseTraceparent('00-0123456789abcdef0123456789abcdef-0000000000000000-00'), null);
+assert.equal(parseTraceparent('01-0123456789abcdef0123456789abcdef-0123456789abcdef-00'), null);
+assert.equal(traceIdForRequest('not-a-request-id'), null);
+assert.equal(childTraceparent('00-ffffffffffffffffffffffffffffffff-0123456789abcdef-00', invocation.requestId), null);
+const forgedHeaders = buildExecutionHeaders(
+  { ...invocation, traceparent: '00-ffffffffffffffffffffffffffffffff-0123456789abcdef-01' },
+  'x-aig-inference-auth',
+  key,
+);
+assert.equal(parseTraceparent(forgedHeaders.get('traceparent'))?.traceId, expectedTraceId);
+assert.equal(forgedHeaders.has('tracestate'), false);
 
 for (const [name, value] of [
   ['x-aig-contract-version', '2'],
