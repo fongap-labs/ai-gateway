@@ -6,9 +6,7 @@
 // it never calls a Provider directly or changes the requested text model.
 type ImagePart = { type: 'image_url'; image_url: string | { url: string } };
 type ChatMessage = { role: string; content: unknown; [key: string]: unknown };
-type PreprocessResult =
-  | { ok: true; body: Record<string, unknown> }
-  | { ok: false; status: number; code: string; message: string };
+type PreprocessResult = { ok: true; body: Record<string, unknown> } | { ok: false; status: number; code: string; message: string };
 
 const VISION_INSTRUCTION =
   'Describe the attached image(s) for a text-only assistant. Preserve visible text, error messages, code, UI controls, spatial relationships, and relevant details. ' +
@@ -60,7 +58,12 @@ export async function preprocessChatImages({
     return { ...message, content: textParts };
   });
   if (userIndex < 0 || images.length === 0 || images.length > 8) {
-    return { ok: false, status: 400, code: 'gateway_vision_preprocess_shape_unsupported', message: 'Only 1–8 supported Chat image attachments can be preprocessed.' };
+    return {
+      ok: false,
+      status: 400,
+      code: 'gateway_vision_preprocess_shape_unsupported',
+      message: 'Only 1–8 supported Chat image attachments can be preprocessed.',
+    };
   }
   if (remainingMs < 3_000) {
     return { ok: false, status: 504, code: 'gateway_vision_preprocess_deadline', message: 'Not enough time remains for image preprocessing.' };
@@ -79,9 +82,9 @@ export async function preprocessChatImages({
       typeof message.content === 'string'
         ? [message.content]
         : Array.isArray(message.content)
-          ? message.content.filter((part: unknown) => !!part && typeof part === 'object' && (part as Record<string, unknown>).type === 'text').map(
-              (part: unknown) => String((part as Record<string, unknown>).text ?? ''),
-            )
+          ? message.content
+              .filter((part: unknown) => !!part && typeof part === 'object' && (part as Record<string, unknown>).type === 'text')
+              .map((part: unknown) => String((part as Record<string, unknown>).text ?? ''))
           : [],
     )
     .join('\n')
@@ -122,7 +125,12 @@ export async function preprocessChatImages({
     // Never turn a malformed preprocessor response into a text-only answer.
   }
   if (typeof observations !== 'string' || !observations.trim()) {
-    return { ok: false, status: 502, code: 'gateway_vision_preprocess_reply_invalid', message: 'Vision preprocessor did not return visual observations.' };
+    return {
+      ok: false,
+      status: 502,
+      code: 'gateway_vision_preprocess_reply_invalid',
+      message: 'Vision preprocessor did not return visual observations.',
+    };
   }
   const lastUser = rewritten[userIndex];
   if (!lastUser) return { ok: false, status: 400, code: 'gateway_vision_preprocess_shape_unsupported', message: 'Missing Chat user message.' };
