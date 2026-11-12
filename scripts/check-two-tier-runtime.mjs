@@ -411,7 +411,6 @@ async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
 await verifyCrossModelProviderFailover(503, 'temporarily unavailable');
 await verifyCrossModelProviderFailover(422, 'No endpoints found for model physical-primary');
 
-
 // Preserve legacy 400-as-node-incompatibility routing (tested above), but
 // a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
