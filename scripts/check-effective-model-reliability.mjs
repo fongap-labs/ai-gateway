@@ -142,6 +142,43 @@ recordOutcome(
 assert.ok(getTier1Model(node.id, effective).cooldownUntil > Date.now());
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
+// Duplicate 404 endpoints are a request-local routing defect, not new
+// capacity on every different free key. Keep paid and alternate routes usable.
+__resetTier1StateForTests();
+const endpointPeers = [
+  { ...node, id: 'same-endpoint-a', baseUrl: 'https://same.example/v1' },
+  { ...node, id: 'same-endpoint-b', baseUrl: 'https://same.example/v1' },
+  { ...node, id: 'different-endpoint', baseUrl: 'https://other.example/v1' },
+  { ...node, id: 'different-model', baseUrl: 'https://same.example/v1', models: { [effective]: 'other-physical' } },
+  { ...node, id: 'paid-same-endpoint', tier: 'tier-2', baseUrl: 'https://same.example/v1' },
+  { ...node, id: 'different-surface', baseUrl: 'https://same.example/v1', surfaces: ['responses'] },
+];
+const endpointState = makeState();
+endpointState.nodes = endpointPeers;
+recordOutcome(
+  endpointState,
+  endpointPeers[0],
+  classifyUpstreamStatus(404, new Headers(), {}, Date.now(), 'Not Found'),
+  makeContext(endpointState),
+  { status: 404, latencyMs: 20 },
+);
+assert.equal(endpointState.attempted.has('same-endpoint-b'), true, 'equivalent free key should not re-dispatch a missing endpoint');
+for (const id of ['different-endpoint', 'different-model', 'paid-same-endpoint', 'different-surface']) {
+  assert.equal(endpointState.attempted.has(id), false, id + ' must remain eligible');
+}
+assert.equal(endpointState.logicalAttempts, 1, 'skipped duplicate endpoints must consume no extra attempts');
+assert.equal(endpointState.dispatches, 1, 'skipped duplicate endpoints must consume no extra physical dispatch');
+const missingModelState = makeState();
+missingModelState.nodes = endpointPeers;
+recordOutcome(
+  missingModelState,
+  endpointPeers[0],
+  classifyUpstreamStatus(404, new Headers(), {}, Date.now(), 'Model does not exist'),
+  makeContext(missingModelState),
+  { status: 404, latencyMs: 20 },
+);
+assert.equal(missingModelState.attempted.has('same-endpoint-b'), false, 'model-missing must not suppress a separate key');
+
 __resetTier1StateForTests();
 const success = makeState();
 const successContext = makeContext(success);
