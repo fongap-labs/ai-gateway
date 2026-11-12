@@ -278,11 +278,7 @@ export async function runAutomaticImageTool({
     });
   }
   if (calls.length !== 1) {
-    return fail(
-      502,
-      'The text model selected multiple image tools; no image was generated.',
-      'gateway_image_tool_selection_invalid',
-    );
+    return fail(502, 'The text model selected multiple image tools; no image was generated.', 'gateway_image_tool_selection_invalid');
   }
   const fn = calls[0] && typeof calls[0] === 'object' ? (calls[0] as Record<string, unknown>).function : null;
   if (!fn || typeof fn !== 'object' || (fn as Record<string, unknown>).name !== IMAGE_TOOL_NAME) {
