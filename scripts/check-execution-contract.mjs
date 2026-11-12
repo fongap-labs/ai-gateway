@@ -12,6 +12,7 @@ import {
   parseExecutionResponse,
   serializeExecutionError,
 } from '../packages/contracts/execution.ts';
+import { withNativeSpan } from '../packages/contracts/native-tracing.ts';
 import { childTraceparent, createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import {
   attemptBudgetWindowMs,
@@ -20,6 +21,47 @@ import {
   centerResponseDeadlineMs,
   requestSizeAllowanceMs,
 } from '../src/config/timeouts.ts';
+
+const spanRecords = [];
+const traceCtx = {
+  tracing: {
+    async enterSpan(name, run) {
+      const attributes = {};
+      const span = { isTraced: true, setAttribute: (key, value) => { attributes[key] = value; } };
+      spanRecords.push({ name, attributes });
+      return run(span);
+    },
+  },
+};
+const nativeResponse = await withNativeSpan(
+  traceCtx,
+  'aig.inference.execute',
+  { requestId: '12345678-1234-1234-1234-123456789abc', nodeId: 'safe-node', model: 'Code-Max', center: 'inference', phase: 'execute' },
+  async () => new Response('ok', { status: 201 }),
+);
+assert.equal(nativeResponse.status, 201);
+assert.equal(spanRecords.length, 1);
+assert.equal(spanRecords[0].name, 'aig.inference.execute');
+assert.equal(spanRecords[0].attributes['aig.model'], 'Code-Max');
+assert.equal(spanRecords[0].attributes['aig.node_id'], 'safe-node');
+assert.equal(spanRecords[0].attributes['http.response.status_code'], 201);
+assert.equal(Object.keys(spanRecords[0].attributes).some((key) => /secret|body|cookie|authorization/i.test(key)), false);
+let executedWithoutTracing = 0;
+await withNativeSpan(undefined, 'aig.noop', { requestId: 'test' }, async () => { executedWithoutTracing++; });
+assert.equal(executedWithoutTracing, 1, 'non-Cloudflare execution still succeeds without native tracing');
+const skippedAttrs = [];
+await withNativeSpan(
+  { tracing: { enterSpan: (_name, run) => run({ isTraced: false, setAttribute: (...args) => skippedAttrs.push(args) }) } },
+  'aig.unsampled',
+  { requestId: 'test' },
+  async () => 'ok',
+);
+assert.equal(skippedAttrs.length, 0, 'unsampled native spans avoid attribute writes');
+await assert.rejects(
+  () => withNativeSpan(traceCtx, 'aig.reject', { requestId: 'test' }, async () => { throw new Error('expected'); }),
+  /expected/,
+  'tracing never changes request failure behavior',
+);
 
 const now = Date.now();
 assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_750);
