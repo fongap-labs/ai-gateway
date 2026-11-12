@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: 在标准 Chat Completions 中显式选择 `generate_image` 函数、传入授权的 `metadata.aig_image_model` 时，可经现有 Generation Center 生成图片并转换为 Chat 回复；支持流式响应，限定 AGENT 权限，不猜测普通文本的绘图意图。
+
 - 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
 
 - 新增: 可通过 `AIG_MODELS_CONFIG` 显式配置 `vision_delegate`，让纯文本模型先用 Omni 经 Perception 识图，再由原模型回答；保留鉴权与原有回退链。
