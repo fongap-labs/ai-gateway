@@ -16,6 +16,8 @@ import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
+import { __resetBodyBudgetForTests, admitRequestBody } from '../src/ratelimit/body-budget.ts';
+import { __resetIsolateConcurrencyForTests, snapshotIsolateRequestActivity } from '../src/ratelimit/isolate-concurrency.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import {
@@ -48,7 +50,7 @@ assert.equal(
 assert.equal(
   getLimits({ AIG_REQUEST_ADMISSION: 'true', AIG_ISOLATE_MAX_IN_FLIGHT: '4' }).isolateMaxInFlight,
   4,
-  'explicit positive caps remain available',
+  'the historical numeric setting remains parsed for deployment compatibility, but cannot deny requests',
 );
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
@@ -378,6 +380,94 @@ await verifyTier1FailureFallsBack(429);
 await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
 await verifyTier1FailureFallsBack(504);
+
+// A configured legacy count limit must never reject a healthy ninth request.
+// Hold twelve actual Gateway -> private-center executions open concurrently;
+// all must complete normally under the existing request-body byte budget.
+__resetIsolateConcurrencyForTests();
+let admitBurstArrivals = 0;
+let resolveAdmissionBurst;
+let markAdmissionBurstReady;
+const admissionBurstBarrier = new Promise((resolve) => {
+  resolveAdmissionBurst = resolve;
+});
+const admissionBurstReady = new Promise((resolve) => {
+  markAdmissionBurstReady = resolve;
+});
+const admissionBurstEnv = {
+  AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
+  AIG_ACCESS_MODELS_AIR: '*',
+  AIG_REQUEST_ADMISSION: 'true',
+  AIG_ISOLATE_MAX_IN_FLIGHT: '1',
+  AIG_REQUEST_HEDGE_MAX: '0',
+  AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+  AIG_TIER1_NODES_01: JSON.stringify([node('admission-burst-node')]),
+  AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
+  AIG_INFERENCE_SERVICE: {
+    async fetch() {
+      admitBurstArrivals++;
+      if (admitBurstArrivals === 12) markAdmissionBurstReady();
+      await admissionBurstBarrier;
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl-burst',
+          object: 'chat.completion',
+          created: 1,
+          model: CUTOVER_MODEL,
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+      );
+    },
+  },
+};
+const burstRequests = Array.from({ length: 12 }, (_, i) =>
+  handleRequest(
+    new Request('https://gateway.example.invalid/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: `request ${i}` }] }),
+    }),
+    admissionBurstEnv,
+    { waitUntil() {}, passThroughOnException() {} },
+  ),
+);
+try {
+  await Promise.race([
+    admissionBurstReady,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Hard count gate or another scheduler prevented twelve concurrent arrivals')), 8_000),
+    ),
+  ]);
+  const activity = snapshotIsolateRequestActivity();
+  assert.equal(admitBurstArrivals, 12);
+  assert.ok(activity.peak >= 12, 'all twelve in-flight requests must be admitted despite legacy count=1');
+  assert.equal(activity.active, 12);
+  const metrics = await metricsResponse(new Request('https://gateway.example.invalid/metrics'), admissionBurstEnv, 'admission-metrics').text();
+  assert.ok(metrics.includes('gateway_isolate_handlers_active{} 12'), 'active handler gauge must report real concurrent work');
+} finally {
+  resolveAdmissionBurst();
+}
+const burstResults = await Promise.all(burstRequests);
+assert.deepEqual(
+  burstResults.map((result) => result.status),
+  Array.from({ length: 12 }, () => 200),
+  'request count alone must not trigger gateway_concurrency_exhausted',
+);
+assert.equal(snapshotIsolateRequestActivity().active, 0, 'all activity counters must release after response headers');
+
+__resetBodyBudgetForTests();
+const largeBodyReservation = admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024);
+assert.ok(largeBodyReservation, 'one 20 MiB body is admitted under the independent 32 MiB memory budget');
+assert.equal(
+  admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024),
+  null,
+  'removing request-count rejection must never disable the 32 MiB body-memory budget',
+);
+largeBodyReservation();
+assert.ok(admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024), 'releasing byte budget restores capacity');
+__resetBodyBudgetForTests();
 
 async function verifyFreeKeyRotation(failureStatus) {
   const first = `tier1-rotate-a-${failureStatus}`;
