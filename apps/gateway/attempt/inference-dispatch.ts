@@ -119,7 +119,11 @@ export async function dispatchInferenceAttempt(
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
     return stopForCenter(c, 504, 'gateway_inference_deadline_expired', center);
   }
-  const windowMs = c.attemptCapMs && !hasBufferedResponse ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
+  // A sibling-hop cap protects an untried compatible model regardless of
+  // streaming mode. Buffered responses still use the full assigned attempt
+  // window for headers, but cannot consume the next model's escape window.
+  // No sibling means attemptCapMs is null and retains the full legacy window.
+  const windowMs = c.attemptCapMs ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
   const centerMayBufferResponse = hasBufferedResponse || returnStream;
   const headersTimeout = attemptHeadersTimeoutMs(
