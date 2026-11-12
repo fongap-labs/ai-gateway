@@ -17,6 +17,10 @@ const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'N
 assert.equal(missing422.kind, KIND.MODEL_MISSING);
 assert.equal(missing422.action, 'rotate');
 assert.equal(missing422.modelScoped, true);
+const endpoint422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"endpoint_not_found"}}');
+assert.equal(endpoint422.kind, KIND.ENDPOINT_NOT_FOUND);
+assert.equal(endpoint422.action, 'rotate');
+assert.equal(endpoint422.counted, false);
 const invalid422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'invalid request body: required field missing');
 assert.equal(invalid422.kind, KIND.CLIENT);
 assert.equal(invalid422.action, 'stop');
@@ -187,6 +191,15 @@ recordOutcome(
   { status: 404, latencyMs: 20 },
 );
 assert.equal(missingModelState.attempted.has('same-endpoint-b'), false, 'model-missing must not suppress a separate key');
+const endpoint422State = makeState();
+endpoint422State.nodes = endpointPeers;
+recordOutcome(endpoint422State, endpointPeers[0], endpoint422, makeContext(endpoint422State), {
+  status: 422,
+  latencyMs: 20,
+});
+assert.equal(endpoint422State.attempted.has('same-endpoint-b'), true, 'explicit 422 endpoint rejection must skip equivalent routes');
+assert.equal(endpoint422State.attempted.has('different-endpoint'), false);
+assert.equal(endpoint422State.dispatches, 1);
 const throttleState = makeState();
 throttleState.nodes = endpointPeers;
 recordOutcome(
