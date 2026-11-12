@@ -14,6 +14,7 @@
 //   openai    -> chat_completions, responses
 //   anthropic -> messages
 
+import type { Protocol, Surface } from '../contracts/protocol.ts';
 import {
   ANTHROPIC_SURFACE_PATH,
   buildAnthropicHeaders,
@@ -32,7 +33,6 @@ import {
   OPENAI_SURFACE_PATH,
   resolveOpenAIPath,
 } from './openai-native.ts';
-import type { Protocol, Surface } from '../contracts/protocol.ts';
 
 export { isOpenAIStreamingResponse, withUsageStreamOptions } from '../protocol-core/openai.ts';
 export {
