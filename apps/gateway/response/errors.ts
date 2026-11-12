@@ -150,6 +150,7 @@ export function buildBudgetExhaustedResponse(
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
     ...conversionRejectedDetails(state),
+    ...summarizeFailoverAttempts(state.attempts),
     ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
@@ -247,6 +248,7 @@ export function buildExhaustedResponse(
     hedges: state.hedges,
     ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
     ...conversionRejectedDetails(state),
+    ...summarizeFailoverAttempts(state.attempts),
     ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts } : {}),
   };
   return gatewayError(
@@ -372,6 +374,7 @@ export function buildClientErrorResponse(
           dispatches: state.dispatches,
           hedges: state.hedges,
           ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+          ...summarizeFailoverAttempts(state.attempts),
           ...attemptsDetail,
         },
       },
@@ -458,4 +461,53 @@ export function terminalStatus(failureKinds?: Partial<Record<FailureKind, number
     }
   }
   return bestStatus;
+}
+
+/**
+ * Compact failover evidence safe for default client errors. Only count logical
+ * model changes and physical dispatches by tier: never reveal a provider,
+ * account, Key ID, raw error, upstream model or configured topology.
+ * The newest 64 events bound CPU work and response size in Workers Free.
+ */
+export function summarizeFailoverAttempts(attempts: ReadonlyArray<Record<string, unknown>>): {
+  failover_summary?: {
+    model_switches: number;
+    distinct_models: number;
+    tier1_dispatches: number;
+    tier2_dispatches: number;
+    other_dispatches: number;
+    truncated: boolean;
+  };
+} {
+  const tail = attempts.slice(-64);
+  let previous: string | null = null;
+  let switches = 0;
+  let tier1 = 0;
+  let tier2 = 0;
+  let other = 0;
+  const models = new Set<string>();
+  for (const attempt of tail) {
+    // A denied admission is not a Provider dispatch, even if it was logged.
+    if (attempt.dispatched === false) continue;
+    const model = typeof attempt.effective_model === 'string' && attempt.effective_model ? attempt.effective_model : null;
+    if (model) {
+      if (previous !== null && previous !== model) switches++;
+      previous = model;
+      models.add(model);
+    }
+    if (attempt.tier === 'tier-1') tier1++;
+    else if (attempt.tier === 'tier-2') tier2++;
+    else other++;
+  }
+  if (!tier1 && !tier2 && !other) return {};
+  return {
+    failover_summary: {
+      model_switches: switches,
+      distinct_models: models.size,
+      tier1_dispatches: tier1,
+      tier2_dispatches: tier2,
+      other_dispatches: other,
+      truncated: attempts.length > tail.length,
+    },
+  };
 }

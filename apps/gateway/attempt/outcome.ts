@@ -65,6 +65,7 @@ export function rotateWithNeutralEnd(
     recordNeutralEnd(node.id);
   }
   noteFailure(state, reason);
+  const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   logLazy(
     state.logger,
     'info',
@@ -72,13 +73,16 @@ export function rotateWithNeutralEnd(
       `dispatch request=${c.requestId ?? state.requestId} logical_attempt=${isPreDispatch ? state.logicalAttempts + 1 : state.logicalAttempts}/${state.maxAttempts}` +
       ` dispatch=${state.dispatches} node=${node.id} provider=${node.provider}` +
       ` protocol=${c.upstreamProtocol ?? node.protocol} surface=${c.surface ?? ''} tier=${node.tier ?? ''}` +
-      ` model=${state.requestedModel}->${upstreamModelOf(node, state.requestedModel)}` +
+      ` model=${state.requestedModel}${effectiveModel !== state.requestedModel ? `=>${effectiveModel}` : ''}->${upstreamModelOf(node, effectiveModel)}` +
       ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=${reason} status=0 counted=false`,
   );
   state.attempts.push({
     attempt: state.logicalAttempts + (isPreDispatch ? 1 : 0),
     dispatch: state.dispatches,
     node_id: node.id,
+    tier: node.tier,
+    effective_model: effectiveModel,
+    dispatched: !isPreDispatch,
     status: 0,
     kind: reason,
     hedged: !!(c.hedgedAttempt || c.hedgedWithTwin),
@@ -216,7 +220,7 @@ export function recordOutcome(
       }
     }
   } else if (classification.modelScoped) {
-    recordModelMissing(node.id, state.requestedModel, classification.cooldownMs || 0);
+    recordModelMissing(node.id, effectiveModel, classification.cooldownMs || 0);
   } else if (classification.action === 'neutral') {
     recordNeutralEnd(node.id);
   } else {
@@ -255,6 +259,8 @@ export function recordOutcome(
     dispatch: state.dispatches,
     node_id: node.id,
     provider: node.provider,
+    tier: node.tier,
+    dispatched: true,
     effective_model: effectiveModel,
     upstream_model: physicalModel,
     protocol: c?.upstreamProtocol ?? node.protocol,
