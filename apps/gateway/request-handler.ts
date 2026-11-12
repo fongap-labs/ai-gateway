@@ -321,7 +321,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   const visionProviderConfigured =
     !imageInputRequired ||
     modelPlan.some((round) =>
-      round.some(({ model }) => [1, 2].some((tier) => tiers[tier as 1 | 2].some((node) => servesModel(node, model, knownModels)))),
+      round.some(({ model }) => TIER_ORDER.some((tierNumber) => tiers[tierNumber].some((node) => servesModel(node, model, knownModels)))),
     );
   if (!visionProviderConfigured) {
     return gatewayError(
