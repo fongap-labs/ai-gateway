@@ -8,6 +8,7 @@ import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNo
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
+import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
 
 const privateRequest = new Request('https://perception.internal/internal/execute', {
@@ -35,6 +36,64 @@ for (const name of ['accept', 'anthropic-beta', 'anthropic-version', 'content-ty
   assert.equal(providerRequest.headers.get(name), privateRequest.headers.get(name));
 }
 assert.equal(providerRequest.body, null, 'Provider header adapter must not copy request bodies');
+
+const physicalAttemptRequest = {
+  url: 'https://upstream.invalid/v1/chat/completions',
+  headers: new Headers({ authorization: 'Bearer test-provider-only-secret', 'content-type': 'application/json' }),
+  body: '{"model":"mock"}',
+  signal: new AbortController().signal,
+  upstreamHeadersDeadlineMs: Date.now() + 10_000,
+};
+const savedProviderFetch = globalThis.fetch;
+try {
+  let attempts = 0;
+  globalThis.fetch = async (url, options) => {
+    attempts++;
+    assert.equal(url, physicalAttemptRequest.url);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.redirect, 'manual', 'Private Provider redirects must never be automatically followed');
+    assert.equal(options.body, physicalAttemptRequest.body);
+    assert.equal(new Headers(options.headers).get('authorization'), 'Bearer test-provider-only-secret');
+    return new Response('ok', { status: 200 });
+  };
+  const success = await dispatchProviderAttempt(physicalAttemptRequest);
+  assert.equal(success.upstream?.status, 200);
+  assert.equal(success.failure, undefined);
+  assert.equal(attempts, 1, 'Exactly one physical request is dispatched');
+
+  const expired = await dispatchProviderAttempt({ ...physicalAttemptRequest, upstreamHeadersDeadlineMs: Date.now() - 1 });
+  assert.equal(expired.failure?.status, 504);
+  assert.equal(expired.failure?.headers.get('x-aig-result'), 'skipped', 'Pre-dispatch timeout cannot count as a Provider attempt');
+  assert.equal(expired.failure?.headers.get('x-aig-retryable'), 'false');
+  assert.equal(attempts, 1, 'Expired ticket must not reach the Provider');
+
+  globalThis.fetch = async () => {
+    throw new Error('mock provider network failure');
+  };
+  const network = await dispatchProviderAttempt(physicalAttemptRequest);
+  assert.equal(network.failure?.status, 502);
+  assert.equal(network.failure?.headers.get('x-aig-error-kind'), 'center_upstream_network');
+  assert.equal(network.failure?.headers.get('x-aig-result'), 'attempted');
+  assert.equal(network.failure?.headers.get('x-aig-retryable'), 'true');
+
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const aborted = await dispatchProviderAttempt({ ...physicalAttemptRequest, signal: cancelled.signal });
+  assert.equal(aborted.failure?.status, 499, 'Cancelled client does not become a Provider network error');
+  assert.equal(aborted.failure?.headers.get('x-aig-result'), null);
+
+  globalThis.fetch = async (_url, options) =>
+    new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('mock header timeout')), { once: true });
+    });
+  const headersTimedOut = await dispatchProviderAttempt({ ...physicalAttemptRequest, upstreamHeadersDeadlineMs: Date.now() + 250 });
+  assert.equal(headersTimedOut.failure?.status, 504);
+  assert.equal(headersTimedOut.failure?.headers.get('x-aig-error-kind'), 'center_upstream_headers_timeout');
+  assert.equal(headersTimedOut.failure?.headers.get('x-aig-result'), 'attempted');
+  assert.equal(headersTimedOut.failure?.headers.get('x-aig-retryable'), 'true');
+} finally {
+  globalThis.fetch = savedProviderFetch;
+}
 
 // Gateway owns both private Center clients. The old paths remain lightweight
 // compatibility exports only; no execution, HTTP or secret policy may drift

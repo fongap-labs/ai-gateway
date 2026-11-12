@@ -22,6 +22,7 @@ import type { IrProtocol } from '../../packages/conversion-core/ir.ts';
 import { protocolForSurface } from '../../packages/conversion-core/surface-protocol.ts';
 import { ConversionError } from '../../packages/conversion-core/validation.ts';
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
+import { dispatchProviderAttempt } from '../../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../../packages/transport/provider-forward-request.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
 import { collectKnownModels, modelRegistryEntry } from '../../src/config/registry.ts';
@@ -214,34 +215,10 @@ async function executeAdmittedNative(
   const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
   if (providerTraceparent) headers.set('traceparent', providerTraceparent);
   const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
-  const controller = new AbortController();
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
-  const remainingMs = upstreamHeadersDeadlineMs - Date.now();
-  if (remainingMs <= 0) return preDispatchProblem(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT);
-  const timeoutId = setTimeout(() => controller.abort(), remainingMs);
-  const onAbort = () => controller.abort();
-  if (request.signal.aborted) onAbort();
-  else request.signal.addEventListener('abort', onAbort, { once: true });
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' });
-  } catch {
-    if (request.signal.aborted) return problem(499, 'center_client_aborted');
-    if (controller.signal.aborted) {
-      const timedOut = problem(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, true);
-      timedOut.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.ATTEMPTED);
-      return timedOut;
-    }
-    // A provider fetch was attempted, but no response headers were received.
-    // The gateway may apply its existing bounded network-failure rotation.
-    const response = problem(502, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_NETWORK, true);
-    response.headers.set('x-aig-result', EXECUTION_WIRE_RESULT.ATTEMPTED);
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-    request.signal.removeEventListener('abort', onAbort);
-  }
+  const attempt = await dispatchProviderAttempt({ url, headers, body, signal: request.signal, upstreamHeadersDeadlineMs });
+  if (attempt.failure) return attempt.failure;
+  const upstream = attempt.upstream;
 
   if (upstream.status >= 300 && upstream.status < 400) return problem(502, 'center_redirect_forbidden');
   const outgoing = new Headers({

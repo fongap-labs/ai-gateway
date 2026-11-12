@@ -707,9 +707,24 @@ for (const center of ['inference', 'generation']) {
     `${center} HTTP entrypoint must not own physical Provider execution`,
   );
   assert.ok(entry.includes("from './execution.ts'"), `${center} entrypoint must call its own executor`);
-  assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
+  if (center === 'inference') {
+    assert.match(executor, /await dispatchProviderAttempt\(/, 'Inference must dispatch through the neutral physical-attempt owner');
+    assert.doesNotMatch(executor, /await fetch\(/, 'Inference cannot independently replay a physical Provider attempt');
+  } else {
+    assert.match(executor, /await fetch\(/, `${center} must own a physical Provider attempt`);
+  }
   assert.doesNotMatch(executor, /runTierLoop|dispatchWithHedge/, `${center} must not implement gateway scheduling`);
 }
+const sharedProviderAttempt = readFileSync(join(root, 'packages/transport/provider-attempt.ts'), 'utf8');
+assert.match(sharedProviderAttempt, /await fetch\(/, 'The neutral private transport must own one physical Provider request');
+assert.match(sharedProviderAttempt, /redirect: 'manual'/, 'The shared attempt must never follow upstream redirects');
+assert.match(sharedProviderAttempt, /EXECUTION_WIRE_RESULT\.ATTEMPTED/, 'Attempted upstream failures must retain their physical disposition');
+assert.match(sharedProviderAttempt, /EXECUTION_WIRE_RESULT\.SKIPPED/, 'Pre-dispatch header deadlines must not consume a physical attempt');
+assert.doesNotMatch(
+  sharedProviderAttempt,
+  /runTierLoop|dispatchWithHedge|loadGatewayConfig/,
+  'Neutral provider transport cannot own policy or retries',
+);
 const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
 assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
 assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
