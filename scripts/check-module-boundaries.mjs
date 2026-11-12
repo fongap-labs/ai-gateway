@@ -720,7 +720,11 @@ assert.match(sharedProviderAttempt, /await fetch\(/, 'The neutral private transp
 assert.match(sharedProviderAttempt, /redirect: 'manual'/, 'The shared attempt must never follow upstream redirects');
 assert.match(sharedProviderAttempt, /EXECUTION_WIRE_RESULT\.ATTEMPTED/, 'Attempted upstream failures must retain their physical disposition');
 assert.match(sharedProviderAttempt, /EXECUTION_WIRE_RESULT\.SKIPPED/, 'Pre-dispatch header deadlines must not consume a physical attempt');
-assert.doesNotMatch(sharedProviderAttempt, /runTierLoop|dispatchWithHedge|loadGatewayConfig/, 'Neutral provider transport cannot own policy or retries');
+assert.doesNotMatch(
+  sharedProviderAttempt,
+  /runTierLoop|dispatchWithHedge|loadGatewayConfig/,
+  'Neutral provider transport cannot own policy or retries',
+);
 const nodeConfigSource = readFileSync(join(root, 'src/config/nodes.ts'), 'utf8');
 assert.doesNotMatch(nodeConfigSource, /getProviderAdapter|providerWire\(/, 'Node config must not load Provider implementations');
 assert.match(nodeConfigSource, /getProviderProfile/, 'Node config must use a credential-free Provider profile');
