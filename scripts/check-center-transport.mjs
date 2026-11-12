@@ -4,6 +4,7 @@
 // external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
@@ -49,6 +50,8 @@ const privateHttpTransport = {
     assert.equal(request.headers.get('x-aig-contract-version'), '1');
     assert.equal(request.headers.get('x-aig-request-id'), id);
     assert.equal(request.headers.get('x-aig-node-id'), 'mock-node');
+    assert.equal(parseTraceparent(request.headers.get('traceparent'))?.traceId, traceIdForRequest(id));
+    assert.equal(request.headers.has('tracestate'), false, 'untrusted vendor context is not forwarded');
     if (request.headers.has('x-aig-inference-auth')) {
       assert.equal(
         Number(request.headers.get('content-length')),
@@ -77,6 +80,8 @@ const clientRequest = new Request('https://client.example/v1/chat/completions', 
     'x-aig-generation-auth': 'forged',
     'anthropic-version': '2023-06-01',
     'idempotency-key': 'test-idempotency',
+    traceparent: '00-ffffffffffffffffffffffffffffffff-0123456789abcdef-01',
+    tracestate: 'client=untrusted',
   },
 });
 const inference = {
@@ -93,6 +98,11 @@ const inferenceRequest = buildInferenceRequest(inferenceEnv, inference);
 assert.equal(inferenceRequest.headers.get('x-aig-inference-auth'), inferenceKey);
 assert.equal(inferenceRequest.headers.get('anthropic-version'), '2023-06-01');
 assert.equal(inferenceRequest.headers.get('idempotency-key'), 'test-idempotency');
+assert.equal(parseTraceparent(inferenceRequest.headers.get('traceparent'))?.traceId, traceIdForRequest(id));
+assert.notEqual(inferenceRequest.headers.get('traceparent'), clientRequest.headers.get('traceparent'));
+assert.equal(inferenceRequest.headers.has('tracestate'), false);
+const trustedParent = createInternalTraceparent(id);
+assert.equal(buildInferenceRequest(inferenceEnv, { ...inference, traceparent: trustedParent }).headers.get('traceparent'), trustedParent);
 assert.equal(inferenceRequest.headers.has('x-aig-generation-auth'), false);
 assert.equal((await invokeInferenceNode(inferenceEnv, inference)).status, 200);
 assert.equal(invocations, 1);
@@ -126,6 +136,7 @@ assert.equal(invocations, 3);
 assert.throws(() => buildPerceptionRequest({}, inference), PerceptionCenterUnavailable);
 await assert.rejects(() => invokePerceptionNode({ AIG_PERCEPTION_AUTH_KEY: perceptionKey }, inference), PerceptionCenterUnavailable);
 assert.equal(invocations, 3);
+assert.equal(new Set(calls.map((call) => parseTraceparent(call.headers.get('traceparent'))?.spanId)).size, 3, 'centers use distinct spans per physical invocation');
 assert.equal(
   calls.every((call) => call.url.endsWith('/internal/execute')),
   true,
