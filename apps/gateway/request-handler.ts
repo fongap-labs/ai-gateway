@@ -650,11 +650,7 @@ function deliver(response: Response, loopCtx: LoopContext): Response {
   // Aggregate evidence that a successful request actually recovered after at
   // least one dispatched upstream failure. No Key, node, Provider or physical
   // model identifiers are disclosed. Hedges without failure do not qualify.
-  if (
-    response.status === 200 &&
-    loopCtx.state.dispatches > 1 &&
-    loopCtx.state.attempts.some((attempt) => attempt.dispatched === true)
-  ) {
+  if (response.status === 200 && loopCtx.state.dispatches > 1 && loopCtx.state.attempts.some((attempt) => attempt.dispatched === true)) {
     const headers = new Headers(response.headers);
     headers.set('x-gateway-dispatches', String(loopCtx.state.dispatches));
     headers.set('x-gateway-attempts', String(loopCtx.state.logicalAttempts));
