@@ -662,6 +662,16 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
 
 // Hands a final response to the client, storing a cacheable success at the edge.
 function deliver(response: Response, loopCtx: LoopContext): Response {
+  // Aggregate evidence that a successful request actually recovered after at
+  // least one dispatched upstream failure. No Key, node, Provider or physical
+  // model identifiers are disclosed. Hedges without failure do not qualify.
+  if (response.status === 200 && loopCtx.state.dispatches > 1 && loopCtx.state.attempts.some((attempt) => attempt.dispatched === true)) {
+    const headers = new Headers(response.headers);
+    headers.set('x-gateway-dispatches', String(loopCtx.state.dispatches));
+    headers.set('x-gateway-attempts', String(loopCtx.state.logicalAttempts));
+    headers.set('x-gateway-failover', 'true');
+    response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
   const plan = loopCtx.edgeCachePlan;
   if (!plan || response.status !== 200) return response;
   storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream, plan.route, loopCtx.request.signal);
