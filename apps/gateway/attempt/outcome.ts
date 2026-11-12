@@ -149,14 +149,15 @@ export function recordOutcome(
   // In this request only, do not probe other free keys pointing at the exact
   // same Provider URL, protocol, surface and physical model. Paid Tier 2
   // remains eligible, as do other URLs/models and subsequent requests.
-  if (classification.kind === KIND.ENDPOINT_NOT_FOUND) {
+  const failedSurface = c.surface ?? c.reqDescriptor?.surface;
+  if (classification.kind === KIND.ENDPOINT_NOT_FOUND && failedSurface) {
     for (const peer of state.nodes ?? []) {
       if (
         peer.tier === node.tier &&
         peer.provider === node.provider &&
         peer.baseUrl === node.baseUrl &&
         peer.protocol === node.protocol &&
-        peer.surfaces.includes(c.surface ?? c.reqDescriptor?.surface) &&
+        peer.surfaces.includes(failedSurface) &&
         upstreamModelOf(peer, effectiveModel) === physicalModel
       ) {
         state.attempted.add(peer.id);
