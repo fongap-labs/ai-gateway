@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
+import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 
 const original = 'Code-Max';
 const vision = 'Vision-Explicit';
@@ -137,4 +138,85 @@ await exercise({
   expectedStatus: 503,
   expectedCode: 'gateway_perception_center_unavailable',
 });
+
+const bridgeModel = 'Omni';
+const bridgeProviderCalls = [];
+const bridgeCenterCalls = [];
+const bridgeEnv = {
+  AIG_ACCESS_KEY_AIR: accessKey,
+  AIG_ACCESS_MODELS_AIR: '*',
+  AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
+  AIG_PERCEPTION_AUTH_KEY: 'v'.repeat(32),
+  AIG_REQUEST_ADMISSION: 'false',
+  AIG_TIER1_NODES_01: JSON.stringify([
+    { id: 'bridge-code', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [original]: 'upstream-text-model' } },
+    { id: 'bridge-vision', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [bridgeModel]: 'upstream-vision-model' } },
+  ]),
+  AIG_MODELS_CONFIG: JSON.stringify({
+    [original]: { policy: 'default', capabilities: { vision: false }, vision_delegate: bridgeModel },
+    [bridgeModel]: { policy: 'default', capabilities: { vision: true } },
+  }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, tier_attempts: { tier1: 2 }, hedge: { enabled: false } } }),
+};
+const bridgeCenterEnv = {
+  ...bridgeEnv,
+  AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'bridge-code': 'local-text-key', 'bridge-vision': 'local-vision-key' }),
+};
+bridgeEnv.AIG_PERCEPTION_SERVICE = {
+  async fetch(req) {
+    bridgeCenterCalls.push('perception');
+    assert.equal(req.headers.get('x-aig-node-id'), 'bridge-vision');
+    return handlePerceptionCenterRequest(req, bridgeCenterEnv);
+  },
+};
+bridgeEnv.AIG_INFERENCE_SERVICE = {
+  async fetch(req) {
+    bridgeCenterCalls.push('inference');
+    assert.equal(req.headers.get('x-aig-node-id'), 'bridge-code');
+    const body = await req.clone().json();
+    assert.equal(JSON.stringify(body).includes('image_url'), false, 'text model must not receive image bytes');
+    assert.match(JSON.stringify(body), /Visual observations/);
+    assert.match(JSON.stringify(body), /red square/);
+    return handleInferenceCenterRequest(req, bridgeCenterEnv);
+  },
+};
+const bridgeRequest = () =>
+  new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: original, messages: [{ role: 'user', content: [{ type: 'text', text: 'What is this?' }, image] }] }),
+  });
+const bridgeOriginalFetch = globalThis.fetch;
+globalThis.fetch = async (_input, init) => {
+  const body = JSON.parse(init.body);
+  bridgeProviderCalls.push(body.model);
+  if (body.model === 'upstream-vision-model') {
+    assert.equal(JSON.stringify(body).includes('image_url'), true);
+  } else {
+    assert.equal(body.model, 'upstream-text-model');
+    assert.equal(JSON.stringify(body).includes('image_url'), false);
+  }
+  return new Response(JSON.stringify({
+    id: 'mock-bridge',
+    object: 'chat.completion',
+    created: 1,
+    model: body.model,
+    choices: [{ index: 0, message: { role: 'assistant', content: body.model === 'upstream-vision-model' ? 'A red square.' : 'A red square is shown.' }, finish_reason: 'stop' }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+try {
+  const result = await handleRequest(bridgeRequest(), bridgeEnv, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(result.status, 200, await result.text());
+  assert.deepEqual(bridgeCenterCalls, ['perception', 'inference']);
+  assert.deepEqual(bridgeProviderCalls, ['upstream-vision-model', 'upstream-text-model']);
+
+  const unauthorized = { ...bridgeEnv, AIG_ACCESS_MODELS_AIR: original };
+  const denied = await handleRequest(bridgeRequest(), unauthorized, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(denied.status, 403, 'an unauthorized vision alias must never be used behind the caller\'s back');
+  assert.equal((await denied.json()).error?.details?.gateway_code, 'gateway_vision_preprocess_unauthorized');
+  assert.equal(bridgeProviderCalls.length, 2, 'unauthorized delegate must not dispatch');
+} finally {
+  globalThis.fetch = bridgeOriginalFetch;
+}
+
 console.log('Gateway -> real Perception -> fake Provider and zero-dispatch failure contracts passed offline.');
