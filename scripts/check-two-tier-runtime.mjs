@@ -40,6 +40,8 @@ assert.equal(getLimits({ AIG_COST_GUARDS: 'false', AIG_TOKEN_D1_SAMPLE_PCT: '37'
 assert.equal(getLimits({ AIG_COST_GUARDS: 'true' }).tier1AffinityWrite, false);
 assert.equal(getLimits({ AIG_COST_GUARDS: 'true', AIG_AFFINITY_WRITE: '1' }).tier1AffinityWrite, true);
 
+assert.equal(getLimits({ AIG_REQUEST_ADMISSION: 'true' }).isolateMaxInFlight, 0, 'request-body guards must not impose a hidden concurrent-request count');
+assert.equal(getLimits({ AIG_REQUEST_ADMISSION: 'true', AIG_ISOLATE_MAX_IN_FLIGHT: '4' }).isolateMaxInFlight, 4, 'explicit positive caps remain available');
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
 assert.equal(routingStrategyFor(2).id, 'priority_lru', 'the API Token tier uses the health-aware scheduler');
@@ -175,6 +177,10 @@ const base = {
   AIG_TIER1_NODES_01: JSON.stringify([node('free-a')]),
   AIG_TIER2_NODES_01: JSON.stringify([node('token-a')]),
 };
+const tier1Only = loadGatewayConfig({ AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR, AIG_TIER1_NODES_01: base.AIG_TIER1_NODES_01 });
+assert.equal(tier1Only.ready, true, 'Tier 1-only config must stay ready without a paid fallback');
+assert.equal(tier1Only.tiers[1].length, 1);
+assert.equal(tier1Only.tiers[2].length, 0, 'unconfigured Tier 2 is absent, not a failure');
 const publicConfig = loadGatewayConfig({ ...base });
 assert.equal(publicConfig.ready, true);
 assert.equal(publicConfig.hasConfigErrors, false);
