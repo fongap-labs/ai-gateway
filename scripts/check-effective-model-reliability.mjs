@@ -17,6 +17,12 @@ const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'N
 assert.equal(missing422.kind, KIND.MODEL_MISSING);
 assert.equal(missing422.action, 'rotate');
 assert.equal(missing422.modelScoped, true);
+const unavailable422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"model_unavailable"}}');
+assert.equal(unavailable422.kind, KIND.MODEL_MISSING);
+assert.equal(unavailable422.action, 'rotate');
+const noProviders422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'No available providers');
+assert.equal(noProviders422.kind, KIND.MODEL_MISSING);
+assert.equal(noProviders422.action, 'rotate');
 const endpoint422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"endpoint_not_found"}}');
 assert.equal(endpoint422.kind, KIND.ENDPOINT_NOT_FOUND);
 assert.equal(endpoint422.action, 'rotate');
