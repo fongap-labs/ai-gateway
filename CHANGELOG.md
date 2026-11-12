@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 同时出现短期 rate limit 与泛化 quota 措辞时优先按短窗口识别，保留既有长期额度与 Retry-After 语义；TTFT 新节点采用保守的双样本置信度，确保仍能及时逃离明显变差的亲和节点。
+
 - 修复: AIG_COST_GUARDS 开启时将未显式配置的 D1 模型明细采样默认值设为 1%，保留全局准确统计和显式 AIG_TOKEN_D1_SAMPLE_PCT 覆盖。
 
 - 维护: 为已鉴权的 /health 增加按需触发的私有中心实时连通性探测，覆盖三中心 Service Binding 与密钥匹配，不执行 Provider 请求，也不新增部署变量。

@@ -123,10 +123,8 @@ const MINUTE_WORDING = /per[ _-]?minute|per[ _-]?second|\b(?:rpm|tpm|itpm|otpm)\
 const GENERIC_QUOTA_WORDING = /\b(?:quota|billing)\b|\u989d\u5ea6|\u914d\u989d|\u9650\u989d/i;
 const GENERIC_WINDOW_WORDING =
   /\b(?:too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b|\u901f\u7387\u9650\u5236|\u8bf7\u6c42\u9891\u7387|\u8bf7\u6c42\u8fc7\u4e8e\u9891\u7e41|\u5e76\u53d1|\u8bbf\u95ee\u91cf\u8fc7\u5927/i;
-// "exhausted" proves a limit ran out but not its horizon: only a WEAK long-lived
-// hint after minute-window wording has been ruled out. "inference tpm exhausted"
-// stays a window, while "plan limit exhausted" (caught above) and a bare
-// "exhausted" read as a long-lived allowance.
+// Explicit minute-level window wording must outrank generic quota boilerplate.
+// Existing quota/exhaustion classification and provider wait hints remain intact.
 const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d/i;
 
 // An explicit provider-stated wait is itself a classification signal when the
@@ -156,8 +154,10 @@ export function rateLimitWindowOf(body: unknown, hintMs: number = 0): 'window' |
   // while a minute limit mistaken for a long allowance would idle the key for
   // minutes on every incident.
   if (hasHorizon && hasMinute) return hintMs > WINDOW_HINT_CEILING_MS ? 'quota' : 'window';
-  if (GENERIC_QUOTA_WORDING.test(text)) return isShortHint ? 'window' : 'quota';
+  // "too many requests" is direct short-window evidence even if the upstream
+  // adds generic quota/billing boilerplate. Keep all other legacy classes.
   if (GENERIC_WINDOW_WORDING.test(text)) return 'window';
+  if (GENERIC_QUOTA_WORDING.test(text)) return isShortHint ? 'window' : 'quota';
   if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
   return undefined;
 }
