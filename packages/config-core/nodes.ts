@@ -20,13 +20,13 @@
 import { getProviderProfile } from '../contracts/provider-profiles.ts';
 import type { NodeTier, RuntimeNode } from '../contracts/runtime-node.ts';
 import type { Tier, TierMap } from '../contracts/scheduler.ts';
-import { trimTrailingSlashes } from './trim.ts';
 import { getBool, readEnv } from './env.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
 import { getPoliciesConfigDiagnostics, loadPoliciesConfig } from './policies.ts';
 import { getProtocolFallbacksDiagnostics } from './protocol-fallbacks.ts';
 import type { RegistryEntry } from './registry.ts';
 import { canonicalLogicalNames, loadModelRegistry } from './registry.ts';
+import { trimTrailingSlashes } from './trim.ts';
 
 export const TIER_SHARD_PATTERN = /^AIG_TIER([12])_NODES_(\d{2})$/;
 export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
