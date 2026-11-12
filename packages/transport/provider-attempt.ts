@@ -16,8 +16,8 @@ export type ProviderAttemptRequest = {
 
 export type ProviderAttemptResult = { upstream: Response; failure?: never } | { failure: Response; upstream?: never };
 
-function problem(status: number, code: string, retryable = false): Response {
-  return serializeExecutionError(status, code, { retryable });
+function problem(status: number, code: string, isRetryable = false): Response {
+  return serializeExecutionError(status, code, { retryable: isRetryable });
 }
 
 export async function dispatchProviderAttempt(attempt: ProviderAttemptRequest): Promise<ProviderAttemptResult> {
