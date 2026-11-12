@@ -16,6 +16,7 @@ function newModelRuntime(): Tier1ModelRuntime {
     cooldownReason: null,
     failureState: FAILURE_STATE.NORMAL,
     consecutiveFailures: 0,
+    lastCountedFailureAt: 0,
     consecutiveRateLimits: 0,
     consecutiveOutliers: 0,
     consecutiveForbidden: 0,

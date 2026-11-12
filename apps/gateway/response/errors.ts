@@ -371,6 +371,7 @@ export function buildClientErrorResponse(
           attempts: state.logicalAttempts,
           dispatches: state.dispatches,
           hedges: state.hedges,
+          ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
           ...attemptsDetail,
         },
       },
