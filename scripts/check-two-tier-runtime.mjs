@@ -354,6 +354,64 @@ await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
 await verifyTier1FailureFallsBack(504);
 
+async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
+  const source = `primary-${failureStatus}`;
+  const fallback = `fallback-${failureStatus}`;
+  const freeNode = `free-primary-${failureStatus}`;
+  const paidNode = `paid-fallback-${failureStatus}`;
+  const actualDispatches = [];
+  const env = {
+    AIG_ACCESS_KEY_AIR: 'local-contract-access-key',
+    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+    AIG_TIER1_NODES_01: JSON.stringify([node(freeNode, { models: { [source]: 'physical-primary' } })]),
+    AIG_TIER2_NODES_01: JSON.stringify([node(paidNode, { models: { [fallback]: 'physical-fallback' } })]),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [source]: { policy: 'default', fallback: [fallback], fallback_mode: 'one_way', fallback_attempt_caps: [1, 1] },
+      [fallback]: { policy: 'default' },
+    }),
+    AIG_POLICIES_CONFIG: JSON.stringify({
+      default: { max_attempts: 2, tier_attempts: { tier1: 1, tier2: 1 }, hedge: { enabled: false } },
+    }),
+    AIG_INFERENCE_SERVICE: {
+      async fetch(request) {
+        const nodeId = request.headers.get('x-aig-node-id');
+        actualDispatches.push(nodeId);
+        if (nodeId === freeNode) {
+          return new Response(JSON.stringify({ error: { message: failureBody } }), {
+            status: failureStatus,
+            headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
+          });
+        }
+        assert.equal(nodeId, paidNode, 'fallback must be routed to a real Tier 2 node with a different model');
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-cross-model',
+            object: 'chat.completion',
+            created: 1,
+            model: fallback,
+            choices: [{ index: 0, message: { role: 'assistant', content: 'recovered' }, finish_reason: 'stop' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+        );
+      },
+    },
+  };
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: source, messages: [{ role: 'user', content: 'recover from upstream failure' }] }),
+  });
+  const result = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(result.status, 200, `Cross-model ${failureStatus} must recover: ${await result.clone().text()}`);
+  assert.equal((await result.json()).choices?.[0]?.message?.content, 'recovered');
+  assert.deepEqual(actualDispatches, [freeNode, paidNode], 'exactly one physical attempt per model across both tiers');
+}
+
+await verifyCrossModelProviderFailover(503, 'temporarily unavailable');
+await verifyCrossModelProviderFailover(422, 'No endpoints found for model physical-primary');
+
+
 // Preserve legacy 400-as-node-incompatibility routing (tested above), but
 // a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
