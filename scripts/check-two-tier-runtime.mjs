@@ -446,7 +446,7 @@ try {
     admissionBurstEnv,
     'admission-metrics',
   ).text();
-  assert.match(metrics, /gateway_isolate_handlers_active\\{\\} 12/);
+  assert.ok(metrics.includes('gateway_isolate_handlers_active{} 12'), 'active handler gauge must report real concurrent work');
 } finally {
   resolveAdmissionBurst();
 }
@@ -457,7 +457,6 @@ assert.deepEqual(
   'request count alone must not trigger gateway_concurrency_exhausted',
 );
 assert.equal(snapshotIsolateRequestActivity().active, 0, 'all activity counters must release after response headers');
-
 
 async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   const source = `primary-${failureStatus}`;
