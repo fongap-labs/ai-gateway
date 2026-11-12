@@ -519,7 +519,9 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
       model.rateLimitRecoveryUntil = 0;
       model.cooldownIsQuota = outcome.isQuota === true;
     }
-    if (halfOpenFailure || thresholdReached) {
+    if (halfOpenFailure || thresholdReached || fastCooldown) {
+      // The short quarantine is a real circuit state, not just a deadline:
+      // its expiry transitions through the existing one-probe HALF_OPEN gate.
       model.failureState = FAILURE_STATE.COOLDOWN;
       model.halfOpenSuccesses = 0;
     }
