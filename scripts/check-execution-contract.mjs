@@ -27,7 +27,12 @@ const traceCtx = {
   tracing: {
     async enterSpan(name, run) {
       const attributes = {};
-      const span = { isTraced: true, setAttribute: (key, value) => { attributes[key] = value; } };
+      const span = {
+        isTraced: true,
+        setAttribute: (key, value) => {
+          attributes[key] = value;
+        },
+      };
       spanRecords.push({ name, attributes });
       return run(span);
     },
@@ -45,9 +50,14 @@ assert.equal(spanRecords[0].name, 'aig.inference.execute');
 assert.equal(spanRecords[0].attributes['aig.model'], 'Code-Max');
 assert.equal(spanRecords[0].attributes['aig.node_id'], 'safe-node');
 assert.equal(spanRecords[0].attributes['http.response.status_code'], 201);
-assert.equal(Object.keys(spanRecords[0].attributes).some((key) => /secret|body|cookie|authorization/i.test(key)), false);
+assert.equal(
+  Object.keys(spanRecords[0].attributes).some((key) => /secret|body|cookie|authorization/i.test(key)),
+  false,
+);
 let executedWithoutTracing = 0;
-await withNativeSpan(undefined, 'aig.noop', { requestId: 'test' }, async () => { executedWithoutTracing++; });
+await withNativeSpan(undefined, 'aig.noop', { requestId: 'test' }, async () => {
+  executedWithoutTracing++;
+});
 assert.equal(executedWithoutTracing, 1, 'non-Cloudflare execution still succeeds without native tracing');
 const skippedAttrs = [];
 await withNativeSpan(
@@ -58,7 +68,10 @@ await withNativeSpan(
 );
 assert.equal(skippedAttrs.length, 0, 'unsampled native spans avoid attribute writes');
 await assert.rejects(
-  () => withNativeSpan(traceCtx, 'aig.reject', { requestId: 'test' }, async () => { throw new Error('expected'); }),
+  () =>
+    withNativeSpan(traceCtx, 'aig.reject', { requestId: 'test' }, async () => {
+      throw new Error('expected');
+    }),
   /expected/,
   'tracing never changes request failure behavior',
 );
