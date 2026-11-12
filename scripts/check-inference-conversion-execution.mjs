@@ -81,7 +81,12 @@ try {
       enterSpan(name, action) {
         const attributes = {};
         centerSpans.push({ name, attributes });
-        return action({ isTraced: true, setAttribute: (key, value) => { attributes[key] = value; } });
+        return action({
+          isTraced: true,
+          setAttribute: (key, value) => {
+            attributes[key] = value;
+          },
+        });
       },
     },
   };
