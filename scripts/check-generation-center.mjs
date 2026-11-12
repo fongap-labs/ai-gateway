@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { handleGenerationCenterRequest } from '../src/generation/generation-center-entry.ts';
+import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable } from '../src/generation/generation-client-request.ts';
 import { quotaFromCenter } from '../src/reliability/center-quota.ts';
 import { attemptNode } from '../src/request/attempt/dispatch.ts';
@@ -44,6 +45,7 @@ function request(body = validBody, overrides = {}) {
 }
 
 const originalFetch = globalThis.fetch;
+const internalParent = createInternalTraceparent('12345678-1234-4234-8234-123456789012');
 let requests = 0;
 try {
   globalThis.fetch = async (url, options) => {
@@ -54,6 +56,10 @@ try {
     assert.equal(headers.has('authorization'), false);
     assert.equal(headers.has('cookie'), false);
     assert.equal(headers.has('x-aig-generation-auth'), false);
+    assert.equal(headers.has('tracestate'), false);
+    const providerSpan = parseTraceparent(headers.get('traceparent'));
+    assert.equal(providerSpan?.traceId, traceIdForRequest('12345678-1234-4234-8234-123456789012'));
+    assert.notEqual(providerSpan?.spanId, parseTraceparent(internalParent)?.spanId);
     const body = JSON.parse(options.body);
     assert.equal(body.contents[0].parts[0].text, 'Draw a square');
     return new Response(
@@ -77,7 +83,13 @@ try {
   const invalidBody = await handleGenerationCenterRequest(request({ ...validBody, n: 2 }), env);
   assert.equal(invalidBody.status, 400);
   assert.equal(requests, 0);
-  const forged = request(validBody, { authorization: 'Bearer attacker-token', cookie: 'token=attacker', 'x-api-key': 'attacker' });
+  const forged = request(validBody, {
+    authorization: 'Bearer attacker-token',
+    cookie: 'token=attacker',
+    'x-api-key': 'attacker',
+    traceparent: internalParent,
+    tracestate: 'client=private',
+  });
   const ok = await handleGenerationCenterRequest(forged, env);
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get('x-aig-generation-normalized'), 'true');
@@ -100,7 +112,13 @@ try {
   const invocation = {
     request: new Request('https://client.example/v1/images/generations', {
       method: 'POST',
-      headers: { authorization: 'Bearer client', cookie: 'secret=x', 'x-aig-generation-auth': 'forged' },
+      headers: {
+        authorization: 'Bearer client',
+        cookie: 'secret=x',
+        'x-aig-generation-auth': 'forged',
+        traceparent: '00-ffffffffffffffffffffffffffffffff-0123456789abcdef-01',
+        tracestate: 'client=secret',
+      },
     }),
     requestId: '12345678-1234-4234-8234-123456789012',
     node: { id: node.id },
@@ -113,6 +131,9 @@ try {
   assert.equal(built.headers.get('x-aig-generation-auth'), internalKey);
   assert.equal(built.headers.has('authorization'), false);
   assert.equal(built.headers.has('cookie'), false);
+  assert.equal(parseTraceparent(built.headers.get('traceparent'))?.traceId, traceIdForRequest(invocation.requestId));
+  assert.notEqual(built.headers.get('traceparent'), invocation.request.headers.get('traceparent'));
+  assert.equal(built.headers.has('tracestate'), false);
   assert.throws(() => buildGenerationRequest({}, invocation), GenerationCenterUnavailable);
 
   assert.deepEqual(quotaFromCenter(new Headers({ 'x-aig-quota-signal': '{"remainingRequests":3}' }))?.remainingRequests, 3);
