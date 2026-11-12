@@ -580,6 +580,9 @@ assert.equal(mixedRetry.headers.get('x-should-retry'), 'false', 'long family coo
 assert.equal(mixedRetry.headers.get('x-gateway-retryable'), 'true', 'a later retry remains possible after the declared cooldown');
 assert.equal(mixedRetryBody.error.details.retryable, true, 'long cooldown must not be misrepresented as permanently non-retryable');
 assert.match(mixedRetryBody.error.message, /advertised delay/, 'a long retry hint must not say retry shortly');
+const pureRateLimit = exhausted({ rate_limit: 8 });
+assert.equal(pureRateLimit.status, 503);
+assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
 assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
