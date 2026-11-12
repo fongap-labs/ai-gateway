@@ -40,6 +40,9 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
 }
 
 async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
+  // The attempt may synchronously settle and increment logicalAttempts before
+  // dispatchAttempt returns. Capture the role *before* dispatching.
+  const previouslyAttempted = c.state.logicalAttempts > 0;
   const outcome = await dispatchAttempt(c);
   if (outcome.budgetCharged !== false) {
     recordAttemptEvent(c.env, {
@@ -48,7 +51,7 @@ async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
       tier: c.node.tier,
       model: c.reqDescriptor.model,
       outcome: outcome.response?.ok ? 'ok' : (outcome.kind ?? (outcome.response?.status === 499 ? 'client_abort' : 'client')),
-      role: c.hedgedAttempt ? 'hedge' : c.state.logicalAttempts > 0 ? 'retry' : 'primary',
+      role: c.hedgedAttempt ? 'hedge' : previouslyAttempted ? 'retry' : 'primary',
       route: c.route,
       status: c.upstreamStatus ?? 0,
       headersMs: c.headersMs ?? -1,
