@@ -4,10 +4,10 @@
 // external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
+import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 
 // Gateway owns both private Center clients. The old paths remain lightweight
 // compatibility exports only; no execution, HTTP or secret policy may drift
@@ -136,7 +136,11 @@ assert.equal(invocations, 3);
 assert.throws(() => buildPerceptionRequest({}, inference), PerceptionCenterUnavailable);
 await assert.rejects(() => invokePerceptionNode({ AIG_PERCEPTION_AUTH_KEY: perceptionKey }, inference), PerceptionCenterUnavailable);
 assert.equal(invocations, 3);
-assert.equal(new Set(calls.map((call) => parseTraceparent(call.headers.get('traceparent'))?.spanId)).size, 3, 'centers use distinct spans per physical invocation');
+assert.equal(
+  new Set(calls.map((call) => parseTraceparent(call.headers.get('traceparent'))?.spanId)).size,
+  3,
+  'centers use distinct spans per physical invocation',
+);
 assert.equal(
   calls.every((call) => call.url.endsWith('/internal/execute')),
   true,
