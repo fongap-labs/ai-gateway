@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 新增: 在标准 Chat Completions 中显式选择 `generate_image` 函数、传入授权的 `metadata.aig_image_model` 时，可经现有 Generation Center 生成图片并转换为 Chat 回复；支持流式响应，限定 AGENT 权限，不猜测普通文本的绘图意图。
+- 新增: Chat 中经 AGENT 授权显式选择 `generate_image` 工具，可通过 Generation Center 生成图片并返回普通或流式回复。
 
 - 修复: 对明确返回 `endpoint_not_found` 的 HTTP 422 按端点故障处理，跳过同请求中的等价失败地址；其他非法请求 422 仍立即停止。
 
