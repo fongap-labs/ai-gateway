@@ -64,6 +64,7 @@ async function checkedRequest(label, key, route, body, assertion, timeoutMs = 90
     attempts: response.headers.get('x-gateway-attempts'),
     dispatches: response.headers.get('x-gateway-dispatches'),
     gateway_code: response.headers.get('x-gateway-error-code') ?? json?.error?.details?.gateway_code ?? null,
+    failover: response.headers.get('x-gateway-failover'),
   };
   results.push(summary);
   if (!response.ok) throw new Error(`${label}: HTTP ${response.status}, gateway_code=${summary.gateway_code ?? 'unknown'}`);
@@ -116,7 +117,7 @@ try {
     );
     if (options['expect-dispatches']) {
       const count = Number(summary.dispatches);
-      if (!summary.dispatches || !Number.isInteger(count) || count < Number(options['expect-dispatches'])) {
+      if (summary.failover !== 'true' || !summary.dispatches || !Number.isInteger(count) || count < Number(options['expect-dispatches'])) {
         throw new Error('Failover could not be verified: enable dispatch evidence and use a controlled staging pool with a failing first node.');
       }
     }
