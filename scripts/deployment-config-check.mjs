@@ -42,6 +42,10 @@ assert.deepEqual(JSON.parse(normalizeNodeConfigJsonText(imeInput)), [{ id: 'node
 const quotedPunctuation = JSON.stringify({ description: 'literal 、， punctuation and escaped " quotes' });
 assert.equal(normalizeNodeConfigJsonText(quotedPunctuation), quotedPunctuation, 'quoted strings must remain byte-for-byte unchanged');
 
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_REQUEST_ADMISSION, 'true');
+assert.equal(DEFAULT_OPTIMAL_VARS.AIG_ISOLATE_MAX_IN_FLIGHT, undefined, 'deploy must not inject a hidden concurrency cap');
+assert.equal(buildWranglerConfig({}).vars.AIG_ISOLATE_MAX_IN_FLIGHT, undefined, 'unconfigured concurrency cap must remain absent');
+assert.equal(buildWranglerConfig({ AIG_ISOLATE_MAX_IN_FLIGHT: '6' }).vars.AIG_ISOLATE_MAX_IN_FLIGHT, '6', 'explicit concurrency cap must win');
 assert.equal(config.keep_vars, true);
 assert.equal(config.main, 'src/index.ts');
 assert.equal(config.secrets, undefined);

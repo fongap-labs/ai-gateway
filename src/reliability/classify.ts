@@ -265,8 +265,12 @@ function looksLikeModelMissing(body: unknown): boolean {
   const text = String(body || '').toLowerCase();
   // "No endpoints found for <model>" (a router with no provider for that model).
   if (/\bno endpoints? found\b/.test(text)) return true;
+  // A provider may express missing physical capacity without a 404 or an
+  // explicit model-not-found code. These are route-local 422s, not malformed
+  // client requests; let another compatible Key/model serve the request.
+  if (/\bno available providers?\b/.test(text)) return true;
   if (!text.includes('model')) return false;
-  return /(not found|does not exist|unknown|no such|not supported|invalid model)/.test(text);
+  return /(not found|does not exist|unknown|no such|not supported|invalid model|not available|unavailable)/.test(text);
 }
 
 export function classifyNetworkError(isHeadersTimeout: boolean): FailureClassification {

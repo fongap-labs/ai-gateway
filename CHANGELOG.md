@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 修复: 移除默认的 Worker 实例并发数量硬限制，保留请求体及重试预算保护；Tier 1 单独部署无需配置 Tier 2，模型暂时不可用的 422 可回退其他兼容节点。
+
+
 - 新增: Responses 的 inline input_image 可经 Omni 识图后交回原模型，保持原生 Responses 返回；拒绝不支持的 file_id 图片。
 
 - 修复: Chat 绘图结果根据图片真实格式输出 PNG、JPEG、WebP 或 GIF，并拒绝无效图片数据，避免错误显示和重复付费。

@@ -45,12 +45,12 @@ export const RUNTIME_TUNABLES = [
   { name: 'AIG_FAILOVER_BUDGET_MS', type: 'int', min: 1_000, max: 900_000, def: 60_000 },
   { name: 'AIG_HEDGE_DELAY_MS', type: 'int', min: 0, max: 600_000, def: 3_000 },
   { name: 'AIG_REQUEST_HEDGE_MAX', type: 'int', min: 0, max: 3, def: 1 },
-  // (AIG_REQUEST_ADMISSION) Per-isolate cap on concurrent body-carrying
-  // requests. Each admission starts streams that share the isolate's CPU and
-  // its ~128MB; a burst must not starve in-flight streams to the point where
-  // the isolate is recycled with all learned state. Bodyless requests
-  // (health, metrics, dashboard) are never refused for this. 0 disables.
-  { name: 'AIG_ISOLATE_MAX_IN_FLIGHT', type: 'int', min: 0, max: 512, def: 32 },
+  // (AIG_REQUEST_ADMISSION) Optional per-isolate hard cap for body-carrying
+  // requests. Disabled by default: the independent bounded request-body pool
+  // and retry budget remain active, without rejecting a short burst solely
+  // because several streaming responses are still open. Operators may set
+  // a positive cap if their workload needs additional isolate protection.
+  { name: 'AIG_ISOLATE_MAX_IN_FLIGHT', type: 'int', min: 0, max: 512, def: 0 },
   // (AIG_REQUEST_ADMISSION) Worst-case charge AND read ceiling for a request
   // body without a usable Content-Length (chunked transfer): its true size is
   // unknowable before reading, but charging AIG_REQUEST_BODY_MAX_BYTES (20MB)
