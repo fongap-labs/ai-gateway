@@ -49,7 +49,7 @@ assert.equal(
 assert.equal(
   getLimits({ AIG_REQUEST_ADMISSION: 'true', AIG_ISOLATE_MAX_IN_FLIGHT: '4' }).isolateMaxInFlight,
   4,
-  'explicit positive caps remain available',
+  'the historical numeric setting remains parsed for deployment compatibility, but cannot deny requests',
 );
 assert.deepEqual(TIER_ORDER, [1, 2], 'only free and API Token tiers participate in routing');
 assert.equal(routingStrategyFor(1).id, 'p2c_ttft', 'the free tier retains its adaptive scheduler');
