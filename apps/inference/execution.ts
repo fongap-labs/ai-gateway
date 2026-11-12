@@ -13,9 +13,9 @@ import {
 } from '../../packages/contracts/execution.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
-import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
+import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { ConversionBudgetStop } from '../../packages/conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../../packages/conversion-core/budget-error.ts';
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
