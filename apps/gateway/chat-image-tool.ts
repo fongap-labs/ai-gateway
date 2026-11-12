@@ -269,11 +269,20 @@ export async function runAutomaticImageTool({
     if (body.stream === true) return synthesizeSseFromCompletion(completion, env, request);
     return new Response(result.text, {
       status: 200,
-      headers: { 'content-type': 'application/json;charset=UTF-8', 'cache-control': 'no-store', 'x-request-id': requestId, ...corsHeaders(request, env) },
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+        ...corsHeaders(request, env),
+      },
     });
   }
   if (calls.length !== 1) {
-    return fail(502, 'The text model selected multiple image tools; no image was generated.', 'gateway_image_tool_selection_invalid');
+    return fail(
+      502,
+      'The text model selected multiple image tools; no image was generated.',
+      'gateway_image_tool_selection_invalid',
+    );
   }
   const fn = calls[0] && typeof calls[0] === 'object' ? (calls[0] as Record<string, unknown>).function : null;
   if (!fn || typeof fn !== 'object' || (fn as Record<string, unknown>).name !== IMAGE_TOOL_NAME) {
@@ -286,7 +295,9 @@ export async function runAutomaticImageTool({
       const parsed: unknown = JSON.parse(args);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid');
       const argPrompt = (parsed as Record<string, unknown>).prompt;
-      if (argPrompt !== undefined && (typeof argPrompt !== 'string' || !argPrompt.trim() || argPrompt.length > 2048)) throw new Error('invalid');
+      if (argPrompt !== undefined && (typeof argPrompt !== 'string' || !argPrompt.trim() || argPrompt.length > 2048)) {
+        throw new Error('invalid');
+      }
       extraPrompt = typeof argPrompt === 'string' ? argPrompt : '';
     } catch {
       return fail(502, 'The image tool arguments are malformed.', 'gateway_image_tool_selection_invalid');
