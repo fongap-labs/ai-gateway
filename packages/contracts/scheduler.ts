@@ -6,8 +6,8 @@
 // (src/types/domain.d.ts has been deleted — see
 // docs/governance/typescript-migration.md).
 
-import type { RuntimeNode } from './runtime-node.ts';
 import type { Protocol, Surface } from './protocol.ts';
+import type { RuntimeNode } from './runtime-node.ts';
 
 /** Numeric policy tier (distinct from the NodeTier label). */
 export type Tier = 1 | 2;
