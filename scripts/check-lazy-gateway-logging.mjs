@@ -27,7 +27,7 @@ try {
   assert.equal(formatted, 0, 'disabled diagnostic levels must not allocate a message');
   assert.equal(output.length, 0);
 
-  const costGuarded = getLogger({ AIG_COST_GUARDS: true });
+  const costGuarded = getLogger({ AIG_COST_GUARDS: 'true' });
   assert.equal(costGuarded.isEnabled?.('info'), false, 'cost guards disable info by default');
   logLazy(costGuarded, 'info', build);
   logLazy(costGuarded, 'debug', build);
