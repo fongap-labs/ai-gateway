@@ -3,8 +3,8 @@
 // Regression: independent D1 reads overlap after buffered writes flush, with
 // identical cumulative/hourly results and the old-schema fallback retained.
 import assert from 'node:assert/strict';
-import { loadUpstreamSummary } from '../src/observability/token-usage-store/upstream-queries.ts';
 import { __resetUsageBufferForTests } from '../packages/usage-store/buffer.ts';
+import { loadUpstreamSummary } from '../src/observability/token-usage-store/upstream-queries.ts';
 
 const now = Date.UTC(2026, 10, 12, 1, 0);
 const currentTotals = {
@@ -123,7 +123,13 @@ const legacyD1 = {
 };
 const legacy = await loadUpstreamSummary({ TOKEN_STATS_DB: legacyD1 }, now);
 assert.equal(legacy?.available, true);
-assert.deepEqual(legacySql.filter((read) => read.modern).map((read) => read.isTotals).sort(), [false, true]);
+assert.deepEqual(
+  legacySql
+    .filter((read) => read.modern)
+    .map((read) => read.isTotals)
+    .sort(),
+  [false, true],
+);
 assert.equal(legacy.cumulative.input, 40);
 assert.equal(legacy.h24.input, 16);
 assert.equal(legacy.h24.cacheHitRatio, null);
