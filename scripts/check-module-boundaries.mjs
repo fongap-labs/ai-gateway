@@ -35,8 +35,7 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
       // Perception currently reuses Inference's single physical executor. This
       // narrowly audited edge is temporary: it cannot expand to other modules,
       // scheduling, response codecs, or another application's implementation.
-      const isApprovedPerceptionExecutionReuse =
-        local === 'apps/perception/index.ts' && target === 'apps/inference/execution.ts';
+      const isApprovedPerceptionExecutionReuse = local === 'apps/perception/index.ts' && target === 'apps/inference/execution.ts';
       assert.ok(
         !target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`) || isApprovedPerceptionExecutionReuse,
         `${local} imports another app: ${target}`,
@@ -1082,14 +1081,6 @@ assert.match(
   'Perception runtime owner must use the shared runtime type contract',
 );
 const perceptionApp = readFileSync(join(root, 'apps/perception/index.ts'), 'utf8');
-assert.match(
-  perceptionApp,
-  /from '\.\.\/inference\/execution\.ts'/,
-  'Perception must explicitly reuse the audited native executor until extraction',
-);
-assert.doesNotMatch(
-  perceptionApp,
-  /from '\.\.\/inference\/(?!execution\.ts)[^']+'/,
-  'Perception cannot import other Inference application modules',
-);
+assert.match(perceptionApp, /from '\.\.\/inference\/execution\.ts'/, 'Perception must explicitly reuse the audited native executor until extraction');
+assert.doesNotMatch(perceptionApp, /from '\.\.\/inference\/(?!execution\.ts)[^']+'/, 'Perception cannot import other Inference application modules');
 console.log(`Architecture boundary check passed (${checked} package/app files).`);
