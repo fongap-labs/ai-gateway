@@ -225,7 +225,17 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       execute: (subrequest) => handleRequest(subrequest, env, ctx),
     });
     if (!visualResult.ok) {
-      return gatewayError(request, env, route, visualResult.status, visualResult.message, requestId, undefined, undefined, visualResult.code);
+      return gatewayError(
+        request,
+        env,
+        route,
+        visualResult.status,
+        visualResult.message,
+        requestId,
+        visualResult.cause ? { preprocess_failure_code: visualResult.cause } : undefined,
+        undefined,
+        visualResult.code,
+      );
     }
     bodyJson = visualResult.body;
     rawBody = undefined; // Original image JSON must never reach a text-only node.
