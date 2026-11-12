@@ -147,8 +147,14 @@ const batchRelay = ownedRelay(
   () => false,
   () => true,
 );
-const deliveredBatch = (await new Response(batchRelay).text()).trim().split('\n').map((v) => JSON.parse(v).index);
-assert.deepEqual(deliveredBatch, Array.from({ length: batchCount }, (_, i) => i + 1));
+const deliveredBatch = (await new Response(batchRelay).text())
+  .trim()
+  .split('\n')
+  .map((v) => JSON.parse(v).index);
+assert.deepEqual(
+  deliveredBatch,
+  Array.from({ length: batchCount }, (_, i) => i + 1),
+);
 
 // Verify UTF-8 continuation bytes split across Provider chunks are decoded
 // once, and the SSE size guard still rejects a single oversized data line.
