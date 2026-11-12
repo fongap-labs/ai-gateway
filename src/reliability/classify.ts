@@ -228,6 +228,12 @@ export function classifyUpstreamStatus(
   if (status === 400) {
     return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
   }
+  // Some compatible-model routers report a missing physical model as
+  // HTTP 422 instead of 404. This is node+model-local; another Key or
+  // configured fallback may still be valid. Other 422 payload errors stop.
+  if (status === 422 && looksLikeModelMissing(body)) {
+    return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
+  }
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
