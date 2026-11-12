@@ -14,8 +14,10 @@ export function traceIdForRequest(requestId: string): string | null {
 
 export function parseTraceparent(value: string | null): TraceContext | null {
   const match = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/.exec(value ?? '');
-  if (!match || /^0{32}$/.test(match[1]) || /^0{16}$/.test(match[2])) return null;
-  return { traceId: match[1], spanId: match[2], flags: match[3] };
+  if (!match) return null;
+  const [, traceId, spanId, flags] = match;
+  if (!traceId || !spanId || !flags || /^0{32}$/.test(traceId) || /^0{16}$/.test(spanId)) return null;
+  return { traceId, spanId, flags };
 }
 
 function freshSpanId(): string {
