@@ -22,9 +22,6 @@ export function applyNativeTraceSampling(observability, raw, exportDestination =
   if (destination && rate === 0) throw new Error('AIG_TRACE_EXPORT_DESTINATION requires positive sampling.');
   return {
     ...observability,
-    traces:
-      rate === 0
-        ? { enabled: false }
-        : { enabled: true, head_sampling_rate: rate, ...(destination ? { destinations: [destination] } : {}) },
+    traces: rate === 0 ? { enabled: false } : { enabled: true, head_sampling_rate: rate, ...(destination ? { destinations: [destination] } : {}) },
   };
 }
