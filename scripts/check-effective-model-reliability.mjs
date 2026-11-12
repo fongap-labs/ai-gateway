@@ -6,9 +6,9 @@
 
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
-import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
+import { recordOutcome, rotateWithNeutralEnd } from '../apps/gateway/attempt/outcome.ts';
 import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
-import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
+import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
 const source = 'Code-Ultra';
@@ -76,6 +76,49 @@ recordOutcome(state, node, classifyUpstreamStatus(503, new Headers(), {}, Date.n
 });
 assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 2);
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
+
+__resetTier1StateForTests();
+// A previous transient Tier 1 failure is NOT a license to send a later
+// last-resort dispatch when a newer outcome has ruled out that candidate.
+const staleAfter429 = makeState();
+recordOutcome(
+  staleAfter429, node,
+  classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
+  makeContext(staleAfter429), { status: 503, latencyMs: 120 },
+);
+assert.equal(staleAfter429.sameNodeRetry?.nodeId, node.id);
+recordOutcome(
+  staleAfter429, node,
+  classifyUpstreamStatus(429, new Headers({ 'Retry-After': '240' }), {}, Date.now(), 'quota exhausted'),
+  makeContext(staleAfter429), { status: 429, latencyMs: 70 },
+);
+assert.equal(staleAfter429.sameNodeRetry, null, 'a later rate limit must cancel an older same-key retry');
+
+__resetTier1StateForTests();
+const staleAfterRefusal = makeState();
+recordOutcome(
+  staleAfterRefusal, node,
+  classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
+  makeContext(staleAfterRefusal), { status: 503, latencyMs: 120 },
+);
+rotateWithNeutralEnd(staleAfterRefusal, node, KIND.AUTH, makeContext(staleAfterRefusal), true);
+assert.equal(staleAfterRefusal.sameNodeRetry, null, 'a pre-dispatch rejection must cancel an older retry');
+assert.equal(staleAfterRefusal.dispatches, 1, 'pre-dispatch rejection must not be charged as a Provider call');
+
+__resetTier1StateForTests();
+const staleAfterTierChange = makeState();
+recordOutcome(
+  staleAfterTierChange, node,
+  classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary outage'),
+  makeContext(staleAfterTierChange), { status: 503, latencyMs: 120 },
+);
+const tokenNode = { ...node, id: 'token-node', tier: 'tier-2' };
+recordOutcome(
+  staleAfterTierChange, tokenNode,
+  classifyUpstreamStatus(429, new Headers({ 'Retry-After': '15' }), {}, Date.now(), 'rate limit'),
+  makeContext(staleAfterTierChange), { status: 429, latencyMs: 70 },
+);
+assert.equal(staleAfterTierChange.sameNodeRetry, null, 'a later Tier 2 failure must not resurrect an older Tier 1 attempt');
 
 __resetTier1StateForTests();
 const throttled = makeState();
