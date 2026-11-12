@@ -227,7 +227,21 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     if ((route === 'health' || route === 'metrics') && !diag.canReadDiagnostics(env, authResult)) {
       return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
     }
-    if (route === 'health') return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };
+    if (route === 'health') {
+      // Only an existing MAX/ULTRA diagnostics key may request an explicit
+      // private binding probe. Ordinary /health remains unchanged and local.
+      if (requestUrl.searchParams.get('probe') === 'private-centers') {
+        if (authResult.mode !== 'grouped' || (authResult.group !== 'MAX' && authResult.group !== 'ULTRA')) {
+          return {
+            ok: false,
+            response: gatewayError(request, env, route, 403, 'Private center probe requires MAX or ULTRA diagnostics access.', requestId),
+          };
+        }
+        const { privateCenterProbeResponse } = await import('./diagnostics/private-centers.ts');
+        return { ok: false, response: await privateCenterProbeResponse(request, env, requestId) };
+      }
+      return { ok: false, response: diag.healthResponse(request, env, requestId, authResult) };
+    }
     if (route === 'metrics') return { ok: false, response: diag.metricsResponse(request, env, requestId) };
     return { ok: false, response: diag.modelsListResponse(request, env, requestId, authResult) };
   }
