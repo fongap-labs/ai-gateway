@@ -58,6 +58,8 @@ content-type: application/json
 }
 ```
 
+若客户端将同一个 `generate_image` 函数声明为唯一工具，指定相同 `metadata.aig_image_model`，并把 `tool_choice` 改为 `"auto"`，Gateway 会先向原文本模型执行一次非流式工具决策：模型返回普通文字时，原样返回文字；模型明确选择唯一的 `generate_image` 函数时，再调用私有 Generation Center 一次。流式 Chat 会在该决策与图片生成结束后合成 SSE；不会把已开始的生成请求重新派发。模型返回多个工具调用或错误参数将直接失败，不自动产生额外费用。此模式仍需要客户端提供工具契约，网关不会从自然语言中猜测是否应该生成图片。
+
 AGENT Key 必须同时被授权调用原 Chat 模型与独立内部图片模型。图片任务由已有 `AIG_GENERATION_SERVICE` 与 `AIG_GENERATION_AUTH_KEY` 执行，不引入新环境变量。Chat 回答的 `content` 是带 Base64 Data URI 的 Markdown 图片；**客户端必须支持 Data URI 图片渲染**。如果客户端不支持此输出格式，仍应直接调用 `/v1/images/generations` 并由客户端显示返回的图片。
 
 网关禁止根据聊天自然语言自动触发付费生成；没有选择工具时普通 Chat 的模型路由不变。工具被选择但调用者不是 AGENT、没有声明函数、没有明确模型、带图片编辑输入、内部中心不可用或 Provider 返回未知结果，均返回明确错误且不盲目重复生成。流式客户端在生成完成后收到合成 Chat SSE，服务端生成本身仍是同步单次提交。

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 新增: AGENT 聊天请求可声明 `generate_image` 并选择 `tool_choice:auto`，由文本模型决定是否生成图片，实际生成仍由 Generation Center 单次执行。
+
 - 维护: 增加 503、422 跨模型及跨 Tier 回退验证，并在真正失败后恢复的成功响应中提供匿名派发数和回退证据。
 
 - 维护: 新增已部署 Gateway 的真实文本、Omni 识图、Perception 委托、故障转移及显式图片生成验收脚本；付费请求默认关闭。
