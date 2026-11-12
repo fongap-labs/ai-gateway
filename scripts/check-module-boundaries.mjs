@@ -32,14 +32,7 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
     }
     if (local.startsWith('apps/')) {
       const ownApp = local.split('/')[1];
-      // Perception currently reuses Inference's single physical executor. This
-      // narrowly audited edge is temporary: it cannot expand to other modules,
-      // scheduling, response codecs, or another application's implementation.
-      const isApprovedPerceptionExecutionReuse = local === 'apps/perception/index.ts' && target === 'apps/inference/execution.ts';
-      assert.ok(
-        !target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`) || isApprovedPerceptionExecutionReuse,
-        `${local} imports another app: ${target}`,
-      );
+      assert.ok(!target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`), `${local} imports another app: ${target}`);
     }
     if (local.startsWith('apps/') || local.startsWith('operations/')) {
       assert.ok(
@@ -728,28 +721,32 @@ assert.doesNotMatch(
 assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
 assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
 assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
-// The neutral physical executor is the unique implementation; the old
-// Inference file is an export-only compatibility facade for existing imports.
-const inferenceExecutionFacade = readFileSync(join(root, 'apps/inference/execution.ts'), 'utf8');
-const inferenceResponseFacade = readFileSync(join(root, 'apps/inference/response.ts'), 'utf8');
+// Both private centers must import the same packages/ owner directly.
+for (const retired of ['apps/inference/execution.ts', 'apps/inference/response.ts']) {
+  assert.ok(!existsSync(join(root, retired)), `Remove redundant private-center compatibility file: ${retired}`);
+}
 const sharedNativeOwner = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const sharedResponseOwner = readFileSync(join(root, 'packages/execution-core/response.ts'), 'utf8');
-assert.match(inferenceExecutionFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/);
-assert.match(inferenceResponseFacade, /export \* from '\.\.\/\.\.\/packages\/execution-core\/response\.ts'/);
-for (const [legacy, source] of [
-  ['execution', inferenceExecutionFacade],
-  ['response', inferenceResponseFacade],
-]) {
-  assert.doesNotMatch(
-    source,
-    /^import |^export (?:async )?(?:function|const|class) /m,
-    `Inference ${legacy} legacy path cannot retain runtime implementation`,
-  );
-}
 assert.match(sharedNativeOwner, /export async function executeNative\(/, 'Neutral executor must own the physical invocation');
 assert.match(sharedResponseOwner, /export function preDispatchProblem\(/, 'Neutral error envelope must preserve pre-dispatch result classification');
 assert.doesNotMatch(sharedNativeOwner, /from ['"][^'"]*\/(?:apps|src)\//, 'Neutral executor must not import application implementations');
 assert.doesNotMatch(sharedResponseOwner, /from ['"][^'"]*\/(?:apps|src)\//, 'Neutral response must not import application implementations');
+for (const center of ['inference', 'perception']) {
+  const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
+  assert.ok(
+    entry.includes("from '../../packages/execution-core/native.ts'"),
+    `${center} must import the neutral executor without a cross-app facade`,
+  );
+  assert.ok(
+    entry.includes("from '../../packages/execution-core/response.ts'"),
+    `${center} must import the shared error envelope without a duplicate local implementation`,
+  );
+}
+const inferencePreflightSource = readFileSync(join(root, 'apps/inference/preflight.ts'), 'utf8');
+assert.ok(
+  inferencePreflightSource.includes("from '../../packages/execution-core/response.ts'"),
+  'Inference preflight must use the same neutral error envelope',
+);
 for (const center of ['inference', 'generation']) {
   const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
   const executorPath = center === 'inference' ? 'packages/execution-core/native.ts' : 'apps/generation/execution.ts';
@@ -759,7 +756,8 @@ for (const center of ['inference', 'generation']) {
     /getProviderAdapter|resolveSubscriptionCredential|await fetch\(/,
     `${center} HTTP entrypoint must not own physical Provider execution`,
   );
-  assert.ok(entry.includes("from './execution.ts'"), `${center} entrypoint must call its own executor`);
+  const executorSpecifier = center === 'inference' ? "from '../../packages/execution-core/native.ts'" : "from './execution.ts'";
+  assert.ok(entry.includes(executorSpecifier), `${center} entrypoint must import the expected physical executor`);
   if (center === 'inference') {
     assert.match(executor, /await dispatchProviderAttempt\(/, 'Inference must dispatch through the neutral physical-attempt owner');
     assert.doesNotMatch(executor, /await fetch\(/, 'Inference cannot independently replay a physical Provider attempt');
@@ -1170,6 +1168,7 @@ assert.match(
   'Perception runtime owner must use the shared runtime type contract',
 );
 const perceptionApp = readFileSync(join(root, 'apps/perception/index.ts'), 'utf8');
-assert.match(perceptionApp, /from '\.\.\/inference\/execution\.ts'/, 'Perception must explicitly reuse the audited native executor until extraction');
-assert.doesNotMatch(perceptionApp, /from '\.\.\/inference\/(?!execution\.ts)[^']+'/, 'Perception cannot import other Inference application modules');
+assert.match(perceptionApp, /from '\.\.\/\.\.\/packages\/execution-core\/native\.ts'/, 'Perception must directly import neutral execution');
+assert.match(perceptionApp, /from '\.\.\/\.\.\/packages\/execution-core\/response\.ts'/, 'Perception must directly share neutral errors');
+assert.doesNotMatch(perceptionApp, /from '\.\.\/inference\//, 'Perception must not import any Inference application module');
 console.log(`Architecture boundary check passed (${checked} package/app files).`);
