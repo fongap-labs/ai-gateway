@@ -446,8 +446,10 @@ const exhaustedEnv = {
   AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
   AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 8, tier_attempts: { tier1: 8 }, hedge: { enabled: false } } }),
   AIG_INFERENCE_SERVICE: {
-    async fetch() {
-      exhaustedDispatches++;
+    async fetch(request) {
+      // A conversion-preflight RPC is not a physical Key/Provider dispatch.
+      // Only /internal/execute carries a selected node identity.
+      if (request.headers.get('x-aig-node-id')) exhaustedDispatches++;
       return new Response(JSON.stringify({ error: { message: 'temporary upstream failure' } }), {
         status: 503,
         headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
