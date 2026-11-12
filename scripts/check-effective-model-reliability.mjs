@@ -33,7 +33,13 @@ const makeState = () => ({
   maxAttempts: 8,
   maxDispatches: 8,
   hedges: 0,
-  logger: { info(message) { logs.push(message); }, debug() {}, error() {} },
+  logger: {
+    info(message) {
+      logs.push(message);
+    },
+    debug() {},
+    error() {},
+  },
 });
 const makeContext = (state) => ({
   state,
@@ -72,10 +78,16 @@ assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
 __resetTier1StateForTests();
 const throttled = makeState();
-recordOutcome(throttled, node, classifyUpstreamStatus(429, new Headers({ 'Retry-After': '15' }), {}, Date.now(), 'requests per minute'), makeContext(throttled), {
-  status: 429,
-  latencyMs: 80,
-});
+recordOutcome(
+  throttled,
+  node,
+  classifyUpstreamStatus(429, new Headers({ 'Retry-After': '15' }), {}, Date.now(), 'requests per minute'),
+  makeContext(throttled),
+  {
+    status: 429,
+    latencyMs: 80,
+  },
+);
 assert.ok(getTier1Model(node.id, effective).cooldownUntil > Date.now());
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
