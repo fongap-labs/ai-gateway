@@ -31,7 +31,7 @@
     "config:diff": "node scripts/config-cli.mjs diff",
     "config:cutover:plan": "node scripts/tier-cutover-plan.mjs",
     "check:cutover-plan": "node scripts/check-tier-cutover-plan.mjs",
-    "check:two-tier-runtime": "node scripts/check-two-tier-runtime.mjs && node scripts/check-free-tier-efficiency.mjs",
+    "check:two-tier-runtime": "node scripts/check-two-tier-runtime.mjs && node scripts/check-free-tier-efficiency.mjs && node scripts/check-tier1-fast-cooldown.mjs",
     "check:lazy-gateway-logging": "node scripts/check-lazy-gateway-logging.mjs",
     "discovery:check": "node scripts/provider-discovery.mjs check-snapshot scripts/provider-discovery/samples/catalog.example.json",
     "discovery:summary": "node scripts/provider-discovery.mjs summary scripts/provider-discovery/samples/catalog.example.json",

@@ -15,10 +15,13 @@ import {
   TIER1_429_ACCOUNT_ESCALATION_MODELS,
   TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
   TIER1_429_PROBE_GATE_MS,
+  TIER1_CIRCUIT_COOLDOWN_FLOOR_MS,
   TIER1_COOLDOWN_DEFAULT_MS,
   TIER1_COOLDOWN_MAX_MS,
   TIER1_EWMA_ALPHA,
+  TIER1_FAILURE_STREAK_WINDOW_MS,
   TIER1_FAILURE_THRESHOLD,
+  TIER1_FAST_COOLDOWN_MS,
   TIER1_FORBIDDEN_LADDER_MS,
   TIER1_HALF_OPEN_SUCCESS_THRESHOLD,
   TIER1_MODEL_MISSING_LADDER_MS,
@@ -55,11 +58,14 @@ export {
   TIER1_429_ACCOUNT_ESCALATION_MODELS,
   TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS,
   TIER1_429_PROBE_GATE_MS,
+  TIER1_CIRCUIT_COOLDOWN_FLOOR_MS,
   TIER1_COOLDOWN_DEFAULT_MS,
   TIER1_COOLDOWN_MAX_MS,
   TIER1_EWMA_ALPHA,
   TIER1_FAILURE_STATES,
+  TIER1_FAILURE_STREAK_WINDOW_MS,
   TIER1_FAILURE_THRESHOLD,
+  TIER1_FAST_COOLDOWN_MS,
   TIER1_FORBIDDEN_LADDER_MS,
   TIER1_HALF_OPEN_SUCCESS_THRESHOLD,
   TIER1_MODEL_MISSING_LADDER_MS,
@@ -486,13 +492,26 @@ export function applyTier1Outcome(accountId: string, modelId: string, outcome: T
   if (outcome.scopeAmbiguous) model.scopeAmbiguous429 = true;
   if (rateLimited) model.consecutiveRateLimits++;
   else model.consecutiveRateLimits = 0;
-  if (outcome.counted) model.consecutiveFailures++;
+  if (outcome.counted) {
+    // An old isolated failure is not a continuing Key+model failure streak.
+    if (model.lastCountedFailureAt === 0 || now - model.lastCountedFailureAt > TIER1_FAILURE_STREAK_WINDOW_MS) {
+      model.consecutiveFailures = 0;
+    }
+    model.consecutiveFailures++;
+    model.lastCountedFailureAt = now;
+  }
 
   const halfOpenFailure = model.failureState === FAILURE_STATE.HALF_OPEN;
   const thresholdReached = outcome.counted === true && model.consecutiveFailures >= TIER1_FAILURE_THRESHOLD;
-  if (halfOpenFailure || thresholdReached || rateLimited || (outcome.cooldownMs ?? 0) > 0) {
-    const cooldownMs = modelCooldownMs(model, outcome);
-    model.cooldownUntil = now + cooldownMs;
+  const fastCooldown = outcome.counted === true && model.consecutiveFailures === 2 && !halfOpenFailure;
+  if (halfOpenFailure || thresholdReached || fastCooldown || rateLimited || (outcome.cooldownMs ?? 0) > 0) {
+    const cooldownMs = halfOpenFailure || thresholdReached
+      ? Math.max(TIER1_CIRCUIT_COOLDOWN_FLOOR_MS, modelCooldownMs(model, outcome))
+      : fastCooldown
+        ? Math.max(TIER1_FAST_COOLDOWN_MS, modelCooldownMs(model, outcome))
+        : modelCooldownMs(model, outcome);
+    // A sibling already in flight must not shorten the current cooldown.
+    model.cooldownUntil = Math.max(model.cooldownUntil, now + cooldownMs);
     model.cooldownReason = outcome.reason;
     if (rateLimited) {
       model.rateLimitRecoveryPending = true;
@@ -571,6 +590,7 @@ export function recordTier1Success(accountId: string, modelId: string, now: numb
   clearRateLimitRecoveryIfProven(account, model, now);
 
   model.consecutiveFailures = 0;
+  model.lastCountedFailureAt = 0;
   model.consecutiveForbidden = 0;
   account.recentRateLimitedModels.delete(modelId);
   if (model.failureState === FAILURE_STATE.HALF_OPEN) {

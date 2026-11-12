@@ -8,6 +8,9 @@ export const TIER1_OUTLIER_MULTIPLIER = 4;
 export const TIER1_OUTLIER_CONSECUTIVE_THRESHOLD = 2;
 
 export const TIER1_FAILURE_THRESHOLD = 3;
+export const TIER1_FAST_COOLDOWN_MS = 15_000;
+export const TIER1_FAILURE_STREAK_WINDOW_MS = 90_000;
+export const TIER1_CIRCUIT_COOLDOWN_FLOOR_MS = 30_000;
 // A half-open model needs two consecutive successful observations before it is
 // treated as healthy again: one success proves the node answers, two prove the
 // answer was not a fluke.
@@ -63,6 +66,7 @@ export type Tier1ModelRuntime = {
   cooldownReason: string | null;
   failureState: Tier1FailureState;
   consecutiveFailures: number;
+  lastCountedFailureAt: number;
   consecutiveRateLimits: number;
   consecutiveOutliers: number;
   // 403 refusals in a row on this model; drives TIER1_FORBIDDEN_LADDER_MS.
