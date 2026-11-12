@@ -19,7 +19,14 @@ const image = {
   },
 };
 
-async function exercise({ allowFallback, provider = 'openai', bindCenter = true, expectedStatus, expectedCode }) {
+async function exercise({
+  allowFallback,
+  provider = 'openai',
+  bindCenter = true,
+  expectedStatus,
+  expectedCode,
+  includeUnsupportedVisionSibling = false,
+}) {
   const providerCalls = [];
   const centerCalls = [];
   const nodes = [
@@ -36,6 +43,14 @@ async function exercise({ allowFallback, provider = 'openai', bindCenter = true,
       models: { [vision]: 'upstream-vision-model' },
     },
   ];
+  if (includeUnsupportedVisionSibling) {
+    nodes.splice(1, 0, {
+      id: 'incompatible-vision-key',
+      provider: 'unverified-provider',
+      base_url: 'https://provider.example.invalid/v1',
+      models: { [vision]: 'upstream-incompatible-model' },
+    });
+  }
   const env = {
     AIG_ACCESS_KEY_AIR: accessKey,
     AIG_ACCESS_MODELS_AIR: '*',
@@ -56,6 +71,7 @@ async function exercise({ allowFallback, provider = 'openai', bindCenter = true,
     AIG_TIER1_CREDENTIALS_01: JSON.stringify({
       'text-only-key': 'local-text-credential',
       'vision-key': 'local-vision-credential',
+      ...(includeUnsupportedVisionSibling ? { 'incompatible-vision-key': 'local-incompatible-key' } : {}),
     }),
   };
   if (bindCenter) {
@@ -126,6 +142,7 @@ async function exercise({ allowFallback, provider = 'openai', bindCenter = true,
 
 await exercise({ allowFallback: false, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
 await exercise({ allowFallback: true, expectedStatus: 200 });
+await exercise({ allowFallback: true, includeUnsupportedVisionSibling: true, expectedStatus: 200 });
 await exercise({
   allowFallback: true,
   provider: 'unverified-provider',
@@ -226,6 +243,32 @@ try {
   assert.equal(bridgeProviderCalls.length, 2, 'unauthorized delegate must not dispatch');
 } finally {
   globalThis.fetch = bridgeOriginalFetch;
+}
+
+// A declared incompatible capability is a zero-dispatch client error, not a
+// Provider 422 with speculative retries across keys and models.
+for (const [field, payload] of [
+  ['tools', { tools: [{ type: 'function', function: { name: 'run', parameters: { type: 'object' } } }] }],
+  ['stream', { stream: true }],
+]) {
+  const capEnv = {
+    AIG_ACCESS_KEY_AIR: accessKey,
+    AIG_ACCESS_MODELS_AIR: original,
+    AIG_TIER1_NODES_01: JSON.stringify([
+      { id: 'cap-incompatible', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [original]: 'cap-physical' } },
+    ]),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [original]: { policy: 'default', capabilities: { tools: field !== 'tools', stream: field !== 'stream' } },
+    }),
+  };
+  const req = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: original, messages: [{ role: 'user', content: 'test' }], ...payload }),
+  });
+  const reply = await handleRequest(req, capEnv, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(reply.status, 400, field);
+  assert.equal(reply.headers.get('x-gateway-error-code'), 'gateway_model_capability_unsupported', field);
 }
 
 console.log('Gateway -> real Perception -> fake Provider and zero-dispatch failure contracts passed offline.');
