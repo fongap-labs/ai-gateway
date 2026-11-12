@@ -4,20 +4,14 @@
 // Shared private-center Matrix stream conversion, native-object collection and
 // synthetic SSE rendering. Gateway still owns first-event commit and retry.
 
-import {
-  type BudgetStopReason,
-  ConversionBudgetStop,
-  createMatrixBudget,
-  type MatrixConversionBudget,
-  outputUnitsOf,
-} from '../budget.ts';
+import { markSyntheticClientStreamHeaders } from '../../transport/client-lifecycle.ts';
+import { convertSseStream } from '../../transport/convert-sse.ts';
+import { createSseScanner, readWithDeadline } from '../../transport/sse.ts';
+import { type BudgetStopReason, ConversionBudgetStop, createMatrixBudget, type MatrixConversionBudget, outputUnitsOf } from '../budget.ts';
 import { IrCollector, type IrEvent, type IrPart, type IrProtocol, type IrReply, isRecord } from '../ir.ts';
 import { ResponsesEventBuilder } from '../responses-events.ts';
 import type { ConversionDiagnostic } from '../result.ts';
 import { ConversionError } from '../validation.ts';
-import { markSyntheticClientStreamHeaders } from '../../transport/client-lifecycle.ts';
-import { convertSseStream } from '../../transport/convert-sse.ts';
-import { createSseScanner, readWithDeadline } from '../../transport/sse.ts';
 import { AnthropicStreamDecoder, AnthropicStreamEncoder } from './anthropic-stream.ts';
 import { ChatStreamDecoder, ChatStreamEncoder } from './chat-stream.ts';
 import { replyToObject, replyToResponsesObject } from './response.ts';
