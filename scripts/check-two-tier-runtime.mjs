@@ -16,8 +16,8 @@ import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
-import { __resetIsolateConcurrencyForTests, snapshotIsolateRequestActivity } from '../src/ratelimit/isolate-concurrency.ts';
 import { __resetBodyBudgetForTests, admitRequestBody } from '../src/ratelimit/body-budget.ts';
+import { __resetIsolateConcurrencyForTests, snapshotIsolateRequestActivity } from '../src/ratelimit/isolate-concurrency.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import {
