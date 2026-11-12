@@ -62,11 +62,11 @@ export function recordTier1QuotaSignal(
 }
 
 /** Record a provider-reported quota window. This is the production writer that
- *  activates the dormant near_limit scoring and exhausted_until eligibility
- *  gate. Absolute remaining (requests/tokens) drives the reservation counter;
- *  the ratio (remaining/limit, when the provider reports a ceiling) drives the
- *  near_limit classification. A `null` signal (provider reports no quota) is
- *  ignored — unknown quota stays a no-op pass-through. */
+ *  keeps the near_limit diagnostic classification and exhausted_until
+ *  eligibility gate. Absolute remaining (requests/tokens) drives reservations;
+ *  the ratio (remaining/limit, when the provider reports a ceiling) is
+ *  diagnostic only while a free key can still accept work. A `null` report
+ *  (unknown quota) remains a no-op pass-through. */
 export function recordTier1QuotaReport(
   accountId: string,
   signal: {
@@ -121,9 +121,9 @@ export function recordTier1QuotaReport(
     account.quotaState = 'exhausted_until';
   } else if (exhausted || worstTail <= 0.1) {
     account.quotaState = 'near_limit';
-    // A zero tail with no usable reset marker cannot prove when the window
-    // refills. Keep the near_limit score demotion but drop the hard
-    // reservation gate: pinning it at zero would deny admission forever.
+    // A zero tail without a reset marker cannot prove when the window
+    // refills. Drop the hard reservation gate: pinning it at zero would
+    // deny admission forever. The near_limit state is diagnostic only.
     if (account.quotaResetAt <= now) {
       if (signal.remainingRequests === 0) account.quotaRemainingRequests = null;
       if (signal.remainingTokens === 0) account.quotaRemainingTokens = null;

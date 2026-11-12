@@ -6,7 +6,7 @@
 // combined into a bounded ranking score. No state is mutated here.
 
 import { tier1ProviderModelHeatFactor } from '../reliability/tier1-heat.ts';
-import { getTier1ModelPerf, TIER1_FAILURE_STATES, tier1QuotaState } from '../reliability/tier1-state.ts';
+import { getTier1ModelPerf, TIER1_FAILURE_STATES } from '../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';
 
 export const TIER1_EXPLORATION_FACTOR = 0.9;
@@ -49,9 +49,8 @@ function failureFactor(accountId: string, modelId: string): number {
   return getTier1ModelPerf(accountId, modelId)?.failureState === TIER1_FAILURE_STATES.HALF_OPEN ? TIER1_HALF_OPEN_SCORE_PENALTY : 1;
 }
 
-function quotaFactor(accountId: string, now: number): number {
-  return tier1QuotaState(accountId, now) === 'near_limit' ? 1.2 : 1;
-}
+// Never demote a healthy free key just to preserve the unused end of a
+// Provider quota window. Confirmed exhaustion remains an admission gate.
 
 function explorationFactor(accountId: string, modelId: string): number {
   const metric = getTier1ModelPerf(accountId, modelId);
@@ -99,7 +98,6 @@ export function calculateTier1Score(
     TIER1_SCORE_BASE *
       ttftFactor(node.id, modelId, candidates) *
       failureFactor(node.id, modelId) *
-      quotaFactor(node.id, now) *
       tier1ProviderModelHeatFactor(node.provider, upstreamModelOf(node, modelId), now) *
       affinityFactor *
       explorationFactor(node.id, modelId),
