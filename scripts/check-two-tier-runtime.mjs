@@ -385,7 +385,7 @@ async function verifyTerminalClientError(status) {
     body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: 'test invalid input' }] }),
   });
   const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
-  assert.equal(response.status, status, `Provider ${status} must remain terminal`);
+  assert.equal(response.status, status, `Provider ${status} must remain terminal: ${await response.clone().text()}`);
   assert.deepEqual(dispatched, [freeId], `Provider ${status} must not consume fallback dispatches`);
   const payload = await response.json();
   assert.equal(payload.error?.details?.attempts, 1, 'error details must reflect exactly one physical dispatch');
