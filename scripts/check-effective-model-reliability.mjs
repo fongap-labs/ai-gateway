@@ -6,6 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
+import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
 import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
 import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
@@ -109,4 +110,54 @@ assert.equal(getTier1Model(node.id, source).consecutiveFailures, 0);
 assert.ok(!JSON.stringify(success.attempts).includes('physical-ultra'), 'source model must not be blamed for target failure');
 __resetTier1StateForTests();
 
-console.log('Tier 1 effective-model error, quota, TTFT and recovery attribution contracts passed offline.');
+// Public diagnostic summary proves that cross-model and cross-tier fallback
+// really dispatched, while protecting Key IDs, Provider and physical models.
+const diagnosticAttempts = [
+  { tier: 'tier-1', node_id: 'secret-node-1', provider: 'secret-provider', effective_model: 'Code-Max', dispatched: false },
+  { tier: 'tier-1', node_id: 'secret-node-1', provider: 'secret-provider', upstream_model: 'secret-physical', effective_model: 'Code-Max', dispatched: true },
+  { tier: 'tier-1', node_id: 'secret-node-2', effective_model: 'Code-Max', dispatched: true },
+  { tier: 'tier-2', node_id: 'secret-node-3', effective_model: 'Code-Pro', dispatched: true },
+];
+const failover = summarizeFailoverAttempts(diagnosticAttempts).failover_summary;
+assert.deepEqual(failover, {
+  model_switches: 1,
+  distinct_models: 2,
+  tier1_dispatches: 2,
+  tier2_dispatches: 1,
+  other_dispatches: 0,
+  truncated: false,
+});
+assert.deepEqual(summarizeFailoverAttempts([{ dispatched: false, effective_model: 'Code-Max' }]), {});
+assert.equal(JSON.stringify(failover).includes('secret-'), false);
+const longTrace = Array.from({ length: 90 }, (_, i) => ({
+  tier: i % 2 === 0 ? 'tier-1' : 'tier-2',
+  effective_model: i % 2 === 0 ? 'Code-Max' : 'Code-Pro',
+  dispatched: true,
+}));
+const bounded = summarizeFailoverAttempts(longTrace).failover_summary;
+assert.equal(bounded?.truncated, true);
+assert.equal((bounded?.tier1_dispatches ?? 0) + (bounded?.tier2_dispatches ?? 0), 64);
+const diagnosticState = {
+  attempts: diagnosticAttempts,
+  logicalAttempts: 3,
+  dispatches: 3,
+  hedges: 0,
+  failureKinds: { rate_limit: 1, headers_timeout: 1, server: 1 },
+};
+const diagnosticRequest = new Request('https://gateway.example.invalid/v1/chat/completions', { method: 'POST' });
+const rejectedResponse = buildClientErrorResponse(
+  diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', 422, 'secret private upstream detail', diagnosticState, false,
+);
+assert.equal(rejectedResponse.status, 422);
+const rejectedText = await rejectedResponse.text();
+assert.deepEqual(JSON.parse(rejectedText).error.details.failover_summary, failover);
+assert.equal(rejectedText.includes('secret-'), false);
+const exhaustedResponse = buildBudgetExhaustedResponse(
+  diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', diagnosticState, false,
+);
+assert.equal(exhaustedResponse.status, 504);
+const exhaustedText = await exhaustedResponse.text();
+assert.deepEqual(JSON.parse(exhaustedText).error.details.failover_summary, failover);
+assert.equal(exhaustedText.includes('secret-'), false);
+
+console.log('Tier 1 effective-model attribution and anonymous failover diagnostics contracts passed offline.');
