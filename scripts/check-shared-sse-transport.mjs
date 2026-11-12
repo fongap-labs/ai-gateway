@@ -100,7 +100,7 @@ const pressureSource = new ReadableStream(
   {
     pull(controller) {
       pressureReads++;
-      controller.enqueue(encoder.encode(\`data: \${JSON.stringify({ index: pressureReads, payload: pressurePayload })}\n\n\`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ index: pressureReads, payload: pressurePayload })}\n\n`));
       if (pressureReads === pressureFrameCount) controller.close();
     },
   },
@@ -134,7 +134,7 @@ assert.equal(pressureReads, pressureFrameCount);
 // must preserve them all. Backpressure applies to subsequent reader.read()
 // calls, not to events already present in a chunk.
 const batchCount = 32;
-const batchedFrames = Array.from({ length: batchCount }, (_, i) => \`data: \${JSON.stringify({ index: i + 1 })}\n\n\`).join('');
+const batchedFrames = Array.from({ length: batchCount }, (_, i) => `data: ${JSON.stringify({ index: i + 1 })}\n\n`).join('');
 const batchSource = new ReadableStream({
   start(controller) {
     controller.enqueue(encoder.encode(batchedFrames));
@@ -143,7 +143,7 @@ const batchSource = new ReadableStream({
 });
 const batchRelay = ownedRelay(
   batchSource,
-  (data, controller) => controller.enqueue(encoder.encode(\`\${data}\n\`)),
+  (data, controller) => controller.enqueue(encoder.encode(`${data}\n`)),
   () => false,
   () => true,
 );
@@ -152,7 +152,7 @@ assert.deepEqual(deliveredBatch, Array.from({ length: batchCount }, (_, i) => i 
 
 // Verify UTF-8 continuation bytes split across Provider chunks are decoded
 // once, and the SSE size guard still rejects a single oversized data line.
-const unicodeEvent = \`data: \${JSON.stringify({ value: 'hello 🌟 中文' })}\n\n\`;
+const unicodeEvent = `data: ${JSON.stringify({ value: 'hello 🌟 中文' })}\n\n`;
 const unicodeBytes = encoder.encode(unicodeEvent);
 const starBytes = encoder.encode('🌟');
 const starIndex = unicodeBytes.findIndex((byte, i) => starBytes.every((b, j) => unicodeBytes[i + j] === b));
@@ -175,7 +175,7 @@ assert.deepEqual(JSON.parse(await new Response(unicodeRelay).text()), { value: '
 const oversizedSource = new ReadableStream(
   {
     pull(controller) {
-      controller.enqueue(encoder.encode(\`data: \${'x'.repeat(ownedLimit + 1)}\n\n\`));
+      controller.enqueue(encoder.encode(`data: ${'x'.repeat(ownedLimit + 1)}\n\n`));
     },
   },
   { highWaterMark: 0 },
