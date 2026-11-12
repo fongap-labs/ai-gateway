@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 功能: 支持在 `AIG_MODELS_CONFIG` 中为纯文本模型显式声明 `vision_delegate`；经原有鉴权、模型授权与 Perception 私有链路先识别图片，再把受限视觉描述交给原请求模型。仅支持 Chat 图像输入，不改变模型回退链，也不自动启用生产配置。
+
 - 修复: 具有未尝试后备模型的非流式请求同样遵守已有 45 秒单模型切换上限；没有后备模型时保留原有完整等待窗口，避免超时耗尽全部故障转移预算。
 
 - 修复: 图片请求在配置中没有可用的视觉 Provider 时，在派发前返回明确的 `gateway_image_provider_unsupported`，不消耗 Provider 调用；新增真实 Perception 中心执行路径、物理模型映射及认证隔离的离线回归。
