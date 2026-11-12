@@ -232,7 +232,10 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
       // private binding probe. Ordinary /health remains unchanged and local.
       if (requestUrl.searchParams.get('probe') === 'private-centers') {
         if (authResult.mode !== 'grouped' || (authResult.group !== 'MAX' && authResult.group !== 'ULTRA')) {
-          return { ok: false, response: gatewayError(request, env, route, 403, 'Private center probe requires MAX or ULTRA diagnostics access.', requestId) };
+          return {
+            ok: false,
+            response: gatewayError(request, env, route, 403, 'Private center probe requires MAX or ULTRA diagnostics access.', requestId),
+          };
         }
         const { privateCenterProbeResponse } = await import('./diagnostics/private-centers.ts');
         return { ok: false, response: await privateCenterProbeResponse(request, env, requestId) };

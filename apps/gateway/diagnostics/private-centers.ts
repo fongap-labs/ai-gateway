@@ -12,9 +12,33 @@ import { corsHeaders } from '../../../src/protocol/http.ts';
 type Status = 'ok' | 'missing-binding' | 'missing-key' | 'unauthorized' | 'unexpected-response' | 'auth-not-enforced' | 'transport-error';
 type PrivateBinding = { fetch(request: Request): Promise<Response> };
 const SPECS = [
-  { name: 'inference', binding: 'AIG_INFERENCE_SERVICE', secret: 'AIG_INFERENCE_AUTH_KEY', header: 'x-aig-inference-auth', path: '/internal/health', method: 'GET', success: 200 },
-  { name: 'perception', binding: 'AIG_PERCEPTION_SERVICE', secret: 'AIG_PERCEPTION_AUTH_KEY', header: 'x-aig-perception-auth', path: '/internal/execute', method: 'POST', success: 400 },
-  { name: 'generation', binding: 'AIG_GENERATION_SERVICE', secret: 'AIG_GENERATION_AUTH_KEY', header: 'x-aig-generation-auth', path: '/internal/health', method: 'GET', success: 200 },
+  {
+    name: 'inference',
+    binding: 'AIG_INFERENCE_SERVICE',
+    secret: 'AIG_INFERENCE_AUTH_KEY',
+    header: 'x-aig-inference-auth',
+    path: '/internal/health',
+    method: 'GET',
+    success: 200,
+  },
+  {
+    name: 'perception',
+    binding: 'AIG_PERCEPTION_SERVICE',
+    secret: 'AIG_PERCEPTION_AUTH_KEY',
+    header: 'x-aig-perception-auth',
+    path: '/internal/execute',
+    method: 'POST',
+    success: 400,
+  },
+  {
+    name: 'generation',
+    binding: 'AIG_GENERATION_SERVICE',
+    secret: 'AIG_GENERATION_AUTH_KEY',
+    header: 'x-aig-generation-auth',
+    path: '/internal/health',
+    method: 'GET',
+    success: 200,
+  },
 ] as const;
 
 function isBinding(value: unknown): value is PrivateBinding {
@@ -26,8 +50,9 @@ function isExpectedPositive(body: unknown, name: string): boolean {
   const data = body as Record<string, unknown>;
   if (name !== 'perception') return data.status === 'ok' && data.center === name;
   const error = data.error;
-  return error !== null && typeof error === 'object' && !Array.isArray(error) &&
-    (error as Record<string, unknown>).code === 'center_contract_invalid';
+  return (
+    error !== null && typeof error === 'object' && !Array.isArray(error) && (error as Record<string, unknown>).code === 'center_contract_invalid'
+  );
 }
 
 async function checkCenter(env: GatewayEnv, spec: (typeof SPECS)[number]): Promise<Status> {
@@ -36,11 +61,12 @@ async function checkCenter(env: GatewayEnv, spec: (typeof SPECS)[number]): Promi
   const secret = env[spec.secret];
   if (typeof secret !== 'string' || secret.length < 32) return 'missing-key';
   const url = `https://${spec.name}.internal${spec.path}`;
-  const makeRequest = (credential: string) => new Request(url, {
-    method: spec.method,
-    headers: { [spec.header]: credential },
-    signal: AbortSignal.timeout(2500),
-  });
+  const makeRequest = (credential: string) =>
+    new Request(url, {
+      method: spec.method,
+      headers: { [spec.header]: credential },
+      signal: AbortSignal.timeout(2500),
+    });
   try {
     // Authenticated request is guaranteed to terminate before execution:
     // GET /internal/health or POST /internal/execute without contract headers.
@@ -63,18 +89,21 @@ export async function privateCenterProbeResponse(request: Request, env: GatewayE
   const statuses = await Promise.all(SPECS.map(async (spec) => [spec.name, await checkCenter(env, spec)] as const));
   const centers = Object.fromEntries(statuses);
   const ready = statuses.every(([, status]) => status === 'ok');
-  return new Response(JSON.stringify({
-    build: resolveBuildSha(env),
-    ready,
-    status: ready ? 'ok' : 'degraded',
-    centers,
-  }), {
-    status: ready ? 200 : 503,
-    headers: {
-      'content-type': 'application/json;charset=UTF-8',
-      'cache-control': 'no-store',
-      'x-request-id': requestId,
-      ...corsHeaders(request, env),
+  return new Response(
+    JSON.stringify({
+      build: resolveBuildSha(env),
+      ready,
+      status: ready ? 'ok' : 'degraded',
+      centers,
+    }),
+    {
+      status: ready ? 200 : 503,
+      headers: {
+        'content-type': 'application/json;charset=UTF-8',
+        'cache-control': 'no-store',
+        'x-request-id': requestId,
+        ...corsHeaders(request, env),
+      },
     },
-  });
+  );
 }

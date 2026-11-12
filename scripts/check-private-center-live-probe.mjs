@@ -6,10 +6,10 @@
 // Cloudflare, actual Secret, or Provider call is permitted.
 
 import assert from 'node:assert/strict';
+import { preflight } from '../apps/gateway/preflight.ts';
 import { handleGenerationCenterRequest } from '../apps/generation/index.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
-import { preflight } from '../apps/gateway/preflight.ts';
 
 const secrets = {
   AIG_INFERENCE_AUTH_KEY: 'offline-inference-secret-00000000000000001',
@@ -50,7 +50,7 @@ globalThis.fetch = async () => {
 };
 
 function request(key, query = '?probe=private-centers') {
-  return new Request('https://gateway.example.test/health' + query, {
+  return new Request(`https://gateway.example.test/health${query}`, {
     headers: key ? { authorization: `Bearer ${key}` } : {},
   });
 }
@@ -78,11 +78,17 @@ try {
   assert.equal(unprivileged.status, 403);
   const unauthenticated = await result(env, undefined);
   assert.equal(unauthenticated.status, 401);
-  assert.equal([...calls.values()].reduce((sum, n) => sum + n, 0), counts);
+  assert.equal(
+    [...calls.values()].reduce((sum, n) => sum + n, 0),
+    counts,
+  );
 
   const usual = await result(env, keys.AIG_ACCESS_KEY_ULTRA, '');
   assert.equal((await usual.json()).centers, undefined);
-  assert.equal([...calls.values()].reduce((sum, n) => sum + n, 0), counts);
+  assert.equal(
+    [...calls.values()].reduce((sum, n) => sum + n, 0),
+    counts,
+  );
 
   const missingBinding = { ...env, AIG_INFERENCE_SERVICE: undefined };
   const absent = await result(missingBinding, keys.AIG_ACCESS_KEY_ULTRA);
