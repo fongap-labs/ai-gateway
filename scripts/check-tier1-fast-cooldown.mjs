@@ -53,12 +53,7 @@ assert.equal(getTier1Model('free-key-1', 'Code-Ultra').cooldownUntil, 0);
 __resetTier1StateForTests();
 const recovering = getTier1Model('free-key-1', 'Code-Ultra');
 recovering.failureState = 'half_open';
-applyTier1Outcome(
-  'free-key-1',
-  'Code-Ultra',
-  classifyTier1Failure({ kind: 'rate_limit', rateLimitScope: 'model' }, { retryAfterMs: 15_000 }),
-  t,
-);
+applyTier1Outcome('free-key-1', 'Code-Ultra', classifyTier1Failure({ kind: 'rate_limit', rateLimitScope: 'model' }, { retryAfterMs: 15_000 }), t);
 assert.equal(recovering.cooldownUntil, t + 15_000);
 assert.equal(recovering.failureState, 'cooldown');
 
