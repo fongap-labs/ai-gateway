@@ -6,8 +6,8 @@
 
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
-import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
 import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
+import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
 import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
@@ -114,7 +114,14 @@ __resetTier1StateForTests();
 // really dispatched, while protecting Key IDs, Provider and physical models.
 const diagnosticAttempts = [
   { tier: 'tier-1', node_id: 'secret-node-1', provider: 'secret-provider', effective_model: 'Code-Max', dispatched: false },
-  { tier: 'tier-1', node_id: 'secret-node-1', provider: 'secret-provider', upstream_model: 'secret-physical', effective_model: 'Code-Max', dispatched: true },
+  {
+    tier: 'tier-1',
+    node_id: 'secret-node-1',
+    provider: 'secret-provider',
+    upstream_model: 'secret-physical',
+    effective_model: 'Code-Max',
+    dispatched: true,
+  },
   { tier: 'tier-1', node_id: 'secret-node-2', effective_model: 'Code-Max', dispatched: true },
   { tier: 'tier-2', node_id: 'secret-node-3', effective_model: 'Code-Pro', dispatched: true },
 ];
@@ -146,15 +153,21 @@ const diagnosticState = {
 };
 const diagnosticRequest = new Request('https://gateway.example.invalid/v1/chat/completions', { method: 'POST' });
 const rejectedResponse = buildClientErrorResponse(
-  diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', 422, 'secret private upstream detail', diagnosticState, false,
+  diagnosticRequest,
+  {},
+  'openai_chat',
+  'offline-request',
+  'Code-Max',
+  422,
+  'secret private upstream detail',
+  diagnosticState,
+  false,
 );
 assert.equal(rejectedResponse.status, 422);
 const rejectedText = await rejectedResponse.text();
 assert.deepEqual(JSON.parse(rejectedText).error.details.failover_summary, failover);
 assert.equal(rejectedText.includes('secret-'), false);
-const exhaustedResponse = buildBudgetExhaustedResponse(
-  diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', diagnosticState, false,
-);
+const exhaustedResponse = buildBudgetExhaustedResponse(diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', diagnosticState, false);
 assert.equal(exhaustedResponse.status, 504);
 const exhaustedText = await exhaustedResponse.text();
 assert.deepEqual(JSON.parse(exhaustedText).error.details.failover_summary, failover);
