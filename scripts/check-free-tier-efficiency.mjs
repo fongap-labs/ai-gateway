@@ -6,7 +6,13 @@
 
 import assert from 'node:assert/strict';
 import { classifyUpstreamStatus, rateLimitWindowOf } from '../src/reliability/classify.ts';
-import { __resetTier1StateForTests, recordTier1QuotaReport, recordTier1QuotaSignal, recordTier1Ttft, tier1QuotaState } from '../src/reliability/tier1-state.ts';
+import {
+  __resetTier1StateForTests,
+  recordTier1QuotaReport,
+  recordTier1QuotaSignal,
+  recordTier1Ttft,
+  tier1QuotaState,
+} from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
 
 assert.equal(rateLimitWindowOf('quota exceeded'), 'quota');
@@ -50,10 +56,7 @@ const now = Date.now();
 assert.equal(recordTier1QuotaSignal('baseline', { remainingRatio: 0.01, resetAtMs: now + 60_000 }, now), true);
 assert.equal(tier1QuotaState('baseline', now), 'near_limit');
 assert.equal(calculateTier1Score(nodes[0], model, nodes), healthyFreeScore);
-assert.equal(
-  recordTier1QuotaReport('baseline', { remainingRequests: 1, limitRequests: 100, resetAtMs: now + 60_000 }, now),
-  true,
-);
+assert.equal(recordTier1QuotaReport('baseline', { remainingRequests: 1, limitRequests: 100, resetAtMs: now + 60_000 }, now), true);
 assert.equal(tier1QuotaState('baseline', now), 'near_limit');
 assert.equal(calculateTier1Score(nodes[0], model, nodes), healthyFreeScore);
 assert.equal(recordTier1QuotaSignal('baseline', { remainingRatio: 0, resetAtMs: now + 60_000 }, now), true);
