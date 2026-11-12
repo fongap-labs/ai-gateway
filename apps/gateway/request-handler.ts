@@ -27,6 +27,7 @@ import type { RuntimeNode } from '../../src/types/node.ts';
 import type { LoopContext, RouteFeasibilityResult } from '../../src/types/request.ts';
 import type { TierMap } from '../../src/types/scheduler.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './cache/edge-cache.ts';
+import { isExplicitImageToolCall, runExplicitImageTool } from './chat-image-tool.ts';
 import { runFallbackChain } from './fallback.ts';
 import { authorizeModel } from './policy/model-authz.ts';
 import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from './policy/model-fallback.ts';
@@ -157,6 +158,22 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
 
   let bodyJson = initialBodyJson;
   let rawBody = initialRawBody;
+
+  // A forced, declared image tool call is an explicit instruction from an
+  // authorized AGENT client; never route arbitrary chat text into paid image
+  // generation, and never bypass the private Generation Center binding.
+  if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
+    return runExplicitImageTool({
+      request,
+      env,
+      body: bodyJson,
+      auth: pre.authResult,
+      knownModels,
+      requestedModel,
+      requestId,
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+    });
+  }
 
   // Edge cache: compute plan and check for HIT before any upstream work.
   const keyGroup = ('group' in pre.authResult && pre.authResult.group) || '';
