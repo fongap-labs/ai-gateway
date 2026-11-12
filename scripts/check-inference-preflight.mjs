@@ -3,6 +3,7 @@
 // Private conversion admission: six protocol pairs, fail-closed and no Provider.
 import assert from 'node:assert/strict';
 import { buildInferencePreflightHeaders, INFERENCE_PREFLIGHT_PATH } from '../packages/contracts/conversion-preflight.ts';
+import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
 import { ConversionError } from '../packages/conversion-core/validation.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { InferenceCenterUnavailable } from '../src/inference/inference-client-request.ts';
@@ -74,6 +75,53 @@ try {
     (error) => error instanceof ConversionError && error.requestField === 'unexpected',
   );
   assert.equal(checks, 7);
+  assert.equal(upstreamAttempts, 0);
+
+  // Native Provider tools cannot be represented as portable function tools.
+  // A preflight may report loss, but must never disclose translated payloads
+  // or allow Gateway to bypass Inference's independent safety decision.
+  const nativeToolName = 'sensitive-native-tool-name';
+  const nativeOnly = {
+    ...bodyByProtocol.anthropic,
+    tools: [{ type: 'web_search_20250305', name: nativeToolName }],
+  };
+  const nativeResult = await checkInferenceConversion(env, {
+    request: client,
+    requestId,
+    from: 'anthropic',
+    to: 'openai_chat',
+    body: nativeOnly,
+    isNonstreamPreferred: false,
+    deadlineMs: Date.now() + 15_000,
+  });
+  assert.strictEqual(nativeResult.body, nativeOnly, 'preflight returns only the original request object');
+  assert.equal(nativeResult.fidelity, 'degraded');
+  assert.deepEqual(highRiskSemanticLoss(nativeResult), ['provider_native_tool']);
+  assert.equal(JSON.stringify(nativeResult.diagnostics).includes(nativeToolName), false, 'diagnostics never leak tool names');
+  assert.equal(checks, 8);
+  assert.equal(upstreamAttempts, 0);
+
+  // Optional server tools alongside a portable function tool are a declared
+  // capability loss, not a request whose entire tool interface was lost.
+  const mixedTools = {
+    ...nativeOnly,
+    tools: [
+      { name: 'local_lookup', input_schema: { type: 'object', properties: {} } },
+      { type: 'web_search_20250305', name: nativeToolName },
+    ],
+  };
+  const mixedResult = await checkInferenceConversion(env, {
+    request: client,
+    requestId,
+    from: 'anthropic',
+    to: 'openai_chat',
+    body: mixedTools,
+    isNonstreamPreferred: false,
+    deadlineMs: Date.now() + 15_000,
+  });
+  assert.deepEqual(highRiskSemanticLoss(mixedResult), []);
+  assert.ok(mixedResult.diagnostics.some((entry) => entry.feature === 'provider_native_tool_definition' && entry.action === 'dropped'));
+  assert.equal(checks, 9);
   assert.equal(upstreamAttempts, 0);
 
   const headers = buildInferencePreflightHeaders({ requestId, deadlineMs: Date.now() + 15_000 }, key);
