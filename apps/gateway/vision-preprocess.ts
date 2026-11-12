@@ -175,7 +175,7 @@ export async function preprocessResponsesImages(args: {
   const images: ImagePart[] = [];
   const text: string[] = [];
   let lastUserIndex = -1;
-  let unsupportedImage = false;
+  let hasUnsupportedImage = false;
   const rewritten = input.map((entry: unknown, index: number) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
     const item = entry as Record<string, unknown>;
@@ -188,7 +188,7 @@ export async function preprocessResponsesImages(args: {
       if (value.type === 'input_text' && isUser && typeof value.text === 'string') text.push(value.text);
       if (value.type !== 'input_image') return part;
       if (!isUser) {
-        unsupportedImage = true;
+        hasUnsupportedImage = true;
         return part;
       }
       const raw = value.image_url;
@@ -199,7 +199,7 @@ export async function preprocessResponsesImages(args: {
             ? (raw as Record<string, unknown>).url
             : null;
       if (typeof url !== 'string' || !url.trim() || value.file_id) {
-        unsupportedImage = true;
+        hasUnsupportedImage = true;
         return part;
       }
       images.push({ type: 'image_url', image_url: { url } });
@@ -207,7 +207,7 @@ export async function preprocessResponsesImages(args: {
     });
     return { ...item, content };
   });
-  if (unsupportedImage || lastUserIndex < 0 || images.length < 1 || images.length > 8) return fail();
+  if (hasUnsupportedImage || lastUserIndex < 0 || images.length < 1 || images.length > 8) return fail();
   const visualResult = await preprocessChatImages({
     ...args,
     body: {
