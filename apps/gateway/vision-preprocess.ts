@@ -6,7 +6,8 @@
 // it never calls a Provider directly or changes the requested text model.
 type ImagePart = { type: 'image_url'; image_url: string | { url: string } };
 type ChatMessage = { role: string; content: unknown; [key: string]: unknown };
-type PreprocessResult = { ok: true; body: Record<string, unknown> } | { ok: false; status: number; code: string; message: string };
+type PreprocessFailure = { ok: false; status: number; code: string; message: string; cause?: string };
+type PreprocessResult = { ok: true; body: Record<string, unknown> } | PreprocessFailure;
 
 const VISION_INSTRUCTION =
   'Describe the attached image(s) for a text-only assistant. Preserve visible text, error messages, code, UI controls, spatial relationships, and relevant details. ' +
@@ -107,11 +108,14 @@ export async function preprocessChatImages({
     return { ok: false, status: 503, code: 'gateway_vision_preprocess_unavailable', message: 'The configured vision preprocessor is unavailable.' };
   }
   if (!result.ok) {
+    const reason = result.headers.get('x-gateway-error-code');
+    const cause = reason && /^gateway_[a-z0-9_]{1,64}$/.test(reason) ? reason : `upstream_http_${result.status}`;
     return {
       ok: false,
-      status: result.status === 429 ? 429 : result.status >= 500 ? 503 : 502,
+      status: result.status === 429 ? 429 : result.status >= 500 ? 503 : result.status === 413 ? 413 : 502,
       code: 'gateway_vision_preprocess_failed',
       message: 'The configured vision preprocessor could not analyze this image.',
+      cause,
     };
   }
   if (Number(result.headers.get('content-length')) > 256 * 1024) {
