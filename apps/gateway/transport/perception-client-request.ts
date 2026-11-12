@@ -30,6 +30,7 @@ export function buildPerceptionRequest(env: GatewayEnv, invocation: InferenceInv
   const headers = buildExecutionHeaders(
     {
       requestId: invocation.requestId,
+      traceparent: invocation.traceparent,
       nodeId: invocation.node.id,
       logicalModel: invocation.logicalModel,
       surface: invocation.surface,
