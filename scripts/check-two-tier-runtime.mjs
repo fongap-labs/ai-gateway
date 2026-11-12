@@ -14,8 +14,16 @@ import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/mode
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { getLimits } from '../src/config/timeouts.ts';
+import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
+import { adoptTier1Cooldown, __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
+import {
+  __resetSharedTier1CooldownsForTests,
+  hydrateSharedTier1Cooldowns,
+  shareLongTier1Cooldowns,
+  snapshotSharedTier1Cooldowns,
+} from '../src/reliability/tier1-shared-cooldowns.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
@@ -613,6 +621,46 @@ assert.equal(admitAuthAttempt('invalid-0', 1, rpmEpoch + 5_002).ok, false, 'acti
 assert.equal(admitAuthAttempt('invalid-1', 1, rpmEpoch + 5_002).ok, true, 'only the oldest invalid fingerprint is evicted');
 assert.equal(admitAuthAttempt('invalid-2', 1, rpmEpoch + 5_002).ok, false, 'another invalid fingerprint remains throttled');
 __resetKeyRpmForTests();
+
+// Observability is isolate-local and must not perform extra KV writes or Provider calls.
+__resetTier1StateForTests();
+__resetSharedTier1CooldownsForTests();
+let kvReads = 0;
+let kvWrites = 0;
+const kv = {
+  async get() {
+    kvReads++;
+    return null;
+  },
+  async put() {
+    kvWrites++;
+  },
+};
+const kvEnv = { TIER1_AFFINITY: kv };
+await hydrateSharedTier1Cooldowns(kvEnv);
+assert.equal(snapshotSharedTier1Cooldowns().reads, 1);
+const tasks = [];
+const now = Date.now();
+adoptTier1Cooldown({ node: 'metric-test-account', until: now + 600_000, reason: 'auth' }, now);
+shareLongTier1Cooldowns(
+  kvEnv,
+  { waitUntil(task) { tasks.push(task); } },
+  'metric-test-account',
+  now,
+);
+await Promise.all(tasks);
+assert.equal(kvWrites, 1);
+assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
+const before = kvReads;
+const response = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'metrics-test');
+const body = await response.text();
+assert.equal(response.status, 200);
+assert.match(body, /gateway_tier1_accounts_configured\{\} 0/);
+assert.match(body, /gateway_tier1_shared_kv_writes_total\{\} 1/);
+assert.match(body, /gateway_tier1_shared_kv_reads_total\{\} 2/);
+assert.equal(kvReads, before, 'reading metrics must not cause more KV requests');
+__resetSharedTier1CooldownsForTests();
+__resetTier1StateForTests();
 
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',

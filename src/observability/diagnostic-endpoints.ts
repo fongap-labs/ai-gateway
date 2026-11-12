@@ -11,6 +11,7 @@ import { collectKnownModels, modelRegistryEntry, servesModel } from '../config/r
 import { corsHeaders, jsonError } from '../protocol/http.ts';
 import { snapshotNode } from '../reliability/node-state.ts';
 import { snapshotRetryBudget } from '../reliability/retry-budget.ts';
+import { snapshotSharedTier1Cooldowns } from '../reliability/tier1-shared-cooldowns.ts';
 import { snapshotTier1AccountRuntime } from '../reliability/tier1-state.ts';
 import { snapshotTier1Affinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
@@ -206,6 +207,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         },
         note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
         tier1_affinity: snapshotTier1Affinity(env),
+        tier1_shared_cooldowns: snapshotSharedTier1Cooldowns(),
         client_stats: {
           started_at: new Date(gatewayStats.startedAt).toISOString(),
           requests_total: gatewayStats.requests,
@@ -316,6 +318,9 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   emit('gateway_tier1_model_ttft_samples', 'gauge', 'Passive real-request TTFT sample count for Tier 1 account/model pairs.');
   emit('gateway_tier1_model_cooldown_remaining_ms', 'gauge', 'Remaining Tier 1 account/model cooldown in ms.');
 
+  let tier1Configured = 0;
+  let tier1Disabled = 0;
+  let tier1AccountCooling = 0;
   for (const node of config.nodes) {
     const s = snapshotNode(node.id, now);
     const label = `node_id="${sanitizePrometheusLabel(node.id)}",tier="${node.tier}",provider="${sanitizePrometheusLabel(node.provider)}"`;
@@ -323,6 +328,9 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
       const configured = Object.keys(node.models || {});
       const modelIds = configured.length ? configured : [...collectKnownModels(config.nodes, env)];
       const runtime = snapshotTier1AccountRuntime(node.id, modelIds, now);
+      tier1Configured++;
+      if (runtime.account_disabled) tier1Disabled++;
+      else if (runtime.account_cooldown_remaining_ms > 0) tier1AccountCooling++;
       counter('gateway_node_active_requests', runtime.in_flight, label);
       counter('gateway_node_cooldown_remaining_ms', runtime.account_cooldown_remaining_ms, label);
       for (const model of runtime.models) {
@@ -346,6 +354,24 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
     counter('gateway_node_successes_total', s.total_successes, label);
     counter('gateway_node_failures_total', s.total_failures, label);
   }
+
+  emit('gateway_tier1_accounts_configured', 'gauge', 'Configured free Tier 1 accounts in this isolate.');
+  counter('gateway_tier1_accounts_configured', tier1Configured);
+  emit('gateway_tier1_accounts_account_cooling', 'gauge', 'Tier 1 accounts in account-wide cooldown (model-specific cooldowns excluded).');
+  counter('gateway_tier1_accounts_account_cooling', tier1AccountCooling);
+  emit('gateway_tier1_accounts_disabled', 'gauge', 'Tier 1 accounts disabled locally.');
+  counter('gateway_tier1_accounts_disabled', tier1Disabled);
+  emit('gateway_tier1_accounts_without_account_block', 'gauge', 'Tier 1 accounts without account-level blocks; model eligibility may still vary.');
+  counter('gateway_tier1_accounts_without_account_block', tier1Configured - tier1Disabled - tier1AccountCooling);
+  const sharedCooldowns = snapshotSharedTier1Cooldowns();
+  emit('gateway_tier1_shared_kv_reads_total', 'counter', 'Shared Tier 1 cooldown KV read attempts in this isolate.');
+  counter('gateway_tier1_shared_kv_reads_total', sharedCooldowns.reads);
+  emit('gateway_tier1_shared_kv_read_failures_total', 'counter', 'Failed shared Tier 1 cooldown KV read attempts.');
+  counter('gateway_tier1_shared_kv_read_failures_total', sharedCooldowns.readFailures);
+  emit('gateway_tier1_shared_kv_writes_total', 'counter', 'Successful shared Tier 1 cooldown KV writes in this isolate.');
+  counter('gateway_tier1_shared_kv_writes_total', sharedCooldowns.writes);
+  emit('gateway_tier1_shared_kv_write_failures_total', 'counter', 'Failed shared Tier 1 cooldown KV write attempts.');
+  counter('gateway_tier1_shared_kv_write_failures_total', sharedCooldowns.writeFailures);
 
   return new Response(`${lines.join('\n')}\n`, {
     status: 200,
