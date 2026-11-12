@@ -32,7 +32,15 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
     }
     if (local.startsWith('apps/')) {
       const ownApp = local.split('/')[1];
-      assert.ok(!target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`), `${local} imports another app: ${target}`);
+      // Perception currently reuses Inference's single physical executor. This
+      // narrowly audited edge is temporary: it cannot expand to other modules,
+      // scheduling, response codecs, or another application's implementation.
+      const isApprovedPerceptionExecutionReuse =
+        local === 'apps/perception/index.ts' && target === 'apps/inference/execution.ts';
+      assert.ok(
+        !target.startsWith('apps/') || target.startsWith(`apps/${ownApp}/`) || isApprovedPerceptionExecutionReuse,
+        `${local} imports another app: ${target}`,
+      );
     }
     if (local.startsWith('apps/') || local.startsWith('operations/')) {
       assert.ok(
@@ -1069,8 +1077,19 @@ for (const path of [
   assert.match(content, /packages\/contracts\/execution\.ts/, `${path} does not use the contract`);
 }
 assert.match(
-  readFileSync(join(root, 'src/perception/perception-center-entry.ts'), 'utf8'),
+  readFileSync(join(root, 'apps/perception/index.ts'), 'utf8'),
   /from '\.\.\/\.\.\/packages\/contracts\/runtime\.ts'/,
-  'Perception compatibility entry must use the shared runtime type contract',
+  'Perception runtime owner must use the shared runtime type contract',
+);
+const perceptionApp = readFileSync(join(root, 'apps/perception/index.ts'), 'utf8');
+assert.match(
+  perceptionApp,
+  /from '\.\.\/inference\/execution\.ts'/,
+  'Perception must explicitly reuse the audited native executor until extraction',
+);
+assert.doesNotMatch(
+  perceptionApp,
+  /from '\.\.\/inference\/(?!execution\.ts)[^']+'/,
+  'Perception cannot import other Inference application modules',
 );
 console.log(`Architecture boundary check passed (${checked} package/app files).`);
