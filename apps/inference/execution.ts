@@ -33,10 +33,10 @@ import { withUsageStreamOptions } from '../../src/protocol/openai.ts';
 import { streamUsageEnabled } from '../../src/providers/registry.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../../src/transport/index.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
-import { buildFramedMatrixObjectFallback, buildFramedMatrixResponse } from './conversion/framed-stream.ts';
-import { convertMatrixRequest, isMatrixPair } from './conversion/request.ts';
-import { replyFromNativeObject, replyToObject } from './conversion/response.ts';
-import { collectMatrixObject, type MatrixStreamBudget } from './conversion/stream.ts';
+import { buildFramedMatrixObjectFallback, buildFramedMatrixResponse } from '../../packages/conversion-core/matrix/framed-stream.ts';
+import { convertMatrixRequest, isMatrixPair } from '../../packages/conversion-core/matrix/request.ts';
+import { replyFromNativeObject, replyToObject } from '../../packages/conversion-core/matrix/response.ts';
+import { collectMatrixObject, type MatrixStreamBudget } from '../../packages/conversion-core/matrix/stream.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 // The physical center uses the same clamped maximum as Gateway preflight.

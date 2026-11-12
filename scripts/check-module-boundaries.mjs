@@ -785,8 +785,29 @@ for (const [shim, target] of [
   );
 }
 
-// All Chat conversion implementations belong to the Inference Center.
-// Legacy paths can re-export them but cannot carry duplicate conversion code.
+// All request, object and stream Matrix converters have one neutral runtime owner.
+// The application paths must remain pure facades for existing module consumers.
+for (const moduleName of [
+  'anthropic-stream',
+  'anthropic',
+  'chat-stream',
+  'chat',
+  'framed-stream',
+  'request',
+  'response',
+  'responses-stream',
+  'responses',
+  'stream',
+]) {
+  const shim = readFileSync(join(root, 'apps/inference/conversion', `${moduleName}.ts`), 'utf8');
+  assert.ok(
+    shim.includes(`export * from '../../../packages/conversion-core/matrix/${moduleName}.ts';`),
+    `Matrix app facade must point at neutral implementation: ${moduleName}`,
+  );
+  assert.doesNotMatch(shim, /export (?:async )?(?:function|class) /, `Matrix implementation cannot return to app facade: ${moduleName}`);
+}
+
+// Legacy paths must continue exporting the same functions and class identities.
 for (const [shim, owner] of [
   ['src/conversion/matrix/chat.ts', '../../../apps/inference/conversion/chat.ts'],
   ['src/conversion/matrix/chat-stream.ts', '../../../apps/inference/conversion/chat-stream.ts'],
@@ -795,7 +816,7 @@ for (const [shim, owner] of [
   assert.ok(compatibility.includes(`export * from '${owner}';`), `Chat converter compatibility export missing: ${shim}`);
   assert.doesNotMatch(compatibility, /export (?:function|class) /, `Chat conversion implementation duplicated: ${shim}`);
 }
-for (const file of ['apps/inference/conversion/chat.ts', 'apps/inference/conversion/chat-stream.ts']) {
+for (const file of ['packages/conversion-core/matrix/chat.ts', 'packages/conversion-core/matrix/chat-stream.ts']) {
   const owner = readFileSync(join(root, file), 'utf8');
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
 }
@@ -808,7 +829,7 @@ for (const [shim, owner] of [
   assert.ok(compatibility.includes(`export * from '${owner}';`), `Anthropic conversion compatibility export missing: ${shim}`);
   assert.doesNotMatch(compatibility, /export (?:function|class) /, `Anthropic conversion implementation duplicated: ${shim}`);
 }
-for (const file of ['apps/inference/conversion/anthropic.ts', 'apps/inference/conversion/anthropic-stream.ts']) {
+for (const file of ['packages/conversion-core/matrix/anthropic.ts', 'packages/conversion-core/matrix/anthropic-stream.ts']) {
   const owner = readFileSync(join(root, file), 'utf8');
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
 }
@@ -824,8 +845,8 @@ for (const [shim, owner] of [
   assert.doesNotMatch(compatibility, /export (?:function|class) /, `Responses implementation duplicated: ${shim}`);
 }
 for (const file of [
-  'apps/inference/conversion/responses.ts',
-  'apps/inference/conversion/responses-stream.ts',
+  'packages/conversion-core/matrix/responses.ts',
+  'packages/conversion-core/matrix/responses-stream.ts',
   'packages/conversion-core/responses-events.ts',
 ]) {
   const owner = readFileSync(join(root, file), 'utf8');
@@ -833,7 +854,7 @@ for (const file of [
 }
 
 // A single Inference-owned implementation must serve every request conversion.
-const matrixRequestOwner = readFileSync(join(root, 'apps/inference/conversion/request.ts'), 'utf8');
+const matrixRequestOwner = readFileSync(join(root, 'packages/conversion-core/matrix/request.ts'), 'utf8');
 const matrixPipelineCompat = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.ok(
   matrixPipelineCompat.includes("export * from '../../../apps/inference/conversion/request.ts';"),
@@ -844,7 +865,7 @@ assert.match(matrixRequestOwner, /export function convertMatrixRequest\(/, 'Infe
 assert.doesNotMatch(matrixRequestOwner, /from ['"][^'"]*\/src\//, 'Request conversion must only use shared contracts and local codecs');
 
 // Native reply decode/render is a single Inference-owned implementation.
-const matrixReplyOwner = readFileSync(join(root, 'apps/inference/conversion/response.ts'), 'utf8');
+const matrixReplyOwner = readFileSync(join(root, 'packages/conversion-core/matrix/response.ts'), 'utf8');
 const matrixReplyLegacy = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.match(matrixReplyOwner, /export function replyFromNativeObject\(/, 'Inference must decode native reply objects');
 assert.match(matrixReplyOwner, /export function replyToObject\(/, 'Inference must render reply objects');
@@ -874,7 +895,7 @@ for (const file of ['packages/transport/sse.ts', 'packages/transport/convert-sse
 
 // No Gateway-side duplicate Matrix SSE lifecycle or reverse Inference -> src imports.
 const matrixLegacyPipeline = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
-const inferenceStreamOwner = readFileSync(join(root, 'apps/inference/conversion/stream.ts'), 'utf8');
+const inferenceStreamOwner = readFileSync(join(root, 'packages/conversion-core/matrix/stream.ts'), 'utf8');
 assert.ok(
   matrixLegacyPipeline.includes("export * from '../../../apps/inference/conversion/stream.ts';"),
   'Old Matrix SSE pipeline must only re-export the Inference implementation',
@@ -927,7 +948,7 @@ assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/,
 // Internal framed streams must have one shared codec and must not carry
 // private Provider accounting data directly to the public response.
 const frameContract = readFileSync(join(root, 'packages/contracts/inference-stream-frames.ts'), 'utf8');
-const frameProducer = readFileSync(join(root, 'apps/inference/conversion/framed-stream.ts'), 'utf8');
+const frameProducer = readFileSync(join(root, 'packages/conversion-core/matrix/framed-stream.ts'), 'utf8');
 const frameConsumer = readFileSync(join(root, 'apps/gateway/transport/inference-stream-client.ts'), 'utf8');
 const frameConsumerShim = readFileSync(join(root, 'src/inference/inference-stream-client.ts'), 'utf8');
 assert.ok(

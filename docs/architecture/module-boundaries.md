@@ -5,7 +5,7 @@
 - `apps/gateway`：公开请求鉴权、模型授权、额度、两层调度、路由与故障恢复；不直接执行 Provider 推理。
 - `apps/inference`：私有推理执行与协议转换；保留既有完整模型池以兼容旧 Gateway，Provider 凭据只在私有 Worker。
 - `apps/perception`：私有图像请求入口；仅接受目录显式 vision 模型与支持图像输入的 Provider，复用共享执行器。
-  当前仍通过受限的 `apps/perception/index.ts → apps/inference/execution.ts` 过渡依赖复用物理执行器。边界检查只允许这一条已审计的单一执行边，不允许额外跨应用模块依赖；后续必须将无调度职责的物理执行器与所需转换代码一起提取为真正的中立模块，并删除此例外。入口搬迁不代表执行器解耦完成。第一批已将执行票据的协议映射与 Provider 请求头白名单下沉至 `packages/conversion-core/surface-protocol.ts` 和 `packages/transport/provider-forward-request.ts`；第二批进一步将单次 Provider `fetch`、响应头超时、取消和网络错误分类统一到 `packages/transport/provider-attempt.ts`；此模块不得拥有 Tier/模型选择、重试或对冲。Inference/Perception 的完整编排与转换依赖仍由 `apps/inference/execution.ts` 复用，跨应用例外尚未删除，须继续抽离为真正的中立执行器。
+  当前仍通过受限的 `apps/perception/index.ts → apps/inference/execution.ts` 过渡依赖复用物理执行器。边界检查只允许这一条已审计的单一执行边，不允许额外跨应用模块依赖；后续必须将无调度职责的物理执行器与所需转换代码一起提取为真正的中立模块，并删除此例外。入口搬迁不代表执行器解耦完成。第一批已将执行票据的协议映射与 Provider 请求头白名单下沉至 `packages/conversion-core/surface-protocol.ts` 和 `packages/transport/provider-forward-request.ts`；第二批进一步将单次 Provider `fetch`、响应头超时、取消和网络错误分类统一到 `packages/transport/provider-attempt.ts`；此模块不得拥有 Tier/模型选择、重试或对冲。第三批将 Chat、Responses、Messages 的对象/流转换与私有帧处理统一收敛到 `packages/conversion-core/matrix/`，`apps/inference/conversion/` 只保留兼容转发；Inference 执行器和预检直接引用中立实现。Perception 当前仍复用 `apps/inference/execution.ts` 的编排及 `src/config` 运行时依赖，跨应用例外尚未删除；这不代表物理执行器全部解耦。
 - `apps/generation`：私有生成能力；只持有其执行所需的 Provider 凭据。
 - `operations`：独立定时维护入口，使用共享 `TOKEN_STATS_DB`，没有公开 `fetch` 路由且不持有 Provider 凭据。
 - `packages/contracts`、`packages/provider-kit`、`packages/transport`、`packages/observability`：跨 Worker 的中立契约和基础设施。
