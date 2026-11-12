@@ -14,6 +14,7 @@ import type { Surface } from '../../../src/types/protocol.ts';
 export type InferenceInvocation = {
   request: Request;
   requestId: string;
+  traceparent?: string;
   node: RuntimeNode;
   logicalModel: string;
   surface: Surface;
@@ -57,6 +58,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
   const headers = buildExecutionHeaders(
     {
       requestId: invocation.requestId,
+      traceparent: invocation.traceparent,
       nodeId: invocation.node.id,
       logicalModel: invocation.logicalModel,
       surface: invocation.surface,
