@@ -42,7 +42,6 @@ async function exercise({ allowFallback, provider = 'openai', bindCenter = true,
       provider: 'unverified-provider',
       base_url: 'https://provider.example.invalid/v1',
       models: { [vision]: 'upstream-incompatible-model' },
-      priority: -10,
     });
   }
   const env = {
