@@ -40,6 +40,12 @@ let known: Tier1SharedCooldown[] = [];
 let readAt = Number.NEGATIVE_INFINITY;
 let isWriting = false;
 let isDirty = false;
+// Per-isolate counters only. Observing them never performs KV or D1 I/O.
+const kvStats = { reads: 0, readFailures: 0, writes: 0, writeFailures: 0 };
+
+export function snapshotSharedTier1Cooldowns() {
+  return { binding: KV_BINDING, ...kvStats, knownEntries: known.length };
+}
 
 function kvOf(env: GatewayEnv): CooldownKV | null {
   const kv = env?.[KV_BINDING] as Partial<CooldownKV> | null | undefined;
@@ -98,10 +104,12 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
   readAt = now;
   const load = (async () => {
     try {
+      kvStats.reads++;
       const entries = parseEntries(await kv.get(SHARED_COOLDOWNS_KEY));
       known = merge(known, entries, Date.now());
       for (const entry of entries) adoptTier1Cooldown(entry);
     } catch {
+      kvStats.readFailures++;
       /* sharing is advisory; a failed read leaves local state unchanged */
     }
   })();
@@ -141,11 +149,25 @@ async function flush(kv: CooldownKV): Promise<void> {
     do {
       isDirty = false;
       // Merge with what other isolates wrote since this one last read.
-      known = merge(parseEntries(await kv.get(SHARED_COOLDOWNS_KEY)), known, Date.now());
+      kvStats.reads++;
+      let prior: string | null | undefined;
+      try {
+        prior = await kv.get(SHARED_COOLDOWNS_KEY);
+      } catch {
+        kvStats.readFailures++;
+        throw new Error('Shared cooldown KV read failed');
+      }
+      known = merge(parseEntries(prior), known, Date.now());
       if (known.length === 0) break;
       const latest = Math.max(...known.map((entry) => entry.until));
       const ttl = Math.max(MIN_KV_TTL_SECONDS, Math.ceil((latest - Date.now()) / 1000));
-      await kv.put(SHARED_COOLDOWNS_KEY, JSON.stringify(known), { expirationTtl: ttl });
+      try {
+        await kv.put(SHARED_COOLDOWNS_KEY, JSON.stringify(known), { expirationTtl: ttl });
+        kvStats.writes++;
+      } catch {
+        kvStats.writeFailures++;
+        throw new Error('Shared cooldown KV write failed');
+      }
     } while (isDirty);
   } catch {
     /* sharing is advisory; the local cooldown still applies */
@@ -159,4 +181,8 @@ export function __resetSharedTier1CooldownsForTests(): void {
   readAt = Number.NEGATIVE_INFINITY;
   isWriting = false;
   isDirty = false;
+  kvStats.reads = 0;
+  kvStats.readFailures = 0;
+  kvStats.writes = 0;
+  kvStats.writeFailures = 0;
 }
