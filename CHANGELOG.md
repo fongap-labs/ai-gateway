@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 测试: 为三个私有中心增加只读 Service Binding 与认证联合合同检查；Inference、Generation 检查私有健康接口，Perception 使用无效执行合同验证拒绝路径，确保不会请求 Provider。
+- 维护: 为三个私有中心增加只读 Service Binding 与认证联合合同检查；Inference、Generation 检查私有健康接口，Perception 使用无效执行合同验证拒绝路径，确保不会请求 Provider。
 
 - 维护: 完成 P3 私有执行架构清理，两个中心直接依赖中立执行器，删除跨应用豁免和冗余转发文件，补充错误一致性回归。
 
