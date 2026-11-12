@@ -198,7 +198,7 @@ export function buildPrivateCenterConfig(worker, input) {
   const base = JSON.parse(baseText);
   const config = {
     ...base,
-    observability: applyNativeTraceSampling(base.observability ?? { enabled: true }, input.AIG_TRACE_HEAD_SAMPLE_RATE),
+    observability: applyNativeTraceSampling(base.observability ?? { enabled: true }, input.AIG_TRACE_HEAD_SAMPLE_RATE, input.AIG_TRACE_EXPORT_DESTINATION),
     name: worker,
     main: path.join(root, target.entry),
     workers_dev: false,
