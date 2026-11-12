@@ -355,10 +355,9 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_COST_GUARDS: 'true',
   AIG_TIER1_PROBE_V2: 'true',
   AIG_REQUEST_ADMISSION: 'true',
-  AIG_ISOLATE_MAX_IN_FLIGHT: '8',
-  // Keep request-admission ceilings aligned with the built-in Tier 1-first
-  // chat/coding policies. The bounded request-wide cap remains 8 and explicit
-  // operator limits still win; Tier 2 retains one baseline fallback attempt.
+  // Do not inject an isolate concurrency cap. The runtime default is disabled;
+  // explicitly configured AIG_ISOLATE_MAX_IN_FLIGHT overrides still pass through.
+  // Keep the bounded request-wide attempt cap and avoid speculative hedges.
   AIG_STREAM_MAX_ATTEMPTS: '8',
   AIG_NONSTREAM_MAX_ATTEMPTS: '8',
   AIG_REQUEST_HEDGE_MAX: '0',
