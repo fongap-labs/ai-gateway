@@ -16,7 +16,7 @@
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
 import { getLimits } from '../../src/config/timeouts.ts';
-import { getLogger } from '../../src/observability/logger.ts';
+import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { admitIsolateRequest, releaseIsolateRequestAfterResponse } from '../../src/ratelimit/isolate-concurrency.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
@@ -342,8 +342,11 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       // failure domain, skip it without charging an attempt or reserving time.
       if (!effectiveFeasibility.reachable) {
         if (domainExcluded > 0) {
-          logger.debug(
-            `model-fallback skip request=${requestId} requested=${requestedModel}` +
+          logLazy(
+            logger,
+            'debug',
+            () =>
+              `model-fallback skip request=${requestId} requested=${requestedModel}` +
               ` effective=${effectiveModel} reason=spent_failure_domain` +
               ` domain_excluded=${domainExcluded}`,
           );
@@ -372,8 +375,11 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       };
 
       if (effectiveModel !== requestedModel || roundIndex > 0 || domainExcluded > 0) {
-        logger.info(
-          `model-fallback request=${requestId} round=${roundIndex + 1}/${modelPlan.length}` +
+        logLazy(
+          logger,
+          'info',
+          () =>
+            `model-fallback request=${requestId} round=${roundIndex + 1}/${modelPlan.length}` +
             ` requested=${requestedModel} effective=${effectiveModel}` +
             ` pass_cap=${pass.attemptCap ?? 'policy'}` +
             ` future_reserve=${futureAttemptReserve}` +
@@ -428,8 +434,11 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     state.requestedModel = retry.model;
     state.attempted = new Set(config.nodes.filter((node) => node.id !== retry.nodeId).map((node) => node.id));
     const retryLoopCtx: LoopContext = { ...loopCtx, feasibility: feasibilityForModel(retry.model), futureAttemptReserve: 0 };
-    logger.info(
-      `same-node retry request=${requestId} node=${retry.nodeId} model=${retry.model} logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
+    logLazy(
+      logger,
+      'info',
+      () =>
+        `same-node retry request=${requestId} node=${retry.nodeId} model=${retry.model} logical_attempts=${state.logicalAttempts}/${requestPolicy.maxAttempts}`,
     );
     const retryResult = await runTierLoop(retryLoopCtx, { ...reqDescriptor, model: retry.model }, null);
     if (retryResult) return deliver(retryResult, retryLoopCtx);

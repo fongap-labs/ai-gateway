@@ -28,4 +28,6 @@ export type GatewayLogger = {
   error: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
   debug: (...args: unknown[]) => void;
+  /** Optional level probe; legacy/custom loggers without it remain compatible. */
+  isEnabled?: (level: 'info' | 'debug') => boolean;
 };

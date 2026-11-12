@@ -10,6 +10,7 @@ import { getProviderProfile } from '../../../packages/contracts/provider-profile
 import { createInternalTraceparent } from '../../../packages/contracts/trace-context.ts';
 import { modelRegistryEntry } from '../../../src/config/registry.ts';
 import { recordAttemptEvent } from '../../../src/observability/gateway-events.ts';
+import { logLazy } from '../../../src/observability/logger.ts';
 import { KIND } from '../../../src/reliability/classify.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { gatewayError } from '../response/errors.ts';
@@ -70,13 +71,17 @@ async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
     c.state.dispatches++;
     if (!c.hedgedAttempt) c.state.logicalAttempts++;
     const effectiveModel = c.reqDescriptor.model;
-    c.logger.debug(
-      `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}` +
+    const successfulStatus = outcome.response.status;
+    logLazy(
+      c.logger,
+      'debug',
+      () =>
+        `dispatch request=${c.requestId} logical_attempt=${c.state.logicalAttempts}/${c.state.maxAttempts}` +
         ` dispatch=${c.state.dispatches} node=${c.node.id} provider=${c.node.provider}` +
         ` protocol=${c.upstreamProtocol ?? c.node.protocol} surface=${c.surface} tier=${c.node.tier}` +
         `${c.traceparent ? ` trace_span_id=${c.traceparent.split('-')[2]}` : ''}` +
         ` model=${c.requestedModel}${effectiveModel !== c.requestedModel ? `=>${effectiveModel}` : ''}->${upstreamModelOf(c.node, effectiveModel)}` +
-        ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=ok status=${outcome.response.status}` +
+        ` hedged=${!!(c.hedgedAttempt || c.hedgedWithTwin)} kind=ok status=${successfulStatus}` +
         ` headers_ms=${c.headersMs ?? -1}${c.ttftMs !== undefined ? ` ttft_ms=${c.ttftMs}` : ''}` +
         ` latency_ms=${c.attemptStartMs ? Date.now() - c.attemptStartMs : -1}`,
     );
