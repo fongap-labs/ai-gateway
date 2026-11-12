@@ -367,7 +367,14 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_FAILOVER_BUDGET_MS: '90000',
 };
 
-export function buildWranglerConfig(vars, d1DatabaseId = '', affinityKvId = '', analyticsDataset = '', traceSampleRate = '', traceExportDestination = '') {
+export function buildWranglerConfig(
+  vars,
+  d1DatabaseId = '',
+  affinityKvId = '',
+  analyticsDataset = '',
+  traceSampleRate = '',
+  traceExportDestination = '',
+) {
   const inferenceTarget = String(vars.AIG_INFERENCE_TARGET ?? '').trim();
   if (inferenceTarget && inferenceTarget !== 'ai-inference-center') throw new Error('Invalid AIG_INFERENCE_TARGET.');
   const generationTarget = String(vars.AIG_GENERATION_TARGET ?? '').trim();
