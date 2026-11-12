@@ -74,7 +74,7 @@ function isPrivatePerception(config, root) {
   return (
     privateBase(config) &&
     config.name === 'ai-perception-center' &&
-    matchesEntrypoint(config.main, root, 'src/perception/perception-center-entry.ts') &&
+    matchesEntrypoint(config.main, root, 'apps/perception/index.ts') &&
     config.keep_vars === false &&
     noFields(config, ['triggers', 'kv_namespaces', 'd1_databases']) &&
     safeCenterVars(config)

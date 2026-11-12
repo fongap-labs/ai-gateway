@@ -18,7 +18,7 @@ assert.equal(
   'The generated private Worker config must carry a validated runtime config before it is deploy-allowlisted.',
 );
 assert.equal(base.name, 'ai-perception-center');
-assert.equal(base.main, 'src/perception/perception-center-entry.ts');
+assert.equal(base.main, 'apps/perception/index.ts');
 assert.equal(base.workers_dev, false);
 for (const field of ['routes', 'route', 'custom_domains', 'services', 'triggers', 'secrets', 'assets']) {
   assert.equal(Object.hasOwn(base, field), false, `Perception must not declare ${field}`);
@@ -55,7 +55,7 @@ assert.ok(prepare >= 0 && prepare < providerPreflight && providerPreflight < sna
 assert.ok(snapshot < centerDeploy && centerDeploy < reconcile && reconcile < inventory && inventory < gatewayDeploy);
 assert.doesNotMatch(deploy, /wrangler secret put|--secrets-file|AIG_OPS_SECRET_VALUE/);
 
-const source = read('src/perception/perception-center-entry.ts');
+const source = read('apps/perception/index.ts');
 assert.match(source, /AIG_PERCEPTION_AUTH_KEY/);
 assert.match(source, /x-aig-perception-auth/);
 assert.match(source, /executeNative\(request, env, invocation, \{ center: 'perception' \}\)/);

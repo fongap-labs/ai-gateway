@@ -129,15 +129,7 @@ export function assertReleaseTopology(plan) {
     'Gateway must route to both private centers through exact Service Bindings',
   );
   checkCenter(inference, 'Inference', 'ai-inference-center', 'src/inference/inference-center-entry.ts', 'AIG_INFERENCE_AUTH_KEY', sha, iNames);
-  checkCenter(
-    perception,
-    'Perception',
-    'ai-perception-center',
-    'src/perception/perception-center-entry.ts',
-    'AIG_PERCEPTION_AUTH_KEY',
-    sha,
-    perceptionNames,
-  );
+  checkCenter(perception, 'Perception', 'ai-perception-center', 'apps/perception/index.ts', 'AIG_PERCEPTION_AUTH_KEY', sha, perceptionNames);
   checkCenter(generation, 'Generation', 'ai-generation-center', 'src/generation/generation-center-entry.ts', 'AIG_GENERATION_AUTH_KEY', sha, pNames);
   assert.equal(Object.hasOwn(perception, 'd1_databases'), false, 'Perception must not inherit a usage D1');
   assert.equal(Object.hasOwn(perception, 'kv_namespaces'), false, 'Perception must not inherit Gateway KV');

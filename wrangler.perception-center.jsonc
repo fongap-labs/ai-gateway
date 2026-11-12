@@ -2,7 +2,7 @@
   // Private multimodal execution Worker. No workers.dev URL, routes or public ingress.
   // The existing source deployment publishes this config only after all centers validate.
   "name": "ai-perception-center",
-  "main": "src/perception/perception-center-entry.ts",
+  "main": "apps/perception/index.ts",
   "compatibility_date": "2026-08-06",
   "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,

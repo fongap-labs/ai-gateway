@@ -33,7 +33,7 @@ const centerTypes = Object.freeze({
     kind: 'generation',
   },
   'ai-perception-center': {
-    entry: 'src/perception/perception-center-entry.ts',
+    entry: 'apps/perception/index.ts',
     base: 'wrangler.perception-center.jsonc',
     auth: 'AIG_PERCEPTION_AUTH_KEY',
     kind: 'perception',

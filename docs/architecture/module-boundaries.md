@@ -5,6 +5,7 @@
 - `apps/gateway`：公开请求鉴权、模型授权、额度、两层调度、路由与故障恢复；不直接执行 Provider 推理。
 - `apps/inference`：私有推理执行与协议转换；保留既有完整模型池以兼容旧 Gateway，Provider 凭据只在私有 Worker。
 - `apps/perception`：私有图像请求入口；仅接受目录显式 vision 模型与支持图像输入的 Provider，复用共享执行器。
+  当前仍通过受限的 `apps/perception/index.ts → apps/inference/execution.ts` 过渡依赖复用物理执行器。边界检查只允许这一条已审计的单一执行边，不允许额外跨应用模块依赖；后续必须将无调度职责的物理执行器与所需转换代码一起提取为真正的中立模块，并删除此例外。入口搬迁不代表执行器解耦完成。
 - `apps/generation`：私有生成能力；只持有其执行所需的 Provider 凭据。
 - `operations`：独立定时维护入口，使用共享 `TOKEN_STATS_DB`，没有公开 `fetch` 路由且不持有 Provider 凭据。
 - `packages/contracts`、`packages/provider-kit`、`packages/transport`、`packages/observability`：跨 Worker 的中立契约和基础设施。
