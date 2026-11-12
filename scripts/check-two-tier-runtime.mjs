@@ -16,6 +16,7 @@ import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
 import { getLimits } from '../src/config/timeouts.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
+import { __resetIsolateConcurrencyForTests, snapshotIsolateRequestActivity } from '../src/ratelimit/isolate-concurrency.ts';
 import { __resetKeyRpmForTests, admitAuthAttempt, admitKeyRequest, getKeyRpmSnapshot, recordAuthFailure } from '../src/ratelimit/key-rpm.ts';
 import { getNodeState } from '../src/reliability/node-state.ts';
 import {
@@ -378,6 +379,85 @@ await verifyTier1FailureFallsBack(429);
 await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
 await verifyTier1FailureFallsBack(504);
+
+// A configured legacy count limit must never reject a healthy ninth request.
+// Hold twelve actual Gateway -> private-center executions open concurrently;
+// all must complete normally under the existing request-body byte budget.
+__resetIsolateConcurrencyForTests();
+let admitBurstArrivals = 0;
+let resolveAdmissionBurst;
+let markAdmissionBurstReady;
+const admissionBurstBarrier = new Promise((resolve) => {
+  resolveAdmissionBurst = resolve;
+});
+const admissionBurstReady = new Promise((resolve) => {
+  markAdmissionBurstReady = resolve;
+});
+const admissionBurstEnv = {
+  AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
+  AIG_ACCESS_MODELS_AIR: '*',
+  AIG_REQUEST_ADMISSION: 'true',
+  AIG_ISOLATE_MAX_IN_FLIGHT: '1',
+  AIG_REQUEST_HEDGE_MAX: '0',
+  AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
+  AIG_TIER1_NODES_01: JSON.stringify([node('admission-burst-node')]),
+  AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
+  AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, hedge: { enabled: false } } }),
+  AIG_INFERENCE_SERVICE: {
+    async fetch() {
+      admitBurstArrivals++;
+      if (admitBurstArrivals === 12) markAdmissionBurstReady();
+      await admissionBurstBarrier;
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl-burst',
+          object: 'chat.completion',
+          created: 1,
+          model: CUTOVER_MODEL,
+          choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' } },
+      );
+    },
+  },
+};
+const burstRequests = Array.from({ length: 12 }, (_, i) =>
+  handleRequest(
+    new Request('https://gateway.example.invalid/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: 'Bearer local-contract-access-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: CUTOVER_MODEL, messages: [{ role: 'user', content: `request ${i}` }] }),
+    }),
+    admissionBurstEnv,
+    { waitUntil() {}, passThroughOnException() {} },
+  ),
+);
+try {
+  await Promise.race([
+    admissionBurstReady,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Hard count gate or another scheduler prevented twelve concurrent arrivals')), 8_000)),
+  ]);
+  const activity = snapshotIsolateRequestActivity();
+  assert.equal(admitBurstArrivals, 12);
+  assert.ok(activity.peak >= 12, 'all twelve in-flight requests must be admitted despite legacy count=1');
+  assert.equal(activity.active, 12);
+  const metrics = await metricsResponse(
+    new Request('https://gateway.example.invalid/metrics'),
+    admissionBurstEnv,
+    'admission-metrics',
+  ).text();
+  assert.match(metrics, /gateway_isolate_handlers_active\\{\\} 12/);
+} finally {
+  resolveAdmissionBurst();
+}
+const burstResults = await Promise.all(burstRequests);
+assert.deepEqual(
+  burstResults.map((result) => result.status),
+  Array.from({ length: 12 }, () => 200),
+  'request count alone must not trigger gateway_concurrency_exhausted',
+);
+assert.equal(snapshotIsolateRequestActivity().active, 0, 'all activity counters must release after response headers');
+
 
 async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
   const source = `primary-${failureStatus}`;
