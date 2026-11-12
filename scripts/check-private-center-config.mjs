@@ -63,6 +63,9 @@ assert.equal(inference.config.observability.traces, undefined, 'native tracing i
 for (const name of ['ai-inference-center', 'ai-perception-center', 'ai-generation-center']) {
   const sampled = buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0.05' });
   assert.deepEqual(sampled.config.observability.traces, { enabled: true, head_sampling_rate: 0.05 });
+  const exported = buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0.05', AIG_TRACE_EXPORT_DESTINATION: 'my_trace_sink' });
+  assert.deepEqual(exported.config.observability.traces, { enabled: true, head_sampling_rate: 0.05, destinations: ['my_trace_sink'] });
+  assert.equal(exported.config.vars.AIG_TRACE_EXPORT_DESTINATION, undefined);
   assert.equal(sampled.config.vars.AIG_TRACE_HEAD_SAMPLE_RATE, undefined, 'sampling is deployment-only');
   assert.deepEqual(
     buildPrivateCenterConfig(name, { ...env, AIG_TRACE_HEAD_SAMPLE_RATE: '0' }).config.observability.traces,
