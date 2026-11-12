@@ -228,7 +228,7 @@ export async function runAutomaticImageTool({
   const decisionMetadata = { ...metadata };
   delete decisionMetadata.aig_image_model;
   delete decisionMetadata.aig_image_size;
-  const decisionBody = { ...body, stream: false };
+  const decisionBody: Record<string, unknown> = { ...body, stream: false };
   if (Object.keys(decisionMetadata).length) decisionBody.metadata = decisionMetadata;
   else delete decisionBody.metadata;
   const headers = new Headers({ 'content-type': 'application/json', 'x-gateway-deadline-ms': String(deadlineMs) });
