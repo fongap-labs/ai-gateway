@@ -348,14 +348,14 @@ async function verifyTier1FailureFallsBack(status) {
   assert.ok(responseText.includes('ok'));
 }
 
+await verifyTier1FailureFallsBack(400);
 await verifyTier1FailureFallsBack(429);
 await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
 await verifyTier1FailureFallsBack(504);
 
-// 4xx from a dispatched Provider is a request-specific rejection, not an
-// unhealthy Key. Stop on that dispatch; do not burn Tier 1 or paid fallback
-// attempts retrying a request the Provider already rejected.
+// Preserve legacy 400-as-node-incompatibility routing (tested above), but
+// a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
   const freeId = `free-terminal-${status}`;
   const dispatched = [];
@@ -392,7 +392,6 @@ async function verifyTerminalClientError(status) {
   assert.equal(payload.error?.details?.dispatches, 1);
 }
 
-await verifyTerminalClientError(400);
 await verifyTerminalClientError(422);
 
 async function verifyStreamGuardAcceptsJsonFallback() {
