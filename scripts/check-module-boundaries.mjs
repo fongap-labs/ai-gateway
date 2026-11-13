@@ -1072,6 +1072,18 @@ assert.doesNotMatch(
   /if \(!invocation.preferNonstream\) return dispatchedConversionProblem/,
   'v3 cannot pass raw successful JSON back to Gateway',
 );
+// A response with a verified dispatched marker must never be treated as
+// a pre-dispatch neutral skip just because the private frame/object contract
+// is invalid. The Provider already ran; account once, fail closed, no retry.
+const centerContractSettlement = readFileSync(join(root, 'apps/gateway/attempt/outcome.ts'), 'utf8');
+assert.match(centerContractSettlement, /export function stopAfterDispatchedCenterFault\(/, 'Gateway must have one dispatched center-fault settlement owner');
+assert.match(centerContractSettlement, /recordUndeliveredUpstreamAttempt\(c, c.node\)/, 'Center faults settle physical usage');
+assert.match(centerContractSettlement, /rotateWithNeutralEnd\(c.state, c.node, KIND.UNKNOWN, c\)/, 'Center faults charge one neutral dispatch');
+for (const code of ['gateway_inference_stream_format_invalid', 'gateway_inference_object_format_invalid']) {
+  assert.match(inferenceV4Dispatcher, new RegExp(`stopForDispatchedCenterContract\\(c, '${code}'`), 'Invalid center format must not be a pre-dispatch stop');
+}
+assert.match(inferenceV4Success, /stopAfterDispatchedCenterFault\(/, 'All Matrix contract faults must settle the physical dispatch');
+
 // Scheduled maintenance is an application boundary. The D1 primitives
 // shared with request-time accounting belong to the neutral usage-store package.
 for (const [legacy, owner] of [
