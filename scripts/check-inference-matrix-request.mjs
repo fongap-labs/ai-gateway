@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 // The single request-conversion implementation handles every directed pair.
 import assert from 'node:assert/strict';
+import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
 import { convertMatrixRequest as legacyConvert, isMatrixPair as legacyPair } from '../src/conversion/matrix/pipeline.ts';
-import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 
 assert.strictEqual(ownedConvert, legacyConvert, 'compatibility conversion must not be a second implementation');
 assert.strictEqual(ownedPair, legacyPair, 'protocol pair semantics must share one function');
@@ -63,16 +63,26 @@ const userBlocks = rebuilt.messages[rebuilt.messages.length - 1].content;
 assert.equal(userBlocks.find((block) => block.type === 'document').source.media_type, 'application/pdf');
 assert.equal(userBlocks.find((block) => block.type === 'tool_result').content.find((block) => block.type === 'document').source.data, 'JVBERi0xLjQK');
 assert.throws(
-  () => buildAnthropicRequest({ ...docRequest.request, messages: [{ role: 'user', parts: [{ type: 'document', mediaType: 'text/plain', data: 'YQ==' }] }] }, docRequest.diag),
+  () =>
+    buildAnthropicRequest(
+      { ...docRequest.request, messages: [{ role: 'user', parts: [{ type: 'document', mediaType: 'text/plain', data: 'YQ==' }] }] },
+      docRequest.diag,
+    ),
   /base64 PDF/,
   'unsupported documents must fail before upstream dispatch',
 );
 assert.throws(
-  () => buildAnthropicRequest({
-    ...docRequest.request,
-    messages: [{ role: 'assistant', parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_pdf', args: '{broken' }] }],
-  }, docRequest.diag),
+  () =>
+    buildAnthropicRequest(
+      {
+        ...docRequest.request,
+        messages: [{ role: 'assistant', parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_pdf', args: '{broken' }] }],
+      },
+      docRequest.diag,
+    ),
   /tool arguments must be a JSON object/,
   'malformed tool history must not be rewritten into a fake valid call',
 );
-console.log('Single request Matrix implementation passed all six protocol pairs, PDF attachments, opaque reasoning isolation and fail-closed semantics.');
+console.log(
+  'Single request Matrix implementation passed all six protocol pairs, PDF attachments, opaque reasoning isolation and fail-closed semantics.',
+);
