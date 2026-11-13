@@ -32,9 +32,8 @@ import {
   recordNodeBudgetStop,
   recordNodeSuccess,
   recordTokens,
-  recordUndeliveredUpstreamAttempt,
 } from './observability.ts';
-import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
+import { hedgeLoserOutcome, recordOutcome, stopAfterDispatchedCenterFault } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
@@ -89,8 +88,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   if (!c.clientWantsStream) {
     if (responseFormat !== INFERENCE_TRANSLATED_OBJECT_FORMAT || !contentType.includes('application/json')) {
       detach();
-      recordUndeliveredUpstreamAttempt(c, node);
-      return { response: gatewayError(request, env, route, 502, 'Private inference object format mismatch.', requestId) };
+      return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Private inference object format mismatch.', requestId));
     }
     detach();
     c.ttftMs = Date.now() - (c.attemptStartMs as number);
@@ -125,8 +123,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     !contentType.includes(INFERENCE_FRAMED_STREAM_CONTENT_TYPE)
   ) {
     detach();
-    recordUndeliveredUpstreamAttempt(c, node);
-    return { response: gatewayError(request, env, route, 502, 'Private inference stream format mismatch.', requestId) };
+    return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Private inference stream format mismatch.', requestId));
   }
 
   // ---- SSE upstream ----------------------------------------------------------
@@ -153,8 +150,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     guardSource = new Response(decoded, { status: 200, headers: { 'content-type': 'text/event-stream' } });
   } catch {
     detach();
-    recordUndeliveredUpstreamAttempt(c, node);
-    return { response: gatewayError(request, env, route, 502, 'Invalid private inference stream.', requestId) };
+    return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Invalid private inference stream.', requestId));
   }
 
   const guardStartMs = Date.now();
@@ -300,6 +296,5 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     return { response: tracked };
   }
   // No client-side object assembly is permitted in the Gateway.
-  recordUndeliveredUpstreamAttempt(c, node);
-  return { response: gatewayError(request, env, route, 502, 'Unexpected private inference response type.', requestId) };
+  return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Unexpected private inference response type.', requestId));
 }
