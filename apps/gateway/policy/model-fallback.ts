@@ -7,6 +7,7 @@
 // At most two rounds run, bounded by the original request-wide attempt budget.
 
 import type { ModelEntry } from '../../../src/config/models.ts';
+import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
@@ -180,8 +181,8 @@ export function modelFallbackCandidates(
  * compares, logs or persists secret material merely to deduplicate retries.
  */
 export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): string {
-  const upstreamModel = node.models[logicalModel] || logicalModel;
-  return JSON.stringify([node.id, upstreamModel]);
+  // An unmapped logical alias is not a physical model failure domain.
+  return JSON.stringify([node.id, resolvePhysicalModel(node, logicalModel)]);
 }
 
 /** A real failed Key cannot be tried again under another logical alias. */
