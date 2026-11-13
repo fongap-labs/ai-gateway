@@ -9,6 +9,7 @@
 // accounting when usage is reported.
 
 import { gatewayStats, recordStreamCompleted, recordStreamInterrupted, recordStreamStart } from '../../../src/observability/gateway-stats.ts';
+import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
 import { mergeReportedUsage, normalizeTokenUsage, recordTokenUsage } from '../../../src/observability/token-usage.ts';
 import { persistTokenUsage, persistUpstreamAttemptUsage } from '../../../src/observability/token-usage-store.ts';
 import { clearAdaptive429State } from '../../../src/reliability/adaptive-429.ts';
@@ -156,6 +157,14 @@ export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reaso
 }
 
 export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyMs: number): void {
+  const model = c.reqDescriptor?.model ?? c.state.requestedModel;
+  recordProviderAttemptEvidence({
+    nodeId: node.id,
+    upstreamModel: upstreamModelOf(node, model),
+    surface: c.surface ?? c.reqDescriptor?.surface ?? 'unknown',
+    status: 200,
+    kind: 'success',
+  });
   if (node.tier === 'tier-1') {
     const logicalModel = c.reqDescriptor?.model ?? c.state.requestedModel;
     const rateLimited = () =>
@@ -206,6 +215,14 @@ export function makeNodeStreamTrack(
       gatewayStats.successes++;
     },
     onFailure: () => {
+      const model = c.reqDescriptor?.model ?? c.state.requestedModel;
+      recordProviderAttemptEvidence({
+        nodeId: node.id,
+        upstreamModel: upstreamModelOf(node, model),
+        surface: c.surface ?? c.reqDescriptor?.surface ?? 'unknown',
+        status: 0,
+        kind: 'stream_interrupted',
+      });
       if (!tier1) {
         const classification = classifyStreamInterrupted();
         recordFailure(node.id, { counted: classification.counted, cooldownMs: classification.cooldownMs, reason: classification.kind });
