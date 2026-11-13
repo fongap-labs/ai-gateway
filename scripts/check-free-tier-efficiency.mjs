@@ -5,6 +5,7 @@
 // Deterministic free-tier reliability contracts. No keys or Provider calls.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { __resetTier1AffinityForTests, readTier1Affinity } from '../apps/gateway/scheduling/tier1-affinity.ts';
 import { pickTier1Candidate } from '../apps/gateway/scheduling/tier1-scheduler.ts';
 import { classifyUpstreamStatus, rateLimitWindowOf } from '../src/reliability/classify.ts';
@@ -16,6 +17,38 @@ import {
   tier1QuotaState,
 } from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
+
+// Keep Free D1 budgeting tied to the actual buffer constants. A previous
+// operations document assumed five-minute windows while code used one minute,
+// underestimating the maximum number of SQL statements under steady traffic.
+const bufferSource = readFileSync(new URL('../packages/usage-store/buffer.ts', import.meta.url), 'utf8');
+const budgetDoc = readFileSync(new URL('../docs/operations/free-tier-budget.md', import.meta.url), 'utf8');
+const intervalLiteral = /const FLUSH_INTERVAL_MS = ([0-9_]+);/.exec(bufferSource)?.[1];
+const thresholdLiteral = /const FLUSH_EVENT_THRESHOLD = ([0-9_]+);/.exec(bufferSource)?.[1];
+assert.ok(intervalLiteral && thresholdLiteral, 'usage buffer budget constants must be discoverable');
+const flushIntervalMs = Number(intervalLiteral.replaceAll('_', ''));
+const flushThreshold = Number(thresholdLiteral.replaceAll('_', ''));
+assert.ok(flushIntervalMs > 0 && flushIntervalMs % 60_000 === 0, 'budget model assumes whole-minute flush intervals');
+assert.ok(flushThreshold > 0);
+const flushMinutes = flushIntervalMs / 60_000;
+const markdownTick = String.fromCharCode(96);
+const expectedIntervalLabel = '默认刷新间隔为 ' + markdownTick + flushIntervalMs / 1_000 + ' 秒' + markdownTick;
+assert.ok(budgetDoc.includes(expectedIntervalLabel), 'budget must state the actual default flush interval');
+assert.ok(budgetDoc.includes(markdownTick + flushThreshold + markdownTick + ' 个事件'), 'budget must state the actual event threshold');
+const hasDurabilityWarning = budgetDoc.split('\n').some((line) => line.includes('定时器') && line.includes('不能保证'));
+assert.ok(hasDurabilityWarning, 'budget must state detached timer durability limits');
+for (const scenario of [
+  { label: '5 个隔离区各活跃 8 小时', isolates: 5, hours: 8, kinds: 2, modelRows: 6 },
+  { label: '20 个隔离区全天活跃', isolates: 20, hours: 24, kinds: 2, modelRows: 10 },
+]) {
+  const rows = budgetDoc.split(String.fromCharCode(10)).filter((line) => line.includes(scenario.label));
+  assert.equal(rows.length, 1, `budget must contain one row for ${scenario.label}`);
+  const cells = rows[0].split('|').map((part) => part.trim());
+  const batches = (scenario.isolates * scenario.hours * 60) / flushMinutes;
+  const statements = batches * (2 * scenario.kinds + scenario.modelRows);
+  assert.equal(Number(cells[2].replaceAll(',', '')), batches, 'budget batch estimate must match flush cadence');
+  assert.equal(Number(cells[4].replaceAll(',', '')), statements, 'budget statement estimate must match model cardinality');
+}
 
 assert.equal(rateLimitWindowOf('quota exceeded'), 'quota');
 assert.equal(rateLimitWindowOf('free quota exhausted'), 'quota');

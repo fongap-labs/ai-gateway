@@ -168,6 +168,10 @@ function clearFlushTimer(): void {
 
 function armFlushTimer(): void {
   if (flushTimer !== null || pendingByDatabase.size === 0) return;
+  // This detached timer is opportunistic: Workers may suspend or recycle an
+  // isolate when the request ends. It is not protected by ctx.waitUntil(), so
+  // its firing must never be treated as a durability guarantee or used to
+  // justify lower D1 usage estimates.
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void flushUsageBuffer().catch((error) => {
