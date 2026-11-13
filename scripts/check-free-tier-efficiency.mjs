@@ -142,7 +142,7 @@ const routingNodes = ['peer-a', 'preferred', 'peer-b'].map((id) => ({
   baseUrl: 'https://provider.test',
   credential: 'test',
   priority: 1,
-  models: { [routingModel]: routingModel },
+  models: { [routingModel]: 'upstream-free-p2c' },
 }));
 for (const [id, ttft] of [
   ['peer-a', 100],
