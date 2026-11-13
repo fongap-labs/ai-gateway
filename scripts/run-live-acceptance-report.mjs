@@ -11,7 +11,9 @@ import { createAcceptanceReport, parseCheckEvidence, parseFailureEvidence, valid
 
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('Usage: node scripts/run-live-acceptance-report.mjs --report-file ./acceptance.json --expected-sha FULL_40_CHAR_SHA --url https://gateway.example --chat-model Max [other check-live-gateway-capabilities.mjs options]');
+  console.log(
+    'Usage: node scripts/run-live-acceptance-report.mjs --report-file ./acceptance.json --expected-sha FULL_40_CHAR_SHA --url https://gateway.example --chat-model Max [other check-live-gateway-capabilities.mjs options]',
+  );
   process.exit(0);
 }
 
@@ -144,10 +146,12 @@ const report = createAcceptanceReport({
 let reportSaved = false;
 try {
   // Exclusively create a private file rather than overwriting past evidence.
-  await writeFile(reportFile, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  await writeFile(reportFile, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   reportSaved = true;
 } catch {
   console.error(JSON.stringify({ result: 'FAIL', category: 'report_write_failed' }));
 }
-console.log(JSON.stringify({ result: reportSaved ? report.result : 'FAIL', checks_passed: report.summary.passed, version_verified: report.version.verified }));
+console.log(
+  JSON.stringify({ result: reportSaved ? report.result : 'FAIL', checks_passed: report.summary.passed, version_verified: report.version.verified }),
+);
 if (!reportSaved || report.result !== 'PASS') process.exitCode = 1;
