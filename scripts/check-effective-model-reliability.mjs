@@ -130,6 +130,7 @@ assert.equal(
 
 // A route-scoped 422 is not six independent failures when all free Keys
 // advertise one physical model. A different model on the same Key survives.
+const sharedPrimary = { ...node, baseUrl: 'https://provider.invalid/v1' };
 const sharedPhysical = { ...node, id: 'same-provider-other-key', baseUrl: 'https://provider.invalid/v1' };
 const differentPhysical = {
   ...node,
@@ -137,9 +138,9 @@ const differentPhysical = {
   baseUrl: 'https://provider.invalid/v1',
   models: { [source]: 'other-upstream', [effective]: 'other-physical' },
 };
-const sharedNodes = new Map([node, sharedPhysical, differentPhysical].map((entry) => [entry.id, entry]));
+const sharedNodes = new Map([sharedPrimary, sharedPhysical, differentPhysical].map((entry) => [entry.id, entry]));
 const routeDomains = new Set();
-rememberFailedDomains(routeDomains, sharedNodes, new Set([node.id]), source, [
+rememberFailedDomains(routeDomains, sharedNodes, new Set([sharedPrimary.id]), source, [
   {
     node_id: node.id,
     effective_model: source,
