@@ -13,12 +13,12 @@ import {
   __resetTier1StateForTests,
   getTier1Account,
   isTier1Eligible,
-  releaseTier1Slot,
-  tier1CountDispatchableNodes,
-  tier1HasDeferredCapacity,
   recordTier1QuotaReport,
   recordTier1QuotaSignal,
   recordTier1Ttft,
+  releaseTier1Slot,
+  tier1CountDispatchableNodes,
+  tier1HasDeferredCapacity,
   tier1QuotaState,
 } from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
