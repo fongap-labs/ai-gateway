@@ -94,7 +94,8 @@ try {
     assert.equal(config.nodes.length, 0, 'invalid endpoint declarations must exclude the physical node');
   }
   assert.deepEqual(
-    loadExecutionConfig({ ...env, AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider: 'anthropic', surfaces: ['messages'] }]) }).nodes[0].surfaces,
+    loadExecutionConfig({ ...env, AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider: 'anthropic', surfaces: ['messages'] }]) }).nodes[0]
+      .surfaces,
     ['messages'],
   );
 
