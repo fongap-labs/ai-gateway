@@ -53,4 +53,8 @@ const anthroOpaque = ownerRender(opaque, 'anthropic');
 assert.deepEqual(anthroOpaque.content, [{ type: 'text', text: 'visible answer' }]);
 const responsesOpaque = ownerRender(opaque, 'openai_responses');
 assert.doesNotMatch(JSON.stringify(responsesOpaque), /provider-only-ciphertext|encrypted_content/);
+assert.throws(
+  () => ownerRender({ ...reply, parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_file', args: '{broken' }] }, 'anthropic'),
+  /tool arguments must be a JSON object/,
+);
 console.log('Inference-owned native-object renderers preserved three protocol shapes, usage and export identity.');
