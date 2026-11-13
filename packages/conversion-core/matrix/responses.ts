@@ -65,6 +65,7 @@ function responsesTools(body: Record<string, unknown>, diag: MatrixDiag): IrTool
       const name = rawTool.name;
       if (typeof name !== 'string' || !name) continue;
       diag.add({ feature: 'custom_tool', action: 'mapped' });
+      diag.add({ feature: 'custom_tool_definition', action: 'dropped' });
       tools.push({
         name,
         description: typeof rawTool.description === 'string' ? rawTool.description : '',
@@ -207,6 +208,7 @@ function inputValueToMessages(
         continue;
       }
       case 'custom_tool_call': {
+        diag.add({ feature: 'custom_tool_history', action: 'dropped' });
         assertFields(item, ['type', 'call_id', 'name', 'input', 'id'], 'custom_tool_call');
         if (typeof item.name !== 'string' || !item.name) throw new ConversionError('conversion_not_supported: custom_tool_call.name is required');
         pushMessage('assistant', [
@@ -221,6 +223,7 @@ function inputValueToMessages(
         continue;
       }
       case 'custom_tool_call_output': {
+        diag.add({ feature: 'custom_tool_history', action: 'dropped' });
         assertFields(item, ['type', 'call_id', 'output', 'id'], 'custom_tool_call_output');
         if (typeof item.call_id !== 'string' || !item.call_id)
           throw new ConversionError('conversion_not_supported: custom_tool_call_output.call_id is required');
@@ -228,12 +231,14 @@ function inputValueToMessages(
         continue;
       }
       case 'local_shell_call': {
+        diag.add({ feature: 'local_shell_history', action: 'dropped' });
         const action = item.action;
         const text = action ? `[local_shell] ${JSON.stringify(action)}` : '[local_shell]';
         pushMessage('assistant', [{ type: 'text', text }]);
         continue;
       }
       case 'local_shell_call_output': {
+        diag.add({ feature: 'local_shell_history', action: 'dropped' });
         const output = item.output;
         const text = typeof output === 'string' ? output : JSON.stringify(output);
         pushMessage('user', [{ type: 'text', text: `[local_shell output] ${text}` }]);
@@ -330,6 +335,9 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
   assertFields(body, RESPONSES_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
+  if (body.previous_response_id !== undefined) diag.add({ feature: 'response_continuation', action: 'dropped' });
+  if (body.prompt !== undefined) diag.add({ feature: 'responses_prompt_reference', action: 'dropped' });
+  if (body.truncation !== undefined) diag.add({ feature: 'responses_truncation_policy', action: 'dropped' });
   for (const field of [
     'max_tool_calls',
     'truncation',
