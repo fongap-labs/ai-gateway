@@ -4,6 +4,7 @@
 // Diagnostic HTTP endpoints: /health, /metrics, /v1/models, and public /health/ready.
 // Responses contain runtime state only — never credentials.
 
+import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
 import type { RegistryEntry } from '../config/registry.ts';
@@ -307,6 +308,31 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_token_usage_reports_total', tokenStats.totals.reports);
   emit('gateway_token_usage_missing_total', 'counter', 'Delivered responses with no usable upstream usage report.');
   counter('gateway_token_usage_missing_total', tokenStats.totals.missing);
+  // Isolate-local buffer metrics do not query D1 and do not represent the
+  // account-wide daily quota. Missing row metadata is explicitly recorded.
+  const usageBuffer = snapshotUsageBuffer();
+  emit('gateway_usage_d1_batches_attempted_total', 'counter', 'D1 usage batch attempts since isolate start.');
+  counter('gateway_usage_d1_batches_attempted_total', usageBuffer.batchAttempts);
+  emit('gateway_usage_d1_batches_succeeded_total', 'counter', 'Successful D1 usage batches since isolate start.');
+  counter('gateway_usage_d1_batches_succeeded_total', usageBuffer.batchSuccesses);
+  emit('gateway_usage_d1_batches_failed_total', 'counter', 'Failed D1 usage batches since isolate start.');
+  counter('gateway_usage_d1_batches_failed_total', usageBuffer.batchFailures);
+  emit('gateway_usage_d1_statements_committed_total', 'counter', 'Statements in successful D1 usage batches.');
+  counter('gateway_usage_d1_statements_committed_total', usageBuffer.committedStatements);
+  emit('gateway_usage_d1_rows_written_reported_total', 'counter', 'Rows written as explicitly reported by D1 batch metadata.');
+  counter('gateway_usage_d1_rows_written_reported_total', usageBuffer.reportedRowsWritten);
+  emit(
+    'gateway_usage_d1_statements_missing_row_metadata_total',
+    'counter',
+    'Committed statements without D1 rows_written metadata; actual rows are unknown.',
+  );
+  counter('gateway_usage_d1_statements_missing_row_metadata_total', usageBuffer.statementsWithoutRowMetadata);
+  emit('gateway_usage_d1_buffer_pending_events', 'gauge', 'Usage events pending D1 flush in this isolate; lost if the isolate is recycled.');
+  counter('gateway_usage_d1_buffer_pending_events', usageBuffer.pendingEvents);
+  emit('gateway_usage_d1_buffer_pending_entries', 'gauge', 'Distinct aggregated usage entries pending D1 flush.');
+  counter('gateway_usage_d1_buffer_pending_entries', usageBuffer.pendingEntries);
+  emit('gateway_usage_d1_buffer_flushing', 'gauge', 'Whether a D1 usage batch flush is currently running.');
+  counter('gateway_usage_d1_buffer_flushing', usageBuffer.flushing ? 1 : 0);
   for (const b of tokenMetricSeries()) {
     const label = `model="${sanitizePrometheusLabel(b.model)}",tier="${sanitizePrometheusLabel(b.tier)}",provider="${sanitizePrometheusLabel(b.provider)}",node_id="${sanitizePrometheusLabel(b.nodeId)}"`;
     counter('gateway_tokens_total', b.total, label);

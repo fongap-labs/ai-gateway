@@ -81,6 +81,29 @@ let lastFlushAt = 0;
 // After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
 // a D1 outage would retry the whole buffer on every event.
 let lastFailureAt = 0;
+// Counters track actual D1 batch results returned by the runtime, not estimates
+// of the account-wide Cloudflare allowance. They reset with the isolate.
+const writeStats = {
+  batchAttempts: 0,
+  batchSuccesses: 0,
+  batchFailures: 0,
+  committedStatements: 0,
+  reportedRowsWritten: 0,
+  statementsWithoutRowMetadata: 0,
+};
+
+/** Read-only isolate snapshot: does not read or write D1. */
+export function snapshotUsageBuffer() {
+  let pendingEntries = 0;
+  for (const batch of pendingByDatabase.values()) pendingEntries += batch.entries.size;
+  return {
+    pendingEvents: bufferedEvents,
+    pendingDatabases: pendingByDatabase.size,
+    pendingEntries,
+    flushing: flushInFlight !== null,
+    ...writeStats,
+  };
+}
 
 function entryKey(kind: UsageKind, hour: string, model: string | null, shouldCountTowardGlobal: boolean): string {
   return `${kind}\u0000${hour}\u0000${model ?? ''}\u0000${shouldCountTowardGlobal ? 'global' : 'detail'}`;
@@ -273,9 +296,29 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
 async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Promise<void> {
   pendingByDatabase.delete(database);
   try {
-    await database.batch(buildFlushStatements(database, batch.entries.values()));
+    // Preparation can fail too (for example a D1 binding error). Keep it
+    // inside the failure boundary so queued increments are always restored.
+    const statements = buildFlushStatements(database, batch.entries.values());
+    writeStats.batchAttempts++;
+    const results = await database.batch(statements);
+    writeStats.batchSuccesses++;
+    writeStats.committedStatements += statements.length;
+    let reportedStatements = 0;
+    // The D1 runtime may omit metadata in a test double or an older adapter.
+    // Count only rows explicitly reported by D1, never guess the missing rows.
+    if (Array.isArray(results)) {
+      for (const result of results) {
+        const rows = result?.meta?.rows_written;
+        if (typeof rows === 'number' && Number.isSafeInteger(rows) && rows >= 0) {
+          reportedStatements++;
+          writeStats.reportedRowsWritten += rows;
+        }
+      }
+    }
+    writeStats.statementsWithoutRowMetadata += Math.max(0, statements.length - reportedStatements);
     bufferedEvents = Math.max(0, bufferedEvents - batch.events);
   } catch (cause) {
+    writeStats.batchFailures++;
     const current = pendingFor(database);
     for (const entry of batch.entries.values()) mergeEntry(current.entries, entry);
     current.events += batch.events;
@@ -329,4 +372,10 @@ export function __resetUsageBufferForTests(): void {
   flushInFlight = null;
   lastFlushAt = 0;
   lastFailureAt = 0;
+  writeStats.batchAttempts = 0;
+  writeStats.batchSuccesses = 0;
+  writeStats.batchFailures = 0;
+  writeStats.committedStatements = 0;
+  writeStats.reportedRowsWritten = 0;
+  writeStats.statementsWithoutRowMetadata = 0;
 }

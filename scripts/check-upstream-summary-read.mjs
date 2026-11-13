@@ -3,7 +3,8 @@
 // Regression: independent D1 reads overlap after buffered writes flush, with
 // identical cumulative/hourly results and the old-schema fallback retained.
 import assert from 'node:assert/strict';
-import { __resetUsageBufferForTests } from '../packages/usage-store/buffer.ts';
+import { __resetUsageBufferForTests, bufferPersist, flushUsageBuffer, snapshotUsageBuffer } from '../packages/usage-store/buffer.ts';
+import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
 import { loadUpstreamSummary } from '../src/observability/token-usage-store/upstream-queries.ts';
 
 const now = Date.UTC(2026, 10, 12, 1, 0);
@@ -150,5 +151,103 @@ const brokenD1 = {
 const broken = await loadUpstreamSummary({ TOKEN_STATS_DB: brokenD1 }, now);
 assert.equal(broken?.available, false);
 assert.match(broken.error, /loadUpstreamSummary: hourly unavailable/);
+// Write observability must reflect D1-reported rows, not extrapolate quota.
+// The first event is flushed promptly; subsequent events are buffered without
+// D1 I/O until a normal explicit flush.
 __resetUsageBufferForTests();
-console.log('Upstream D1 summary: concurrent independent reads, legacy schema, and error boundary passed.');
+let writeCalls = 0;
+let failNextBatch = false;
+const writeD1 = {
+  prepare() {
+    return {
+      bind() {
+        return this;
+      },
+    };
+  },
+  async batch(statements) {
+    writeCalls++;
+    if (failNextBatch) {
+      failNextBatch = false;
+      throw new Error('temporary D1 outage');
+    }
+    return statements.map(() => ({ meta: { rows_written: 1 } }));
+  },
+};
+const usagePayload = {
+  input: 1,
+  output: 2,
+  cacheCreation: 0,
+  cacheRead: 0,
+  effectiveInput: 1,
+  observedCacheRead: 0,
+  observedCacheInput: 0,
+  cacheReadReports: 0,
+  total: 3,
+  requests: 1,
+  reports: 1,
+  missing: 0,
+};
+const usageEvent = { now, model: 'Code-Ultra', usage: usagePayload, exactGlobal: true, includeModel: true };
+await bufferPersist({ TOKEN_STATS_DB: writeD1 }, 'delivered', usageEvent);
+const committed = snapshotUsageBuffer();
+assert.equal(committed.batchAttempts, 1);
+assert.equal(committed.batchSuccesses, 1);
+assert.equal(committed.batchFailures, 0);
+assert.ok(committed.reportedRowsWritten > 0);
+assert.equal(committed.statementsWithoutRowMetadata, 0);
+assert.equal(committed.pendingEvents, 0);
+await bufferPersist({ TOKEN_STATS_DB: writeD1 }, 'delivered', usageEvent);
+assert.equal(snapshotUsageBuffer().pendingEvents, 1);
+assert.equal(writeCalls, 1, 'buffered events must not trigger an extra D1 write');
+const beforeMetrics = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'usage-d1-test').text();
+assert.match(beforeMetrics, /gateway_usage_d1_buffer_pending_events\{\} 1/);
+assert.equal(writeCalls, 1, 'metrics must never query or flush D1');
+failNextBatch = true;
+await assert.rejects(flushUsageBuffer(), /temporary D1 outage/);
+assert.equal(snapshotUsageBuffer().batchFailures, 1);
+assert.equal(snapshotUsageBuffer().pendingEvents, 1, 'a failed batch must requeue its usage increments');
+await flushUsageBuffer();
+assert.equal(snapshotUsageBuffer().batchAttempts, 3);
+assert.equal(snapshotUsageBuffer().batchSuccesses, 2);
+assert.equal(snapshotUsageBuffer().pendingEvents, 0);
+assert.equal(writeCalls, 3);
+const finalMetrics = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'usage-d1-test').text();
+assert.match(finalMetrics, /gateway_usage_d1_batches_failed_total\{\} 1/);
+assert.match(finalMetrics, /gateway_usage_d1_buffer_pending_events\{\} 0/);
+__resetUsageBufferForTests();
+assert.equal(snapshotUsageBuffer().batchAttempts, 0, 'isolate test reset must clear D1 counters');
+
+// Missing D1 row metadata must remain unknown, not become fabricated writes.
+const noMetaD1 = {
+  ...writeD1,
+  async batch(statements) {
+    return statements.map(() => ({ success: true }));
+  },
+};
+await bufferPersist({ TOKEN_STATS_DB: noMetaD1 }, 'delivered', usageEvent);
+assert.equal(snapshotUsageBuffer().reportedRowsWritten, 0);
+assert.ok(snapshotUsageBuffer().statementsWithoutRowMetadata > 0);
+__resetUsageBufferForTests();
+
+// A synchronous statement-preparation failure must requeue rather than silently
+// discard already buffered usage increments.
+let prepUnavailable = false;
+const preparationD1 = {
+  ...writeD1,
+  prepare() {
+    if (prepUnavailable) throw new Error('D1 preparation unavailable');
+    return writeD1.prepare();
+  },
+};
+await bufferPersist({ TOKEN_STATS_DB: preparationD1 }, 'delivered', usageEvent);
+await bufferPersist({ TOKEN_STATS_DB: preparationD1 }, 'delivered', usageEvent);
+prepUnavailable = true;
+await assert.rejects(flushUsageBuffer(), /D1 preparation unavailable/);
+assert.equal(snapshotUsageBuffer().pendingEvents, 1);
+prepUnavailable = false;
+await flushUsageBuffer();
+assert.equal(snapshotUsageBuffer().pendingEvents, 0);
+__resetUsageBufferForTests();
+
+console.log('Upstream D1 summary and buffered write diagnostics passed without extra D1 reads or writes.');
