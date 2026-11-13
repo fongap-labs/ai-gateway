@@ -199,14 +199,17 @@ assert.equal(committed.statementsWithoutRowMetadata, 0);
 assert.equal(committed.pendingEvents, 0);
 await bufferPersist({ TOKEN_STATS_DB: writeD1 }, 'delivered', usageEvent);
 assert.equal(snapshotUsageBuffer().pendingEvents, 1);
+assert.ok(snapshotUsageBuffer(Date.now() + 5_000).oldestPendingAgeSeconds >= 5, 'pending event age advances without D1 I/O');
 assert.equal(writeCalls, 1, 'buffered events must not trigger an extra D1 write');
 const beforeMetrics = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'usage-d1-test').text();
 assert.match(beforeMetrics, /gateway_usage_d1_buffer_pending_events\{\} 1/);
+assert.match(beforeMetrics, /gateway_usage_d1_buffer_oldest_pending_age_seconds\{\} \d+/);
 assert.equal(writeCalls, 1, 'metrics must never query or flush D1');
 failNextBatch = true;
 await assert.rejects(flushUsageBuffer(), /temporary D1 outage/);
 assert.equal(snapshotUsageBuffer().batchFailures, 1);
 assert.equal(snapshotUsageBuffer().pendingEvents, 1, 'a failed batch must requeue its usage increments');
+assert.ok(snapshotUsageBuffer(Date.now() + 5_000).oldestPendingAgeSeconds >= 5, 'failed batch retains the oldest event age');
 await flushUsageBuffer();
 assert.equal(snapshotUsageBuffer().batchAttempts, 3);
 assert.equal(snapshotUsageBuffer().batchSuccesses, 2);
@@ -215,6 +218,7 @@ assert.equal(writeCalls, 3);
 const finalMetrics = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'usage-d1-test').text();
 assert.match(finalMetrics, /gateway_usage_d1_batches_failed_total\{\} 1/);
 assert.match(finalMetrics, /gateway_usage_d1_buffer_pending_events\{\} 0/);
+assert.match(finalMetrics, /gateway_usage_d1_buffer_oldest_pending_age_seconds\{\} 0/);
 __resetUsageBufferForTests();
 assert.equal(snapshotUsageBuffer().batchAttempts, 0, 'isolate test reset must clear D1 counters');
 
@@ -276,6 +280,33 @@ assert.equal(snapshotUsageBuffer().pendingEvents, 1);
 prepUnavailable = false;
 await flushUsageBuffer();
 assert.equal(snapshotUsageBuffer().pendingEvents, 0);
+__resetUsageBufferForTests();
+
+// An in-flight batch must retain its original age while temporarily absent
+// from pendingByDatabase, then reset the gauge when the batch completes.
+let enterD1;
+let releaseD1;
+const enteredD1 = new Promise((resolve) => {
+  enterD1 = resolve;
+});
+const heldD1 = new Promise((resolve) => {
+  releaseD1 = resolve;
+});
+const slowD1 = {
+  ...writeD1,
+  async batch(statements) {
+    enterD1();
+    await heldD1;
+    return statements.map(() => ({ success: true, meta: { rows_written: 1 } }));
+  },
+};
+const heldWrite = bufferPersist({ TOKEN_STATS_DB: slowD1 }, 'delivered', usageEvent);
+await enteredD1;
+assert.equal(snapshotUsageBuffer().pendingEvents, 1, 'in-flight batch still counts as uncommitted');
+assert.ok(snapshotUsageBuffer(Date.now() + 5_000).oldestPendingAgeSeconds >= 5, 'in-flight batch retains its age');
+releaseD1();
+await heldWrite;
+assert.equal(snapshotUsageBuffer().oldestPendingAgeSeconds, 0, 'completed writes clear backlog age');
 __resetUsageBufferForTests();
 
 console.log('Upstream D1 summary and buffered write diagnostics passed without extra D1 reads or writes.');

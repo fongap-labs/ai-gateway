@@ -70,6 +70,8 @@ type UsageEntry = {
 type PendingBatch = {
   entries: Map<string, UsageEntry>;
   events: number;
+  /** Isolate-local arrival time of the oldest uncommitted event. */
+  oldestQueuedAt: number;
 };
 
 const pendingByDatabase: Map<UsageDatabase, PendingBatch> = new Map();
@@ -77,6 +79,9 @@ let databasesWithInitialFlush = new WeakSet<UsageDatabase>();
 let bufferedEvents = 0;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<void> | null = null;
+// A batch is removed from pendingByDatabase while D1 is writing it; retain
+// its age separately so /metrics does not report zero backlog mid-flush.
+let inFlightOldestQueuedAt: number | null = null;
 let lastFlushAt = 0;
 // After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
 // a D1 outage would retry the whole buffer on every event.
@@ -93,13 +98,20 @@ const writeStats = {
 };
 
 /** Read-only isolate snapshot: does not read or write D1. */
-export function snapshotUsageBuffer() {
+export function snapshotUsageBuffer(now: number = Date.now()) {
   let pendingEntries = 0;
-  for (const batch of pendingByDatabase.values()) pendingEntries += batch.entries.size;
+  let oldestQueuedAt = inFlightOldestQueuedAt;
+  for (const batch of pendingByDatabase.values()) {
+    pendingEntries += batch.entries.size;
+    oldestQueuedAt = oldestQueuedAt === null ? batch.oldestQueuedAt : Math.min(oldestQueuedAt, batch.oldestQueuedAt);
+  }
   return {
     pendingEvents: bufferedEvents,
     pendingDatabases: pendingByDatabase.size,
     pendingEntries,
+    // Since isolate start only; zero when empty. Does not query D1 or
+    // represent the age of any buffered work in other Workers/isolates.
+    oldestPendingAgeSeconds: bufferedEvents > 0 && oldestQueuedAt !== null ? Math.max(0, Math.floor((now - oldestQueuedAt) / 1_000)) : 0,
     flushing: flushInFlight !== null,
     ...writeStats,
   };
@@ -112,7 +124,7 @@ function entryKey(kind: UsageKind, hour: string, model: string | null, shouldCou
 function pendingFor(database: UsageDatabase): PendingBatch {
   let batch = pendingByDatabase.get(database);
   if (!batch) {
-    batch = { entries: new Map(), events: 0 };
+    batch = { entries: new Map(), events: 0, oldestQueuedAt: Date.now() };
     pendingByDatabase.set(database, batch);
   }
   return batch;
@@ -299,6 +311,7 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
 // rethrown.
 async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Promise<void> {
   pendingByDatabase.delete(database);
+  inFlightOldestQueuedAt = batch.oldestQueuedAt;
   try {
     // Preparation can fail too (for example a D1 binding error). Keep it
     // inside the failure boundary so queued increments are always restored.
@@ -331,9 +344,12 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
     writeStats.batchFailures++;
     const current = pendingFor(database);
     for (const entry of batch.entries.values()) mergeEntry(current.entries, entry);
+    current.oldestQueuedAt = Math.min(current.oldestQueuedAt, batch.oldestQueuedAt);
     current.events += batch.events;
     lastFailureAt = Date.now();
     throw persistFailure(cause);
+  } finally {
+    inFlightOldestQueuedAt = null;
   }
 }
 
@@ -380,6 +396,7 @@ export function __resetUsageBufferForTests(): void {
   databasesWithInitialFlush = new WeakSet();
   bufferedEvents = 0;
   flushInFlight = null;
+  inFlightOldestQueuedAt = null;
   lastFlushAt = 0;
   lastFailureAt = 0;
   writeStats.batchAttempts = 0;
