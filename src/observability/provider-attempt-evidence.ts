@@ -43,7 +43,10 @@ export function recordProviderAttemptEvidence(
   let bucket = buckets.get(key);
   if (!bucket) {
     if (buckets.size >= MAX_BUCKETS) prune(now);
-    if (buckets.size >= MAX_BUCKETS) { droppedEvents++; return; }
+    if (buckets.size >= MAX_BUCKETS) {
+      droppedEvents++;
+      return;
+    }
     bucket = { ...empty(), node_id: dims[0], upstream_model: dims[1], surface: dims[2], minute };
     buckets.set(key, bucket);
   }
@@ -74,7 +77,9 @@ export function snapshotProviderAttemptEvidence(now: number = Date.now()) {
     row.timeouts += bucket.timeouts;
     row.other_failures += bucket.other_failures;
   }
-  const sorted = [...rows.values()].sort((a, b) => (b.http_429 + b.http_422 + b.http_503 + b.stream_interruptions) - (a.http_429 + a.http_422 + a.http_503 + a.stream_interruptions));
+  const sorted = [...rows.values()].sort(
+    (a, b) => b.http_429 + b.http_422 + b.http_503 + b.stream_interruptions - (a.http_429 + a.http_422 + a.http_503 + a.stream_interruptions),
+  );
   return {
     scope: 'isolate-local',
     window_minutes: 15,
