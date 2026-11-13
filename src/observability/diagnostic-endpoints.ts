@@ -20,6 +20,7 @@ import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { AuthResult } from '../types/request.ts';
 import { gatewayStats, streamStats } from './gateway-stats.ts';
+import { snapshotProviderAttemptEvidence } from './provider-attempt-evidence.ts';
 import { summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
 
 export const APP_META = Object.freeze({
@@ -210,6 +211,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
         tier1_affinity: snapshotTier1Affinity(env),
         tier1_shared_cooldowns: snapshotSharedTier1Cooldowns(),
+        provider_attempt_evidence: snapshotProviderAttemptEvidence(now),
         client_stats: {
           started_at: new Date(gatewayStats.startedAt).toISOString(),
           requests_total: gatewayStats.requests,
