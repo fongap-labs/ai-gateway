@@ -488,7 +488,9 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '') {
           return new Response(
             JSON.stringify({
               error: {
-                ...(errorCode ? { code: errorCode } : { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` }),
+                ...(errorCode
+                  ? { code: errorCode }
+                  : { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` }),
               },
             }),
             {
