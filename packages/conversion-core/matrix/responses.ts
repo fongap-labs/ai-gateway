@@ -65,6 +65,7 @@ function responsesTools(body: Record<string, unknown>, diag: MatrixDiag): IrTool
       const name = rawTool.name;
       if (typeof name !== 'string' || !name) continue;
       diag.add({ feature: 'custom_tool', action: 'mapped' });
+      diag.add({ feature: 'custom_tool_definition', action: 'dropped' });
       tools.push({
         name,
         description: typeof rawTool.description === 'string' ? rawTool.description : '',
@@ -207,6 +208,7 @@ function inputValueToMessages(
         continue;
       }
       case 'custom_tool_call': {
+        diag.add({ feature: 'custom_tool_history', action: 'dropped' });
         assertFields(item, ['type', 'call_id', 'name', 'input', 'id'], 'custom_tool_call');
         if (typeof item.name !== 'string' || !item.name) throw new ConversionError('conversion_not_supported: custom_tool_call.name is required');
         pushMessage('assistant', [
@@ -221,6 +223,7 @@ function inputValueToMessages(
         continue;
       }
       case 'custom_tool_call_output': {
+        diag.add({ feature: 'custom_tool_history', action: 'dropped' });
         assertFields(item, ['type', 'call_id', 'output', 'id'], 'custom_tool_call_output');
         if (typeof item.call_id !== 'string' || !item.call_id)
           throw new ConversionError('conversion_not_supported: custom_tool_call_output.call_id is required');
@@ -228,12 +231,14 @@ function inputValueToMessages(
         continue;
       }
       case 'local_shell_call': {
+        diag.add({ feature: 'local_shell_history', action: 'dropped' });
         const action = item.action;
         const text = action ? `[local_shell] ${JSON.stringify(action)}` : '[local_shell]';
         pushMessage('assistant', [{ type: 'text', text }]);
         continue;
       }
       case 'local_shell_call_output': {
+        diag.add({ feature: 'local_shell_history', action: 'dropped' });
         const output = item.output;
         const text = typeof output === 'string' ? output : JSON.stringify(output);
         pushMessage('user', [{ type: 'text', text: `[local_shell output] ${text}` }]);
@@ -330,6 +335,9 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
   assertFields(body, RESPONSES_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
   if (body.metadata !== undefined) diag.add({ feature: 'metadata', action: 'dropped' });
+  if (body.previous_response_id !== undefined) diag.add({ feature: 'response_continuation', action: 'dropped' });
+  if (body.prompt !== undefined) diag.add({ feature: 'responses_prompt_reference', action: 'dropped' });
+  if (body.truncation !== undefined) diag.add({ feature: 'responses_truncation_policy', action: 'dropped' });
   for (const field of [
     'max_tool_calls',
     'truncation',
@@ -467,12 +475,11 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   if (ir.structuredOutputSchema) {
     out.text = { format: { type: 'json_schema', name: 'response', schema: ir.structuredOutputSchema, strict: true } };
   }
-  let maxTokens = ir.maxTokens;
-  if (maxTokens == null) {
-    maxTokens = RESPONSES_DEFAULT_MAX_OUTPUT_TOKENS;
-    diag.add({ feature: 'max_tokens', action: 'defaulted' });
-  }
-  out.max_output_tokens = maxTokens;
+  // The Responses API permits an omitted output ceiling. A hardcoded 1024
+  // silently truncates long code generation and may reject some free endpoints.
+  // Preserve the client's limit when supplied; otherwise let the physical
+  // Provider apply its own default.
+  if (ir.maxTokens != null) out.max_output_tokens = ir.maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
   // top_k is an Anthropic-native control; this target cannot carry it.

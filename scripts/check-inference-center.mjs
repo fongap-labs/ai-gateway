@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
+import { resolvePhysicalModel, servesModel } from '../packages/config-core/registry.ts';
 import { executeNative } from '../packages/execution-core/native.ts';
 import { preDispatchProblem, problem } from '../packages/execution-core/response.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
@@ -73,6 +74,54 @@ try {
   assert.equal((await handleInferenceCenterRequest(request(validBody, { 'x-aig-node-id': 'missing-node' }), env)).status, 404);
   assert.equal((await handleInferenceCenterRequest(request({ ...validBody, model: 'other' }), env)).status, 400);
   assert.equal(attempts, 0);
+
+  // API surfaces are physical endpoint configuration, not fixed model
+  // capabilities. The Gateway and private center must normalize identically.
+  const surfaceEnv = (provider, surfaces) => ({
+    ...env,
+    AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider, surfaces }]),
+  });
+  const chatOnly = surfaceEnv('openai', ['chat_completions']);
+  assert.deepEqual(
+    loadGatewayConfig({ ...chatOnly, AIG_ACCESS_KEY_AGENT: 'gateway-test-access-key', AIG_INFERENCE_ACTIVE: 'true' }).nodes[0].surfaces,
+    ['chat_completions'],
+  );
+  assert.deepEqual(loadExecutionConfig(chatOnly).nodes[0].surfaces, ['chat_completions']);
+  const rejectedResponses = await handleInferenceCenterRequest(request(validBody, { 'x-aig-surface': 'responses' }), chatOnly);
+  assert.equal(rejectedResponses.status, 404, 'a chat-only endpoint must reject Responses before dispatch');
+  assert.equal(attempts, 0, 'unsupported API surface must not use a Provider Key');
+  const compatibleResponses = surfaceEnv('custom-compatible', ['responses']);
+  assert.deepEqual(loadExecutionConfig(compatibleResponses).nodes[0].surfaces, ['responses']);
+  for (const invalid of [[], ['messages'], ['chat_completions', 'chat_completions'], ['responses', 123]]) {
+    const config = loadExecutionConfig(surfaceEnv('openai', invalid));
+    assert.equal(config.nodes.length, 0, 'invalid endpoint declarations must exclude the physical node');
+  }
+  assert.deepEqual(
+    loadExecutionConfig({ ...env, AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider: 'anthropic', surfaces: ['messages'] }]) }).nodes[0]
+      .surfaces,
+    ['messages'],
+  );
+
+  // Wildcard or missing mappings must never be forwarded. Explicit identity
+  // mappings are legitimate when the upstream model has that exact name.
+  const unmappedCases = [{ name: 'wildcard', models: {} }];
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'chat-test' } }, 'chat-test'), 'chat-test');
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'CHAT-TEST' } }, 'chat-test'), 'CHAT-TEST');
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': '  ' } }, 'chat-test'), null);
+  for (const item of unmappedCases) {
+    const rejectedEnv = {
+      ...env,
+      AIG_MODELS_CONFIG: JSON.stringify({ 'chat-test': { policy: 'normal' } }),
+      AIG_TIER2_NODES_01: JSON.stringify([{ ...node, models: item.models }]),
+    };
+    assert.equal(resolvePhysicalModel({ models: item.models }, 'chat-test'), null, item.name);
+    assert.equal(servesModel({ models: item.models }, 'chat-test', new Set(['chat-test'])), true, item.name + ' stays catalog-visible only');
+    const refused = await handleInferenceCenterRequest(request(), rejectedEnv);
+    assert.equal(refused.status, 404, item.name + ' must fail before Provider dispatch');
+    assert.equal(refused.headers.get('x-aig-result'), 'skipped', item.name + ' is not an attempted Provider call');
+    assert.equal(attempts, 0, item.name + ' must not leak logical alias to Provider');
+  }
+  assert.equal(resolvePhysicalModel({ models: node.models }, 'chat-test'), 'gpt-test-upstream');
 
   const forged = request(validBody, { authorization: 'Bearer attacker', cookie: 'session=attacker', 'x-api-key': 'attacker' });
   const ok = await handleInferenceCenterRequest(forged, env);

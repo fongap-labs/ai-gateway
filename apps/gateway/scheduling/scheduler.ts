@@ -5,7 +5,7 @@
 //
 // There is NO static retry index. Before every attempt the eligible set is
 // recomputed from current node state:
-//   valid config -> protocol matches -> surface supported -> model supported
+//   valid config -> protocol matches -> surface supported -> explicit physical mapping
 //   -> circuit available -> cooldown expired -> not already attempted
 // then the best candidate is picked with a single O(n) pass:
 //   priority ASC -> activeRequests ASC -> health DESC (band) -> first-token
@@ -33,7 +33,7 @@
 // explicit request descriptor; no scheduler call ever crosses the boundary
 // on its own.
 
-import { servesModel } from '../../../src/config/registry.ts';
+import { resolvePhysicalModel } from '../../../src/config/registry.ts';
 import { acquireSlot, getModelPerf, getNodeState, isModelCooling, peekAvailability } from '../../../src/reliability/node-state.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 import type { ModelPerfEntry, NodeState } from '../../../src/types/reliability.ts';
@@ -49,9 +49,9 @@ export function supportsRequest(node: RuntimeNode, req: RoutableRequest, knownMo
   if (!req || typeof req !== 'object') return false;
   if (node.protocol !== req.protocol) return false;
   if (!Array.isArray(node.surfaces) || !node.surfaces.includes(req.surface)) return false;
-  // Empty models map = wildcard only inside the supplied Known Model Catalog;
-  // without a catalog, wildcard matching fails closed.
-  return servesModel(node, req.model, knownModels);
+  // A catalog entry alone is insufficient: every dispatch needs an explicit
+  // physical model mapping; wildcard nodes are not dispatchable.
+  return resolvePhysicalModel(node, req.model, knownModels) !== null;
 }
 
 // Pick and claim the best eligible node from one tier, or return null.

@@ -17,6 +17,7 @@
 // Unknown fields, credential material, alternate model shapes, and numeric
 // strings are configuration errors.
 
+import type { Surface } from '../contracts/protocol.ts';
 import { getProviderProfile } from '../contracts/provider-profiles.ts';
 import type { NodeTier, RuntimeNode } from '../contracts/runtime-node.ts';
 import type { Tier, TierMap } from '../contracts/scheduler.ts';
@@ -33,7 +34,7 @@ export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces']);
 
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
@@ -392,7 +393,7 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces)`);
       return null;
     }
   }
@@ -438,7 +439,9 @@ function buildRuntimeNode(
   if (models === null) return null;
   const priority = parsePriority(rec.priority, id, diagnostics);
   if (priority === null) return null;
-  const { protocol, surfaces } = profile.wire;
+  const { protocol, surfaces: defaultSurfaces } = profile.wire;
+  const surfaces = resolveConfiguredSurfaces(rec.surfaces, defaultSurfaces, protocol, isImageOnly, id, diagnostics);
+  if (!surfaces) return null;
 
   return {
     id,
@@ -451,6 +454,31 @@ function buildRuntimeNode(
     priority,
     models,
   };
+}
+
+// Surface availability is a property of a configured physical endpoint, not
+// a permanent model capability. Nodes may opt into an OpenAI-compatible
+// surface or restrict a default profile without changing Provider adapters.
+function resolveConfiguredSurfaces(
+  raw: unknown,
+  defaults: ReadonlyArray<Surface>,
+  protocol: 'openai' | 'anthropic',
+  isImageOnly: boolean,
+  nodeId: string,
+  diagnostics: string[],
+): ReadonlyArray<Surface> | null {
+  if (raw === undefined) return defaults;
+  const allowed: ReadonlyArray<Surface> = protocol === 'openai' && !isImageOnly ? ['chat_completions', 'responses'] : defaults;
+  const supported = new Set<string>(allowed);
+  if (!Array.isArray(raw) || raw.length === 0 || raw.some((item) => typeof item !== 'string' || !supported.has(item))) {
+    diagnostics.push(`node "${nodeId}": surfaces must be a non-empty list of supported wire endpoints (${allowed.join(', ')})`);
+    return null;
+  }
+  if (new Set(raw).size !== raw.length) {
+    diagnostics.push(`node "${nodeId}": surfaces must not contain duplicates`);
+    return null;
+  }
+  return raw as Surface[];
 }
 
 function parsePriority(raw: unknown, nodeId: string, diagnostics: string[]): number | null {

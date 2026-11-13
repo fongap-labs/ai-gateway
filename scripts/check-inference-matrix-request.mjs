@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
+import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
 import { convertMatrixRequest as legacyConvert, isMatrixPair as legacyPair } from '../src/conversion/matrix/pipeline.ts';
 
 assert.strictEqual(ownedConvert, legacyConvert, 'compatibility conversion must not be a second implementation');
@@ -33,6 +34,17 @@ for (const [from, body] of [
     assert.ok(Array.isArray(converted.diagnostics));
   }
 }
+// A Code client without an explicit ceiling must not be capped to 1024 when
+// translated to Responses; explicit client ceilings must survive unchanged.
+const unboundedResponses = ownedConvert('openai_chat', 'openai_responses', chat);
+assert.equal(unboundedResponses.body.max_output_tokens, undefined);
+assert.equal(
+  unboundedResponses.diagnostics.some((d) => d.feature === 'max_tokens' && d.action === 'defaulted'),
+  false,
+);
+const boundedResponses = ownedConvert('openai_chat', 'openai_responses', { ...chat, max_tokens: 8192 });
+assert.equal(boundedResponses.body.max_output_tokens, 8192);
+
 const preferred = ownedConvert('openai_chat', 'anthropic', chat, { isNonstreamPreferred: true });
 assert.notEqual(preferred.body.stream, true, 'explicit nonstream preference must be honored');
 assert.throws(() => ownedConvert('openai_chat', 'openai_chat', chat), /conversion_not_supported/);
@@ -47,6 +59,19 @@ const encryptedResponses = ownedConvert('openai_responses', 'anthropic', {
 });
 assert.doesNotMatch(JSON.stringify(encryptedResponses.body), /responses-only-ciphertext|redacted_thinking/);
 assert.ok(encryptedResponses.diagnostics.some((d) => d.feature === 'thinking_history' && d.action === 'dropped'));
+assert.deepEqual(highRiskSemanticLoss(encryptedResponses), ['thinking_history']);
+for (const [body, expected] of [
+  [{ model: 'test-model', previous_response_id: 'resp-previous', input: 'next' }, 'response_continuation'],
+  [{ model: 'test-model', prompt: { id: 'prompt-reference' }, input: 'next' }, 'responses_prompt_reference'],
+  [{ model: 'test-model', truncation: 'auto', input: 'next' }, 'responses_truncation_policy'],
+  [{ model: 'test-model', input: [{ type: 'local_shell_call', action: { command: 'echo hello' } }] }, 'local_shell_history'],
+  [{ model: 'test-model', input: 'next', tools: [{ type: 'custom', name: 'apply_patch', format: { type: 'text' } }] }, 'custom_tool_definition'],
+]) {
+  const result = ownedConvert('openai_responses', 'openai_chat', body);
+  assert.ok(highRiskSemanticLoss(result).includes(expected), `must not silently lose ${expected} across protocols`);
+}
+const regularResponses = ownedConvert('openai_responses', 'openai_chat', responses);
+assert.deepEqual(highRiskSemanticLoss(regularResponses), [], 'ordinary portable Responses requests remain convertible');
 
 // PDF documents, including tool-result attachments, must survive Anthropic rendering.
 const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0xLjQK' } };

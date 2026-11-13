@@ -6,6 +6,7 @@
 // A model without explicit fallback does not acquire neighbors by its spelling.
 // At most two rounds run, bounded by the original request-wide attempt budget.
 
+import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
@@ -180,8 +181,8 @@ export function modelFallbackCandidates(
  * compares, logs or persists secret material merely to deduplicate retries.
  */
 export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): string {
-  const upstreamModel = node.models[logicalModel] || logicalModel;
-  return JSON.stringify([node.id, upstreamModel]);
+  // An unmapped logical alias is not a physical model failure domain.
+  return JSON.stringify([node.id, resolvePhysicalModel(node, logicalModel)]);
 }
 
 /** A real failed Key cannot be tried again under another logical alias. */

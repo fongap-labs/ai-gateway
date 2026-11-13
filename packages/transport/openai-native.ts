@@ -56,16 +56,21 @@ export function buildOpenAIHeaders(request: Request, credential: string, request
   return headers;
 }
 
-// OpenAI Responses first-real-output predicate for the first-event guard:
-// a `response.*.delta` event carries model output; lifecycle events
-// (response.created / output_item.added / ...) do NOT commit the failover
-// boundary, so a node that announces itself and then dies can still be
-// rotated away from.
+// A real Responses output may be emitted as deltas OR as a complete tool
+// item/completed reply by a compatible Provider. Never commit on a lifecycle
+// heartbeat alone; commit only after actual text, reasoning, or tool output.
 export function isResponsesRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
-  const type = json?.type;
-  if (typeof type !== 'string' || !RESPONSES_MEANINGFUL_DELTA_TYPES.has(type)) return false;
-  return typeof json?.delta === 'string' && json.delta.trim().length > 0;
+  const type = json.type;
+  if (typeof type !== 'string') return false;
+  if (RESPONSES_MEANINGFUL_DELTA_TYPES.has(type)) return typeof json.delta === 'string' && json.delta.trim().length > 0;
+  if (type === 'response.output_item.done') return isOpenAIResponsesObjectMeaningful({ output: [json.item] });
+  if (type === 'response.completed') return isOpenAIResponsesObjectMeaningful(json.response);
+  if (type === 'response.output_text.done' || type === 'response.reasoning_text.done' || type === 'response.function_call_arguments.done') {
+    const text = type === 'response.function_call_arguments.done' ? json.arguments : json.text;
+    return typeof text === 'string' && text.trim().length > 0;
+  }
+  return false;
 }
 
 // OpenAI Chat meaningful-output predicate for the Tier 1 first-event guard.

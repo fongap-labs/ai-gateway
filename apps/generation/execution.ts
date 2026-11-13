@@ -11,7 +11,7 @@ import { extractQuotaSignal } from '../../packages/contracts/quota-signal.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { childTraceparent } from '../../packages/contracts/trace-context.ts';
 import { loadExecutionConfig } from '../../src/config/nodes.ts';
-import { collectKnownModels } from '../../src/config/registry.ts';
+import { collectKnownModels, resolvePhysicalModel } from '../../src/config/registry.ts';
 import { BodyTooLargeError, readBodyTextBounded, readBodyTextWithLimit } from '../../src/protocol/http.ts';
 import type { ImageSize, PreparedImageRequest } from '../../src/providers/image-generation.ts';
 import { getProviderAdapter } from '../../src/providers/registry.ts';
@@ -29,8 +29,9 @@ function generationNode(nodes: readonly RuntimeNode[], invocation: Invocation, e
   const node = nodes.find((candidate) => candidate.id === invocation.nodeId);
   if (!node || !isImageGenerationProvider(node.provider)) return null;
   if (!node.surfaces.includes('images_generations')) return null;
-  if (!collectKnownModels(nodes, env).has(invocation.logicalModel)) return null;
-  if (Object.keys(node.models).length > 0 && !Object.hasOwn(node.models, invocation.logicalModel)) return null;
+  const knownModels = collectKnownModels(nodes, env);
+  if (!knownModels.has(invocation.logicalModel)) return null;
+  if (!resolvePhysicalModel(node, invocation.logicalModel, knownModels)) return null;
   return node;
 }
 
@@ -82,7 +83,8 @@ export async function execute(request: Request, env: GatewayEnv, invocation: Inv
 
   const adapter = getProviderAdapter(node.provider).image;
   if (!adapter) return problem(503, 'generation_adapter_missing');
-  const physicalModel = node.models[invocation.logicalModel] ?? invocation.logicalModel;
+  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, collectKnownModels(cfg.nodes, env));
+  if (!physicalModel) return problem(404, 'generation_node_unavailable');
   let prepared: PreparedImageRequest;
   try {
     const candidate = adapter.prepare(node.baseUrl, physicalModel, {
