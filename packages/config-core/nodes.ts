@@ -17,9 +17,9 @@
 // Unknown fields, credential material, alternate model shapes, and numeric
 // strings are configuration errors.
 
+import type { Surface } from '../contracts/protocol.ts';
 import { getProviderProfile } from '../contracts/provider-profiles.ts';
 import type { NodeTier, RuntimeNode } from '../contracts/runtime-node.ts';
-import type { Surface } from '../contracts/protocol.ts';
 import type { Tier, TierMap } from '../contracts/scheduler.ts';
 import { getBool, readEnv } from './env.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
