@@ -178,16 +178,18 @@ export function recordOutcome(
           upstreamModelOf(previousNode, String(attempt.effective_model ?? effectiveModel)) === physicalModel
         );
       });
-    if (status !== 422 || previousSameRoute422) for (const peer of state.nodes ?? []) {
-      if (
-        peer.tier === node.tier &&
+    if (status !== 422 || previousSameRoute422) {
+      for (const peer of state.nodes ?? []) {
+        if (
+          peer.tier === node.tier &&
         peer.provider === node.provider &&
         peer.baseUrl === node.baseUrl &&
         peer.protocol === node.protocol &&
         peer.surfaces.includes(failedSurface) &&
         upstreamModelOf(peer, effectiveModel) === physicalModel
-      ) {
-        state.attempted.add(peer.id);
+        ) {
+          state.attempted.add(peer.id);
+        }
       }
     }
   }
