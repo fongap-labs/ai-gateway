@@ -230,6 +230,37 @@ assert.equal(snapshotUsageBuffer().reportedRowsWritten, 0);
 assert.ok(snapshotUsageBuffer().statementsWithoutRowMetadata > 0);
 __resetUsageBufferForTests();
 
+// An explicitly unsuccessful D1Result is a failed batch even if the binding
+// resolves rather than throws. Neither success metrics nor rows_written from
+// that attempt can be treated as committed; preserve the same retry boundary.
+let d1ReportsFailure = true;
+const explicitFailureD1 = {
+  ...writeD1,
+  async batch(statements) {
+    return statements.map((_, index) => ({
+      success: !d1ReportsFailure || index !== 0,
+      meta: { rows_written: 1 },
+    }));
+  },
+};
+await assert.rejects(
+  bufferPersist({ TOKEN_STATS_DB: explicitFailureD1 }, 'delivered', usageEvent),
+  /D1 batch returned an unsuccessful statement/,
+);
+assert.equal(snapshotUsageBuffer().batchAttempts, 1);
+assert.equal(snapshotUsageBuffer().batchSuccesses, 0);
+assert.equal(snapshotUsageBuffer().batchFailures, 1);
+assert.equal(snapshotUsageBuffer().reportedRowsWritten, 0, 'failed results must not inflate observed D1 writes');
+assert.equal(snapshotUsageBuffer().committedStatements, 0, 'failed results must not inflate committed SQL counts');
+assert.equal(snapshotUsageBuffer().pendingEvents, 1, 'the full rejected batch must be restored');
+d1ReportsFailure = false;
+await flushUsageBuffer();
+assert.equal(snapshotUsageBuffer().batchAttempts, 2);
+assert.equal(snapshotUsageBuffer().batchSuccesses, 1);
+assert.equal(snapshotUsageBuffer().pendingEvents, 0);
+assert.ok(snapshotUsageBuffer().reportedRowsWritten > 0);
+__resetUsageBufferForTests();
+
 // A synchronous statement-preparation failure must requeue rather than silently
 // discard already buffered usage increments.
 let prepUnavailable = false;
