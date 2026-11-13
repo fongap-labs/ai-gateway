@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: Cloudflare 免费资源保护关闭亲和性写入时同步跳过无效 KV 读取及会话哈希；精简 Tier 1 亲和 P2C 采样与重复评分，保留显式开启和故障冷却语义。
+
 - 修复: 真实图片识别验收改为随机颜色图挑战并核对回答，阻止仅返回非空文本却未识图的假阳性。
 
 - 维护: 真实 HTTPS Gateway 验收增加 Responses 经 Perception 识图，并正确识别 PNG、JPEG、WebP、GIF 绘图结果；新增离线返回格式回归。
