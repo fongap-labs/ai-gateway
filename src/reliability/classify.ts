@@ -287,12 +287,7 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
   'deployment_not_found',
   'no_available_providers',
 ]);
-const ENDPOINT_ROUTE_ERROR_CODES = new Set([
-  'endpoint_not_found',
-  'route_not_found',
-  'unsupported_endpoint',
-  'endpoint_unsupported',
-]);
+const ENDPOINT_ROUTE_ERROR_CODES = new Set(['endpoint_not_found', 'route_not_found', 'unsupported_endpoint', 'endpoint_unsupported']);
 const UNSUPPORTED_ROUTE_ERROR_CODES = new Set([
   'unsupported_parameter',
   'unsupported_value',
@@ -311,8 +306,7 @@ function structuredUpstreamError(body: unknown): { code: string } | null {
     const parsed: unknown = JSON.parse(body);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const root = parsed as Record<string, unknown>;
-    const source =
-      root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : root;
+    const source = root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : root;
     // A body with only "message" or "type" is not an explicit error code.
     const code = typeof source.code === 'string' ? source.code.trim().toLowerCase() : '';
     return code ? { code } : null;
