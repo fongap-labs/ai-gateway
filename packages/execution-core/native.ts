@@ -5,7 +5,7 @@
 // model family retries, Tier scheduling or public routing in this module.
 
 import { loadExecutionConfig } from '../config-core/nodes.ts';
-import { collectKnownModels, modelRegistryEntry } from '../config-core/registry.ts';
+import { collectKnownModels, modelRegistryEntry, resolvePhysicalModel } from '../config-core/registry.ts';
 import { getLimits } from '../config-core/timeouts.ts';
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../contracts/execution.ts';
 import { hasImageInput } from '../contracts/image-input.ts';
@@ -88,7 +88,7 @@ function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocat
   if (!node.surfaces.includes(invocation.surface)) return null;
   const knownModels = collectKnownModels(configuredNodes, env);
   if (!knownModels.has(invocation.logicalModel)) return null;
-  if (Object.keys(node.models).length > 0 && !Object.hasOwn(node.models, invocation.logicalModel)) return null;
+  if (!resolvePhysicalModel(node, invocation.logicalModel)) return null;
   return node;
 }
 
@@ -183,12 +183,13 @@ async function executeAdmittedNative(
       throw error;
     }
   }
-  const physicalModel = node.models[invocation.logicalModel] ?? invocation.logicalModel;
+  // Enforce the mapping again at the physical dispatch boundary. A missing,
+  // wildcard, or identity mapping must never send the public alias upstream.
+  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel);
+  if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const clientRequest = buildProviderForwardRequest(request);
-  if (physicalModel !== invocation.logicalModel) {
-    outboundBody = { ...outboundBody, model: physicalModel };
-    isMutated = true;
-  }
+  outboundBody = { ...outboundBody, model: physicalModel };
+  isMutated = true;
   if (invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env)) {
     outboundBody = withUsageStreamOptions(outboundBody);
     isMutated = true;
