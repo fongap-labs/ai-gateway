@@ -35,7 +35,7 @@ function parseLine(line) {
 
 export function parseCheckEvidence(line) {
   const raw = parseLine(line);
-  if (!raw || raw.result !== 'PASS' || !/^[a-z][a-z0-9-]{0,64}$/.test(raw.check ?? '')) return null;
+  if (raw?.result !== 'PASS' || !/^[a-z][a-z0-9-]{0,64}$/.test(raw.check ?? '')) return null;
   return {
     check: raw.check,
     result: 'PASS',
@@ -51,7 +51,7 @@ export function parseCheckEvidence(line) {
 
 export function parseFailureEvidence(line) {
   const raw = parseLine(line);
-  if (!raw || raw.result !== 'FAIL' || typeof raw.message !== 'string') return null;
+  if (raw?.result !== 'FAIL' || typeof raw.message !== 'string') return null;
   // Extract only a check label, HTTP status and simple gateway code. The
   // upstream message itself must never be kept in an acceptance report.
   const match = /^([a-z][a-z0-9-]{0,64}): HTTP (\d{3}), gateway_code=([A-Za-z0-9._:-]{1,128})/.exec(raw.message);
@@ -68,17 +68,7 @@ export function parseFailureEvidence(line) {
   return { stage: 'request', category: 'assertion_or_transport', check: label?.[1] ?? null, http_status: null, gateway_code: null };
 }
 
-export function createAcceptanceReport({
-  origin,
-  expectedSha,
-  readiness,
-  startedAt,
-  completedAt,
-  checks,
-  exitCode,
-  failure,
-  plannedImageCalls,
-}) {
+export function createAcceptanceReport({ origin, expectedSha, readiness, startedAt, completedAt, checks, exitCode, failure, plannedImageCalls }) {
   const observedSha = typeof readiness?.build === 'string' && BUILD_RE.test(readiness.build) ? readiness.build : null;
   const versionVerified = validExpectedSha(expectedSha) && observedSha === expectedSha;
   const ready = readiness?.ready === true;
