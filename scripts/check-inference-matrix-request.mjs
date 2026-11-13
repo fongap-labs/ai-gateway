@@ -67,4 +67,12 @@ assert.throws(
   /base64 PDF/,
   'unsupported documents must fail before upstream dispatch',
 );
+assert.throws(
+  () => buildAnthropicRequest({
+    ...docRequest.request,
+    messages: [{ role: 'assistant', parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_pdf', args: '{broken' }] }],
+  }, docRequest.diag),
+  /tool arguments must be a JSON object/,
+  'malformed tool history must not be rewritten into a fake valid call',
+);
 console.log('Single request Matrix implementation passed all six protocol pairs, PDF attachments, opaque reasoning isolation and fail-closed semantics.');
