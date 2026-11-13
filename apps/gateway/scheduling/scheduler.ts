@@ -5,7 +5,7 @@
 //
 // There is NO static retry index. Before every attempt the eligible set is
 // recomputed from current node state:
-//   valid config -> protocol matches -> surface supported -> model supported
+//   valid config -> protocol matches -> surface supported -> explicit physical mapping
 //   -> circuit available -> cooldown expired -> not already attempted
 // then the best candidate is picked with a single O(n) pass:
 //   priority ASC -> activeRequests ASC -> health DESC (band) -> first-token
@@ -49,8 +49,8 @@ export function supportsRequest(node: RuntimeNode, req: RoutableRequest, knownMo
   if (!req || typeof req !== 'object') return false;
   if (node.protocol !== req.protocol) return false;
   if (!Array.isArray(node.surfaces) || !node.surfaces.includes(req.surface)) return false;
-  // Empty models map = wildcard only inside the supplied Known Model Catalog;
-  // without a catalog, wildcard matching fails closed.
+  // A catalog entry alone is insufficient: every dispatch needs an explicit
+  // physical model mapping; wildcard nodes are not dispatchable.
   return servesModel(node, req.model, knownModels);
 }
 
