@@ -6,7 +6,18 @@
 // This does not call a provider, open a socket, or require any secrets.
 
 import assert from 'node:assert/strict';
+import { isResponsesRealOutput } from '../packages/transport/openai-native.ts';
 import { relayStreamResponse, trackStreamResponse } from '../src/stream/track.ts';
+
+// A compatible Provider may emit a completed function item without argument
+// delta events. That is real output; role/lifecycle/usage-only events are not.
+assert.equal(isResponsesRealOutput({ type: 'response.created', response: { status: 'in_progress' } }), false);
+assert.equal(isResponsesRealOutput({ type: 'response.completed', response: { usage: { output_tokens: 0 } } }), false);
+assert.equal(isResponsesRealOutput({ type: 'response.output_item.done', item: { type: 'function_call', name: 'run', arguments: '{}' } }), true);
+assert.equal(isResponsesRealOutput({ type: 'response.completed', response: { output: [{ type: 'message', content: [{ text: 'done' }] }] } }), true);
+assert.equal(isResponsesRealOutput({ type: 'response.function_call_arguments.done', arguments: '{}' }), true);
+assert.equal(isResponsesRealOutput({ type: 'response.output_text.done', text: 'done' }), true);
+assert.equal(isResponsesRealOutput({ type: 'response.output_item.done', item: { type: 'message', content: [] } }), false);
 
 const encoder = new TextEncoder();
 
