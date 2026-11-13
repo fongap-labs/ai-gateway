@@ -19,8 +19,8 @@ import { snapshotTier1Affinity } from '../scheduler/tier1-affinity.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { AuthResult } from '../types/request.ts';
-import { gatewayStats, streamStats } from './gateway-stats.ts';
-import { summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
+import { gatewayStats, startGatewayStats, streamStats } from './gateway-stats.ts';
+import { startTokenStats, summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
 
 export const APP_META = Object.freeze({
   name: 'ai-gateway',
@@ -147,6 +147,9 @@ export function readinessResponse(request: Request, env: Record<string, unknown>
 }
 
 export function healthResponse(request: Request, env: Record<string, unknown>, requestId: string, authResult: AuthResult): Response {
+  const observationTime = Date.now();
+  startGatewayStats(observationTime);
+  startTokenStats(observationTime);
   const config = loadGatewayConfig(env);
   const now = Date.now();
   const allLogical = collectKnownModels(config.nodes, env);
@@ -183,8 +186,12 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
   });
   const cooling = endpoints.filter((e) => e.status === 'cooldown' || e.status === 'cooling_down').length;
   const disabled = endpoints.filter((e) => e.status === 'disabled').length;
-  const observedHealthy = endpoints.filter((e) => e.status === 'observed_healthy' || e.status === 'active').length;
-  const unknown = endpoints.filter((e) => e.status === 'configured' || e.status === 'unknown').length;
+  // A first SSE event (TTFT sample) is not proof of a completed reply.
+  // Provider health must be backed by a completed successful call on this isolate.
+  const observedHealthy = endpoints.filter((e) => e.total_successes > 0 && !['disabled', 'cooldown', 'cooling_down'].includes(e.status)).length;
+  const observedResponsive = endpoints.filter((e) => e.status === 'observed_healthy' || (e.status === 'active' && e.total_successes > 0)).length;
+  const unknown = endpoints.filter((e) => !e.total_successes && !['disabled', 'cooldown', 'cooling_down'].includes(e.status)).length;
+  const configuredWithoutAccountBlock = Math.max(0, config.nodesUsable - cooling - disabled);
   const statusCode = config.status === 'invalid' || config.status === 'unconfigured' ? 503 : 200;
 
   return new Response(
@@ -195,8 +202,11 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         ready: config.ready,
         nodes_total: config.nodesTotal,
         nodes_usable: config.nodesUsable,
-        nodes_active: config.nodesUsable - cooling - disabled,
+        nodes_configured_eligible: config.nodesUsable,
+        nodes_without_local_account_block: configuredWithoutAccountBlock,
+        nodes_active: observedHealthy,
         nodes_observed_healthy: observedHealthy,
+        nodes_observed_responsive: observedResponsive,
         nodes_unknown_or_configured: unknown,
         nodes_cooling_down: cooling,
         nodes_disabled: disabled,
@@ -207,7 +217,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
           'tier-1': config.nodes.filter((n) => n.tier === 'tier-1').length,
           'tier-2': config.nodes.filter((n) => n.tier === 'tier-2').length,
         },
-        note: 'Isolate-local best-effort state; not a cluster-wide snapshot.',
+        note: 'Ready and configured eligibility are not verified Provider health. Observed health requires a completed success in this isolate. Model-specific cooldowns may further limit eligibility; this is not a cluster-wide snapshot.',
         tier1_affinity: snapshotTier1Affinity(env),
         tier1_shared_cooldowns: snapshotSharedTier1Cooldowns(),
         client_stats: {
