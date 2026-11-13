@@ -48,6 +48,8 @@
 node scripts/check-live-gateway-capabilities.mjs --url https://<gateway-host> --chat-model Max --vision-model Omni --delegate-model Code-Max --responses-delegate-model Code-Max
 ```
 
+识图验收使用随机红、蓝、绿、黄方块图片并校验模型给出的颜色；无法看图、回答错误或非颜色文本均判失败，不再仅凭非空回复判通过。测试不会回显图片或原始模型回复。
+
 生图验收兼容 PNG、JPEG、WebP、GIF（不再只接受 PNG）。相关响应格式另有离线断言脚本 `check-live-gateway-assertions.mjs`，中央 CI 会自动运行，但这不等于真实 Provider 验收。真实付费图片请求**默认不执行**。在确认成本和权限后，才增加 `--run-image --image-model Image-Creator`（只执行一次图片生成）；`--run-direct-image` 会再增加一次明确的直接图片调用；`--run-auto-image` 会让文本模型选择 `generate_image`，在确实选择工具时再执行一次付费图片生成，未选择图片时作为验收失败处理。故障转移检查可使用 `--failover-model Code-Max --expect-dispatches 2`，但仅应在部署了可控失败节点的测试环境执行，并要求响应包含真实物理派发计数；如果缺少证据，脚本会报错，不将单次成功冒充故障转移成功。
 
 ## Provider Discovery
