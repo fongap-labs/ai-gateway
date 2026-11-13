@@ -23,22 +23,22 @@ import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/sched
 // underestimating the maximum number of SQL statements under steady traffic.
 const bufferSource = readFileSync(new URL('../packages/usage-store/buffer.ts', import.meta.url), 'utf8');
 const budgetDoc = readFileSync(new URL('../docs/operations/free-tier-budget.md', import.meta.url), 'utf8');
-const intervalLiteral = /const FLUSH_INTERVAL_MS = ([\\d_]+);/.exec(bufferSource)?.[1];
-const thresholdLiteral = /const FLUSH_EVENT_THRESHOLD = ([\\d_]+);/.exec(bufferSource)?.[1];
+const intervalLiteral = /const FLUSH_INTERVAL_MS = ([0-9_]+);/.exec(bufferSource)?.[1];
+const thresholdLiteral = /const FLUSH_EVENT_THRESHOLD = ([0-9_]+);/.exec(bufferSource)?.[1];
 assert.ok(intervalLiteral && thresholdLiteral, 'usage buffer budget constants must be discoverable');
 const flushIntervalMs = Number(intervalLiteral.replaceAll('_', ''));
 const flushThreshold = Number(thresholdLiteral.replaceAll('_', ''));
 assert.ok(flushIntervalMs > 0 && flushIntervalMs % 60_000 === 0, 'budget model assumes whole-minute flush intervals');
 assert.ok(flushThreshold > 0);
 const flushMinutes = flushIntervalMs / 60_000;
-assert.ok(budgetDoc.includes(`默认刷新间隔为 \\`${flushIntervalMs / 1_000} 秒\\``), 'budget must state the actual default flush interval');
-assert.ok(budgetDoc.includes(`\\`${flushThreshold}\\` 个事件`), 'budget must state the actual event threshold');
+assert.ok(budgetDoc.includes('默认刷新间隔为 ' + String.fromCharCode(96) + flushIntervalMs / 1_000 + ' 秒' + String.fromCharCode(96)), 'budget must state the actual default flush interval');
+assert.ok(budgetDoc.includes(String.fromCharCode(96) + flushThreshold + String.fromCharCode(96) + ' 个事件'), 'budget must state the actual event threshold');
 assert.match(budgetDoc, /定时器.*不能保证|不能保证.*定时器/, 'budget must state detached timer durability limits');
 for (const scenario of [
   { label: '5 个隔离区各活跃 8 小时', isolates: 5, hours: 8, kinds: 2, modelRows: 6 },
   { label: '20 个隔离区全天活跃', isolates: 20, hours: 24, kinds: 2, modelRows: 10 },
 ]) {
-  const rows = budgetDoc.split('\\n').filter((line) => line.includes(scenario.label));
+  const rows = budgetDoc.split(String.fromCharCode(10)).filter((line) => line.includes(scenario.label));
   assert.equal(rows.length, 1, `budget must contain one row for ${scenario.label}`);
   const cells = rows[0].split('|').map((part) => part.trim());
   const batches = (scenario.isolates * scenario.hours * 60) / flushMinutes;
