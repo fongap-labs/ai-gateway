@@ -218,4 +218,36 @@ assert.match(finalMetrics, /gateway_usage_d1_buffer_pending_events\{\} 0/);
 __resetUsageBufferForTests();
 assert.equal(snapshotUsageBuffer().batchAttempts, 0, 'isolate test reset must clear D1 counters');
 
+// Missing D1 row metadata must remain unknown, not become fabricated writes.
+const noMetaD1 = {
+  ...writeD1,
+  async batch(statements) {
+    return statements.map(() => ({ success: true }));
+  },
+};
+await bufferPersist({ TOKEN_STATS_DB: noMetaD1 }, 'delivered', usageEvent);
+assert.equal(snapshotUsageBuffer().reportedRowsWritten, 0);
+assert.ok(snapshotUsageBuffer().statementsWithoutRowMetadata > 0);
+__resetUsageBufferForTests();
+
+// A synchronous statement-preparation failure must requeue rather than silently
+// discard already buffered usage increments.
+let prepUnavailable = false;
+const preparationD1 = {
+  ...writeD1,
+  prepare() {
+    if (prepUnavailable) throw new Error('D1 preparation unavailable');
+    return writeD1.prepare();
+  },
+};
+await bufferPersist({ TOKEN_STATS_DB: preparationD1 }, 'delivered', usageEvent);
+await bufferPersist({ TOKEN_STATS_DB: preparationD1 }, 'delivered', usageEvent);
+prepUnavailable = true;
+await assert.rejects(flushUsageBuffer(), /D1 preparation unavailable/);
+assert.equal(snapshotUsageBuffer().pendingEvents, 1);
+prepUnavailable = false;
+await flushUsageBuffer();
+assert.equal(snapshotUsageBuffer().pendingEvents, 0);
+__resetUsageBufferForTests();
+
 console.log('Upstream D1 summary and buffered write diagnostics passed without extra D1 reads or writes.');
