@@ -4,7 +4,8 @@
 //
 // Real public Gateway smoke checks. No Provider simulation, no deployment,
 // and no stored credentials. Only --run-image authorizes a billable image call.
-import { hasGeneratedImageDataUri, hasResponsesOutputText } from './live-gateway-assertions.mjs';
+import { randomInt } from 'node:crypto';
+import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 
 const options = {};
 for (let index = 2; index < process.argv.length; index++) {
@@ -32,8 +33,17 @@ if (options['run-auto-image'] && !options['run-image']) throw new Error('--run-a
 if (options['run-image'] && !options['image-model']) throw new Error('--run-image requires --image-model.');
 if (options['expect-dispatches'] && !options['failover-model']) throw new Error('--expect-dispatches requires --failover-model.');
 
-const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGN8JiLCwMDAxMDAwMDAAAANpAESe7q5qgAAAABJRU5ErkJggg==';
-const image = { type: 'image_url', image_url: { url: `data:image/png;base64,${png}` } };
+const visionColors = [
+  { name: 'red', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAApUlEQVR42u3dMQ0AIAwAQUqQgA7860AHHooCdgL3a7dLOzcys+hcRQAIECBAgAC9WjsN1hhfQfQ5bZATAwQIECBAgAQIECBAgAABAiRAgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIkAABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABAiRAgAABurHwV8MGAQIECBAgQJ+2Ad+sCbu++cWOAAAAAElFTkSuQmCC' },
+  { name: 'blue', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfEygiNkMEdzMEfIDjgBfU7eb+neQU1k5qG6EwEgQIAAAQL010Y1mPdqBfE+lw1yYoAAAQIECJAAAQIECBAgQIAECBAgQIAAAQIESIAAAQIECBAgQAIECBAgQIAAARIgQIAAAQIECBAgAQIECBAgQIAACRAgQIAAAQIESIAAAQIECBAgQIAECBAgQDsW/mrYIECAAAECBKhpHwU7CbtgbwuDAAAAAElFTkSuQmCC' },
+  { name: 'green', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAp0lEQVR42u3dsRGAMAhAUfEyitukclIrt8kuOAF9Tt5v6d5BTWTmoboTASBAgAABAvTXRjW43rsVxJqPDXJigAABAgQIkAABAgQIECBAgAQIECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIECABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAgAQIECBAOxb+atggQIAAAQIEqGkfw4wJu9HnYwMAAAAASUVORK5CYII=' },
+  { name: 'yellow', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfHiCJnA/UdyAkdIgRPQ5+T9lu4d1ERmHqo7EQACBAgQIEB/bVSD9cxWENf92iAnBggQIECAAAkQIECAAAECBEiAAAECBAgQIECABAgQIECAAAECJECAAAECBAgQIECAAAESIECAAAECBAiQAAECBAgQIECAAAECBEiAAAECtGPhr4YNAgQIECBAgJr2AXprCbsGVzFtAAAAAElFTkSuQmCC' },
+];
+const visionQuestion = 'Identify the color of the large square in the attached image. Reply with exactly one lowercase English word: red, blue, green, or yellow.';
+function nextVisionChallenge() {
+  const selected = visionColors[randomInt(visionColors.length)];
+  return { color: selected.name, image: { type: 'image_url', image_url: { url: `data:image/png;base64,${selected.base64}` } } };
+}
 const results = [];
 
 function keyFor(group) {
@@ -85,49 +95,34 @@ try {
 
   if (options['vision-model']) {
     const visionKey = keyFor(visionGroup);
-    await checkedRequest(
-      'omni-direct',
-      visionKey,
-      '/v1/chat/completions',
-      { model: options['vision-model'], messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe the attached image.' }, image] }] },
+    const challenge = nextVisionChallenge();
+    await checkedRequest('omni-direct', visionKey, '/v1/chat/completions',
+      { model: options['vision-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
       (reply) => {
-        if (!reply?.choices?.[0]?.message?.content) throw new Error('Direct vision returned no observations.');
+        if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Direct vision did not identify the image color.');
       },
     );
   }
   if (options['delegate-model']) {
     const visionKey = keyFor(visionGroup);
-    await checkedRequest(
-      'perception-delegate',
-      visionKey,
-      '/v1/chat/completions',
-      { model: options['delegate-model'], messages: [{ role: 'user', content: [{ type: 'text', text: 'Describe the attached image.' }, image] }] },
+    const challenge = nextVisionChallenge();
+    await checkedRequest('perception-delegate', visionKey, '/v1/chat/completions',
+      { model: options['delegate-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
       (reply) => {
-        if (!reply?.choices?.[0]?.message?.content) throw new Error('Vision delegate returned no observations.');
+        if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Vision delegate did not identify the image color.');
       },
     );
   }
   if (options['responses-delegate-model']) {
     const visionKey = keyFor(visionGroup);
-    await checkedRequest(
-      'perception-responses-delegate',
-      visionKey,
-      '/v1/responses',
-      {
-        model: options['responses-delegate-model'],
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: 'Describe the attached image.' },
-              { type: 'input_image', image_url: image.image_url.url },
-            ],
-          },
-        ],
-        stream: false,
-      },
+    const challenge = nextVisionChallenge();
+    await checkedRequest('perception-responses-delegate', visionKey, '/v1/responses',
+      { model: options['responses-delegate-model'], input: [{ role: 'user', content: [
+        { type: 'input_text', text: visionQuestion },
+        { type: 'input_image', image_url: challenge.image.image_url.url },
+      ] }], stream: false },
       (reply) => {
-        if (!hasResponsesOutputText(reply)) throw new Error('Responses delegate did not return native output_text content.');
+        if (!hasResponsesVisionColor(reply, challenge.color)) throw new Error('Responses delegate did not identify the image color.');
       },
     );
   }
