@@ -55,6 +55,35 @@ for (const code of ['model_not_found', 'invalid_model', 'deployment_not_found'])
   assert.equal(result.action, 'rotate', code);
   assert.equal(result.modelScoped, true, code);
 }
+const schema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', 'reasoning_effort'], msg: 'Extra inputs are not permitted' }] }),
+);
+assert.equal(schema422.action, 'rotate', 'top-level unsupported Code parameter may use another node');
+const malformedSchema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({
+    detail: [
+      { type: 'extra_forbidden', loc: ['body', 'reasoning_effort'] },
+      { type: 'missing', loc: ['body', 'messages'] },
+    ],
+  }),
+);
+assert.equal(malformedSchema422.action, 'stop', 'missing required fields must never trigger a Key rotation');
+const nestedSchema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', 'tools', 0, 'function', 'parameters'] }] }),
+);
+assert.equal(nestedSchema422.action, 'stop', 'malformed nested tools are client-owned');
 const machineEndpoint422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"unsupported_endpoint"}}');
 assert.equal(machineEndpoint422.kind, KIND.ENDPOINT_NOT_FOUND);
 assert.equal(machineEndpoint422.action, 'rotate');
