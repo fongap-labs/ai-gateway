@@ -8,6 +8,7 @@
 
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
+import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
 import { trimDiagnostic } from '../../../src/protocol/http.ts';
 import {
   ADAPTIVE_429_QUOTA_START_STAGE,
@@ -132,6 +133,15 @@ export function recordOutcome(
   // client requested. Diagnostics must name the model actually sent upstream.
   const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   const physicalModel = upstreamModelOf(node, effectiveModel);
+  if (classification.action !== 'neutral') {
+    recordProviderAttemptEvidence({
+      nodeId: node.id,
+      upstreamModel: physicalModel,
+      surface: c.surface ?? c.reqDescriptor?.surface ?? 'unknown',
+      status,
+      kind: classification.kind,
+    });
+  }
   // A confirmed endpoint 404 is a route failure, not a quota failure.
   // In this request only, do not probe other free keys pointing at the exact
   // same Provider URL, protocol, surface and physical model. Paid Tier 2

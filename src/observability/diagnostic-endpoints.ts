@@ -21,6 +21,7 @@ import type { Surface } from '../types/protocol.ts';
 import type { AuthResult } from '../types/request.ts';
 import { gatewayStats, startGatewayStats, streamStats } from './gateway-stats.ts';
 import { summarizeHealthEvidence } from './health-evidence.ts';
+import { snapshotProviderAttemptEvidence } from './provider-attempt-evidence.ts';
 import { startTokenStats, summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
 
 export const APP_META = Object.freeze({
@@ -217,6 +218,7 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
         note: 'Ready and configured eligibility are not verified Provider health. Observed health requires a completed success in this isolate. Model-specific cooldowns may further limit eligibility; this is not a cluster-wide snapshot.',
         tier1_affinity: snapshotTier1Affinity(env),
         tier1_shared_cooldowns: snapshotSharedTier1Cooldowns(),
+        provider_attempt_evidence: snapshotProviderAttemptEvidence(now),
         client_stats: {
           started_at: new Date(gatewayStats.startedAt).toISOString(),
           requests_total: gatewayStats.requests,
