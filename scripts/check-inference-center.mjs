@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
-import { executeNative } from '../packages/execution-core/native.ts';
 import { resolvePhysicalModel, servesModel } from '../packages/config-core/registry.ts';
+import { executeNative } from '../packages/execution-core/native.ts';
 import { preDispatchProblem, problem } from '../packages/execution-core/response.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
