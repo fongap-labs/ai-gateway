@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Fongap Labs
 // Pure offline contract checks: no Gateway, Key or Provider request.
 import assert from 'node:assert/strict';
-import { hasGeneratedImageDataUri, hasResponsesOutputText } from './live-gateway-assertions.mjs';
+import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGN8JiLCwMDAxMDAwMDAAAANpAESe7q5qgAAAABJRU5ErkJggg==';
 for (const mime of ['png', 'jpeg', 'webp', 'gif']) {
@@ -32,4 +32,20 @@ assert.equal(hasResponsesOutputText({ output: [{ type: 'function_call', argument
 assert.equal(hasResponsesOutputText({ output: [{ type: 'message', role: 'user', content: [{ type: 'output_text', text: 'text' }] }] }), false);
 assert.equal(hasResponsesOutputText({ output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '   ' }] }] }), false);
 assert.equal(hasResponsesOutputText({ error: { message: 'upstream unavailable' } }), false);
+const chatVision = (answer) => ({ choices: [{ message: { content: answer } }] });
+assert.equal(hasChatVisionColor(chatVision('RED.'), 'red'), true);
+assert.equal(hasChatVisionColor(chatVision('blue'), 'red'), false);
+assert.equal(hasChatVisionColor(chatVision('I cannot see the image.'), 'red'), false);
+assert.equal(hasChatVisionColor(chatVision('red and blue'), 'red'), false);
+assert.equal(hasChatVisionColor(chatVision('red'), 'purple'), false);
+assert.equal(hasChatVisionColor({ choices: [] }, 'red'), false);
+
+const responsesVision = (answer, role = 'assistant') => ({
+  output: [{ type: 'message', role, content: [{ type: 'output_text', text: answer }] }],
+});
+assert.equal(hasResponsesVisionColor(responsesVision('yellow'), 'yellow'), true);
+assert.equal(hasResponsesVisionColor(responsesVision('green'), 'yellow'), false);
+assert.equal(hasResponsesVisionColor(responsesVision('Sorry, no image is available'), 'yellow'), false);
+assert.equal(hasResponsesVisionColor(responsesVision('yellow', 'user'), 'yellow'), false);
+assert.equal(hasResponsesVisionColor({ output: [{ type: 'function_call', arguments: 'yellow' }] }, 'yellow'), false);
 console.log('Live Gateway acceptance response contracts passed offline.');
