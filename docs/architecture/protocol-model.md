@@ -263,4 +263,4 @@ Workers Free 单请求仅有 10ms CPU、128MB 内存。等待外部 `fetch` 的�
 
 ## Inference 协议转换边界（2026-11）
 
-`packages/conversion-core/matrix/adapter.ts` 是私有执行中心的纯请求适配入口：原生请求不改写；跨协议时先检查矩阵路径，再校验高风险语义损失，最后产生可供 Provider 执行的请求对象。失败发生在上游派发之前，不占用物理 Key 尝试。调度、凭据、429 归因及故障转移仍由 Gateway 负责；适配层不维护动态模型能力表，也不部署独立 Worker。
+`packages/conversion-core/matrix/request-protocol-adapter.ts` 是私有执行中心的纯请求适配入口：原生请求不改写；跨协议时先检查矩阵路径，再校验高风险语义损失，最后产生可供 Provider 执行的请求对象。失败发生在上游派发之前，不占用物理 Key 尝试。调度、凭据、429 归因及故障转移仍由 Gateway 负责；适配层不维护动态模型能力表，也不部署独立 Worker。
