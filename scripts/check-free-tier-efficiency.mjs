@@ -90,7 +90,7 @@ assert.equal(affinityReads, 0, 'disabled affinity must consume no KV reads');
 const explicitlyDisabledEnv = { AIG_AFFINITY_WRITE: '0', TIER1_AFFINITY: affinityKV };
 assert.equal(await readTier1Affinity(explicitlyDisabledEnv, sessionId), undefined);
 assert.equal(affinityReads, 0, 'explicitly disabled affinity also consumes no KV reads');
-const explicitlyEnabledEnv = { ...costGuardedEnv, AIG_AFFINITY_WRITE: 'true' };
+const explicitlyEnabledEnv = { ...costGuardedEnv, AIG_AFFINITY_WRITE: '1' };
 assert.equal(await readTier1Affinity(explicitlyEnabledEnv, sessionId), 'sticky-key');
 assert.equal(await readTier1Affinity(explicitlyEnabledEnv, sessionId), 'sticky-key');
 assert.equal(affinityReads, 1, 'enabled affinity reuses the isolate cache');
