@@ -55,6 +55,7 @@ models
 
 ```text
 priority
+surfaces
 ```
 
 示例：
@@ -79,8 +80,8 @@ priority
 - `provider`、`base_url` 与 `models` 为必填项。任何节点都必须显式声明 `base_url`，不得使用旧会员订阅回退端点。
 - 除非显式启用了不安全的 HTTP，否则 `base_url` 必须是绝对的 HTTPS 地址。
 - 若提供了 `priority`，它必须是非负整数。Tier 2 可以使用它；Tier 1 不会将静态节点 priority 用作 P2C 评分。
-- `models` 是一个从逻辑模型到上游模型的映射对象。`{}` 仅表示有意设置的、受目录约束的通配符。
-- `protocol`、`surfaces`、`limits`、凭据字段以及其他未知字段均会被拒绝（`protocol`, `surfaces`, `limits`, credential fields, and other unknown fields are rejected）。
+- `models` 是一个从逻辑模型到上游模型的映射对象。执行时必须存在显式且非空的物理模型映射；同名映射合法。空映射 `{}` 可以解析，但不会产生可派发的物理模型。
+- `protocol`、`limits`、凭据字段以及其他未知字段均会被拒绝。`surfaces` 是可选的节点级 API 接口列表，用于约束或显式启用物理端点，不能据此推断模型工具、推理等能力。
 
 当前只有一种节点结构。不保留任何备用或兼容的 schema。
 
@@ -92,15 +93,15 @@ Tier 2 只接受静态 API Token。节点必须声明 `id`、`provider`、`base_
 
 ## Provider wire profiles（提供商线协议配置）
 
-协议与 API surface 属于 Provider 的能力，并且仅在 provider 适配器注册表（`src/providers/registry.ts`）中定义一次：
+Provider Adapter 定义基础协议和默认 API surface；可选的节点 `surfaces` 则声明物理端点实际提供的接口：
 
 - `provider: "anthropic"` → Anthropic 协议，`messages` surface。
 - `provider: "openai"` → OpenAI 协议，`chat_completions` 与 `responses` surface。
 - 其他 provider → OpenAI 兼容的 `chat_completions` surface。
 
-运行时归一化会将这些协议/surface 事实添加到 `RuntimeNode` 中；账号级的节点 JSON 不会覆盖它们。
+运行时会将默认 API 接口或节点配置的 `surfaces` 添加到 `RuntimeNode`。未声明时完全沿用旧默认值。OpenAI 线协议（非图片专用）可显式选择 `chat_completions` 和/或 `responses`；Anthropic 只能选择 `messages`。错误接口、重复和空列表将拒绝节点。
 
-若某个 Provider 需要不同的线协议契约，应修改其在 `src/providers/` 中的 provider 适配器。不要在每个账号中重复声明结构性的协议/surface 字段。
+线协议 (`openai` / `anthropic`) 仍由 Provider Adapter 定义，不接受节点级覆盖。只有具体 API endpoint 的可用性可在节点级 `surfaces` 中覆盖，固定模型映射和 Key 不变；不要把该字段用作静态能力白名单。
 
 OpenAI Responses 同样参与跨协议翻译；三个协议 surface 两两互转（规范化 IR 矩阵），内置默认链为：
 
