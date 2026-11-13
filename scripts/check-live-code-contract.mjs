@@ -17,7 +17,8 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 if (!opts.url || !opts.model)
   throw Error(
-    'Usage: node scripts/check-live-code-contract.mjs --url https://gateway.example --model Code-Max [--key-group MAX] [--tools] [--responses] [--stream] [--reasoning]',
+    'Usage: node scripts/check-live-code-contract.mjs --url https://gateway.example --model Code-Max ' +
+      '[--key-group MAX] [--tools] [--responses] [--stream] [--reasoning]',
   );
 const base = new URL(opts.url);
 if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash)
@@ -46,9 +47,17 @@ if (opts.tools)
 if (opts.responses)
   trials.push({ name: 'responses_text', route: '/v1/responses', body: { model: opts.model, stream: false, input: 'Reply exactly ok.' } });
 if (opts.reasoning)
-  trials.push({ name: 'chat_reasoning', route: '/v1/chat/completions', body: { model: opts.model, stream: false, messages, reasoning_effort: 'medium' } });
+  trials.push({
+    name: 'chat_reasoning',
+    route: '/v1/chat/completions',
+    body: { model: opts.model, stream: false, messages, reasoning_effort: 'medium' },
+  });
 if (opts.reasoning && opts.responses)
-  trials.push({ name: 'responses_reasoning', route: '/v1/responses', body: { model: opts.model, stream: false, input: 'Reply exactly ok.', reasoning: { effort: 'medium' } } });
+  trials.push({
+    name: 'responses_reasoning',
+    route: '/v1/responses',
+    body: { model: opts.model, stream: false, input: 'Reply exactly ok.', reasoning: { effort: 'medium' } },
+  });
 if (opts.tools && opts.responses)
   trials.push({
     name: 'responses_tools',
@@ -57,7 +66,14 @@ if (opts.tools && opts.responses)
       model: opts.model,
       stream: false,
       input: 'Reply exactly ok.',
-      tools: [{ type: 'function', name: 'diagnostic_noop', description: 'Safe no-op diagnostic tool; do not execute', parameters: { type: 'object', properties: {}, additionalProperties: false } }],
+      tools: [
+        {
+          type: 'function',
+          name: 'diagnostic_noop',
+          description: 'Safe no-op diagnostic tool; do not execute',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      ],
       tool_choice: 'auto',
     },
   });
