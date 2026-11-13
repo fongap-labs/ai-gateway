@@ -242,7 +242,7 @@ export function classifyUpstreamStatus(
     if (error && UNSUPPORTED_ROUTE_ERROR_CODES.has(error.code)) {
       return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
     }
-    if (looksLikeUnsupportedRequestFeature(body)) {
+    if (looksLikeUnsupportedRequestFeature(body) || looksLikeSchemaRejectedOptionalFields(body)) {
       return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
     }
     if (looksLikeModelMissing(body)) {
@@ -318,6 +318,50 @@ function structuredUpstreamError(body: unknown): { code: string } | null {
     return code ? { code } : null;
   } catch {
     return null;
+  }
+}
+
+// FastAPI/Pydantic Providers can answer with a detail[] validation envelope
+// instead of an OpenAI error.code. Only an exact "extra_forbidden" on a known
+// top-level optional request feature is node-specific. Missing/invalid nested
+// fields still indicate a malformed client payload and must stop.
+const OPTIONAL_UPSTREAM_FIELDS = new Set([
+  'reasoning',
+  'reasoning_effort',
+  'thinking',
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'stream_options',
+  'response_format',
+  'max_output_tokens',
+  'max_completion_tokens',
+  'include',
+  'store',
+]);
+
+function looksLikeSchemaRejectedOptionalFields(body: unknown): boolean {
+  if (typeof body !== 'string' || body.length > 4096) return false;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const detail = (parsed as Record<string, unknown>).detail;
+    if (!Array.isArray(detail) || detail.length === 0 || detail.length > 16) return false;
+    return detail.every((item: unknown) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const issue = item as Record<string, unknown>;
+      const loc = issue.loc;
+      return (
+        issue.type === 'extra_forbidden' &&
+        Array.isArray(loc) &&
+        loc.length === 2 &&
+        loc[0] === 'body' &&
+        typeof loc[1] === 'string' &&
+        OPTIONAL_UPSTREAM_FIELDS.has(loc[1])
+      );
+    });
+  } catch {
+    return false;
   }
 }
 
