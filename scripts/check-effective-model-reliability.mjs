@@ -9,9 +9,9 @@ import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/att
 import { recordOutcome, rotateWithNeutralEnd } from '../apps/gateway/attempt/outcome.ts';
 import { failedDomainNodeIds, rememberFailedDomains } from '../apps/gateway/policy/model-fallback.ts';
 import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
+import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetKeyGroupForTests, credentialPeers, credentialSlotId, noteKeyGroup429 } from '../src/reliability/shared-credential-group.ts';
-import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
 // A physical-model rejection is local to its route, while malformed
@@ -134,7 +134,10 @@ const groupedA = { ...node, id: 'nvidia-04', baseUrl: 'https://integrate.api.nvi
 const groupedOmni = { ...node, id: 'omni-04', baseUrl: groupedA.baseUrl, keyGroup: 'nvidia-key-04', models: { Omni: 'physical-omni' } };
 const groupedAlias = { ...node, id: 'alias-04', baseUrl: groupedA.baseUrl, keyGroup: 'nvidia-key-04', models: { Alias: 'physical-max' } };
 const separateGroup = { ...groupedOmni, id: 'omni-05', keyGroup: 'nvidia-key-05' };
-assert.deepEqual(credentialPeers([groupedA, groupedOmni, separateGroup], groupedA).map((x) => x.id), ['omni-04']);
+assert.deepEqual(
+  credentialPeers([groupedA, groupedOmni, separateGroup], groupedA).map((x) => x.id),
+  ['omni-04'],
+);
 assert.equal(credentialSlotId(groupedA), credentialSlotId(groupedOmni));
 assert.notEqual(credentialSlotId(groupedA), credentialSlotId(separateGroup));
 __resetKeyGroupForTests();
@@ -142,7 +145,13 @@ assert.equal(noteKeyGroup429(groupedA, 'physical-max', 100_000), 'model');
 assert.equal(noteKeyGroup429(groupedOmni, 'physical-omni', 101_000), 'account');
 assert.equal(noteKeyGroup429(separateGroup, 'physical-omni', 101_000), 'model');
 __resetKeyGroupForTests();
-const nodeInput = { id: 'test-node', provider: 'openai', base_url: 'https://example.invalid/v1', models: { Code: 'physical-code' }, key_group: 'same-key' };
+const nodeInput = {
+  id: 'test-node',
+  provider: 'openai',
+  base_url: 'https://example.invalid/v1',
+  models: { Code: 'physical-code' },
+  key_group: 'same-key',
+};
 const config = loadExecutionConfig({
   AIG_TIER1_NODES_01: JSON.stringify([nodeInput]),
   AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'test-node': 'test-only-credential' }),
@@ -228,18 +237,32 @@ assert.equal(failedDomainNodeIds([groupedOmni], 'Omni', account429).has(groupedO
 __resetTier1StateForTests();
 const groupCooldownState = makeState();
 groupCooldownState.nodes = [groupedA, groupedOmni, groupedAlias, separateGroup];
-recordOutcome(groupCooldownState, groupedA, classifyUpstreamStatus(429, new Headers(), {}, Date.now(), 'daily quota exhausted'), makeContext(groupCooldownState), {
-  status: 429, latencyMs: 50,
-});
+recordOutcome(
+  groupCooldownState,
+  groupedA,
+  classifyUpstreamStatus(429, new Headers(), {}, Date.now(), 'daily quota exhausted'),
+  makeContext(groupCooldownState),
+  {
+    status: 429,
+    latencyMs: 50,
+  },
+);
 assert.ok(getTier1Account(groupedOmni.id).accountCooldownUntil > Date.now(), 'shared Key inherits account-wide cooldown');
 assert.equal(getTier1Account(separateGroup.id).accountCooldownUntil, 0, 'other Key group remains usable');
 
 __resetTier1StateForTests();
 const modelCooldownState = makeState();
 modelCooldownState.nodes = [groupedA, groupedOmni, groupedAlias];
-recordOutcome(modelCooldownState, groupedA, classifyUpstreamStatus(429, new Headers(), {}, Date.now(), 'requests per minute'), makeContext(modelCooldownState), {
-  status: 429, latencyMs: 50,
-});
+recordOutcome(
+  modelCooldownState,
+  groupedA,
+  classifyUpstreamStatus(429, new Headers(), {}, Date.now(), 'requests per minute'),
+  makeContext(modelCooldownState),
+  {
+    status: 429,
+    latencyMs: 50,
+  },
+);
 assert.ok(getTier1Model(groupedAlias.id, 'Alias').cooldownUntil > Date.now(), 'same physical model on the shared Key inherits model cooldown');
 assert.equal(getTier1Account(groupedOmni.id).accountCooldownUntil, 0, 'model 429 does not cool the whole Key');
 assert.equal(getTier1Model(groupedOmni.id, 'Omni').cooldownUntil, 0, 'different physical Omni model remains usable');
