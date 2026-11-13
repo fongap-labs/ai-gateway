@@ -99,9 +99,12 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
     // surfaces against the Provider profile before any deployment can pass.
     if (Object.hasOwn(node, 'surfaces')) {
       const surfaces = node.surfaces;
-      if (!Array.isArray(surfaces) || surfaces.length === 0 ||
-          surfaces.some((value) => typeof value !== 'string' || !value.trim()) ||
-          new Set(surfaces).size !== surfaces.length) {
+      if (
+        !Array.isArray(surfaces) ||
+        surfaces.length === 0 ||
+        surfaces.some((value) => typeof value !== 'string' || !value.trim()) ||
+        new Set(surfaces).size !== surfaces.length
+      ) {
         throw new Error(`${label}: node "${id}" surfaces must be a non-empty list of distinct endpoint strings`);
       }
     }
