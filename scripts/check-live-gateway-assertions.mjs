@@ -3,6 +3,8 @@
 // Copyright (c) 2026 Fongap Labs
 // Pure offline contract checks: no Gateway, Key or Provider request.
 import assert from 'node:assert/strict';
+import { inflateSync } from 'node:zlib';
+import { visionColors } from './live-gateway-vision-fixtures.mjs';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGN8JiLCwMDAxMDAwMDAAAANpAESe7q5qgAAAABJRU5ErkJggg==';
@@ -48,4 +50,37 @@ assert.equal(hasResponsesVisionColor(responsesVision('green'), 'yellow'), false)
 assert.equal(hasResponsesVisionColor(responsesVision('Sorry, no image is available'), 'yellow'), false);
 assert.equal(hasResponsesVisionColor(responsesVision('yellow', 'user'), 'yellow'), false);
 assert.equal(hasResponsesVisionColor({ output: [{ type: 'function_call', arguments: 'yellow' }] }, 'yellow'), false);
+// Guard the actual image payloads, not just response shapes: a damaged PNG can
+// pass the static checks but fail only when the live test randomly selects it.
+assert.equal(visionColors.length, 4);
+for (const { name, base64 } of visionColors) {
+  const imageBytes = Buffer.from(base64, 'base64');
+  assert.equal(imageBytes.toString('base64'), base64, `${name} base64`);
+  assert.equal(imageBytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${name} PNG signature`);
+  assert.equal(imageBytes.readUInt32BE(16), 96, `${name} width`);
+  assert.equal(imageBytes.readUInt32BE(20), 96, `${name} height`);
+  assert.equal(imageBytes[24], 8, `${name} bit depth`);
+  assert.equal(imageBytes[25], 2, `${name} RGB color type`);
+  const imageData = [];
+  let offset = 8;
+  let seenEnd = false;
+  while (offset < imageBytes.length) {
+    assert.ok(offset + 12 <= imageBytes.length, `${name} truncated chunk header`);
+    const length = imageBytes.readUInt32BE(offset);
+    const type = imageBytes.toString('ascii', offset + 4, offset + 8);
+    const end = offset + length + 12;
+    assert.ok(end <= imageBytes.length, `${name} truncated ${type} chunk`);
+    if (type === 'IDAT') imageData.push(imageBytes.subarray(offset + 8, offset + 8 + length));
+    offset = end;
+    if (type === 'IEND') {
+      seenEnd = true;
+      break;
+    }
+  }
+  assert.equal(seenEnd, true, `${name} must end with IEND`);
+  assert.equal(offset, imageBytes.length, `${name} unexpected trailing bytes`);
+  assert.ok(imageData.length > 0, `${name} missing image data`);
+  assert.equal(inflateSync(Buffer.concat(imageData)).length, 96 * (96 * 3 + 1), `${name} invalid PNG pixel data`);
+}
+
 console.log('Live Gateway acceptance response contracts passed offline.');
