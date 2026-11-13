@@ -22,7 +22,7 @@ const evidence = parseCheckEvidence(JSON.stringify({
   dispatches: '2',
   gateway_code: null,
   failover: 'true',
-  authorization: 'never-keep-this',
+  ignored_field: 'never-keep-this',
   content: 'never-keep-raw-reply',
 }));
 assert.equal(evidence.check, 'perception-delegate');
@@ -31,7 +31,7 @@ assert.equal(evidence.failover, true);
 assert.equal(evidence.request_id, 'safe-request-01');
 assert.equal(JSON.stringify(evidence).includes('never-keep'), false);
 assert.equal(parseCheckEvidence('not-json'), null);
-assert.equal(parseCheckEvidence(JSON.stringify({ result: 'PASS', check: 'bad check', authorization: 'private' })), null);
+assert.equal(parseCheckEvidence(JSON.stringify({ result: 'PASS', check: 'bad check', ignored_field: 'private' })), null);
 assert.equal(parseCheckEvidence(JSON.stringify({ result: 'FAIL', check: 'text' })), null);
 
 const error = parseFailureEvidence(
