@@ -109,7 +109,9 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   // A missing Service Binding or auth key fails closed (503); never dispatch a
   // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
-  if (hasImageInput(bodyJson)) {
+  // The Gateway computed this after optional visual preprocessing. Direct
+  // attempt contexts without the hint retain independent shape detection.
+  if (c.imageInputRequired ?? hasImageInput(bodyJson)) {
     const visionDeclared = modelRegistryEntry(c.env, reqDescriptor.model).catalog.capabilities.vision === true;
     const providerAcceptsImages = getProviderProfile(node.provider).imageInput;
     if (!visionDeclared) {
