@@ -41,6 +41,57 @@ assert.equal(incompatible422.counted, false);
 const unsupportedTool422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'This model does not support tools');
 assert.equal(unsupportedTool422.kind, KIND.CLIENT, 'unsupported tools is not a missing physical model');
 assert.equal(unsupportedTool422.action, 'rotate');
+// Code-model Providers often return only an OpenAI-style error.code, not the
+// English "unsupported parameter" phrase. That must not terminate failover.
+for (const code of ['unsupported_parameter', 'unsupported_value', 'unknown_parameter', 'unsupported_tool_type']) {
+  const result = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), JSON.stringify({ error: { code, param: 'reasoning.effort' } }));
+  assert.equal(result.kind, KIND.CLIENT, code);
+  assert.equal(result.action, 'rotate', code);
+  assert.equal(result.counted, false, code);
+}
+for (const code of ['model_not_found', 'invalid_model', 'deployment_not_found']) {
+  const result = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), JSON.stringify({ error: { code } }));
+  assert.equal(result.kind, KIND.MODEL_MISSING, code);
+  assert.equal(result.action, 'rotate', code);
+  assert.equal(result.modelScoped, true, code);
+}
+const schema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', 'reasoning_effort'], msg: 'Extra inputs are not permitted' }] }),
+);
+assert.equal(schema422.action, 'rotate', 'top-level unsupported Code parameter may use another node');
+const malformedSchema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({
+    detail: [
+      { type: 'extra_forbidden', loc: ['body', 'reasoning_effort'] },
+      { type: 'missing', loc: ['body', 'messages'] },
+    ],
+  }),
+);
+assert.equal(malformedSchema422.action, 'stop', 'missing required fields must never trigger a Key rotation');
+const nestedSchema422 = classifyUpstreamStatus(
+  422,
+  new Headers(),
+  {},
+  Date.now(),
+  JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', 'tools', 0, 'function', 'parameters'] }] }),
+);
+assert.equal(nestedSchema422.action, 'stop', 'malformed nested tools are client-owned');
+const machineEndpoint422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"unsupported_endpoint"}}');
+assert.equal(machineEndpoint422.kind, KIND.ENDPOINT_NOT_FOUND);
+assert.equal(machineEndpoint422.action, 'rotate');
+for (const code of ['invalid_request_error', 'context_length_exceeded', 'invalid_json']) {
+  const result = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), JSON.stringify({ error: { code, message: 'Invalid request body' } }));
+  assert.equal(result.action, 'stop', 'genuine client 422 must not consume alternate Keys');
+}
+assert.equal(classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"message":"Unprocessable entity"}}').action, 'stop');
 const unavailable503 = classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporarily unavailable');
 assert.equal(unavailable503.action, 'rotate');
 

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 const opts = {};
 for (let i = 2; i < process.argv.length; i++) {
   const name = process.argv[i];
-  if (['--responses', '--tools', '--stream'].includes(name)) {
+  if (['--responses', '--tools', '--stream', '--reasoning'].includes(name)) {
     opts[name.slice(2)] = true;
     continue;
   }
@@ -17,7 +17,8 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 if (!opts.url || !opts.model)
   throw Error(
-    'Usage: node scripts/check-live-code-contract.mjs --url https://gateway.example --model Code-Max [--key-group MAX] [--tools] [--responses] [--stream]',
+    'Usage: node scripts/check-live-code-contract.mjs --url https://gateway.example --model Code-Max ' +
+      '[--key-group MAX] [--tools] [--responses] [--stream] [--reasoning]',
   );
 const base = new URL(opts.url);
 if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash)
@@ -45,6 +46,37 @@ if (opts.tools)
   });
 if (opts.responses)
   trials.push({ name: 'responses_text', route: '/v1/responses', body: { model: opts.model, stream: false, input: 'Reply exactly ok.' } });
+if (opts.reasoning)
+  trials.push({
+    name: 'chat_reasoning',
+    route: '/v1/chat/completions',
+    body: { model: opts.model, stream: false, messages, reasoning_effort: 'medium' },
+  });
+if (opts.reasoning && opts.responses)
+  trials.push({
+    name: 'responses_reasoning',
+    route: '/v1/responses',
+    body: { model: opts.model, stream: false, input: 'Reply exactly ok.', reasoning: { effort: 'medium' } },
+  });
+if (opts.tools && opts.responses)
+  trials.push({
+    name: 'responses_tools',
+    route: '/v1/responses',
+    body: {
+      model: opts.model,
+      stream: false,
+      input: 'Reply exactly ok.',
+      tools: [
+        {
+          type: 'function',
+          name: 'diagnostic_noop',
+          description: 'Safe no-op diagnostic tool; do not execute',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+      ],
+      tool_choice: 'auto',
+    },
+  });
 if (opts.stream)
   trials.push({ name: 'chat_stream', route: '/v1/chat/completions', body: { model: opts.model, stream: true, messages }, stream: true });
 if (opts.stream && opts.responses)
@@ -85,6 +117,7 @@ async function check(trial) {
         result: 'FAIL',
         error_code: error?.code ?? error?.details?.gateway_code ?? null,
         error_param: error?.param ?? null,
+        failure_kinds: error?.details?.failure_kinds ?? null,
       }),
     );
     throw Error(trial.name + ': upstream returned HTTP ' + response.status);
@@ -143,14 +176,21 @@ async function check(trial) {
   }
   console.log(JSON.stringify({ ...summary, result: 'PASS' }));
 }
+// Keep running every opted-in surface: a broken chat route must not hide an
+// otherwise healthy Responses route (or vice versa).
 let completed = 0;
-try {
-  for (const trial of trials) {
+const failed = [];
+for (const trial of trials) {
+  try {
     await check(trial);
     completed++;
+  } catch (error) {
+    failed.push({ probe: trial.name, message: String(error?.message ?? error) });
   }
-  console.log(JSON.stringify({ result: 'PASS', checks: completed, scope: 'logical-route-only', warning: 'Not per-node capability certification' }));
-} catch (error) {
-  console.error(JSON.stringify({ result: 'FAIL', checks_completed: completed, message: String(error?.message ?? error) }));
+}
+if (failed.length) {
+  console.error(JSON.stringify({ result: 'FAIL', checks_completed: completed, failed_probes: failed, scope: 'logical-route-only' }));
   process.exitCode = 1;
+} else {
+  console.log(JSON.stringify({ result: 'PASS', checks: completed, scope: 'logical-route-only', warning: 'Not per-node capability certification' }));
 }
