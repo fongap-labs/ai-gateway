@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from '../apps/gateway/attempt/outcome.ts';
+import { failedDomainNodeIds, rememberFailedDomains } from '../apps/gateway/policy/model-fallback.ts';
 import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailoverAttempts } from '../apps/gateway/response/errors.ts';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
@@ -30,6 +31,16 @@ assert.equal(endpoint422.counted, false);
 const invalid422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'invalid request body: required field missing');
 assert.equal(invalid422.kind, KIND.CLIENT);
 assert.equal(invalid422.action, 'stop');
+const invalid400 = classifyUpstreamStatus(400, new Headers(), {}, Date.now(), 'invalid JSON in request body');
+assert.equal(invalid400.action, 'stop', 'malformed client payload must not rotate across Keys');
+const compatible400 = classifyUpstreamStatus(400, new Headers(), {}, Date.now(), 'unsupported parameter: reasoning_effort');
+assert.equal(compatible400.action, 'rotate', 'provider-specific 400 can use another Key');
+const incompatible422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'unsupported parameter: stream_options');
+assert.equal(incompatible422.action, 'rotate', 'explicit 422 protocol incompatibility may rotate');
+assert.equal(incompatible422.counted, false);
+const unsupportedTool422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'This model does not support tools');
+assert.equal(unsupportedTool422.kind, KIND.CLIENT, 'unsupported tools is not a missing physical model');
+assert.equal(unsupportedTool422.action, 'rotate');
 const unavailable503 = classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporarily unavailable');
 assert.equal(unavailable503.action, 'rotate');
 
@@ -43,6 +54,29 @@ const node = {
   surfaces: ['chat_completions'],
   models: { [source]: 'physical-ultra', [effective]: 'physical-max' },
 };
+// Across logical-model rounds a physically failed Key must never be reused,
+// even if its other model name resolves to a different upstream model.
+const otherKey = { ...node, id: 'another-physical-key' };
+const skippedPeer = { ...node, id: 'skipped-before-dispatch' };
+const domains = new Set();
+const keyNodes = new Map([node, otherKey, skippedPeer].map((entry) => [entry.id, entry]));
+rememberFailedDomains(domains, keyNodes, new Set([node.id, skippedPeer.id]), source, [
+  { node_id: node.id, dispatched: true, kind: 'server' },
+  { node_id: skippedPeer.id, dispatched: false, kind: 'server' },
+]);
+const forbidden = failedDomainNodeIds([node, otherKey, skippedPeer], effective, domains);
+assert.equal(forbidden.has(node.id), true, 'failed Key must be excluded for a different physical model');
+assert.equal(forbidden.has(otherKey.id), false, 'fresh Key must remain eligible');
+assert.equal(forbidden.has(skippedPeer.id), false, 'un-dispatched peer must remain eligible for other models');
+assert.equal(failedDomainNodeIds([node, otherKey, skippedPeer], source, domains).has(skippedPeer.id), true);
+const missingOnlyDomains = new Set();
+rememberFailedDomains(missingOnlyDomains, keyNodes, new Set([node.id]), source, [{ node_id: node.id, dispatched: true, kind: 'model_missing' }]);
+assert.equal(
+  failedDomainNodeIds([node, otherKey], effective, missingOnlyDomains).has(node.id),
+  false,
+  'a missing model must not disable other models on the same Key',
+);
+
 const logs = [];
 const makeState = () => ({
   requestedModel: source,
