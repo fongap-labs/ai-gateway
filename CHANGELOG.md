@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 真实 HTTPS Gateway 验收增加 Responses 经 Perception 识图，并正确识别 PNG、JPEG、WebP、GIF 绘图结果；新增离线返回格式回归。
+
 - 修复: Tier 1 发生 429、503 时优先切换其他可用 Key；没有剩余兼容节点时立即停止，不为了凑满最大尝试次数重试同一 Key。
 
 - 修复: 移除按 Isolate 并发请求数量直接拒绝的 503；旧配置变量保持兼容但不再设硬门槛，请求体字节保护和重试预算继续生效。
