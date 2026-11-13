@@ -111,7 +111,8 @@ export function pickTier1Candidate(
 
     if (affinityNode && affinityNode.id !== p2cWinner.id) {
       // Affinity vs this round's P2C winner only — never a full-pool scan.
-      const affScore = scoreFor(affinityNode);
+      // sampleTwo pins affinityNode as sample a; do not score it twice.
+      const affScore = scoreA;
       if (evaluateAffinity && affinityShouldEscape(affScore, p2cWinnerScore)) {
         chosen = p2cWinner;
         hasEscapedFromAffinity = true;
@@ -154,8 +155,13 @@ export function pickTier1Candidate(
 // no new env knob is required.
 function sampleTwo(arr: RuntimeNode[], rng: () => number = cryptoRng, affinityNode: RuntimeNode | null = null): { a: RuntimeNode; b: RuntimeNode } {
   if (affinityNode) {
-    const peers = arr.filter((node) => node.id !== affinityNode.id);
-    const peer = peers[Math.floor(rng() * peers.length)];
+    // Skip the pinned index directly instead of allocating a second candidate
+    // array on every sticky-session request. The peer distribution is unchanged.
+    const pinnedIndex = arr.indexOf(affinityNode);
+    if (pinnedIndex < 0) throw new Error('tier1 P2C invariant: affinity candidate is not eligible');
+    let peerIndex = Math.floor(rng() * (arr.length - 1));
+    if (peerIndex >= pinnedIndex) peerIndex += 1;
+    const peer = arr[peerIndex];
     if (!peer) throw new Error('tier1 P2C invariant: affinity candidate requires a peer');
     return { a: affinityNode, b: peer };
   }
