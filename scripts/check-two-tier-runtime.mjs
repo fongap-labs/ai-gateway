@@ -630,7 +630,7 @@ await verifyCrossModelProviderFailover(503, 'temporarily unavailable');
 await verifyCrossModelProviderFailover(422, 'No endpoints found for model physical-primary');
 
 // Preserve legacy 400-as-node-incompatibility routing (tested above), but
-// a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
+// a structured invalid client request 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
   const freeId = `free-terminal-${status}`;
   const dispatched = [];
@@ -647,7 +647,7 @@ async function verifyTerminalClientError(status) {
     AIG_INFERENCE_SERVICE: {
       async fetch(request) {
         dispatched.push(request.headers.get('x-aig-node-id'));
-        return new Response(JSON.stringify({ error: { message: 'mock invalid input' } }), {
+        return new Response(JSON.stringify({ error: { code: 'invalid_json', message: 'mock invalid input' } }), {
           status,
           headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
         });
