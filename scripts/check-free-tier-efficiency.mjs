@@ -11,6 +11,11 @@ import { pickTier1Candidate } from '../apps/gateway/scheduling/tier1-scheduler.t
 import { classifyUpstreamStatus, rateLimitWindowOf } from '../src/reliability/classify.ts';
 import {
   __resetTier1StateForTests,
+  getTier1Account,
+  isTier1Eligible,
+  releaseTier1Slot,
+  tier1CountDispatchableNodes,
+  tier1HasDeferredCapacity,
   recordTier1QuotaReport,
   recordTier1QuotaSignal,
   recordTier1Ttft,
@@ -164,6 +169,24 @@ for (const [rngValue, expected] of [
   assert.equal(pick?.node?.id, expected, 'P2C must choose the deterministic eligible peer');
   assert.equal(pick?.escapedFromAffinity, true);
 }
+// Tier 1 selection and recovery must agree with the private executor: a
+// catalog-visible wildcard without a physical model is NOT dispatchable.
+const knownRoutingModels = new Set([routingModel]);
+const unmappedNode = { ...routingNodes[0], id: 'tier1-no-physical-map', models: {} };
+const mappedNode = { ...routingNodes[1], id: 'tier1-explicit-map' };
+const identityNode = { ...routingNodes[2], id: 'tier1-identity-map', models: { [routingModel]: routingModel } };
+const eligibilityAt = Date.now();
+assert.equal(isTier1Eligible(unmappedNode, routeRequest, eligibilityAt, knownRoutingModels), false);
+assert.equal(tier1CountDispatchableNodes([unmappedNode], routeRequest, new Set(), eligibilityAt, knownRoutingModels), 0);
+assert.equal(pickTier1Candidate([unmappedNode], routeRequest, new Set(), { knownModels: knownRoutingModels }), null);
+assert.equal(isTier1Eligible(identityNode, routeRequest, eligibilityAt, knownRoutingModels), true, 'explicit same-name mapping is valid');
+const onlyMapped = pickTier1Candidate([unmappedNode, mappedNode], routeRequest, new Set(), { knownModels: knownRoutingModels });
+assert.equal(onlyMapped?.node?.id, mappedNode.id, 'unmapped wildcard must not consume a physical attempt');
+if (onlyMapped?.node) releaseTier1Slot(onlyMapped.node.id, onlyMapped.releaseToken);
+const recovery = getTier1Account(unmappedNode.id);
+recovery.rateLimitRecoveryUntil = eligibilityAt + 20_000;
+assert.equal(tier1HasDeferredCapacity([unmappedNode], routeRequest, new Set(), eligibilityAt, knownRoutingModels), false);
+
 __resetTier1StateForTests();
 
 console.log('Free Tier 1 429 recovery and TTFT-confidence contracts passed offline.');
