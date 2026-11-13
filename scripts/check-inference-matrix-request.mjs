@@ -38,7 +38,10 @@ for (const [from, body] of [
 // translated to Responses; explicit client ceilings must survive unchanged.
 const unboundedResponses = ownedConvert('openai_chat', 'openai_responses', chat);
 assert.equal(unboundedResponses.body.max_output_tokens, undefined);
-assert.equal(unboundedResponses.diagnostics.some((d) => d.feature === 'max_tokens' && d.action === 'defaulted'), false);
+assert.equal(
+  unboundedResponses.diagnostics.some((d) => d.feature === 'max_tokens' && d.action === 'defaulted'),
+  false,
+);
 const boundedResponses = ownedConvert('openai_chat', 'openai_responses', { ...chat, max_tokens: 8192 });
 assert.equal(boundedResponses.body.max_output_tokens, 8192);
 
