@@ -7,7 +7,7 @@
 import { MatrixDiag } from '../diag.ts';
 import { type IrProtocol, type IrReply, isRecord } from '../ir.ts';
 import type { ConversionDiagnostic } from '../result.ts';
-import { ConversionError } from '../validation.ts';
+import { ConversionError, parseToolArguments } from '../validation.ts';
 import { anthropicObjectToIr, anthropicStopFromIr } from './anthropic.ts';
 import { chatObjectToIr, chatStopFromIr, chatToolId } from './chat.ts';
 import { chatUsageFromRaw } from './chat-stream.ts';
@@ -81,13 +81,9 @@ export function replyToAnthropicObject(reply: IrReply): Record<string, unknown> 
         content.push({ type: 'thinking', thinking: part.text, signature: part.signature });
       }
     } else if (part.type === 'tool_call') {
-      let input: unknown = {};
-      try {
-        input = JSON.parse(part.args || '{}');
-      } catch {
-        input = { raw: part.args };
-      }
-      content.push({ type: 'tool_use', id: part.id || chatToolId(part.id), name: part.name, input: isRecord(input) ? input : {} });
+      // Never emit a misleading tool_use event with silently altered arguments.
+      const input = parseToolArguments(part.args);
+      content.push({ type: 'tool_use', id: part.id || chatToolId(part.id), name: part.name, input });
     }
   }
   const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
