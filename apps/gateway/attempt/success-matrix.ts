@@ -26,13 +26,7 @@ import type { AttemptOutcome, ConversionContext } from '../../../src/types/reque
 import { gatewayError } from '../response/errors.ts';
 import { finalHeaders, jsonResponse, streamInterruptionChunk } from '../response/response-helpers.ts';
 import { decodeFramedInferenceResponse } from '../transport/inference-stream-client.ts';
-import {
-  makeNodeStreamTrack,
-  observeUpstreamAttemptUsage,
-  recordNodeBudgetStop,
-  recordNodeSuccess,
-  recordTokens,
-} from './observability.ts';
+import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordNodeBudgetStop, recordNodeSuccess, recordTokens } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, stopAfterDispatchedCenterFault } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
