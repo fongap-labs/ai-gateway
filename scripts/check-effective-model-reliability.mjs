@@ -61,14 +61,24 @@ const skippedPeer = { ...node, id: 'skipped-before-dispatch' };
 const domains = new Set();
 const keyNodes = new Map([node, otherKey, skippedPeer].map((entry) => [entry.id, entry]));
 rememberFailedDomains(domains, keyNodes, new Set([node.id, skippedPeer.id]), source, [
-  { node_id: node.id, dispatched: true },
-  { node_id: skippedPeer.id, dispatched: false },
+  { node_id: node.id, dispatched: true, kind: 'server' },
+  { node_id: skippedPeer.id, dispatched: false, kind: 'server' },
 ]);
 const forbidden = failedDomainNodeIds([node, otherKey, skippedPeer], effective, domains);
 assert.equal(forbidden.has(node.id), true, 'failed Key must be excluded for a different physical model');
 assert.equal(forbidden.has(otherKey.id), false, 'fresh Key must remain eligible');
 assert.equal(forbidden.has(skippedPeer.id), false, 'un-dispatched peer must remain eligible for other models');
 assert.equal(failedDomainNodeIds([node, otherKey, skippedPeer], source, domains).has(skippedPeer.id), true);
+const missingOnlyDomains = new Set();
+rememberFailedDomains(
+  missingOnlyDomains,
+  keyNodes,
+  new Set([node.id]),
+  source,
+  [{ node_id: node.id, dispatched: true, kind: 'model_missing' }],
+);
+assert.equal(failedDomainNodeIds([node, otherKey], effective, missingOnlyDomains).has(node.id), false, 'a missing model must not disable other models on the same Key');
+
 const logs = [];
 const makeState = () => ({
   requestedModel: source,
