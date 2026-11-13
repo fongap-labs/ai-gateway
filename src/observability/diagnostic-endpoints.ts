@@ -185,8 +185,10 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
       runtime,
     };
   });
-  const { cooling, disabled, observedHealthy, observedResponsive, unknown, configuredWithoutAccountBlock } =
-    summarizeHealthEvidence(endpoints, config.nodesUsable);
+  const { cooling, disabled, observedHealthy, observedResponsive, unknown, configuredWithoutAccountBlock } = summarizeHealthEvidence(
+    endpoints,
+    config.nodesUsable,
+  );
   const statusCode = config.status === 'invalid' || config.status === 'unconfigured' ? 503 : 200;
 
   return new Response(
