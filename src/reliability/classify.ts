@@ -298,7 +298,13 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
   'deployment_not_found',
   'no_available_providers',
 ]);
-const CLIENT_REQUEST_ERROR_CODES = new Set(['invalid_request_error', 'invalid_json', 'context_length_exceeded', 'invalid_request', 'malformed_request']);
+const CLIENT_REQUEST_ERROR_CODES = new Set([
+  'invalid_request_error',
+  'invalid_json',
+  'context_length_exceeded',
+  'invalid_request',
+  'malformed_request',
+]);
 const ENDPOINT_ROUTE_ERROR_CODES = new Set(['endpoint_not_found', 'route_not_found', 'unsupported_endpoint', 'endpoint_unsupported']);
 const UNSUPPORTED_ROUTE_ERROR_CODES = new Set([
   'unsupported_parameter',
