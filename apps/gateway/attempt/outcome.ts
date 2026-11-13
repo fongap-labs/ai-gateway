@@ -182,7 +182,7 @@ export function recordOutcome(
           upstreamModelOf(previousNode, String(attempt.effective_model ?? effectiveModel)) === physicalModel
         );
       });
-    if (status !== 422 || previousSameRoute422) {
+    if (status !== 422 || !classification.uncertain422 || previousSameRoute422) {
       for (const peer of state.nodes ?? []) {
         if (
           peer.tier === node.tier &&
