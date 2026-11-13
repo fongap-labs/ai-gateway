@@ -475,12 +475,11 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   if (ir.structuredOutputSchema) {
     out.text = { format: { type: 'json_schema', name: 'response', schema: ir.structuredOutputSchema, strict: true } };
   }
-  let maxTokens = ir.maxTokens;
-  if (maxTokens == null) {
-    maxTokens = RESPONSES_DEFAULT_MAX_OUTPUT_TOKENS;
-    diag.add({ feature: 'max_tokens', action: 'defaulted' });
-  }
-  out.max_output_tokens = maxTokens;
+  // The Responses API permits an omitted output ceiling. A hardcoded 1024
+  // silently truncates long code generation and may reject some free endpoints.
+  // Preserve the client's limit when supplied; otherwise let the physical
+  // Provider apply its own default.
+  if (ir.maxTokens != null) out.max_output_tokens = ir.maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
   // top_k is an Anthropic-native control; this target cannot carry it.
