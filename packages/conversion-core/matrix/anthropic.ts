@@ -686,7 +686,8 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
       const imageBlocks = part.images.map((image) => ({ type: 'image', source: imageSource(image) }));
       const documentBlocks = (part.documents ?? []).map((document) => ({ type: 'document', source: documentSource(document) }));
       // Text-only tool results stay a plain string (the legacy shape).
-      const content = imageBlocks.length || documentBlocks.length ? [{ type: 'text', text: part.text }, ...imageBlocks, ...documentBlocks] : part.text;
+      const content =
+        imageBlocks.length || documentBlocks.length ? [{ type: 'text', text: part.text }, ...imageBlocks, ...documentBlocks] : part.text;
       blocks.push({ type: 'tool_result', tool_use_id: part.callId, content, ...(part.isError ? { is_error: true } : {}) });
     }
   }
