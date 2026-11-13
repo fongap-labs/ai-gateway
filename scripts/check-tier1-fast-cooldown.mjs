@@ -58,8 +58,10 @@ assert.equal(recovering.cooldownUntil, t + 15_000);
 assert.equal(recovering.failureState, 'cooldown');
 
 const rejected = classifyUpstreamStatus(422, new Headers(), {}, t, 'unprocessable');
-assert.equal(rejected.action, 'stop');
+assert.equal(rejected.action, 'rotate', 'opaque 422 permits a bounded alternate physical route');
 assert.equal(rejected.counted, false);
+const invalidRequest = classifyUpstreamStatus(422, new Headers(), {}, t, '{"error":{"code":"invalid_json"}}');
+assert.equal(invalidRequest.action, 'stop', 'explicit invalid request must not be replayed');
 applyTier1Outcome('free-key-1', 'Code-Ultra', classifyTier1Failure(rejected), t + TIER1_FAILURE_STREAK_WINDOW_MS + 2);
 assert.equal(getTier1Model('free-key-1', 'Code-Ultra').consecutiveFailures, 0);
 
@@ -81,4 +83,4 @@ assert.equal(details.attempts, 4);
 assert.deepEqual(details.failure_kinds, { server: 2, headers_timeout: 1, client: 1 });
 assert.ok(!raw.includes('private upstream details'));
 __resetTier1StateForTests();
-console.log('Tier 1 Key+model cooldown and terminal 422 diagnostics passed offline.');
+console.log('Tier 1 Key+model cooldown and scoped 422 diagnostics passed offline.');
