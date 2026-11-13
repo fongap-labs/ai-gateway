@@ -45,19 +45,20 @@ flowchart LR
 
 图示为容量顺序，不代表无限次重试。请求共享尝试次数和时间预算；**流式响应开始输出后不会再透明切换上游**。不同接口和模型能力可能限制回退路径。
 
-## 四 Worker 架构与生产状态
+## 四个计算 Worker + Operations（共五个 Worker）
 
 ```mermaid
 flowchart LR
     Client[客户端] --> Gateway[Gateway：鉴权、额度与路由]
-    Gateway -->|私有 Service Binding| Inference[Inference Center：推理执行与协议转换]
-    Gateway -->|私有 Service Binding| Generation[Generation Center：生成能力]
+    Gateway -->|私有 Service Binding| Inference[Inference Center：文本推理]
+    Gateway -->|私有 Service Binding| Perception[Perception Center：图像识别]
+    Gateway -->|私有 Service Binding| Generation[Generation Center：图片生成]
     Gateway --> Stats[(共享用量 D1)]
     Operations[Operations：定时维护] --> Stats
 ```
 
 - Gateway 只处理鉴权、额度、调度、限流和故障恢复，不直接请求 Provider。
-- Inference Center 持有推理 Provider 凭据并负责执行和协议转换；Generation Center 仅持有生成能力所需凭据。
+- Inference、Perception 和 Generation 三个私有中心按能力执行，分别持有对应 Provider 凭据；Gateway 通过 Service Binding 调用它们。
 - Operations 只运行定时维护，通过共享 D1 汇总和保留用量数据；它没有公开请求路由，也不持有 Provider 凭据。
 - 调度固定为 Tier 1 免费 API Key → Tier 2 API Token；会员 OAuth 与第三层 Tier 不属于当前运行时。
 
@@ -106,6 +107,17 @@ curl -H "Authorization: Bearer YOUR_GATEWAY_KEY" https://your-gateway.example/v1
 | Anthropic 兼容 | `https://your-gateway.example` | `/v1/messages`、`/v1/messages/count_tokens` |
 
 客户端将原始服务商密钥替换为网关访问密钥。实际环境变量名依客户端而定；接入细节参见 [配置说明](docs/operations/configuration.md)。
+
+真实上游验收不能只依赖中央 CI：现有 `npm run validate:merge` 检查离线合同，不访问生产 Provider。先确认线上 `/health/ready` 的构建 SHA 与目标发布相符，再在**受控环境**中运行现有的真实 HTTP 验收脚本（它会发起实际文本推理请求）：
+
+~~~bash
+# 先在本地安全地设置 AIG_ACCESS_KEY_MAX，切勿将密钥写入命令参数或日志。
+node scripts/check-live-gateway-capabilities.mjs \
+  --url https://your-gateway.example \
+  --chat-model YOUR_LOGICAL_TEXT_MODEL
+~~~
+
+脚本还支持 `--vision-model`、`--delegate-model` 和 `--responses-delegate-model` 验证实际图片输入；`--failover-model` 可观察故障转移，但只有在受控故障节点池中配合 `--expect-dispatches` 才能据此证明多次真实派发。**图片生成必须显式传入 `--run-image --image-model ...`，可能产生上游费用**。这些真实测试需要网关 URL、对应分组的访问密钥及可用的上游节点；脚本不会自行获取生产凭据，也不自动发布。CPU、内存、D1/KV 用量仍须结合 Cloudflare 账户侧运行指标验证，测试通过不等于免费配额充足。
 
 ## 安全与运行边界
 
