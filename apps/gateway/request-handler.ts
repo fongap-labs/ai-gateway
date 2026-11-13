@@ -294,10 +294,8 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
   const reasoningEffort = bodyJson.reasoning_effort;
   const requiresReasoning =
     (typeof reasoningEffort === 'string' && reasoningEffort.toLowerCase() !== 'none') ||
-    (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning) &&
-      (reasoning as Record<string, unknown>).effort !== 'none') ||
-    (thinking !== null && typeof thinking === 'object' && !Array.isArray(thinking) &&
-      (thinking as Record<string, unknown>).type === 'enabled');
+    (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning) && (reasoning as Record<string, unknown>).effort !== 'none') ||
+    (thinking !== null && typeof thinking === 'object' && !Array.isArray(thinking) && (thinking as Record<string, unknown>).type === 'enabled');
   const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
