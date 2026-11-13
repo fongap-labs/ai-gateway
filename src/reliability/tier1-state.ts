@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 
 // Stable Tier 1 lifecycle/mutation facade; one account store is owned by tier1-store.ts.
-import { servesModel } from '../config/registry.ts';
+import { resolvePhysicalModel } from '../config/registry.ts';
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
 import type { RuntimeNode } from '../types/node.ts';
 import type { RoutableRequest } from '../types/scheduler.ts';
@@ -236,7 +236,9 @@ export function isTier1Eligible(
   if (node?.tier !== 'tier-1') return false;
   if (node.protocol !== req.protocol) return false;
   if (!Array.isArray(node.surfaces) || !node.surfaces.includes(req.surface)) return false;
-  if (!servesModel(node, req.model, knownModels)) return false;
+  // Catalog visibility is not physical dispatch eligibility: wildcard or
+  // unmapped aliases must never reserve a Tier 1 Key.
+  if (!resolvePhysicalModel(node, req.model, knownModels)) return false;
   const account = accounts.get(node.id);
   if (!account) return true;
   normalizeQuotaWindow(account, now);
@@ -641,7 +643,7 @@ export function tier1HasDeferredCapacity(
 ): boolean {
   for (const node of nodes ?? []) {
     if (attempted.has(node.id) || node.tier !== 'tier-1') continue;
-    if (node.protocol !== req.protocol || !node.surfaces?.includes(req.surface) || !servesModel(node, req.model, knownModels)) continue;
+    if (node.protocol !== req.protocol || !node.surfaces?.includes(req.surface) || !resolvePhysicalModel(node, req.model, knownModels)) continue;
     const account = accounts.get(node.id);
     if (!account || account.accountDisabled || account.accountCooldownUntil > now) continue;
     if (account.rateLimitRecoveryUntil > now) return true;
