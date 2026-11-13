@@ -49,4 +49,32 @@ assert.equal(assembled.object.output[0].content[0].text, 'hello');
 const synthetic = ownedSynthesize(assembled.reply, 'openai_responses');
 assert.match(synthetic.headers.get('content-type') ?? '', /text\/event-stream/);
 assert.match(await synthetic.text(), /response\.completed/);
-console.log('Inference Matrix SSE owner, compatibility identity, stream collection and synthetic events passed.');
+const opaque = {
+  ...assembled.reply,
+  parts: [
+    { type: 'thinking', text: 'untrusted reasoning summary' },
+    { type: 'thinking', text: '', sealed: true, data: 'foreign-ciphertext' },
+    { type: 'text', text: 'visible answer' },
+  ],
+};
+const anthroSynthetic = await ownedSynthesize(opaque, 'anthropic').text();
+assert.match(anthroSynthetic, /visible answer/);
+assert.doesNotMatch(anthroSynthetic, /foreign-ciphertext|redacted_thinking|thinking_delta/);
+const responsesSynthetic = await ownedSynthesize(opaque, 'openai_responses').text();
+assert.doesNotMatch(responsesSynthetic, /foreign-ciphertext|encrypted_content/);
+
+// Chat thinking deltas must not create unsigned Anthropic thinking blocks in live SSE.
+const reasoningFrames = [
+  { id: 'chat-reasoning', model: 'test-model', choices: [{ index: 0, delta: { reasoning_content: 'nonportable thoughts', content: 'answer' }, finish_reason: null }] },
+  { id: 'chat-reasoning', model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+].map((frame) => `data: ${JSON.stringify(frame)}\\n\\n`).join('') + 'data: [DONE]\\n\\n';
+const liveReasoning = ownedStream(new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode(reasoningFrames));
+    controller.close();
+  },
+}), 'openai_chat', 'anthropic', 'fallback-reasoning', { model: 'test-model' });
+const reasoningOutput = await new Response(liveReasoning.clientStream).text();
+assert.match(reasoningOutput, /answer/);
+assert.doesNotMatch(reasoningOutput, /nonportable thoughts|thinking_delta|redacted_thinking/);
+console.log('Inference Matrix SSE owner, opaque reasoning isolation, compatibility identity, stream collection and synthetic events passed.');
