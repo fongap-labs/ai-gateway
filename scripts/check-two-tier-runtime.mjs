@@ -494,7 +494,10 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '', schemaError 
                     error: {
                       ...(errorCode
                         ? { code: errorCode }
-                        : { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` }),
+                        : {
+                            message:
+                              failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}`,
+                          }),
                     },
                   },
             ),
