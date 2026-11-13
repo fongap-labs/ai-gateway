@@ -31,8 +31,10 @@ const flushThreshold = Number(thresholdLiteral.replaceAll('_', ''));
 assert.ok(flushIntervalMs > 0 && flushIntervalMs % 60_000 === 0, 'budget model assumes whole-minute flush intervals');
 assert.ok(flushThreshold > 0);
 const flushMinutes = flushIntervalMs / 60_000;
-assert.ok(budgetDoc.includes('默认刷新间隔为 ' + String.fromCharCode(96) + flushIntervalMs / 1_000 + ' 秒' + String.fromCharCode(96)), 'budget must state the actual default flush interval');
-assert.ok(budgetDoc.includes(String.fromCharCode(96) + flushThreshold + String.fromCharCode(96) + ' 个事件'), 'budget must state the actual event threshold');
+const markdownTick = String.fromCharCode(96);
+const expectedIntervalLabel = '默认刷新间隔为 ' + markdownTick + flushIntervalMs / 1_000 + ' 秒' + markdownTick;
+assert.ok(budgetDoc.includes(expectedIntervalLabel), 'budget must state the actual default flush interval');
+assert.ok(budgetDoc.includes(markdownTick + flushThreshold + markdownTick + ' 个事件'), 'budget must state the actual event threshold');
 assert.match(budgetDoc, /定时器.*不能保证|不能保证.*定时器/, 'budget must state detached timer durability limits');
 for (const scenario of [
   { label: '5 个隔离区各活跃 8 小时', isolates: 5, hours: 8, kinds: 2, modelRows: 6 },
