@@ -106,8 +106,9 @@ export function isWildcardNode(node: { models: Record<string, string> }): boolea
   return Object.keys(node.models).length === 0;
 }
 
-/** Resolve a logical alias ONLY through an explicit, distinct physical model mapping.
- * Wildcards, missing mappings, and identity mappings must never reach a Provider.
+/** Resolve a logical model only through its configured physical model ID.
+ * Explicit identity mappings are valid: a provider may use the same name as
+ * the public alias. Only absent or invalid mappings fail closed.
  */
 export function resolvePhysicalModel(
   node: { models: Record<string, string> },
@@ -117,12 +118,9 @@ export function resolvePhysicalModel(
   if (!Object.hasOwn(node.models, logicalModel)) return null;
   const physical = node.models[logicalModel];
   if (typeof physical !== 'string' || !physical.trim()) return null;
-  const resolved = physical.trim();
-  const normalized = resolved.toLowerCase();
-  // Protect ALL frontend aliases, not only the alias currently requested.
-  if (Object.keys(node.models).some((name) => name.trim().toLowerCase() === normalized)) return null;
-  if (knownModels && [...knownModels].some((name) => name.trim().toLowerCase() === normalized)) return null;
-  return resolved;
+  // The operator owns the mapping; an explicit identical target is not an
+  // implicit alias leak. No model-name heuristics or capability assumptions.
+  return physical.trim();
 }
 
 /** Logical catalog membership only; dispatch must use resolvePhysicalModel. */
