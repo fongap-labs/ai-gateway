@@ -243,10 +243,7 @@ const failedDb = {
     }));
   },
 };
-await assert.rejects(
-  bufferPersist({ TOKEN_STATS_DB: failedDb }, 'delivered', usageEvent),
-  /D1 batch returned an unsuccessful statement/,
-);
+await assert.rejects(bufferPersist({ TOKEN_STATS_DB: failedDb }, 'delivered', usageEvent), /D1 batch returned an unsuccessful statement/);
 assert.equal(snapshotUsageBuffer().batchAttempts, 1);
 assert.equal(snapshotUsageBuffer().batchSuccesses, 0);
 assert.equal(snapshotUsageBuffer().batchFailures, 1);
