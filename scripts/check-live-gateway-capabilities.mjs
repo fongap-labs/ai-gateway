@@ -34,12 +34,29 @@ if (options['run-image'] && !options['image-model']) throw new Error('--run-imag
 if (options['expect-dispatches'] && !options['failover-model']) throw new Error('--expect-dispatches requires --failover-model.');
 
 const visionColors = [
-  { name: 'red', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAApUlEQVR42u3dMQ0AIAwAQUqQgA7860AHHooCdgL3a7dLOzcys+hcRQAIECBAgAC9WjsN1hhfQfQ5bZATAwQIECBAgAQIECBAgAABAiRAgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIkAABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABAiRAgAABurHwV8MGAQIECBAgQJ+2Ad+sCbu++cWOAAAAAElFTkSuQmCC' },
-  { name: 'blue', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfEygiNkMEdzMEfIDjgBfU7eb+neQU1k5qG6EwEgQIAAAQL010Y1mPdqBfE+lw1yYoAAAQIECJAAAQIECBAgQIAECBAgQIAAAQIESIAAAQIECBAgQAIECBAgQIAAARIgQIAAAQIECBAgAQIECBAgQIAACRAgQIAAAQIESIAAAQIECBAgQIAECBAgQDsW/mrYIECAAAECBKhpHwU7CbtgbwuDAAAAAElFTkSuQmCC' },
-  { name: 'green', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAp0lEQVR42u3dsRGAMAhAUfEyitukclIrt8kuOAF9Tt5v6d5BTWTmoboTASBAgAABAvTXRjW43rsVxJqPDXJigAABAgQIkAABAgQIECBAgAQIECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIECABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAgAQIECBAOxb+atggQIAAAQIEqGkfw4wJu9HnYwMAAAAASUVORK5CYII=' },
-  { name: 'yellow', base64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfHiCJnA/UdyAkdIgRPQ5+T9lu4d1ERmHqo7EQACBAgQIEB/bVSD9cxWENf92iAnBggQIECAAAkQIECAAAECBEiAAAECBAgQIECABAgQIECAAAECJECAAAECBAgQIECAAAESIECAAAECBAiQAAECBAgQIECAAAECBEiAAAECtGPhr4YNAgQIECBAgJr2AXprCbsGVzFtAAAAAElFTkSuQmCC' },
+  {
+    name: 'red',
+    base64:
+      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAApUlEQVR42u3dMQ0AIAwAQUqQgA7860AHHooCdgL3a7dLOzcys+hcRQAIECBAgAC9WjsN1hhfQfQ5bZATAwQIECBAgAQIECBAgAABAiRAgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIkAABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABAiRAgAABurHwV8MGAQIECBAgQJ+2Ad+sCbu++cWOAAAAAElFTkSuQmCC',
+  },
+  {
+    name: 'blue',
+    base64:
+      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfEygiNkMEdzMEfIDjgBfU7eb+neQU1k5qG6EwEgQIAAAQL010Y1mPdqBfE+lw1yYoAAAQIECJAAAQIECBAgQIAECBAgQIAAAQIESIAAAQIECBAgQAIECBAgQIAAARIgQIAAAQIECBAgAQIECBAgQIAACRAgQIAAAQIESIAAAQIECBAgQIAECBAgQDsW/mrYIECAAAECBKhpHwU7CbtgbwuDAAAAAElFTkSuQmCC',
+  },
+  {
+    name: 'green',
+    base64:
+      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAp0lEQVR42u3dsRGAMAhAUfEyitukclIrt8kuOAF9Tt5v6d5BTWTmoboTASBAgAABAvTXRjW43rsVxJqPDXJigAABAgQIkAABAgQIECBAgAQIECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIECABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAgAQIECBAOxb+atggQIAAAQIEqGkfw4wJu9HnYwMAAAAASUVORK5CYII=',
+  },
+  {
+    name: 'yellow',
+    base64:
+      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfHiCJnA/UdyAkdIgRPQ5+T9lu4d1ERmHqo7EQACBAgQIEB/bVSD9cxWENf92iAnBggQIECAAAkQIECAAAECBEiAAAECBAgQIECABAgQIECAAAECJECAAAECBAgQIECAAAESIECAAAECBAiQAAECBAgQIECAAAECBEiAAAECtGPhr4YNAgQIECBAgJr2AXprCbsGVzFtAAAAAElFTkSuQmCC',
+  },
 ];
-const visionQuestion = 'Identify the color of the large square in the attached image. Reply with exactly one lowercase English word: red, blue, green, or yellow.';
+const visionQuestion =
+  'Identify the color of the large square in the attached image. Reply with exactly one lowercase English word: red, blue, green, or yellow.';
 function nextVisionChallenge() {
   const selected = visionColors[randomInt(visionColors.length)];
   return { color: selected.name, image: { type: 'image_url', image_url: { url: `data:image/png;base64,${selected.base64}` } } };
@@ -96,7 +113,10 @@ try {
   if (options['vision-model']) {
     const visionKey = keyFor(visionGroup);
     const challenge = nextVisionChallenge();
-    await checkedRequest('omni-direct', visionKey, '/v1/chat/completions',
+    await checkedRequest(
+      'omni-direct',
+      visionKey,
+      '/v1/chat/completions',
       { model: options['vision-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
       (reply) => {
         if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Direct vision did not identify the image color.');
@@ -106,7 +126,10 @@ try {
   if (options['delegate-model']) {
     const visionKey = keyFor(visionGroup);
     const challenge = nextVisionChallenge();
-    await checkedRequest('perception-delegate', visionKey, '/v1/chat/completions',
+    await checkedRequest(
+      'perception-delegate',
+      visionKey,
+      '/v1/chat/completions',
       { model: options['delegate-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
       (reply) => {
         if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Vision delegate did not identify the image color.');
@@ -116,11 +139,23 @@ try {
   if (options['responses-delegate-model']) {
     const visionKey = keyFor(visionGroup);
     const challenge = nextVisionChallenge();
-    await checkedRequest('perception-responses-delegate', visionKey, '/v1/responses',
-      { model: options['responses-delegate-model'], input: [{ role: 'user', content: [
-        { type: 'input_text', text: visionQuestion },
-        { type: 'input_image', image_url: challenge.image.image_url.url },
-      ] }], stream: false },
+    await checkedRequest(
+      'perception-responses-delegate',
+      visionKey,
+      '/v1/responses',
+      {
+        model: options['responses-delegate-model'],
+        input: [
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: visionQuestion },
+              { type: 'input_image', image_url: challenge.image.image_url.url },
+            ],
+          },
+        ],
+        stream: false,
+      },
       (reply) => {
         if (!hasResponsesVisionColor(reply, challenge.color)) throw new Error('Responses delegate did not identify the image color.');
       },
