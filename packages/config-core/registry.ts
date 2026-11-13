@@ -109,18 +109,25 @@ export function isWildcardNode(node: { models: Record<string, string> }): boolea
 /** Resolve a logical alias ONLY through an explicit, distinct physical model mapping.
  * Wildcards, missing mappings, and identity mappings must never reach a Provider.
  */
-export function resolvePhysicalModel(node: { models: Record<string, string> }, logicalModel: string): string | null {
+export function resolvePhysicalModel(
+  node: { models: Record<string, string> },
+  logicalModel: string,
+  knownModels?: ReadonlySet<string> | null,
+): string | null {
   if (!Object.hasOwn(node.models, logicalModel)) return null;
   const physical = node.models[logicalModel];
   if (typeof physical !== 'string' || !physical.trim()) return null;
   const resolved = physical.trim();
-  if (resolved.toLowerCase() === logicalModel.trim().toLowerCase()) return null;
+  const normalized = resolved.toLowerCase();
+  // Protect ALL frontend aliases, not only the alias currently requested.
+  if (Object.keys(node.models).some((name) => name.trim().toLowerCase() === normalized)) return null;
+  if (knownModels && [...knownModels].some((name) => name.trim().toLowerCase() === normalized)) return null;
   return resolved;
 }
 
 /** A node is dispatchable only when an explicit physical model is available. */
-export function servesModel(node: { models: Record<string, string> }, model: string, _knownModels?: ReadonlySet<string> | null): boolean {
-  return resolvePhysicalModel(node, model) !== null;
+export function servesModel(node: { models: Record<string, string> }, model: string, knownModels?: ReadonlySet<string> | null): boolean {
+  return resolvePhysicalModel(node, model, knownModels) !== null;
 }
 
 // One spelling per logical model, matched case-insensitively. The MODELS_CONFIG
