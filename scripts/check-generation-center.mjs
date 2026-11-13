@@ -87,6 +87,17 @@ try {
   const invalidBody = await handleGenerationCenterRequest(request({ ...validBody, n: 2 }), env);
   assert.equal(invalidBody.status, 400);
   assert.equal(requests, 0);
+  // Generation must enforce the same explicit mapping rule as Inference.
+  for (const models of [{}, { 'image-test': 'image-test' }, { 'image-test': 'IMAGE-TEST' }]) {
+    const invalidMapEnv = {
+      ...env,
+      AIG_MODELS_CONFIG: JSON.stringify({ 'image-test': { policy: 'normal' } }),
+      AIG_TIER2_NODES_01: JSON.stringify([{ ...node, models }]),
+    };
+    const refused = await handleGenerationCenterRequest(request(), invalidMapEnv);
+    assert.equal(refused.status, 404, 'unmapped generation alias must fail closed');
+    assert.equal(requests, 0, 'logical image alias must never reach Provider');
+  }
   const forged = request(validBody, {
     authorization: 'Bearer attacker-token',
     cookie: 'token=attacker',
