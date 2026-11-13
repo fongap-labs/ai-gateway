@@ -75,8 +75,11 @@ export function replyToAnthropicObject(reply: IrReply): Record<string, unknown> 
     if (part.type === 'text') {
       if (part.text) content.push({ type: 'text', text: part.text });
     } else if (part.type === 'thinking') {
-      if (part.sealed && part.data) content.push({ type: 'redacted_thinking', data: part.data });
-      else if (part.text) content.push({ type: 'thinking', thinking: part.text, ...(part.signature ? { signature: part.signature } : {}) });
+      // A Responses ciphertext is not an Anthropic signed thinking block.
+      // Unsigned reasoning summaries also cannot be safely replayed by clients.
+      if (!part.sealed && part.text && part.signature) {
+        content.push({ type: 'thinking', thinking: part.text, signature: part.signature });
+      }
     } else if (part.type === 'tool_call') {
       let input: unknown = {};
       try {
