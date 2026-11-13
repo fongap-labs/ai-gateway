@@ -34,6 +34,14 @@ for (const [from, body] of [
     assert.ok(Array.isArray(converted.diagnostics));
   }
 }
+// A Code client without an explicit ceiling must not be capped to 1024 when
+// translated to Responses; explicit client ceilings must survive unchanged.
+const unboundedResponses = ownedConvert('openai_chat', 'openai_responses', chat);
+assert.equal(unboundedResponses.body.max_output_tokens, undefined);
+assert.equal(unboundedResponses.diagnostics.some((d) => d.feature === 'max_tokens' && d.action === 'defaulted'), false);
+const boundedResponses = ownedConvert('openai_chat', 'openai_responses', { ...chat, max_tokens: 8192 });
+assert.equal(boundedResponses.body.max_output_tokens, 8192);
+
 const preferred = ownedConvert('openai_chat', 'anthropic', chat, { isNonstreamPreferred: true });
 assert.notEqual(preferred.body.stream, true, 'explicit nonstream preference must be honored');
 assert.throws(() => ownedConvert('openai_chat', 'openai_chat', chat), /conversion_not_supported/);
