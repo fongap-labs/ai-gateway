@@ -4,6 +4,7 @@
 //
 // Real public Gateway smoke checks. No Provider simulation, no deployment,
 // and no stored credentials. Only --run-image authorizes a billable image call.
+import { hasGeneratedImageDataUri, hasResponsesOutputText } from './live-gateway-assertions.mjs';
 
 const options = {};
 for (let index = 2; index < process.argv.length; index++) {
@@ -19,7 +20,7 @@ for (let index = 2; index < process.argv.length; index++) {
 }
 if (!options.url || !options['chat-model']) {
   throw new Error(
-    'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--delegate-model Code-Max] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
+    'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--delegate-model Code-Max] [--responses-delegate-model Code-Max] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
   );
 }
 const base = new URL(options.url);
@@ -106,6 +107,30 @@ try {
       },
     );
   }
+  if (options['responses-delegate-model']) {
+    const visionKey = keyFor(visionGroup);
+    await checkedRequest(
+      'perception-responses-delegate',
+      visionKey,
+      '/v1/responses',
+      {
+        model: options['responses-delegate-model'],
+        input: [
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: 'Describe the attached image.' },
+              { type: 'input_image', image_url: image.image_url.url },
+            ],
+          },
+        ],
+        stream: false,
+      },
+      (reply) => {
+        if (!hasResponsesOutputText(reply)) throw new Error('Responses delegate did not return native output_text content.');
+      },
+    );
+  }
   if (options['failover-model']) {
     const summary = await checkedRequest(
       'failover',
@@ -140,8 +165,8 @@ try {
       toolBody,
       (reply, response) => {
         if (response.headers.get('x-gateway-image-tool') !== 'true') throw new Error('Chat request never entered image tool.');
-        if (!String(reply?.choices?.[0]?.message?.content || '').startsWith('![Generated image](data:image/png;base64,')) {
-          throw new Error('Chat image tool returned no image data.');
+        if (!hasGeneratedImageDataUri(reply)) {
+          throw new Error('Chat image tool did not return a supported PNG, JPEG, WebP or GIF data URI.');
         }
       },
       150_000,
@@ -156,8 +181,8 @@ try {
           if (response.headers.get('x-gateway-image-tool') !== 'true') {
             throw new Error('Auto tool selection never executed Generation Center; verify the staging model supports function tools.');
           }
-          if (!String(reply?.choices?.[0]?.message?.content || '').startsWith('![Generated image](data:image/')) {
-            throw new Error('Automatic Chat image tool returned no image data.');
+          if (!hasGeneratedImageDataUri(reply)) {
+            throw new Error('Automatic Chat image tool returned no supported image data URI.');
           }
         },
         150_000,
