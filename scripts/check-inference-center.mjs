@@ -146,7 +146,7 @@ try {
   // Legacy/v0.1.5 scheduling regression: a failed Provider fetch rotates
   // to another eligible node, bounded by the existing request retry budget.
   // Missing private bindings still fail closed without direct Provider calls.
-  const runCenterGatewayAttempt = async (fetch) => {
+  const runCenterGatewayAttempt = async (fetch, overrides = {}) => {
     const state = {
       attempted: new Set(),
       attempts: [],
@@ -173,6 +173,7 @@ try {
       remainingDispatchableAttempts: 2,
       failoverBudgetMs: 60_000,
       requestStartMs: Date.now(),
+      ...overrides,
     });
     return { result, state };
   };
@@ -217,6 +218,44 @@ try {
   });
   assert.equal(bindingFailure.result.rotate, true, 'legacy network failure rotates without bypassing the private center');
   assert.equal(bindingFailure.state.logicalAttempts, 1);
+
+  // Contract faults occur AFTER the private center dispatched a Provider.
+  // They must fail closed, charge exactly one physical attempt and never
+  // masquerade as pre-dispatch skips (which would undercount paid usage).
+  for (const stream of [false, true]) {
+    let centerCalls = 0;
+    const body = { ...validBody, stream };
+    const { result, state } = await runCenterGatewayAttempt(
+      async (incoming) => {
+        centerCalls++;
+        assert.equal(incoming.headers.get('x-aig-return-stream'), stream ? 'true' : null);
+        assert.equal(incoming.headers.get('x-aig-return-object'), stream ? null : 'true');
+        return new Response('invalid-center-response', {
+          status: 200,
+          headers: { 'x-aig-result': 'dispatched', 'content-type': stream ? 'text/event-stream' : 'application/json' },
+        });
+      },
+      {
+        route: 'anthropic_messages',
+        bodyJson: body,
+        clientWantsStream: stream,
+        conversionContext: {
+          clientRoute: 'anthropic_messages',
+          fallbackProtocol: 'openai',
+          fallbackSurface: 'chat_completions',
+          convertedBody: body,
+          isNonstreamPreferred: false,
+        },
+      },
+    );
+    assert.equal(centerCalls, 1, 'invalid center format must never trigger a second private execution');
+    assert.equal(result.response?.status, 502, 'invalid center response must fail closed');
+    assert.notEqual(result.rotate, true, 'a dispatched center contract fault must not transparently retry');
+    assert.notEqual(result.budgetCharged, false, 'one executed Provider attempt must charge the dispatch budget');
+    assert.equal(state.logicalAttempts, 1, 'center contract faults must charge one logical attempt');
+    assert.equal(state.dispatches, 1, 'center contract faults must charge one physical dispatch');
+    assert.equal(state.attempts.length, 1, 'center contract faults must settle exactly once');
+  }
 
   // A center-owned Gateway must be routable with NO static Provider secrets.
   // A public Gateway can route secretless metadata even when a private binding

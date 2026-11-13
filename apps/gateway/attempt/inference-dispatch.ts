@@ -31,7 +31,7 @@ import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
 import { type InferenceCenter, InferenceCenterUnavailable, invokeInferenceNode } from '../transport/inference-client-request.ts';
 import { invokePerceptionNode, PerceptionCenterUnavailable } from '../transport/perception-client-request.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
-import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd } from './outcome.ts';
+import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd, stopAfterDispatchedCenterFault } from './outcome.ts';
 import { handleSuccess } from './success.ts';
 
 function inputSurfaceForClientRoute(route: string): ExecutionInputSurface | null {
@@ -68,6 +68,24 @@ function stopForCenter(c: AttemptContext, status: number, code: string, center: 
       center === 'perception' ? code.replace('inference', 'perception') : code,
     ),
   };
+}
+
+function stopForDispatchedCenterContract(c: AttemptContext, code: string, center: InferenceCenter): AttemptOutcome {
+  const name = center === 'perception' ? 'Private perception center' : 'Private inference center';
+  return stopAfterDispatchedCenterFault(
+    c,
+    gatewayError(
+      c.request,
+      c.env,
+      c.route,
+      502,
+      `${name} returned an invalid response contract after upstream dispatch.`,
+      c.requestId,
+      undefined,
+      undefined,
+      center === 'perception' ? code.replace('inference', 'perception') : code,
+    ),
+  );
 }
 
 export async function dispatchInferenceAttempt(
@@ -285,8 +303,7 @@ export async function dispatchInferenceAttempt(
     // A v4 center MUST NOT return unframed SSE. Reject before any client
     // response byte; no fallback to the direct Provider path.
     detach();
-    recordUndeliveredUpstreamAttempt(c, node);
-    return stopForCenter(c, 502, 'gateway_inference_stream_format_invalid', center);
+    return stopForDispatchedCenterContract(c, 'gateway_inference_stream_format_invalid', center);
   }
   if (node.tier === 'tier-1') {
     const signal = quotaFromCenter(upstream.headers);
@@ -333,8 +350,7 @@ export async function dispatchInferenceAttempt(
     // Neither v3 nor v6 may fall back to decoding Provider SSE/JSON in Gateway.
     // Every successful non-stream Matrix reply must be tagged by Inference.
     detach();
-    recordUndeliveredUpstreamAttempt(c, node);
-    return stopForCenter(c, 502, 'gateway_inference_object_format_invalid', center);
+    return stopForDispatchedCenterContract(c, 'gateway_inference_object_format_invalid', center);
   }
 
   const physicalModel = node.models[effectiveModel] || effectiveModel;
