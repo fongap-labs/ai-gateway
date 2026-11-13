@@ -184,17 +184,20 @@ export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): 
   return JSON.stringify([node.id, upstreamModel]);
 }
 
+/** A real failed Key cannot be tried again under another logical alias. */
+function keyFailureDomainKey(node: RuntimeNode): string {
+  return JSON.stringify([node.id, '*failed-key*']);
+}
+
 /**
- * Seed a new logical-model pass with nodes whose real account/model domain has
- * already failed earlier in this request. A node mapped to a DIFFERENT real
- * upstream model stays eligible, even when it is the same configured account.
- * A different node/account mapped to the same model also stays eligible.
+ * Seed a new model pass with both spent Key+model routes and physically failed
+ * Keys. A distinct Key remains eligible even if it targets the same model.
  */
 export function failedDomainNodeIds(nodes: ReadonlyArray<RuntimeNode>, logicalModel: string, failedDomains: ReadonlySet<string>): Set<string> {
   const attempted = new Set<string>();
   if (failedDomains.size === 0) return attempted;
   for (const node of nodes) {
-    if (failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
+    if (failedDomains.has(keyFailureDomainKey(node)) || failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
       attempted.add(node.id);
     }
   }
@@ -207,9 +210,20 @@ export function rememberFailedDomains(
   nodesById: ReadonlyMap<string, RuntimeNode>,
   attemptedNodeIds: ReadonlySet<string>,
   logicalModel: string,
+  attempts: ReadonlyArray<Record<string, unknown>> = [],
 ): void {
   for (const nodeId of attemptedNodeIds) {
     const node = nodesById.get(nodeId);
     if (node) failedDomains.add(modelFailureDomainKey(node, logicalModel));
+  }
+  // An account-wide or transient execution failure exhausts the physical
+  // Key for this request, regardless of which logical model is tried next.
+  // Model-missing and endpoint-specific refusals remain scoped to the failing
+  // physical model: another model on that Key may still be valid.
+  const keyFailures = new Set(['rate_limit', 'auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
+  for (const attempt of attempts) {
+    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string' || !keyFailures.has(String(attempt.kind))) continue;
+    const node = nodesById.get(attempt.node_id);
+    if (node) failedDomains.add(keyFailureDomainKey(node));
   }
 }

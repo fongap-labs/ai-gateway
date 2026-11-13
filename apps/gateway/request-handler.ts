@@ -289,6 +289,13 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     ? evaluateRouteFeasibility({ route, requestedModel, requestDescriptor: reqDescriptor, tiers, knownModels, env })
     : initialFeasibility;
   const requiresTools = Array.isArray(bodyJson.tools) && bodyJson.tools.length > 0;
+  const reasoning = bodyJson.reasoning;
+  const thinking = bodyJson.thinking;
+  const reasoningEffort = bodyJson.reasoning_effort;
+  const requiresReasoning =
+    (typeof reasoningEffort === 'string' && reasoningEffort.toLowerCase() !== 'none') ||
+    (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning) && (reasoning as Record<string, unknown>).effort !== 'none') ||
+    (thinking !== null && typeof thinking === 'object' && !Array.isArray(thinking) && (thinking as Record<string, unknown>).type === 'enabled');
   const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
@@ -303,6 +310,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
         const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
         if (imageInputRequired && capabilities.vision !== true) return false;
         if (requiresTools && declared?.tools === false) return false;
+        if (requiresReasoning && declared?.reasoning === false) return false;
         if (clientWantsStream && declared?.stream === false) return false;
         return true;
       }),
@@ -574,7 +582,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
 
       const nativeResult = await runTierLoop(effectiveLoopCtx, effectiveReqDescriptor, null);
       if (nativeResult) return deliver(nativeResult, effectiveLoopCtx);
-      rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
+      rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel, state.attempts);
 
       if (state.logicalAttempts >= requestPolicy.maxAttempts) break modelRoundsLoop;
       if (state.logicalAttempts >= passAttemptCeiling) continue;
@@ -593,7 +601,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
         runTierLoop,
       });
       if (fbResult) return deliver(fbResult, fallbackLoopCtx);
-      rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel);
+      rememberFailedDomains(failedDomains, nodesById, state.attempted, effectiveModel, state.attempts);
     }
   }
 
