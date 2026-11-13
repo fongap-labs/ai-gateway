@@ -234,9 +234,14 @@ function lookupBinding(kv: AffinityKV, key: string): Promise<string | null | und
 // past its freshness window; the refresh then runs in the background.
 export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?: ExecutionContextLike): Promise<string | null | undefined> {
   if (!sessionId) return null;
+  const limits = getLimits(env);
+  // When affinity writes are explicitly disabled (including the Free cost-guard
+  // default), there is no durable session binding to maintain. Do not spend a
+  // SHA-256 digest and a KV read on every cold session for a soft score bias.
+  // Return "unknown" so the caller also skips escape-window bookkeeping.
+  if (!limits.tier1AffinityWrite) return undefined;
   const kv = kvOf(env);
   if (!kv) return null;
-  const limits = getLimits(env);
   const key = await affinityKey(sessionId);
   const cached = cache.get(key);
   if (cached !== undefined) {
@@ -289,10 +294,8 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?
 // migration. Repeated successes on the same account perform no KV write.
 export function writeTier1Affinity(env: GatewayEnv, ctx: ExecutionContextLike, sessionId: string, accountId: string): boolean {
   // AIG_COST_GUARDS defaults KV affinity writes OFF (AIG_AFFINITY_WRITE; an
-  // explicit set wins on both sides): it is a soft score bias whose write
-  // volume competes with the Free plan's 1,000 KV writes/day. Reads follow
-  // their own path — with no writes, lookups miss and affinity degrades to
-  // the plain score bias without stale-binding risk.
+  // explicit set wins on both sides). The read path is disabled with writes,
+  // avoiding wasted KV reads when affinity is intentionally off.
   if (!getLimits(env).tier1AffinityWrite) return false;
   const kv = kvOf(env);
   if (!sessionId || !accountId || !kv) return false;
