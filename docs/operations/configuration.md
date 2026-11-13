@@ -81,6 +81,7 @@ surfaces
 - 除非显式启用了不安全的 HTTP，否则 `base_url` 必须是绝对的 HTTPS 地址。
 - 若提供了 `priority`，它必须是非负整数。Tier 2 可以使用它；Tier 1 不会将静态节点 priority 用作 P2C 评分。
 - `models` 是一个从逻辑模型到上游模型的映射对象。执行时必须存在显式且非空的物理模型映射；同名映射合法。空映射 `{}` 可以解析，但不会产生可派发的物理模型。
+- 跨协议转换到 Responses 时，未给出最大输出 Token 数的请求保持未设置，让真实 Provider 自行处理；显式设置的输出上限不丢失。
 - `AIG_USAGE_INCLUDE_MODE` 未配置时不会给上游流式请求追加 `stream_options.include_usage`。仅显式设置 `on` 或 `auto` 才允许注入（`auto` 继续尊重 Provider 默认与排除列表）。这避免免费兼容节点因不支持附加参数而返回 422。
 - `protocol`、`limits`、凭据字段以及其他未知字段均会被拒绝。`surfaces` 是可选的节点级 API 接口列表，用于约束或显式启用物理端点，不能据此推断模型工具、推理等能力。
 
