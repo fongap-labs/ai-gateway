@@ -301,6 +301,12 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
     const statements = buildFlushStatements(database, batch.entries.values());
     writeStats.batchAttempts++;
     const results = await database.batch(statements);
+    // D1Result.success is part of the batch contract. An adapter may resolve
+    // with an explicit unsuccessful statement instead of throwing; never count
+    // such a batch as committed or discard its pending increments.
+    if (Array.isArray(results) && results.some((result) => result?.success === false)) {
+      throw new Error('D1 batch returned an unsuccessful statement');
+    }
     writeStats.batchSuccesses++;
     writeStats.committedStatements += statements.length;
     let reportedStatements = 0;
