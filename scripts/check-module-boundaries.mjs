@@ -967,8 +967,11 @@ assert.doesNotMatch(
 
 const inferenceExecutor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const centerDispatch = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
-assert.match(inferenceExecutor, /convertMatrixRequest\(from, to, clientBody/, 'Inference must execute the physical protocol request conversion');
-assert.match(inferenceExecutor, /highRiskSemanticLoss\(converted\)/, 'Center must recheck high-risk fidelity');
+const requestAdapter = readFileSync(join(root, 'packages/conversion-core/matrix/request-protocol-adapter.ts'), 'utf8');
+assert.match(inferenceExecutor, /prepareProtocolRequest\(clientBody/, 'Inference must call the private protocol adapter before Provider dispatch');
+assert.match(requestAdapter, /convertMatrixRequest\(from, to, body/, 'Protocol adapter must execute physical request conversion');
+assert.match(requestAdapter, /highRiskSemanticLoss\(converted\)/, 'Protocol adapter must reject high-risk semantic loss');
+assert.doesNotMatch(requestAdapter, /from ['"][^'"]*\/apps\/gateway\//, 'Protocol adapter must not depend on Gateway');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
 const responseCenter = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 const responseGateway = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
