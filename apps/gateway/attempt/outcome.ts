@@ -81,6 +81,19 @@ export function rotateWithNeutralEnd(
   return isPreDispatch ? { rotate: true, budgetCharged: false, kind: reason } : { rotate: true, kind: reason };
 }
 
+/**
+ * A private center may return HTTP 200 with an invalid internal response
+ * envelope AFTER dispatching the physical Provider request. This is a center
+ * contract fault, not a bad key or a reason to retry the upstream. Settle the
+ * undelivered usage and charge one neutral physical dispatch (including the
+ * logical attempt) without cooling down the Provider.
+ */
+export function stopAfterDispatchedCenterFault(c: AttemptContext, response: Response): AttemptOutcome {
+  recordUndeliveredUpstreamAttempt(c, c.node);
+  rotateWithNeutralEnd(c.state, c.node, KIND.UNKNOWN, c);
+  return { response, kind: KIND.UNKNOWN };
+}
+
 export function noteFailure(state: LoopState, kind: FailureKind): void {
   state.failureKinds[kind] = (state.failureKinds[kind] || 0) + 1;
 }
