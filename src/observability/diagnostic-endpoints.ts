@@ -321,7 +321,11 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_usage_d1_statements_committed_total', usageBuffer.committedStatements);
   emit('gateway_usage_d1_rows_written_reported_total', 'counter', 'Rows written as explicitly reported by D1 batch metadata.');
   counter('gateway_usage_d1_rows_written_reported_total', usageBuffer.reportedRowsWritten);
-  emit('gateway_usage_d1_statements_missing_row_metadata_total', 'counter', 'Committed statements without D1 rows_written metadata; actual rows are unknown.');
+  emit(
+    'gateway_usage_d1_statements_missing_row_metadata_total',
+    'counter',
+    'Committed statements without D1 rows_written metadata; actual rows are unknown.',
+  );
   counter('gateway_usage_d1_statements_missing_row_metadata_total', usageBuffer.statementsWithoutRowMetadata);
   emit('gateway_usage_d1_buffer_pending_events', 'gauge', 'Usage events pending D1 flush in this isolate; lost if the isolate is recycled.');
   counter('gateway_usage_d1_buffer_pending_events', usageBuffer.pendingEvents);
