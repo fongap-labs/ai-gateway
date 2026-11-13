@@ -12,7 +12,7 @@ import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailov
 import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetKeyGroupForTests, credentialPeers, credentialSlotId, noteKeyGroup429 } from '../src/reliability/shared-credential-group.ts';
-import { __resetTier1StateForTests, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
+import { __resetTier1StateForTests, getTier1Account, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
 // A physical-model rejection is local to its route, while malformed
 // client payloads must not trigger speculative cross-Provider replay.
