@@ -60,13 +60,10 @@ const otherKey = { ...node, id: 'another-physical-key' };
 const skippedPeer = { ...node, id: 'skipped-before-dispatch' };
 const domains = new Set();
 const keyNodes = new Map([node, otherKey, skippedPeer].map((entry) => [entry.id, entry]));
-rememberFailedDomains(
-  domains,
-  keyNodes,
-  new Set([node.id, skippedPeer.id]),
-  source,
-  [{ node_id: node.id, dispatched: true }, { node_id: skippedPeer.id, dispatched: false }],
-);
+rememberFailedDomains(domains, keyNodes, new Set([node.id, skippedPeer.id]), source, [
+  { node_id: node.id, dispatched: true },
+  { node_id: skippedPeer.id, dispatched: false },
+]);
 const forbidden = failedDomainNodeIds([node, otherKey, skippedPeer], effective, domains);
 assert.equal(forbidden.has(node.id), true, 'failed Key must be excluded for a different physical model');
 assert.equal(forbidden.has(otherKey.id), false, 'fresh Key must remain eligible');
