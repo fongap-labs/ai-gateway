@@ -7,6 +7,7 @@
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
+import { credentialPeers, credentialSlotId, noteKeyGroup429 } from '../../../src/reliability/shared-credential-group.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
 import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
 import { trimDiagnostic } from '../../../src/protocol/http.ts';
@@ -24,8 +25,11 @@ import { classifyHedgeRaceLoss, KIND } from '../../../src/reliability/classify.t
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordModelMissing, recordNeutralEnd } from '../../../src/reliability/node-state.ts';
 import { recordTier1ProviderModelRateLimit } from '../../../src/reliability/tier1-heat.ts';
 import {
+  adoptTier1Cooldown,
   applyTier1Outcome,
   classifyTier1Failure,
+  getTier1Account,
+  getTier1Model,
   decideTier1RateLimitScope,
   recordTier1Oversize,
   releaseTier1Slot,
@@ -197,7 +201,7 @@ export function recordOutcome(
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
         // A 429 is blamed on the model that got it; the whole key is blamed only
         // when a second model on it is limited too. Each scope has its own ladder.
-        const observedScope = decideTier1RateLimitScope(node.id, effectiveModel);
+        const observedScope = node.keyGroup ? noteKeyGroup429(node, upstreamModel) : decideTier1RateLimitScope(node.id, effectiveModel);
         // A long-lived allowance (quota wording, or a multi-minute wait hint) is
         // account-wide by nature: cool the whole key on the FIRST such 429 instead
         // of letting every model climb its own ladder against one shared pool.
@@ -226,14 +230,14 @@ export function recordOutcome(
 
         tier1RetryAfterMs = nextAdaptive429CooldownMs(
           node.provider,
-          node.id,
+          credentialSlotId(node),
           Math.min(classification.retryAfterMs || 0, TIER1_QUOTA_COOLDOWN_MAX_MS),
           now,
           ladderModel,
           ladderSteps,
           startStage,
         );
-        const adaptive429 = snapshotAdaptive429State(node.provider, node.id, now, ladderModel);
+        const adaptive429 = snapshotAdaptive429State(node.provider, credentialSlotId(node), now, ladderModel);
         tier1RateLimitStage = adaptive429.stage;
         tier1RateLimitCooldownMs = adaptive429.cooldown_remaining_ms;
       }
@@ -245,6 +249,33 @@ export function recordOutcome(
       // One timestamp for both, so a cooldown exactly at the sharing threshold is shared.
       const outcomeAt = Date.now();
       applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
+      // Share the relevant cooldown across node IDs only when the operator
+      // explicitly declares they use the SAME upstream credential.
+      if (node.keyGroup) {
+        const peers = credentialPeers(state.nodes ?? [], node);
+        if (t1Class.scope === 'account' && (classification.kind === KIND.RATE_LIMIT || (classification.kind === KIND.AUTH && !classification.forbidden))) {
+          const owner = getTier1Account(node.id);
+          for (const peer of peers) {
+            adoptTier1Cooldown({
+              node: peer.id,
+              until: owner.accountCooldownUntil,
+              reason: owner.accountCooldownReason ?? classification.kind,
+              ...(owner.accountCooldownIsQuota ? { quota: true } : {}),
+            }, outcomeAt);
+          }
+        } else if (classification.kind === KIND.RATE_LIMIT && t1Class.scope === 'model') {
+          const modelUntil = getTier1Model(node.id, effectiveModel).cooldownUntil;
+          if (modelUntil > outcomeAt) {
+            for (const peer of peers) {
+              for (const [alias, physical] of Object.entries(peer.models)) {
+                if (physical === upstreamModel) {
+                  adoptTier1Cooldown({ node: peer.id, model: alias, until: modelUntil, reason: classification.kind }, outcomeAt);
+                }
+              }
+            }
+          }
+        }
+      }
       shareLongTier1Cooldowns(c.env, c.ctx, node.id, outcomeAt);
       bumpNodeCounters(node.id, { requests: 1, failures: 1 });
     }

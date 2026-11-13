@@ -7,6 +7,7 @@
 // At most two rounds run, bounded by the original request-wide attempt budget.
 
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
+import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
@@ -182,12 +183,12 @@ export function modelFallbackCandidates(
  */
 export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): string {
   // An unmapped logical alias is not a physical model failure domain.
-  return JSON.stringify([node.id, resolvePhysicalModel(node, logicalModel)]);
+  return JSON.stringify([credentialSlotId(node), resolvePhysicalModel(node, logicalModel)]);
 }
 
 /** A real failed Key cannot be tried again under another logical alias. */
 function keyFailureDomainKey(node: RuntimeNode): string {
-  return JSON.stringify([node.id, '*failed-key*']);
+  return JSON.stringify([credentialSlotId(node), '*failed-key*']);
 }
 
 /**
@@ -221,10 +222,13 @@ export function rememberFailedDomains(
   // Key for this request, regardless of which logical model is tried next.
   // Model-missing and endpoint-specific refusals remain scoped to the failing
   // physical model: another model on that Key may still be valid.
-  const keyFailures = new Set(['rate_limit', 'auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
+  const keyFailures = new Set(['auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
   for (const attempt of attempts) {
-    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string' || !keyFailures.has(String(attempt.kind))) continue;
+    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
-    if (node) failedDomains.add(keyFailureDomainKey(node));
+    // A model-scoped 429 must not exclude unrelated physical models on the Key.
+    if (node && (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account'))) {
+      failedDomains.add(keyFailureDomainKey(node));
+    }
   }
 }
