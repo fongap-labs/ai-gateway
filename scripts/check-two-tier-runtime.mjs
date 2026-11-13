@@ -469,9 +469,10 @@ largeBodyReservation();
 assert.ok(admitRequestBody(20 * 1024 * 1024, 20 * 1024 * 1024), 'releasing byte budget restores capacity');
 __resetBodyBudgetForTests();
 
-async function verifyFreeKeyRotation(failureStatus, errorCode = '') {
-  const first = `tier1-rotate-a-${failureStatus}${errorCode ? '-coded' : ''}`;
-  const second = `tier1-rotate-b-${failureStatus}${errorCode ? '-coded' : ''}`;
+async function verifyFreeKeyRotation(failureStatus, errorCode = '', schemaError = false) {
+  const suffix = errorCode ? '-coded' : schemaError ? '-schema' : '';
+  const first = `tier1-rotate-a-${failureStatus}${suffix}`;
+  const second = `tier1-rotate-b-${failureStatus}${suffix}`;
   const dispatches = [];
   const env = {
     AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
@@ -486,13 +487,17 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '') {
         dispatches.push(nodeId);
         if (dispatches.length === 1) {
           return new Response(
-            JSON.stringify({
-              error: {
-                ...(errorCode
-                  ? { code: errorCode }
-                  : { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` }),
-              },
-            }),
+            JSON.stringify(
+              schemaError
+                ? { detail: [{ type: 'extra_forbidden', loc: ['body', 'reasoning_effort'], msg: 'Extra inputs are not permitted' }] }
+                : {
+                    error: {
+                      ...(errorCode
+                        ? { code: errorCode }
+                        : { message: failureStatus === 422 ? 'No endpoints found for model upstream-primary' : `Tier 1 key rejected with ${failureStatus}` }),
+                    },
+                  },
+            ),
             {
               status: failureStatus,
               headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
@@ -528,6 +533,7 @@ await verifyFreeKeyRotation(503);
 await verifyFreeKeyRotation(422);
 await verifyFreeKeyRotation(422, 'unsupported_parameter');
 await verifyFreeKeyRotation(422, 'model_not_found');
+await verifyFreeKeyRotation(422, '', true);
 
 // An attempt budget of eight is a ceiling, not a target. If the only Key
 // returns 503, the gateway must terminate after ONE physical dispatch.
