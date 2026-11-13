@@ -6,8 +6,8 @@
 // A model without explicit fallback does not acquire neighbors by its spelling.
 // At most two rounds run, bounded by the original request-wide attempt budget.
 
-import type { ModelEntry } from '../../../src/config/models.ts';
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
+import type { ModelEntry } from '../../../src/config/models.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
