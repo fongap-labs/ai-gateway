@@ -50,9 +50,7 @@ export function hasResponsesVisionColor(reply, expectedColor) {
         item?.type === 'message' &&
         item.role === 'assistant' &&
         Array.isArray(item.content) &&
-        item.content.some(
-          (part) => part?.type === 'output_text' && matchesExpectedVisionColor(part.text, expectedColor),
-        ),
+        item.content.some((part) => part?.type === 'output_text' && matchesExpectedVisionColor(part.text, expectedColor)),
     )
   );
 }
