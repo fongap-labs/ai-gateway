@@ -5,12 +5,16 @@
 
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { sanitizedInternalErrorForRoute } from '../../src/observability/diagnostic-endpoints.ts';
-import { gatewayStats, isCountedRoute, trackClientResponse } from '../../src/observability/gateway-stats.ts';
+import { gatewayStats, isCountedRoute, startGatewayStats, trackClientResponse } from '../../src/observability/gateway-stats.ts';
+import { startTokenStats } from '../../src/observability/token-usage.ts';
 import { detectRoute, normalizePath } from './policy/router.ts';
 import { handleRequest } from './request-handler.ts';
 
 export default {
   async fetch(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+    const now = Date.now();
+    startGatewayStats(now);
+    startTokenStats(now);
     const pathname = normalizePath(new URL(request.url).pathname);
     const route = detectRoute(request.method.toUpperCase(), pathname);
     const counted = isCountedRoute(request.method.toUpperCase(), pathname);

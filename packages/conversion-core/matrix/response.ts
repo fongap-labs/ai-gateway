@@ -7,7 +7,7 @@
 import { MatrixDiag } from '../diag.ts';
 import { type IrProtocol, type IrReply, isRecord } from '../ir.ts';
 import type { ConversionDiagnostic } from '../result.ts';
-import { ConversionError } from '../validation.ts';
+import { ConversionError, parseToolArguments } from '../validation.ts';
 import { anthropicObjectToIr, anthropicStopFromIr } from './anthropic.ts';
 import { chatObjectToIr, chatStopFromIr, chatToolId } from './chat.ts';
 import { chatUsageFromRaw } from './chat-stream.ts';
@@ -75,16 +75,15 @@ export function replyToAnthropicObject(reply: IrReply): Record<string, unknown> 
     if (part.type === 'text') {
       if (part.text) content.push({ type: 'text', text: part.text });
     } else if (part.type === 'thinking') {
-      if (part.sealed && part.data) content.push({ type: 'redacted_thinking', data: part.data });
-      else if (part.text) content.push({ type: 'thinking', thinking: part.text, ...(part.signature ? { signature: part.signature } : {}) });
-    } else if (part.type === 'tool_call') {
-      let input: unknown = {};
-      try {
-        input = JSON.parse(part.args || '{}');
-      } catch {
-        input = { raw: part.args };
+      // A Responses ciphertext is not an Anthropic signed thinking block.
+      // Unsigned reasoning summaries also cannot be safely replayed by clients.
+      if (!part.sealed && part.text && part.signature) {
+        content.push({ type: 'thinking', thinking: part.text, signature: part.signature });
       }
-      content.push({ type: 'tool_use', id: part.id || chatToolId(part.id), name: part.name, input: isRecord(input) ? input : {} });
+    } else if (part.type === 'tool_call') {
+      // Never emit a misleading tool_use event with silently altered arguments.
+      const input = parseToolArguments(part.args);
+      content.push({ type: 'tool_use', id: part.id || chatToolId(part.id), name: part.name, input });
     }
   }
   const raw = isRecord(reply.rawUsage) ? reply.rawUsage : {};
@@ -132,10 +131,8 @@ export function replyToResponsesObject(reply: IrReply): Record<string, unknown> 
       open.text += part.text;
     } else if (part.type === 'thinking') {
       if (part.sealed) {
+        // Anthropic redacted_thinking cannot be reused as Responses encrypted_content.
         flushOpen();
-        // A sealed block without a payload carries no replayable content: an
-        // empty reasoning item would be a lie about what the upstream returned.
-        if (part.data) output.push({ type: 'reasoning', id: `rs_${itemSeed++}`, encrypted_content: part.data });
       } else if (part.text) {
         flushOpen();
         open = { type: 'think', id: `rs_${itemSeed++}`, text: part.text };

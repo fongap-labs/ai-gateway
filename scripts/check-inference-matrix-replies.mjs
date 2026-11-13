@@ -40,4 +40,21 @@ const responses = ownerRender(reply, 'openai_responses');
 assert.equal(responses.output[0].content[0].text, 'hello');
 assert.equal(responses.usage.total_tokens, 5);
 assert.throws(() => ownerRender(reply, 'unsupported'), /conversion_not_supported/);
+
+const opaque = {
+  ...reply,
+  parts: [
+    { type: 'thinking', text: 'unsigned summary' },
+    { type: 'thinking', text: '', sealed: true, data: 'provider-only-ciphertext' },
+    { type: 'text', text: 'visible answer' },
+  ],
+};
+const anthroOpaque = ownerRender(opaque, 'anthropic');
+assert.deepEqual(anthroOpaque.content, [{ type: 'text', text: 'visible answer' }]);
+const responsesOpaque = ownerRender(opaque, 'openai_responses');
+assert.doesNotMatch(JSON.stringify(responsesOpaque), /provider-only-ciphertext|encrypted_content/);
+assert.throws(
+  () => ownerRender({ ...reply, parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_file', args: '{broken' }] }, 'anthropic'),
+  /tool arguments must be a JSON object/,
+);
 console.log('Inference-owned native-object renderers preserved three protocol shapes, usage and export identity.');

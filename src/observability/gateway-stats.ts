@@ -8,13 +8,19 @@ import { isOpenAIStreamingResponse } from '../protocol/openai.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
 
 export const gatewayStats = {
-  startedAt: Date.now(),
+  startedAt: 0,
   requests: 0,
   successes: 0,
   failures: 0,
   activeRequests: 0,
   cancellations: 0,
 };
+
+// Cloudflare can initialize a module with a frozen zero clock. Record the
+// first request-time timestamp rather than leaking Unix epoch in /health.
+export function startGatewayStats(now: number = Date.now()): void {
+  if (gatewayStats.startedAt <= 0 && Number.isFinite(now) && now > 0) gatewayStats.startedAt = now;
+}
 
 // Node-layer stream lifecycle counters (gateway_stream_* in /metrics).
 // Emitted only by the node-layer tracking in handler.ts: the client-facing

@@ -85,12 +85,17 @@ export const tokenStats: {
   hourBuckets: Map<number, RollingWindowBucket>; // hourStartMs -> { total, reports }  (rolling 24h)
   dayBuckets: Map<number, RollingWindowBucket>; // dayStartMs  -> { total, reports }  (rolling 7d)
 } = {
-  startedAt: Date.now(),
+  startedAt: 0,
   totals: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, effectiveInput: 0, total: 0, reports: 0, missing: 0 },
   buckets: new Map(),
   hourBuckets: new Map(),
   dayBuckets: new Map(),
 };
+
+// The Worker module clock may be zero before any request has arrived.
+export function startTokenStats(now: number = Date.now()): void {
+  if (tokenStats.startedAt <= 0 && Number.isFinite(now) && now > 0) tokenStats.startedAt = now;
+}
 
 function validTokenCount(value: unknown): number | null {
   // Strict: numbers only (numeric strings from odd upstreams are rejected),
@@ -328,6 +333,7 @@ export function recordTokenUsage({
   usage: unknown;
   now?: number;
 }): void {
+  startTokenStats(now);
   const dims = {
     model: sanitizeDimension(model),
     tier: sanitizeDimension(tier),
@@ -401,6 +407,7 @@ function usageCoverage(): number | null {
 
 // Isolate-global summary for /health, /metrics and diagnostics.
 export function summarizeTokenStats() {
+  startTokenStats();
   return {
     startedAt: tokenStats.startedAt,
     totals: { ...tokenStats.totals },
