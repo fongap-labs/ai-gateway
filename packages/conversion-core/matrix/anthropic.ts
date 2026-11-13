@@ -19,7 +19,7 @@ import {
   isRecord,
   THINKING_HEADROOM,
 } from '../ir.ts';
-import { ConversionError } from '../validation.ts';
+import { ConversionError, parseToolArguments } from '../validation.ts';
 import { structuredOutputInstruction } from './chat.ts';
 
 export { ConversionError };
@@ -661,7 +661,7 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
       // Anthropic API rejects thinking blocks whose signature cannot be
       // verified; reasoning summaries picked up from other protocols carry no
       // signature, so they are history that this target cannot legally keep.
-      if (part.sealed || !part.text || !part.signature) {
+      if (!part.text || !part.signature) {
         diag.add({ feature: 'thinking_history', action: 'dropped' });
         continue;
       }
@@ -671,13 +671,9 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
     }
     if (part.type === 'tool_call') {
       diag.add({ feature: 'tool_calls', action: 'mapped' });
-      let input: unknown = {};
-      try {
-        input = JSON.parse(part.args || '{}');
-      } catch {
-        input = { raw: part.args };
-      }
-      if (!isRecord(input)) input = { value: input };
+      // Do not turn malformed tool history into a different valid-looking call.
+      // An invalid argument payload must fail before dispatch, not become { raw }.
+      const input = parseToolArguments(part.args);
       blocks.push({ type: 'tool_use', id: part.id, name: part.name, input });
       continue;
     }
