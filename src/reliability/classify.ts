@@ -245,7 +245,7 @@ export function classifyUpstreamStatus(
       return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
     }
     if (error && MODEL_ROUTE_ERROR_CODES.has(error.code)) {
-      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true, physicalRouteFailure: true };
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
     }
     if (error && ENDPOINT_ROUTE_ERROR_CODES.has(error.code)) {
       return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false, physicalRouteFailure: true };
@@ -257,7 +257,7 @@ export function classifyUpstreamStatus(
       return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true };
     }
     if (looksLikeModelMissing(body)) {
-      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true, physicalRouteFailure: true };
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
     }
     if (/\bendpoint[_ -]?not[_ -]?found\b/i.test(String(body || ''))) {
       return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false, physicalRouteFailure: true };
