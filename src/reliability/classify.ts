@@ -311,9 +311,8 @@ function structuredUpstreamError(body: unknown): { code: string } | null {
     const parsed: unknown = JSON.parse(body);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const root = parsed as Record<string, unknown>;
-    const source = root.error && typeof root.error === 'object' && !Array.isArray(root.error)
-      ? (root.error as Record<string, unknown>)
-      : root;
+    const source =
+      root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : root;
     // A body with only "message" or "type" is not an explicit error code.
     const code = typeof source.code === 'string' ? source.code.trim().toLowerCase() : '';
     return code ? { code } : null;
