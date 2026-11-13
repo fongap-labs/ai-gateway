@@ -29,8 +29,9 @@ function generationNode(nodes: readonly RuntimeNode[], invocation: Invocation, e
   const node = nodes.find((candidate) => candidate.id === invocation.nodeId);
   if (!node || !isImageGenerationProvider(node.provider)) return null;
   if (!node.surfaces.includes('images_generations')) return null;
-  if (!collectKnownModels(nodes, env).has(invocation.logicalModel)) return null;
-  if (!resolvePhysicalModel(node, invocation.logicalModel)) return null;
+  const knownModels = collectKnownModels(nodes, env);
+  if (!knownModels.has(invocation.logicalModel)) return null;
+  if (!resolvePhysicalModel(node, invocation.logicalModel, knownModels)) return null;
   return node;
 }
 
@@ -82,7 +83,7 @@ export async function execute(request: Request, env: GatewayEnv, invocation: Inv
 
   const adapter = getProviderAdapter(node.provider).image;
   if (!adapter) return problem(503, 'generation_adapter_missing');
-  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel);
+  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, collectKnownModels(cfg.nodes, env));
   if (!physicalModel) return problem(404, 'generation_node_unavailable');
   let prepared: PreparedImageRequest;
   try {
