@@ -5,10 +5,27 @@ import assert from 'node:assert/strict';
 import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
 import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
+import { prepareProtocolRequest } from '../packages/conversion-core/matrix/request-protocol-adapter.ts';
 import { convertMatrixRequest as legacyConvert, isMatrixPair as legacyPair } from '../src/conversion/matrix/pipeline.ts';
 
 assert.strictEqual(ownedConvert, legacyConvert, 'compatibility conversion must not be a second implementation');
 assert.strictEqual(ownedPair, legacyPair, 'protocol pair semantics must share one function');
+
+const protocolNative = { model: 'code-test', stream: true, messages: [{ role: 'user', content: 'unchanged' }] };
+const untouched = prepareProtocolRequest(protocolNative, undefined, 'chat_completions');
+assert.equal(untouched.ok, true);
+if (untouched.ok) assert.strictEqual(untouched.body, protocolNative, 'native request is never rewritten at the conversion boundary');
+const adapted = prepareProtocolRequest(protocolNative, 'chat_completions', 'messages');
+assert.equal(adapted.ok, true);
+if (adapted.ok) assert.ok(Array.isArray(adapted.body.messages));
+assert.deepEqual(prepareProtocolRequest(protocolNative, 'chat_completions', 'chat_completions'), {
+  ok: false, status: 400, code: 'center_conversion_route_invalid'
+});
+const unsafe = prepareProtocolRequest(
+  { model: 'code-test', previous_response_id: 'opaque', input: 'next' },
+  'responses', 'chat_completions'
+);
+assert.deepEqual(unsafe, { ok: false, status: 422, code: 'center_conversion_semantic_loss' });
 
 const protocols = ['openai_chat', 'openai_responses', 'anthropic'];
 for (const from of protocols) {
