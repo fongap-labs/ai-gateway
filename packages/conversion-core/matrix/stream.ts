@@ -222,9 +222,8 @@ function endsCleanly(decoder: ChatStreamDecoder | AnthropicStreamDecoder | Respo
 
 function streamDiagnostics(reply: IrReply | null, to: IrProtocol): readonly ConversionDiagnostic[] {
   const diagnostics: ConversionDiagnostic[] = [];
-  const sealed = reply?.parts.some((part) => part.type === 'thinking' && part.sealed) ?? false;
-  if (sealed && to === 'anthropic') diagnostics.push({ feature: 'thinking_history', action: 'mapped' });
-  if (sealed && to !== 'anthropic') diagnostics.push({ feature: 'thinking_history', action: 'dropped' });
+  const droppedReasoning = reply?.parts.some((part) => part.type === 'thinking' && (to === 'anthropic' || part.sealed)) ?? false;
+  if (droppedReasoning) diagnostics.push({ feature: 'thinking_history', action: 'dropped' });
   return diagnostics;
 }
 
