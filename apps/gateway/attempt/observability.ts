@@ -13,9 +13,9 @@ import { recordProviderAttemptEvidence } from '../../../src/observability/provid
 import { mergeReportedUsage, normalizeTokenUsage, recordTokenUsage } from '../../../src/observability/token-usage.ts';
 import { persistTokenUsage, persistUpstreamAttemptUsage } from '../../../src/observability/token-usage-store.ts';
 import { clearAdaptive429State } from '../../../src/reliability/adaptive-429.ts';
-import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import { classifyStreamInterrupted } from '../../../src/reliability/classify.ts';
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordNeutralEnd, recordSuccess } from '../../../src/reliability/node-state.ts';
+import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import { recordTier1ProviderModelSuccess } from '../../../src/reliability/tier1-heat.ts';
 import {
   applyTier1Outcome,
@@ -177,7 +177,8 @@ export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyM
       if (woken.length) c.state.logger.info(`rate-limit recovery: node=${node.id} provider=${node.provider} woke_siblings=${woken.join(',')}`);
     }
     if (getTier1Account(node.id).consecutiveRateLimits === 0) clearAdaptive429State(node.provider, credentialSlotId(node));
-    if (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits === 0) clearAdaptive429State(node.provider, credentialSlotId(node), logicalModel);
+    if (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits === 0)
+      clearAdaptive429State(node.provider, credentialSlotId(node), logicalModel);
     recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), node.id);
     recordTier1UpstreamModelServed(node.id, upstreamModelOf(node, logicalModel));
     // Confirm the quota lease with actual delivered usage before release; a
