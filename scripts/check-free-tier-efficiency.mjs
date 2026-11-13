@@ -5,6 +5,8 @@
 // Deterministic free-tier reliability contracts. No keys or Provider calls.
 
 import assert from 'node:assert/strict';
+import { __resetTier1AffinityForTests, readTier1Affinity } from '../apps/gateway/scheduling/tier1-affinity.ts';
+import { pickTier1Candidate } from '../apps/gateway/scheduling/tier1-scheduler.ts';
 import { classifyUpstreamStatus, rateLimitWindowOf } from '../src/reliability/classify.ts';
 import {
   __resetTier1StateForTests,
@@ -14,8 +16,6 @@ import {
   tier1QuotaState,
 } from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
-import { pickTier1Candidate } from '../apps/gateway/scheduling/tier1-scheduler.ts';
-import { __resetTier1AffinityForTests, readTier1Affinity } from '../apps/gateway/scheduling/tier1-affinity.ts';
 
 assert.equal(rateLimitWindowOf('quota exceeded'), 'quota');
 assert.equal(rateLimitWindowOf('free quota exhausted'), 'quota');
@@ -111,11 +111,18 @@ const routingNodes = ['peer-a', 'preferred', 'peer-b'].map((id) => ({
   priority: 1,
   models: { [routingModel]: routingModel },
 }));
-for (const [id, ttft] of [['peer-a', 100], ['preferred', 12_000], ['peer-b', 200]]) {
+for (const [id, ttft] of [
+  ['peer-a', 100],
+  ['preferred', 12_000],
+  ['peer-b', 200],
+]) {
   for (let i = 0; i < TIER1_TTFT_CONFIDENCE_SAMPLES; i++) recordTier1Ttft(id, routingModel, ttft);
 }
 const routeRequest = { model: routingModel, protocol: 'openai', surface: 'chat_completions', bodyChars: 100 };
-for (const [rngValue, expected] of [[0, 'peer-a'], [0.99999, 'peer-b']]) {
+for (const [rngValue, expected] of [
+  [0, 'peer-a'],
+  [0.99999, 'peer-b'],
+]) {
   const pick = pickTier1Candidate(routingNodes, routeRequest, new Set(), {
     affinityAccountId: 'preferred',
     evaluateAffinity: true,
