@@ -216,11 +216,13 @@ export function rememberFailedDomains(
     const node = nodesById.get(nodeId);
     if (node) failedDomains.add(modelFailureDomainKey(node, logicalModel));
   }
-  // Only actual dispatches exhaust a Key globally. Scheduler-excluded peers
-  // (for example identical broken endpoints) were never called, and may still
-  // serve a different compatible physical model later in this request.
+  // An account-wide or transient execution failure exhausts the physical
+  // Key for this request, regardless of which logical model is tried next.
+  // Model-missing and endpoint-specific refusals remain scoped to the failing
+  // physical model: another model on that Key may still be valid.
+  const keyFailures = new Set(['rate_limit', 'auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
   for (const attempt of attempts) {
-    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
+    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string' || !keyFailures.has(String(attempt.kind))) continue;
     const node = nodesById.get(attempt.node_id);
     if (node) failedDomains.add(keyFailureDomainKey(node));
   }
