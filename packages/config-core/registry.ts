@@ -106,12 +106,21 @@ export function isWildcardNode(node: { models: Record<string, string> }): boolea
   return Object.keys(node.models).length === 0;
 }
 
-// Empty `models:{}` is an intentional wildcard ONLY inside the known logical
-// model catalog. Without that catalog, wildcard routing fails closed; callers
-// no longer receive an old permissive fallback.
-export function servesModel(node: { models: Record<string, string> }, model: string, knownModels?: ReadonlySet<string> | null): boolean {
-  if (isWildcardNode(node)) return !!knownModels?.has(model);
-  return Object.hasOwn(node.models, model);
+/** Resolve a logical alias ONLY through an explicit, distinct physical model mapping.
+ * Wildcards, missing mappings, and identity mappings must never reach a Provider.
+ */
+export function resolvePhysicalModel(node: { models: Record<string, string> }, logicalModel: string): string | null {
+  if (!Object.hasOwn(node.models, logicalModel)) return null;
+  const physical = node.models[logicalModel];
+  if (typeof physical !== 'string' || !physical.trim()) return null;
+  const resolved = physical.trim();
+  if (resolved.toLowerCase() === logicalModel.trim().toLowerCase()) return null;
+  return resolved;
+}
+
+/** A node is dispatchable only when an explicit physical model is available. */
+export function servesModel(node: { models: Record<string, string> }, model: string, _knownModels?: ReadonlySet<string> | null): boolean {
+  return resolvePhysicalModel(node, model) !== null;
 }
 
 // One spelling per logical model, matched case-insensitively. The MODELS_CONFIG
