@@ -20,6 +20,7 @@ import type { RuntimeNode } from '../types/node.ts';
 import type { Surface } from '../types/protocol.ts';
 import type { AuthResult } from '../types/request.ts';
 import { gatewayStats, startGatewayStats, streamStats } from './gateway-stats.ts';
+import { summarizeHealthEvidence } from './health-evidence.ts';
 import { startTokenStats, summarizeTokenStats, tokenMetricSeries, tokenStats } from './token-usage.ts';
 
 export const APP_META = Object.freeze({
@@ -184,14 +185,8 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
       runtime,
     };
   });
-  const cooling = endpoints.filter((e) => e.status === 'cooldown' || e.status === 'cooling_down').length;
-  const disabled = endpoints.filter((e) => e.status === 'disabled').length;
-  // A first SSE event (TTFT sample) is not proof of a completed reply.
-  // Provider health must be backed by a completed successful call on this isolate.
-  const observedHealthy = endpoints.filter((e) => e.total_successes > 0 && !['disabled', 'cooldown', 'cooling_down'].includes(e.status)).length;
-  const observedResponsive = endpoints.filter((e) => e.status === 'observed_healthy' || (e.status === 'active' && e.total_successes > 0)).length;
-  const unknown = endpoints.filter((e) => !e.total_successes && !['disabled', 'cooldown', 'cooling_down'].includes(e.status)).length;
-  const configuredWithoutAccountBlock = Math.max(0, config.nodesUsable - cooling - disabled);
+  const { cooling, disabled, observedHealthy, observedResponsive, unknown, configuredWithoutAccountBlock } =
+    summarizeHealthEvidence(endpoints, config.nodesUsable);
   const statusCode = config.status === 'invalid' || config.status === 'unconfigured' ? 503 : 200;
 
   return new Response(
