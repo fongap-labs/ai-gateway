@@ -295,9 +295,11 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
 // rethrown.
 async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Promise<void> {
   pendingByDatabase.delete(database);
-  const statements = buildFlushStatements(database, batch.entries.values());
-  writeStats.batchAttempts++;
   try {
+    // Preparation can fail too (for example a D1 binding error). Keep it
+    // inside the failure boundary so queued increments are always restored.
+    const statements = buildFlushStatements(database, batch.entries.values());
+    writeStats.batchAttempts++;
     const results = await database.batch(statements);
     writeStats.batchSuccesses++;
     writeStats.committedStatements += statements.length;
