@@ -7,7 +7,6 @@
 // pre-dispatch neutral ends, and the single per-dispatch completion log.
 
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
-import { credentialPeers, credentialSlotId, noteKeyGroup429 } from '../../../src/reliability/shared-credential-group.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
 import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
 import { trimDiagnostic } from '../../../src/protocol/http.ts';
@@ -23,14 +22,15 @@ import {
 import type { FailureClassification, FailureKind } from '../../../src/reliability/classify.ts';
 import { classifyHedgeRaceLoss, KIND } from '../../../src/reliability/classify.ts';
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordModelMissing, recordNeutralEnd } from '../../../src/reliability/node-state.ts';
+import { credentialPeers, credentialSlotId, noteKeyGroup429 } from '../../../src/reliability/shared-credential-group.ts';
 import { recordTier1ProviderModelRateLimit } from '../../../src/reliability/tier1-heat.ts';
 import {
   adoptTier1Cooldown,
   applyTier1Outcome,
   classifyTier1Failure,
+  decideTier1RateLimitScope,
   getTier1Account,
   getTier1Model,
-  decideTier1RateLimitScope,
   recordTier1Oversize,
   releaseTier1Slot,
   settleTier1Quota,
@@ -253,15 +253,21 @@ export function recordOutcome(
       // explicitly declares they use the SAME upstream credential.
       if (node.keyGroup) {
         const peers = credentialPeers(state.nodes ?? [], node);
-        if (t1Class.scope === 'account' && (classification.kind === KIND.RATE_LIMIT || (classification.kind === KIND.AUTH && !classification.forbidden))) {
+        if (
+          t1Class.scope === 'account' &&
+          (classification.kind === KIND.RATE_LIMIT || (classification.kind === KIND.AUTH && !classification.forbidden))
+        ) {
           const owner = getTier1Account(node.id);
           for (const peer of peers) {
-            adoptTier1Cooldown({
-              node: peer.id,
-              until: owner.accountCooldownUntil,
-              reason: owner.accountCooldownReason ?? classification.kind,
-              ...(owner.accountCooldownIsQuota ? { quota: true } : {}),
-            }, outcomeAt);
+            adoptTier1Cooldown(
+              {
+                node: peer.id,
+                until: owner.accountCooldownUntil,
+                reason: owner.accountCooldownReason ?? classification.kind,
+                ...(owner.accountCooldownIsQuota ? { quota: true } : {}),
+              },
+              outcomeAt,
+            );
           }
         } else if (classification.kind === KIND.RATE_LIMIT && t1Class.scope === 'model') {
           const modelUntil = getTier1Model(node.id, effectiveModel).cooldownUntil;
