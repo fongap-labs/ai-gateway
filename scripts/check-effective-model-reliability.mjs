@@ -131,17 +131,24 @@ assert.equal(
 // A route-scoped 422 is not six independent failures when all free Keys
 // advertise one physical model. A different model on the same Key survives.
 const sharedPhysical = { ...node, id: 'same-provider-other-key', baseUrl: 'https://provider.invalid/v1' };
-const differentPhysical = { ...node, id: 'different-physical', baseUrl: 'https://provider.invalid/v1', models: { [source]: 'other-upstream', [effective]: 'other-physical' } };
+const differentPhysical = {
+  ...node,
+  id: 'different-physical',
+  baseUrl: 'https://provider.invalid/v1',
+  models: { [source]: 'other-upstream', [effective]: 'other-physical' },
+};
 const sharedNodes = new Map([node, sharedPhysical, differentPhysical].map((entry) => [entry.id, entry]));
 const routeDomains = new Set();
-rememberFailedDomains(routeDomains, sharedNodes, new Set([node.id]), source, [{
-  node_id: node.id,
-  effective_model: source,
-  dispatched: true,
-  surface: 'chat_completions',
-  status: 422,
-  kind: 'client',
-}]);
+rememberFailedDomains(routeDomains, sharedNodes, new Set([node.id]), source, [
+  {
+    node_id: node.id,
+    effective_model: source,
+    dispatched: true,
+    surface: 'chat_completions',
+    status: 422,
+    kind: 'client',
+  },
+]);
 const routeOptions = failedDomainNodeIds([node, sharedPhysical, differentPhysical], source, routeDomains, 'chat_completions');
 assert.equal(routeOptions.has(sharedPhysical.id), true, 'do not retry an opaque 422 on an equivalent physical route');
 assert.equal(routeOptions.has(differentPhysical.id), false, 'distinct physical models stay eligible');
