@@ -82,7 +82,10 @@ try {
     AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider, surfaces }]),
   });
   const chatOnly = surfaceEnv('openai', ['chat_completions']);
-  assert.deepEqual(loadGatewayConfig(chatOnly).nodes[0].surfaces, ['chat_completions']);
+  assert.deepEqual(
+    loadGatewayConfig({ ...chatOnly, AIG_ACCESS_KEY_AGENT: 'gateway-test-access-key', AIG_INFERENCE_ACTIVE: 'true' }).nodes[0].surfaces,
+    ['chat_completions'],
+  );
   assert.deepEqual(loadExecutionConfig(chatOnly).nodes[0].surfaces, ['chat_completions']);
   const rejectedResponses = await handleInferenceCenterRequest(request(validBody, { 'x-aig-surface': 'responses' }), chatOnly);
   assert.equal(rejectedResponses.status, 404, 'a chat-only endpoint must reject Responses before dispatch');
