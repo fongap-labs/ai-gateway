@@ -75,6 +75,29 @@ try {
   assert.equal((await handleInferenceCenterRequest(request({ ...validBody, model: 'other' }), env)).status, 400);
   assert.equal(attempts, 0);
 
+  // API surfaces are physical endpoint configuration, not fixed model
+  // capabilities. The Gateway and private center must normalize identically.
+  const surfaceEnv = (provider, surfaces) => ({
+    ...env,
+    AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider, surfaces }]),
+  });
+  const chatOnly = surfaceEnv('openai', ['chat_completions']);
+  assert.deepEqual(loadGatewayConfig(chatOnly).nodes[0].surfaces, ['chat_completions']);
+  assert.deepEqual(loadExecutionConfig(chatOnly).nodes[0].surfaces, ['chat_completions']);
+  const rejectedResponses = await handleInferenceCenterRequest(request(validBody, { 'x-aig-surface': 'responses' }), chatOnly);
+  assert.equal(rejectedResponses.status, 404, 'a chat-only endpoint must reject Responses before dispatch');
+  assert.equal(attempts, 0, 'unsupported API surface must not use a Provider Key');
+  const compatibleResponses = surfaceEnv('custom-compatible', ['responses']);
+  assert.deepEqual(loadExecutionConfig(compatibleResponses).nodes[0].surfaces, ['responses']);
+  for (const invalid of [[], ['messages'], ['chat_completions', 'chat_completions'], ['responses', 123]]) {
+    const config = loadExecutionConfig(surfaceEnv('openai', invalid));
+    assert.equal(config.nodes.length, 0, 'invalid endpoint declarations must exclude the physical node');
+  }
+  assert.deepEqual(
+    loadExecutionConfig({ ...env, AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider: 'anthropic', surfaces: ['messages'] }]) }).nodes[0].surfaces,
+    ['messages'],
+  );
+
   // Wildcard or missing mappings must never be forwarded. Explicit identity
   // mappings are legitimate when the upstream model has that exact name.
   const unmappedCases = [{ name: 'wildcard', models: {} }];
