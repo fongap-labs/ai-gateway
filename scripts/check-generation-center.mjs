@@ -275,7 +275,12 @@ try {
     });
   };
   const gatewayCtx = { waitUntil() {}, passThroughOnException() {} };
-  function gatewayImageRequest(key, path = '/v1/images/generations', body = { model: imageModel, prompt: 'Draw a square', size: '1024x1024' }, rawBody = null) {
+  function gatewayImageRequest(
+    key,
+    path = '/v1/images/generations',
+    body = { model: imageModel, prompt: 'Draw a square', size: '1024x1024' },
+    rawBody = null,
+  ) {
     return new Request(`https://gateway.example.invalid${path}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
