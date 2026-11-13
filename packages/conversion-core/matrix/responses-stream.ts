@@ -310,15 +310,9 @@ export class ResponsesStreamEncoder {
         if (this.open?.type !== 'tool') return [];
         this.open.buffer += event.args;
         return [this.builder.function_call_arguments_delta(this.open.itemId, this.open.outputIndex, event.args)];
-      case 'sealed': {
-        const out = this.closeCurrent();
-        const outputIndex = this.items.length;
-        const item = { type: 'reasoning', id: `rs_${outputIndex}`, encrypted_content: event.text };
-        out.push(this.builder.output_item_added(outputIndex, item));
-        this.items.push(item);
-        out.push(this.builder.output_item_done(outputIndex, item));
-        return out;
-      }
+      case 'sealed':
+        // The upstream's opaque payload belongs to a different protocol.
+        return [];
       case 'stop':
       case 'usage':
         // Buffered: finish(reply) owns the reply tail.

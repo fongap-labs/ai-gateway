@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // The single request-conversion implementation handles every directed pair.
 import assert from 'node:assert/strict';
+import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
 import { convertMatrixRequest as legacyConvert, isMatrixPair as legacyPair } from '../src/conversion/matrix/pipeline.ts';
 
@@ -36,4 +37,52 @@ const preferred = ownedConvert('openai_chat', 'anthropic', chat, { isNonstreamPr
 assert.notEqual(preferred.body.stream, true, 'explicit nonstream preference must be honored');
 assert.throws(() => ownedConvert('openai_chat', 'openai_chat', chat), /conversion_not_supported/);
 assert.throws(() => ownedConvert('openai_chat', 'anthropic', { ...chat, unexpected: true }), /conversion_not_supported/);
-console.log('Single request Matrix implementation passed all six protocol pairs and fail-closed semantics.');
+// Encrypted Responses reasoning must never become Anthropic redacted_thinking.
+const encryptedResponses = ownedConvert('openai_responses', 'anthropic', {
+  model: 'test-model',
+  input: [
+    { type: 'reasoning', encrypted_content: 'responses-only-ciphertext' },
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] },
+  ],
+});
+assert.doesNotMatch(JSON.stringify(encryptedResponses.body), /responses-only-ciphertext|redacted_thinking/);
+assert.ok(encryptedResponses.diagnostics.some((d) => d.feature === 'thinking_history' && d.action === 'dropped'));
+
+// PDF documents, including tool-result attachments, must survive Anthropic rendering.
+const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0xLjQK' } };
+const docRequest = parseAnthropicRequest({
+  model: 'test-model',
+  max_tokens: 128,
+  messages: [
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'call_pdf', name: 'read_pdf', input: {} }] },
+    { role: 'user', content: [pdf, { type: 'tool_result', tool_use_id: 'call_pdf', content: [pdf] }] },
+  ],
+});
+const rebuilt = buildAnthropicRequest(docRequest.request, docRequest.diag);
+const userBlocks = rebuilt.messages[rebuilt.messages.length - 1].content;
+assert.equal(userBlocks.find((block) => block.type === 'document').source.media_type, 'application/pdf');
+assert.equal(userBlocks.find((block) => block.type === 'tool_result').content.find((block) => block.type === 'document').source.data, 'JVBERi0xLjQK');
+assert.throws(
+  () =>
+    buildAnthropicRequest(
+      { ...docRequest.request, messages: [{ role: 'user', parts: [{ type: 'document', mediaType: 'text/plain', data: 'YQ==' }] }] },
+      docRequest.diag,
+    ),
+  /base64 PDF/,
+  'unsupported documents must fail before upstream dispatch',
+);
+assert.throws(
+  () =>
+    buildAnthropicRequest(
+      {
+        ...docRequest.request,
+        messages: [{ role: 'assistant', parts: [{ type: 'tool_call', id: 'call_bad', name: 'read_pdf', args: '{broken' }] }],
+      },
+      docRequest.diag,
+    ),
+  /tool arguments must be a JSON object/,
+  'malformed tool history must not be rewritten into a fake valid call',
+);
+console.log(
+  'Single request Matrix implementation passed all six protocol pairs, PDF attachments, opaque reasoning isolation and fail-closed semantics.',
+);

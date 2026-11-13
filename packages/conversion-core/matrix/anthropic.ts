@@ -19,7 +19,7 @@ import {
   isRecord,
   THINKING_HEADROOM,
 } from '../ir.ts';
-import { ConversionError } from '../validation.ts';
+import { ConversionError, parseToolArguments } from '../validation.ts';
 import { structuredOutputInstruction } from './chat.ts';
 
 export { ConversionError };
@@ -646,20 +646,22 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
       blocks.push({ type: 'image', source: imageSource(part) });
       continue;
     }
+    if (part.type === 'document') {
+      blocks.push({ type: 'document', source: documentSource(part) });
+      continue;
+    }
     if (part.type === 'thinking') {
-      // A sealed block (Anthropic redacted_thinking, Responses
-      // encrypted_content) carries an opaque payload the target can replay
-      // verbatim. Anthropic accepts it as a redacted_thinking block, so the
-      // reasoning history survives the translation instead of being dropped.
-      if (part.sealed && part.data) {
-        diag.add({ feature: 'thinking_history', action: 'mapped' });
-        blocks.push({ type: 'redacted_thinking', data: part.data });
+      // The matrix is cross-protocol only. A Responses encrypted_content blob
+      // is not an Anthropic redacted_thinking signature and cannot be replayed
+      // as one: doing so causes upstream 422 on the next agent turn.
+      if (part.sealed) {
+        diag.add({ feature: 'thinking_history', action: 'dropped' });
         continue;
       }
       // Anthropic API rejects thinking blocks whose signature cannot be
       // verified; reasoning summaries picked up from other protocols carry no
       // signature, so they are history that this target cannot legally keep.
-      if (part.sealed || !part.text || !part.signature) {
+      if (!part.text || !part.signature) {
         diag.add({ feature: 'thinking_history', action: 'dropped' });
         continue;
       }
@@ -669,25 +671,32 @@ function buildMessageBlocks(message: IrMessageLike, diag: MatrixDiag): Record<st
     }
     if (part.type === 'tool_call') {
       diag.add({ feature: 'tool_calls', action: 'mapped' });
-      let input: unknown = {};
-      try {
-        input = JSON.parse(part.args || '{}');
-      } catch {
-        input = { raw: part.args };
-      }
-      if (!isRecord(input)) input = { value: input };
+      // Do not turn malformed tool history into a different valid-looking call.
+      // An invalid argument payload must fail before dispatch, not become { raw }.
+      const input = parseToolArguments(part.args);
       blocks.push({ type: 'tool_use', id: part.id, name: part.name, input });
       continue;
     }
     if (part.type === 'tool_result') {
       diag.add({ feature: 'tool_results', action: 'mapped' });
       const imageBlocks = part.images.map((image) => ({ type: 'image', source: imageSource(image) }));
+      const documentBlocks = (part.documents ?? []).map((document) => ({ type: 'document', source: documentSource(document) }));
       // Text-only tool results stay a plain string (the legacy shape).
-      const content = imageBlocks.length ? [{ type: 'text', text: part.text }, ...imageBlocks] : part.text;
+      const content =
+        imageBlocks.length || documentBlocks.length ? [{ type: 'text', text: part.text }, ...imageBlocks, ...documentBlocks] : part.text;
       blocks.push({ type: 'tool_result', tool_use_id: part.callId, content, ...(part.isError ? { is_error: true } : {}) });
     }
   }
   return blocks;
+}
+
+function documentSource(part: IrDocumentPart): Record<string, unknown> {
+  // Anthropic's base64 document input is defined for PDF; do not silently
+  // drop another file type or send an unsupported MIME to the provider.
+  if (part.mediaType !== 'application/pdf' || !part.data) {
+    throw new ConversionError('conversion_not_supported: Anthropic document requires a base64 PDF');
+  }
+  return { type: 'base64', media_type: 'application/pdf', data: part.data };
 }
 
 function imageSource(part: IrImagePart): Record<string, unknown> {
