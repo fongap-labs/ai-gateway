@@ -7,9 +7,10 @@
 // Secrets:
 //   AIG_TIER{1,2}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
 //
-// Node config is account-level only. Protocol and surfaces are Provider wire
-// capabilities owned by src/providers/registry.ts, not repeated here. All nodes use static Provider credentials; legacy OAuth subscription markers
-// are rejected rather than silently becoming paid Token nodes.
+// Node config keeps Provider protocol ownership. A node may optionally choose
+// physical API surfaces; runtime validates their compatibility against the
+// Provider wire profile. All nodes use static credentials; legacy OAuth
+// subscriber markers are rejected.
 
 import fs from 'node:fs';
 
@@ -22,7 +23,7 @@ export const MANAGED_SECRET_PATTERN = /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const VALID_TIER_PATTERN = /^[12]$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces', 'auth']);
 
 function byteLength(value) {
   return Buffer.byteLength(value, 'utf8');
@@ -92,6 +93,17 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
 
     if (typeof node.provider !== 'string' || !node.provider.trim()) {
       throw new Error(`${label}: node "${id}" provider is required and must be a non-empty string`);
+    }
+
+    // Shape validation here; the canonical runtime validator checks these
+    // surfaces against the Provider profile before any deployment can pass.
+    if (Object.hasOwn(node, 'surfaces')) {
+      const surfaces = node.surfaces;
+      if (!Array.isArray(surfaces) || surfaces.length === 0 ||
+          surfaces.some((value) => typeof value !== 'string' || !value.trim()) ||
+          new Set(surfaces).size !== surfaces.length) {
+        throw new Error(`${label}: node "${id}" surfaces must be a non-empty list of distinct endpoint strings`);
+      }
     }
 
     if (Object.hasOwn(node, 'auth')) {
