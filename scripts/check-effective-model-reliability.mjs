@@ -174,15 +174,19 @@ __resetTier1StateForTests();
 const state = makeState();
 const c = makeContext(state);
 const opaquePeer = { ...node, id: 'same-physical-other-key', baseUrl: 'https://provider.invalid/v1' };
+const opaqueThirdPeer = { ...opaquePeer, id: 'third-physical-key' };
 const opaquePrimary = { ...node, baseUrl: 'https://provider.invalid/v1' };
 const opaqueState = makeState();
 opaqueState.nodes = [
   opaquePrimary,
   opaquePeer,
+  opaqueThirdPeer,
   { ...opaquePeer, id: 'different-model', models: { [source]: 'other-ultra', [effective]: 'other-physical' } },
 ];
 recordOutcome(opaqueState, opaquePrimary, opaque422, makeContext(opaqueState), { status: 422, latencyMs: 90 });
-assert.equal(opaqueState.attempted.has(opaquePeer.id), true, '422 must not retry same physical route on another Key');
+assert.equal(opaqueState.attempted.has(opaquePeer.id), false, 'first opaque 422 permits one alternate Key for the same route');
+recordOutcome(opaqueState, opaquePeer, opaque422, makeContext(opaqueState), { status: 422, latencyMs: 90 });
+assert.equal(opaqueState.attempted.has(opaqueThirdPeer.id), true, 'second opaque 422 blocks remaining equivalent Key routes');
 assert.equal(opaqueState.attempted.has('different-model'), false, 'a different physical route remains available');
 recordOutcome(state, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary unavailable'), c, { status: 503, latencyMs: 200 });
 assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 1);
