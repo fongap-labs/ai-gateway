@@ -125,9 +125,10 @@ export function resolvePhysicalModel(
   return resolved;
 }
 
-/** A node is dispatchable only when an explicit physical model is available. */
+/** Logical catalog membership only; dispatch must use resolvePhysicalModel. */
 export function servesModel(node: { models: Record<string, string> }, model: string, knownModels?: ReadonlySet<string> | null): boolean {
-  return resolvePhysicalModel(node, model, knownModels) !== null;
+  if (isWildcardNode(node)) return !!knownModels?.has(model);
+  return Object.hasOwn(node.models, model);
 }
 
 // One spelling per logical model, matched case-insensitively. The MODELS_CONFIG
