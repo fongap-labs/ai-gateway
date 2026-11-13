@@ -14,6 +14,7 @@ for (const content of [
   '![Generated image](data:image/png;base64,AAAA)',
   '![Generated image](https://example.invalid/image.png)',
   '![Generated image](data:image/jpeg;base64,)',
+  '![Generated image](data:image/png;base64,INVALID%%%BASE64)',
   'Generated text, not an image.',
   '',
 ]) {
