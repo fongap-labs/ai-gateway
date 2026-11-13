@@ -147,28 +147,11 @@ export class AnthropicStreamEncoder {
             },
           }),
         ];
-      case 'think': {
-        const out = this.beginBlockChunks('thinking');
-        if (this.open === 'thinking') {
-          out.push(
-            sse('content_block_delta', {
-              type: 'content_block_delta',
-              index: this.blockIndex,
-              delta: { type: 'thinking_delta', thinking: event.text },
-            }),
-          );
-        }
-        return out;
-      }
+      case 'think':
       case 'sig':
-        if (this.open !== 'thinking') return [];
-        return [
-          sse('content_block_delta', {
-            type: 'content_block_delta',
-            index: this.blockIndex,
-            delta: { type: 'signature_delta', signature: event.signature },
-          }),
-        ];
+        // Cross-protocol streaming cannot prove the origin of a thinking
+        // signature. Never emit a replayable-looking Anthropic reasoning block.
+        return [];
       case 'text': {
         const out = this.beginBlockChunks('text');
         if (this.open === 'text') {
@@ -202,19 +185,9 @@ export class AnthropicStreamEncoder {
             delta: { type: 'input_json_delta', partial_json: event.args },
           }),
         ];
-      case 'sealed': {
-        const out = this.closeChunks();
-        this.blockIndex += 1;
-        out.push(
-          sse('content_block_start', {
-            type: 'content_block_start',
-            index: this.blockIndex,
-            content_block: { type: 'redacted_thinking', data: event.text },
-          }),
-        );
-        out.push(sse('content_block_stop', { type: 'content_block_stop', index: this.blockIndex }));
-        return out;
-      }
+      case 'sealed':
+        // Opaque Responses reasoning is not Anthropic redacted_thinking.
+        return [];
       case 'stop':
       case 'usage':
         // Buffered: finish(reply) owns the reply tail.
