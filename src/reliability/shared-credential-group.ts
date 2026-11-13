@@ -10,9 +10,13 @@ export function credentialSlotId(node: RuntimeNode): string {
 
 export function credentialPeers(nodes: readonly RuntimeNode[], node: RuntimeNode): RuntimeNode[] {
   if (!node.keyGroup) return [];
-  return nodes.filter((peer) =>
-    peer.id !== node.id && peer.keyGroup === node.keyGroup &&
-    peer.tier === node.tier && peer.provider === node.provider && peer.baseUrl === node.baseUrl,
+  return nodes.filter(
+    (peer) =>
+      peer.id !== node.id &&
+      peer.keyGroup === node.keyGroup &&
+      peer.tier === node.tier &&
+      peer.provider === node.provider &&
+      peer.baseUrl === node.baseUrl,
   );
 }
 
@@ -35,4 +39,6 @@ export function noteKeyGroup429(node: RuntimeNode, physicalModel: string, now: n
   }
   return seen.size >= TIER1_429_ACCOUNT_ESCALATION_MODELS ? 'account' : 'model';
 }
-export function __resetKeyGroupForTests(): void { recentModels.clear(); }
+export function __resetKeyGroupForTests(): void {
+  recentModels.clear();
+}
