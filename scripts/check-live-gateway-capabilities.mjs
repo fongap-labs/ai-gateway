@@ -5,6 +5,7 @@
 // Real public Gateway smoke checks. No Provider simulation, no deployment,
 // and no stored credentials. Only --run-image authorizes a billable image call.
 import { randomInt } from 'node:crypto';
+import { visionColors } from './live-gateway-vision-fixtures.mjs';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 
 const options = {};
@@ -33,28 +34,6 @@ if (options['run-auto-image'] && !options['run-image']) throw new Error('--run-a
 if (options['run-image'] && !options['image-model']) throw new Error('--run-image requires --image-model.');
 if (options['expect-dispatches'] && !options['failover-model']) throw new Error('--expect-dispatches requires --failover-model.');
 
-const visionColors = [
-  {
-    name: 'red',
-    base64:
-      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAApUlEQVR42u3dMQ0AIAwAQUqQgA7860AHHooCdgL3a7dLOzcys+hcRQAIECBAgAC9WjsN1hhfQfQ5bZATAwQIECBAgAQIECBAgAABAiRAgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIkAABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABAiRAgAABurHwV8MGAQIECBAgQJ+2Ad+sCbu++cWOAAAAAElFTkSuQmCC',
-  },
-  {
-    name: 'blue',
-    base64:
-      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfEygiNkMEdzMEfIDjgBfU7eb+neQU1k5qG6EwEgQIAAAQL010Y1mPdqBfE+lw1yYoAAAQIECJAAAQIECBAgQIAECBAgQIAAAQIESIAAAQIECBAgQAIECBAgQIAAARIgQIAAAQIECBAgAQIECBAgQIAACRAgQIAAAQIESIAAAQIECBAgQIAECBAgQDsW/mrYIECAAAECBKhpHwU7CbtgbwuDAAAAAElFTkSuQmCC',
-  },
-  {
-    name: 'green',
-    base64:
-      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAp0lEQVR42u3dsRGAMAhAUfEyitukclIrt8kuOAF9Tt5v6d5BTWTmoboTASBAgAABAvTXRjW43rsVxJqPDXJigAABAgQIkAABAgQIECBAgAQIECBAgAABAgRIgAABAgQIECBAAgQIECBAgAABEiBAgAABAgQIECABAgQIECBAgAAJECBAgAABAgRIgAABAgQIECBAgAQIECBAOxb+atggQIAAAQIEqGkfw4wJu9HnYwMAAAAASUVORK5CYII=',
-  },
-  {
-    name: 'yellow',
-    base64:
-      'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAAqElEQVR42u3dsRGAMAhAUfHiCJnA/UdyAkdIgRPQ5+T9lu4d1ERmHqo7EQACBAgQIEB/bVSD9cxWENf92iAnBggQIECAAAkQIECAAAECBEiAAAECBAgQIECABAgQIECAAAECJECAAAECBAgQIECAAAESIECAAAECBAiQAAECBAgQIECAAAECBEiAAAECtGPhr4YNAgQIECBAgJr2AXprCbsGVzFtAAAAAElFTkSuQmCC',
-  },
-];
 const visionQuestion =
   'Identify the color of the large square in the attached image. Reply with exactly one lowercase English word: red, blue, green, or yellow.';
 function nextVisionChallenge() {
