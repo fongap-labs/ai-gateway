@@ -176,7 +176,11 @@ const c = makeContext(state);
 const opaquePeer = { ...node, id: 'same-physical-other-key', baseUrl: 'https://provider.invalid/v1' };
 const opaquePrimary = { ...node, baseUrl: 'https://provider.invalid/v1' };
 const opaqueState = makeState();
-opaqueState.nodes = [opaquePrimary, opaquePeer, { ...opaquePeer, id: 'different-model', models: { [source]: 'other-ultra', [effective]: 'other-physical' } }];
+opaqueState.nodes = [
+  opaquePrimary,
+  opaquePeer,
+  { ...opaquePeer, id: 'different-model', models: { [source]: 'other-ultra', [effective]: 'other-physical' } },
+];
 recordOutcome(opaqueState, opaquePrimary, opaque422, makeContext(opaqueState), { status: 422, latencyMs: 90 });
 assert.equal(opaqueState.attempted.has(opaquePeer.id), true, '422 must not retry same physical route on another Key');
 assert.equal(opaqueState.attempted.has('different-model'), false, 'a different physical route remains available');
