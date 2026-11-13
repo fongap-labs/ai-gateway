@@ -21,6 +21,8 @@ export type NodeModelMap = { [logicalModel: string]: string };
 
 export type RuntimeNode = {
   id: string;
+  /** Non-secret shared credential identity; absent preserves node isolation. */
+  keyGroup?: string;
   tier: NodeTier;
   provider: string;
   protocol: Protocol;
