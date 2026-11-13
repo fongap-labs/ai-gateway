@@ -161,7 +161,24 @@ export function recordOutcome(
   // remains eligible, as do other URLs/models and subsequent requests.
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
   if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
-    for (const peer of state.nodes ?? []) {
+    // An opaque 422 is not proof that every Key on this physical route is
+    // unusable. Permit one alternate Key before excluding equivalent routes.
+    // Do not persist this as a model capability fact between requests.
+    const previousSameRoute422 =
+      status === 422 &&
+      state.attempts.some((attempt) => {
+        if (attempt.dispatched !== true || attempt.status !== 422) return false;
+        const previousNode = (state.nodes ?? []).find((candidate) => candidate.id === attempt.node_id);
+        return (
+          previousNode?.tier === node.tier &&
+          previousNode.provider === node.provider &&
+          previousNode.baseUrl === node.baseUrl &&
+          previousNode.protocol === node.protocol &&
+          (attempt.surface ?? failedSurface) === failedSurface &&
+          upstreamModelOf(previousNode, String(attempt.effective_model ?? effectiveModel)) === physicalModel
+        );
+      });
+    if (status !== 422 || previousSameRoute422) for (const peer of state.nodes ?? []) {
       if (
         peer.tier === node.tier &&
         peer.provider === node.provider &&
