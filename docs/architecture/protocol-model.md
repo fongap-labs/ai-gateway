@@ -59,6 +59,10 @@ type ConversionResult = {
 };
 ```
 
+跨协议的加密或签名推理历史属于 Provider 专有数据：OpenAI Responses 的 `encrypted_content` 不能作为 Anthropic 的 `redacted_thinking` 回放，反之亦然。没有可验证签名的推理摘要也不能构造成 Anthropic 的 `thinking` 块。转换矩阵会丢弃这些不可移植部分并记录非敏感诊断，保留后续文本和函数工具历史；原生协议请求不经过此转换。
+
+对于 PDF 文档，转换到 Anthropic Messages 时使用其原生 base64 document block，包含工具结果中的 PDF。其他无法安全表达的文档类型必须在上游派发前拒绝，不能静默删除附件。
+
 ### 保真度（Fidelity）
 
 | 保真度 | 含义 |
