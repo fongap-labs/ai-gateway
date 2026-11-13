@@ -461,6 +461,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     fakeStream,
     bodyJson,
     rawBody,
+    imageInputRequired,
     bodyChars: reqDescriptor.bodyChars,
     limits,
     exposeUpstreamInfo,

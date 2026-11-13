@@ -246,12 +246,19 @@ try {
   delete gatewayImageEnv.AIG_TIER1_CREDENTIALS_01;
   let centerCalls = 0;
   let physicalCalls = 0;
+  // Preserve non-canonical but valid client JSON when no model rewrite is
+  // required. A round-trip through JSON.stringify would strip whitespace.
+  const originalGenerationJson = '{\n  "model": "Image-Creator",\n  "prompt": "Draw a square",\n  "size": "1024x1024"\n}';
+  let expectedCenterRawBody = originalGenerationJson;
   gatewayImageEnv.AIG_GENERATION_SERVICE = {
     async fetch(centerRequest) {
       centerCalls += 1;
       assert.equal(centerRequest.headers.get('authorization'), null, 'client Authorization must never reach Generation Center');
       assert.equal(centerRequest.headers.get('x-aig-generation-auth'), internalKey);
       assert.equal(centerRequest.headers.get('x-aig-node-id'), 'image-1');
+      if (expectedCenterRawBody !== null) {
+        assert.equal(await centerRequest.clone().text(), expectedCenterRawBody, 'native generation must preserve valid raw JSON');
+      }
       return handleGenerationCenterRequest(centerRequest, imageEnv);
     },
   };
@@ -268,14 +275,24 @@ try {
     });
   };
   const gatewayCtx = { waitUntil() {}, passThroughOnException() {} };
-  function gatewayImageRequest(key, path = '/v1/images/generations', body = { model: imageModel, prompt: 'Draw a square', size: '1024x1024' }) {
+  function gatewayImageRequest(
+    key,
+    path = '/v1/images/generations',
+    body = { model: imageModel, prompt: 'Draw a square', size: '1024x1024' },
+    rawBody = null,
+  ) {
     return new Request(`https://gateway.example.invalid${path}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: rawBody ?? JSON.stringify(body),
     });
   }
-  const generated = await handleRequest(gatewayImageRequest('backend-agent-test-key'), gatewayImageEnv, gatewayCtx);
+  const generated = await handleRequest(
+    gatewayImageRequest('backend-agent-test-key', '/v1/images/generations', undefined, originalGenerationJson),
+    gatewayImageEnv,
+    gatewayCtx,
+  );
+  expectedCenterRawBody = null;
   const generatedBody = await generated.json();
   assert.equal(generated.status, 200, JSON.stringify(generatedBody));
   assert.deepEqual(generatedBody.data, [{ b64_json: imageToolPng }]);

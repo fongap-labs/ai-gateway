@@ -41,7 +41,11 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
   }
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
   const effectiveModel = reqDescriptor.model;
-  const outboundBody = JSON.stringify({ ...c.bodyJson, model: effectiveModel });
+  // Reuse the admitted JSON when the logical model is unchanged. A renamed
+  // model still requires serialization so the private center receives the
+  // effective model, not the client's alias.
+  const reuseRaw = Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
+  const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify({ ...c.bodyJson, model: effectiveModel });
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
   const controller = new AbortController();

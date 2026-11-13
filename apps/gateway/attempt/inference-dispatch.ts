@@ -82,11 +82,17 @@ export async function dispatchInferenceAttempt(
   // Gateway's converted body remains an admission dry-run, not the wire body.
   const inputSurface = c.conversionContext ? inputSurfaceForClientRoute(c.conversionContext.clientRoute) : undefined;
   if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid', center);
-  const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
-  if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
-  // Avoid a second copy for normal native requests with no alias or stream mutation.
+  // The native fast path already has validated raw JSON. Do not allocate and
+  // shallow-copy the parsed request on every retry when the wire body is reused.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
-  const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify(body);
+  let outboundBody: string;
+  if (reuseRaw && c.rawBody) {
+    outboundBody = c.rawBody.text;
+  } else {
+    const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
+    if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
+    outboundBody = JSON.stringify(body);
+  }
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
 
   // v4 handles ordinary streams; authenticated v5 carries bounded budgets

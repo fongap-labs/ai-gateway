@@ -126,6 +126,8 @@ export type LoopContext = {
   bodyJson: Record<string, unknown>;
   /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
   rawBody?: RawBody;
+  /** Set after optional visual preprocessing; avoids rescanning the same messages for each retry. */
+  imageInputRequired?: boolean;
   /** Client request body size in characters; fallback descriptors carry it too. */
   bodyChars?: number;
   limits: Limits;
@@ -196,6 +198,8 @@ export type AttemptContext = {
   bodyJson: Record<string, unknown>;
   /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
   rawBody?: RawBody;
+  /** Trusted Gateway-computed image-input result; absent in older direct test contexts. */
+  imageInputRequired?: boolean;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   state: LoopState;
