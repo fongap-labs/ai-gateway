@@ -155,10 +155,10 @@ export function recordOutcome(
       kind: classification.kind,
     });
   }
-  // Endpoint/physical-route rejections (including opaque 422) are not
-  // credential failures. In this request only, do not probe other Keys on the exact
-  // same Provider URL, protocol, surface and physical model. Paid Tier 2
-  // remains eligible, as do other URLs/models and subsequent requests.
+  // Endpoint/physical-route rejections are not credential failures.
+  // Once two equivalent 422 dispatches fail, exclude remaining sibling Keys
+  // for this request. Explicit endpoint 404s are excluded immediately.
+  // Other physical routes and subsequent requests remain eligible.
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
   if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
     // An opaque 422 is not proof that every Key on this physical route is
@@ -182,11 +182,11 @@ export function recordOutcome(
       for (const peer of state.nodes ?? []) {
         if (
           peer.tier === node.tier &&
-        peer.provider === node.provider &&
-        peer.baseUrl === node.baseUrl &&
-        peer.protocol === node.protocol &&
-        peer.surfaces.includes(failedSurface) &&
-        upstreamModelOf(peer, effectiveModel) === physicalModel
+          peer.provider === node.provider &&
+          peer.baseUrl === node.baseUrl &&
+          peer.protocol === node.protocol &&
+          peer.surfaces.includes(failedSurface) &&
+          upstreamModelOf(peer, effectiveModel) === physicalModel
         ) {
           state.attempted.add(peer.id);
         }
