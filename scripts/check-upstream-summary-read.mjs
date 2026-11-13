@@ -234,7 +234,7 @@ __resetUsageBufferForTests();
 // resolves rather than throws. Neither success metrics nor rows_written from
 // that attempt can be treated as committed; preserve the same retry boundary.
 let d1ReportsFailure = true;
-const explicitFailureD1 = {
+const failedDb = {
   ...writeD1,
   async batch(statements) {
     return statements.map((_, index) => ({
@@ -244,7 +244,7 @@ const explicitFailureD1 = {
   },
 };
 await assert.rejects(
-  bufferPersist({ TOKEN_STATS_DB: explicitFailureD1 }, 'delivered', usageEvent),
+  bufferPersist({ TOKEN_STATS_DB: failedDb }, 'delivered', usageEvent),
   /D1 batch returned an unsuccessful statement/,
 );
 assert.equal(snapshotUsageBuffer().batchAttempts, 1);
