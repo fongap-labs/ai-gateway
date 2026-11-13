@@ -469,7 +469,8 @@ function resolveConfiguredSurfaces(
 ): ReadonlyArray<Surface> | null {
   if (raw === undefined) return defaults;
   const allowed: ReadonlyArray<Surface> = protocol === 'openai' && !isImageOnly ? ['chat_completions', 'responses'] : defaults;
-  if (!Array.isArray(raw) || raw.length === 0 || raw.some((item) => typeof item !== 'string' || !allowed.includes(item))) {
+  const supported = new Set<string>(allowed);
+  if (!Array.isArray(raw) || raw.length === 0 || raw.some((item) => typeof item !== 'string' || !supported.has(item))) {
     diagnostics.push(`node "${nodeId}": surfaces must be a non-empty list of supported wire endpoints (${allowed.join(', ')})`);
     return null;
   }
