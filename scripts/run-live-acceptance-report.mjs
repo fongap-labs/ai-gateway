@@ -106,10 +106,25 @@ try {
     child.once('error', reject);
     child.once('close', resolve);
   });
-  checks = stdout.split('\n').map(parseCheckEvidence).filter(Boolean);
+  const lines = stdout.split('\n');
+  checks = lines.map(parseCheckEvidence).filter(Boolean);
   const failedChecks = stderr.split('\n').map(parseFailureEvidence).filter(Boolean);
+  const finalSummary = lines
+    .map((line) => {
+      try {
+        const parsed = JSON.parse(line);
+        return parsed?.result === 'PASS' && Number.isSafeInteger(parsed.checks) ? parsed : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .at(-1);
   if (exceeded) failure = { stage: 'request', category: 'output_limit', check: null };
   else if (code !== 0) failure = failedChecks.at(-1) ?? { stage: 'request', category: 'nonzero_exit', check: null };
+  else if (!finalSummary || finalSummary.checks !== checks.length || checks.length === 0) {
+    failure = { stage: 'request', category: 'incomplete_evidence', check: null };
+  }
   exitCode = failure ? 1 : 0;
 } catch {
   failure ??= { stage: 'request', category: 'execution_error', check: null };
@@ -126,12 +141,13 @@ const report = createAcceptanceReport({
   failure,
   plannedImageCalls,
 });
+let reportSaved = false;
 try {
   // Exclusively create a private file rather than overwriting past evidence.
   await writeFile(reportFile, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  reportSaved = true;
 } catch {
   console.error(JSON.stringify({ result: 'FAIL', category: 'report_write_failed' }));
-  process.exitCode = 1;
 }
-console.log(JSON.stringify({ result: report.result, checks_passed: report.summary.passed, version_verified: report.version.verified }));
-if (report.result !== 'PASS') process.exitCode = 1;
+console.log(JSON.stringify({ result: reportSaved ? report.result : 'FAIL', checks_passed: report.summary.passed, version_verified: report.version.verified }));
+if (!reportSaved || report.result !== 'PASS') process.exitCode = 1;
