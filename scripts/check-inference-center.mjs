@@ -3,6 +3,7 @@
 // Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
 import { executeNative } from '../packages/execution-core/native.ts';
+import { resolvePhysicalModel, servesModel } from '../packages/config-core/registry.ts';
 import { preDispatchProblem, problem } from '../packages/execution-core/response.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getLimits } from '../src/config/timeouts.ts';
@@ -73,6 +74,28 @@ try {
   assert.equal((await handleInferenceCenterRequest(request(validBody, { 'x-aig-node-id': 'missing-node' }), env)).status, 404);
   assert.equal((await handleInferenceCenterRequest(request({ ...validBody, model: 'other' }), env)).status, 400);
   assert.equal(attempts, 0);
+
+  // Public logical aliases are never valid upstream model IDs, even when a
+  // wildcard catalog knows the alias or an operator configures identity mapping.
+  const unmappedCases = [
+    { name: 'wildcard', models: {} },
+    { name: 'identity', models: { 'chat-test': 'chat-test' } },
+    { name: 'case-identity', models: { 'chat-test': 'CHAT-TEST' } },
+  ];
+  for (const item of unmappedCases) {
+    const rejectedEnv = {
+      ...env,
+      AIG_MODELS_CONFIG: JSON.stringify({ 'chat-test': { policy: 'normal' } }),
+      AIG_TIER2_NODES_01: JSON.stringify([{ ...node, models: item.models }]),
+    };
+    assert.equal(resolvePhysicalModel({ models: item.models }, 'chat-test'), null, item.name);
+    assert.equal(servesModel({ models: item.models }, 'chat-test', new Set(['chat-test'])), false, item.name);
+    const refused = await handleInferenceCenterRequest(request(), rejectedEnv);
+    assert.equal(refused.status, 404, item.name + ' must fail before Provider dispatch');
+    assert.equal(refused.headers.get('x-aig-result'), 'skipped', item.name + ' is not an attempted Provider call');
+    assert.equal(attempts, 0, item.name + ' must not leak logical alias to Provider');
+  }
+  assert.equal(resolvePhysicalModel({ models: node.models }, 'chat-test'), 'gpt-test-upstream');
 
   const forged = request(validBody, { authorization: 'Bearer attacker', cookie: 'session=attacker', 'x-api-key': 'attacker' });
   const ok = await handleInferenceCenterRequest(forged, env);
