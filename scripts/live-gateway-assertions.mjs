@@ -13,8 +13,8 @@ export function hasGeneratedImageDataUri(reply) {
   if (!content.startsWith(prefix) || !content.endsWith(')')) return false;
   const separator = content.indexOf(';base64,', prefix.length);
   if (separator < 0 || !imageMimeTypes.has(content.slice(prefix.length, separator))) return false;
-  const encodedLength = content.length - separator - ';base64,'.length - 1;
-  return encodedLength >= 16 && encodedLength % 4 === 0;
+  const encoded = content.slice(separator + ';base64,'.length, -1);
+  return encoded.length >= 16 && encoded.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(encoded);
 }
 
 export function hasResponsesOutputText(reply) {
