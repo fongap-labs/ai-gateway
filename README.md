@@ -119,6 +119,19 @@ node scripts/check-live-gateway-capabilities.mjs \
 
 脚本还支持 `--vision-model`、`--delegate-model` 和 `--responses-delegate-model` 验证实际图片输入；`--failover-model` 可观察故障转移，但只有在受控故障节点池中配合 `--expect-dispatches` 才能据此证明多次真实派发。**图片生成必须显式传入 `--run-image --image-model ...`，可能产生上游费用**。这些真实测试需要网关 URL、对应分组的访问密钥及可用的上游节点；脚本不会自行获取生产凭据，也不自动发布。CPU、内存、D1/KV 用量仍须结合 Cloudflare 账户侧运行指标验证，测试通过不等于免费配额充足。
 
+若需要保存可审计、脱敏的真实验收证据，使用封装脚本（仍调用上述现有测试，不重新实现请求链路）：
+
+~~~bash
+node scripts/run-live-acceptance-report.mjs \
+  --url https://your-gateway.example \
+  --chat-model YOUR_LOGICAL_TEXT_MODEL \
+  --expected-sha YOUR_APPROVED_40_CHARACTER_GIT_SHA \
+  --report-file ../ai-gateway-live-acceptance.json
+~~~
+
+该脚本先检查公开 `/health/ready` 的实际 40 位构建 SHA、就绪和降级状态；**版本不匹配时不会调用上游模型**。验收范围可继续添加前述 `--vision-model`、`--delegate-model`、`--failover-model`，只有明确使用 `--run-image` 才会发起图片生成。报告仅记录版本、检查名称、HTTP 状态、耗时、请求 ID、派发/回退摘要和固定类别的失败原因，不保存请求体、原始响应、图片或密钥；本地以独占创建方式写出，不能覆盖历史文件，建议保存在仓库外并妥善保护。真实请求可能消耗上游额度，报告也不代表 Cloudflare 全账户 CPU、D1、KV 已完成验收。
+
+
 ## 安全与运行边界
 
 上游凭据和网关访问密钥必须放在 Secrets 中，不得写入仓库、节点 JSON 或请求网址。`/health/ready` 仅返回最小发布就绪信息并公开；详细的 `/health`、`/metrics` 和模型接口要求鉴权。**仪表盘 `/` 和状态图 `/readme-status.svg` 默认公开**，不希望公开时设置 `AIG_PUBLIC_DASHBOARD=false`。
