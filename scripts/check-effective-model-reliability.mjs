@@ -91,7 +91,11 @@ for (const code of ['invalid_request_error', 'context_length_exceeded', 'invalid
   const result = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), JSON.stringify({ error: { code, message: 'Invalid request body' } }));
   assert.equal(result.action, 'stop', 'genuine client 422 must not consume alternate Keys');
 }
-assert.equal(classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"message":"Unprocessable entity"}}').action, 'stop');
+const opaque422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"message":"Unprocessable entity"}}');
+assert.equal(opaque422.action, 'rotate', 'opaque 422 may try another physical route');
+assert.equal(opaque422.uncertain422, true);
+assert.equal(opaque422.physicalRouteFailure, true);
+assert.equal(classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"invalid_json"}}').action, 'stop');
 const unavailable503 = classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporarily unavailable');
 assert.equal(unavailable503.action, 'rotate');
 
@@ -169,6 +173,13 @@ __resetTier1StateForTests();
 // descriptor. Only the descriptor is the evidence of which model failed.
 const state = makeState();
 const c = makeContext(state);
+const opaquePeer = { ...node, id: 'same-physical-other-key', baseUrl: 'https://provider.invalid/v1' };
+const opaquePrimary = { ...node, baseUrl: 'https://provider.invalid/v1' };
+const opaqueState = makeState();
+opaqueState.nodes = [opaquePrimary, opaquePeer, { ...opaquePeer, id: 'different-model', models: { [source]: 'other-ultra', [effective]: 'other-physical' } }];
+recordOutcome(opaqueState, opaquePrimary, opaque422, makeContext(opaqueState), { status: 422, latencyMs: 90 });
+assert.equal(opaqueState.attempted.has(opaquePeer.id), true, '422 must not retry same physical route on another Key');
+assert.equal(opaqueState.attempted.has('different-model'), false, 'a different physical route remains available');
 recordOutcome(state, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary unavailable'), c, { status: 503, latencyMs: 200 });
 assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 1);
 assert.equal(getTier1Model(node.id, source).consecutiveFailures, 0);

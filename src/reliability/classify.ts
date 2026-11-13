@@ -41,6 +41,10 @@ export type FailureClassification = {
   counted: boolean;
   retryAfterMs?: number;
   modelScoped?: boolean;
+  /** Failure belongs to a physical endpoint/model/surface, not to every Key. */
+  physicalRouteFailure?: boolean;
+  /** Opaque 422: permit a bounded probe on a different physical route. */
+  uncertain422?: boolean;
   explicitRetryAfter?: boolean;
   /** The upstream said this request is larger than the model accepts (413). */
   requestTooLarge?: boolean;
@@ -230,28 +234,35 @@ export function classifyUpstreamStatus(
   // A number of OpenAI-compatible Providers return machine-readable 422s
   // with no useful prose (e.g. {"error":{"code":"unsupported_parameter"}}).
   // Recognize only explicit route-local errors. A malformed client request or
-  // an unrecognized 422 must still stop: replaying it wastes every Key.
+  // an opaque 422 may retry a *different* physical route, never the same
+  // physical model across all Keys. Malformed client payloads still stop.
   if (status === 422) {
+    if (looksLikeInvalidRequestPayload(body) || hasNonOptionalValidationErrors(body)) {
+      return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+    }
     const error = structuredUpstreamError(body);
+    if (error && CLIENT_REQUEST_ERROR_CODES.has(error.code)) {
+      return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+    }
     if (error && MODEL_ROUTE_ERROR_CODES.has(error.code)) {
-      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true, physicalRouteFailure: true };
     }
     if (error && ENDPOINT_ROUTE_ERROR_CODES.has(error.code)) {
-      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false, physicalRouteFailure: true };
     }
     if (error && UNSUPPORTED_ROUTE_ERROR_CODES.has(error.code)) {
-      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
+      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true };
     }
     if (looksLikeUnsupportedRequestFeature(body) || looksLikeSchemaRejectedOptionalFields(body)) {
-      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
+      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true };
     }
     if (looksLikeModelMissing(body)) {
-      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true, physicalRouteFailure: true };
     }
     if (/\bendpoint[_ -]?not[_ -]?found\b/i.test(String(body || ''))) {
-      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false, physicalRouteFailure: true };
     }
-    return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true, uncertain422: true };
   }
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
@@ -287,6 +298,7 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
   'deployment_not_found',
   'no_available_providers',
 ]);
+const CLIENT_REQUEST_ERROR_CODES = new Set(['invalid_request_error', 'invalid_json', 'context_length_exceeded', 'invalid_request', 'malformed_request']);
 const ENDPOINT_ROUTE_ERROR_CODES = new Set(['endpoint_not_found', 'route_not_found', 'unsupported_endpoint', 'endpoint_unsupported']);
 const UNSUPPORTED_ROUTE_ERROR_CODES = new Set([
   'unsupported_parameter',
@@ -354,6 +366,20 @@ function looksLikeSchemaRejectedOptionalFields(body: unknown): boolean {
         OPTIONAL_UPSTREAM_FIELDS.has(loc[1])
       );
     });
+  } catch {
+    return false;
+  }
+}
+
+// A mixed or nested validation failure is evidence of a bad client payload.
+// Only a list entirely consisting of optional top-level extra fields is route-local.
+function hasNonOptionalValidationErrors(body: unknown): boolean {
+  if (typeof body !== 'string' || body.length > 4096) return false;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const detail = (parsed as Record<string, unknown>).detail;
+    return Array.isArray(detail) && detail.length > 0 && !looksLikeSchemaRejectedOptionalFields(body);
   } catch {
     return false;
   }

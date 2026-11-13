@@ -155,12 +155,12 @@ export function recordOutcome(
       kind: classification.kind,
     });
   }
-  // A confirmed endpoint 404 is a route failure, not a quota failure.
-  // In this request only, do not probe other free keys pointing at the exact
+  // Endpoint/physical-route rejections (including opaque 422) are not
+  // credential failures. In this request only, do not probe other Keys on the exact
   // same Provider URL, protocol, surface and physical model. Paid Tier 2
   // remains eligible, as do other URLs/models and subsequent requests.
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
-  if (classification.kind === KIND.ENDPOINT_NOT_FOUND && failedSurface) {
+  if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
     for (const peer of state.nodes ?? []) {
       if (
         peer.tier === node.tier &&
