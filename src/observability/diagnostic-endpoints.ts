@@ -331,6 +331,12 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_usage_d1_buffer_pending_events', usageBuffer.pendingEvents);
   emit('gateway_usage_d1_buffer_pending_entries', 'gauge', 'Distinct aggregated usage entries pending D1 flush.');
   counter('gateway_usage_d1_buffer_pending_entries', usageBuffer.pendingEntries);
+  emit(
+    'gateway_usage_d1_buffer_oldest_pending_age_seconds',
+    'gauge',
+    'Age of the oldest uncommitted usage event in this isolate, including any in-flight D1 batch; zero when empty.',
+  );
+  counter('gateway_usage_d1_buffer_oldest_pending_age_seconds', usageBuffer.oldestPendingAgeSeconds);
   emit('gateway_usage_d1_buffer_flushing', 'gauge', 'Whether a D1 usage batch flush is currently running.');
   counter('gateway_usage_d1_buffer_flushing', usageBuffer.flushing ? 1 : 0);
   for (const b of tokenMetricSeries()) {
