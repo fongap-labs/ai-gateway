@@ -18,7 +18,7 @@ export function prepareProtocolRequest(
   body: Record<string, unknown>,
   inputSurface: ExecutionInputSurface | undefined,
   targetSurface: ExecutionSurface,
-  preferNonstream: boolean = false,
+  isNonstreamPreferred: boolean = false,
 ): PreparedProtocolRequest {
   if (!inputSurface) return { ok: true, body, converted: false };
   const from = protocolForSurface(inputSurface);
@@ -27,7 +27,7 @@ export function prepareProtocolRequest(
     return { ok: false, status: 400, code: 'center_conversion_route_invalid' };
   }
   try {
-    const converted = convertMatrixRequest(from, to, body, { isNonstreamPreferred: preferNonstream });
+    const converted = convertMatrixRequest(from, to, body, { isNonstreamPreferred: isNonstreamPreferred });
     if (highRiskSemanticLoss(converted).length > 0) {
       return { ok: false, status: 422, code: 'center_conversion_semantic_loss' };
     }
