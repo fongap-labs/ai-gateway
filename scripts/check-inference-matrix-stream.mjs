@@ -64,20 +64,29 @@ const responsesSynthetic = await ownedSynthesize(opaque, 'openai_responses').tex
 assert.doesNotMatch(responsesSynthetic, /foreign-ciphertext|encrypted_content/);
 
 // Chat thinking deltas must not create unsigned Anthropic thinking blocks in live SSE.
-const reasoningFrames = [
-  {
-    id: 'chat-reasoning',
-    model: 'test-model',
-    choices: [{ index: 0, delta: { reasoning_content: 'nonportable thoughts', content: 'answer' }, finish_reason: null }],
-  },
-  { id: 'chat-reasoning', model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
-].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n';
-const liveReasoning = ownedStream(new ReadableStream({
-  start(controller) {
-    controller.enqueue(encoder.encode(reasoningFrames));
-    controller.close();
-  },
-}), 'openai_chat', 'anthropic', 'fallback-reasoning', { model: 'test-model' });
+const reasoningFrames =
+  [
+    {
+      id: 'chat-reasoning',
+      model: 'test-model',
+      choices: [{ index: 0, delta: { reasoning_content: 'nonportable thoughts', content: 'answer' }, finish_reason: null }],
+    },
+    { id: 'chat-reasoning', model: 'test-model', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+  ]
+    .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+    .join('') + 'data: [DONE]\n\n';
+const liveReasoning = ownedStream(
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(reasoningFrames));
+      controller.close();
+    },
+  }),
+  'openai_chat',
+  'anthropic',
+  'fallback-reasoning',
+  { model: 'test-model' },
+);
 const reasoningOutput = await new Response(liveReasoning.clientStream).text();
 assert.match(reasoningOutput, /answer/);
 assert.doesNotMatch(reasoningOutput, /nonportable thoughts|thinking_delta|redacted_thinking/);
