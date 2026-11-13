@@ -3,8 +3,8 @@
 // The single request-conversion implementation handles every directed pair.
 import assert from 'node:assert/strict';
 import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
-import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
+import { highRiskSemanticLoss } from '../packages/conversion-core/fidelity-policy.ts';
 import { convertMatrixRequest as legacyConvert, isMatrixPair as legacyPair } from '../src/conversion/matrix/pipeline.ts';
 
 assert.strictEqual(ownedConvert, legacyConvert, 'compatibility conversion must not be a second implementation');
@@ -54,10 +54,7 @@ for (const [body, expected] of [
   [{ model: 'test-model', prompt: { id: 'prompt-reference' }, input: 'next' }, 'responses_prompt_reference'],
   [{ model: 'test-model', truncation: 'auto', input: 'next' }, 'responses_truncation_policy'],
   [{ model: 'test-model', input: [{ type: 'local_shell_call', action: { command: 'echo hello' } }] }, 'local_shell_history'],
-  [
-    { model: 'test-model', input: 'next', tools: [{ type: 'custom', name: 'apply_patch', format: { type: 'text' } }] },
-    'custom_tool_definition',
-  ],
+  [{ model: 'test-model', input: 'next', tools: [{ type: 'custom', name: 'apply_patch', format: { type: 'text' } }] }, 'custom_tool_definition'],
 ]) {
   const result = ownedConvert('openai_responses', 'openai_chat', body);
   assert.ok(highRiskSemanticLoss(result).includes(expected), `must not silently lose ${expected} across protocols`);
