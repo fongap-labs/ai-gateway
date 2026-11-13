@@ -7,8 +7,8 @@
 // At most two rounds run, bounded by the original request-wide attempt budget.
 
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
-import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
+import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
