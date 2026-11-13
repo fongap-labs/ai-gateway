@@ -227,22 +227,31 @@ export function classifyUpstreamStatus(
   if (status === 400) {
     return { kind: KIND.CLIENT, action: looksLikeInvalidRequestPayload(body) ? 'stop' : 'rotate', cooldownMs: 0, counted: false };
   }
-  // A 422 naming an unsupported parameter/feature is route-specific, unlike
-  // malformed JSON. Try another Key only for an explicit incompatibility.
-  if (status === 422 && looksLikeUnsupportedRequestFeature(body)) {
-    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
-  }
-  // Some compatible-model routers report a missing physical model as
-  // HTTP 422 instead of 404. This is node+model-local; another Key or
-  // configured fallback may still be valid. Other 422 payload errors stop.
-  if (status === 422 && looksLikeModelMissing(body)) {
-    return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
-  }
-  // OpenAI-compatible routers may encode a missing endpoint as HTTP 422 with
-  // a machine-readable endpoint_not_found code. Treat only this explicit
-  // signal as route-local; malformed payloads and all other 422s still stop.
-  if (status === 422 && /\bendpoint[_ -]?not[_ -]?found\b/i.test(String(body || ''))) {
-    return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+  // A number of OpenAI-compatible Providers return machine-readable 422s
+  // with no useful prose (e.g. {"error":{"code":"unsupported_parameter"}}).
+  // Recognize only explicit route-local errors. A malformed client request or
+  // an unrecognized 422 must still stop: replaying it wastes every Key.
+  if (status === 422) {
+    const error = structuredUpstreamError(body);
+    if (error && MODEL_ROUTE_ERROR_CODES.has(error.code)) {
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
+    }
+    if (error && ENDPOINT_ROUTE_ERROR_CODES.has(error.code)) {
+      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+    }
+    if (error && UNSUPPORTED_ROUTE_ERROR_CODES.has(error.code)) {
+      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
+    }
+    if (looksLikeUnsupportedRequestFeature(body) || looksLikeSchemaRejectedOptionalFields(body)) {
+      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
+    }
+    if (looksLikeModelMissing(body)) {
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
+    }
+    if (/\bendpoint[_ -]?not[_ -]?found\b/i.test(String(body || ''))) {
+      return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+    }
+    return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
@@ -263,6 +272,91 @@ export function classifyUpstreamStatus(
     return { kind: KIND.SERVER, action: 'rotate', cooldownMs: 0, counted: true };
   }
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+}
+
+// These codes describe the physical Provider route, not the submitted JSON.
+// Do not infer compatibility from an arbitrary 422 or a generic
+// invalid_request_error code (which may be a genuine client bug).
+const MODEL_ROUTE_ERROR_CODES = new Set([
+  'model_not_found',
+  'model_unavailable',
+  'model_unsupported',
+  'model_not_supported',
+  'invalid_model',
+  'no_such_model',
+  'deployment_not_found',
+  'no_available_providers',
+]);
+const ENDPOINT_ROUTE_ERROR_CODES = new Set(['endpoint_not_found', 'route_not_found', 'unsupported_endpoint', 'endpoint_unsupported']);
+const UNSUPPORTED_ROUTE_ERROR_CODES = new Set([
+  'unsupported_parameter',
+  'unsupported_value',
+  'unsupported_feature',
+  'unsupported_tool',
+  'unsupported_tool_type',
+  'unknown_parameter',
+  'unrecognized_parameter',
+  'unknown_field',
+  'unrecognized_field',
+]);
+
+function structuredUpstreamError(body: unknown): { code: string } | null {
+  if (typeof body !== 'string' || body.length > 4096) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const root = parsed as Record<string, unknown>;
+    const source = root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : root;
+    // A body with only "message" or "type" is not an explicit error code.
+    const code = typeof source.code === 'string' ? source.code.trim().toLowerCase() : '';
+    return code ? { code } : null;
+  } catch {
+    return null;
+  }
+}
+
+// FastAPI/Pydantic Providers can answer with a detail[] validation envelope
+// instead of an OpenAI error.code. Only an exact "extra_forbidden" on a known
+// top-level optional request feature is node-specific. Missing/invalid nested
+// fields still indicate a malformed client payload and must stop.
+const OPTIONAL_UPSTREAM_FIELDS = new Set([
+  'reasoning',
+  'reasoning_effort',
+  'thinking',
+  'tools',
+  'tool_choice',
+  'parallel_tool_calls',
+  'stream_options',
+  'response_format',
+  'max_output_tokens',
+  'max_completion_tokens',
+  'include',
+  'store',
+]);
+
+function looksLikeSchemaRejectedOptionalFields(body: unknown): boolean {
+  if (typeof body !== 'string' || body.length > 4096) return false;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const detail = (parsed as Record<string, unknown>).detail;
+    if (!Array.isArray(detail) || detail.length === 0 || detail.length > 16) return false;
+    return detail.every((item: unknown) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const issue = item as Record<string, unknown>;
+      const loc = issue.loc;
+      return (
+        issue.type === 'extra_forbidden' &&
+        Array.isArray(loc) &&
+        loc.length === 2 &&
+        loc[0] === 'body' &&
+        typeof loc[1] === 'string' &&
+        OPTIONAL_UPSTREAM_FIELDS.has(loc[1])
+      );
+    });
+  } catch {
+    return false;
+  }
 }
 
 function looksLikeInvalidRequestPayload(body: unknown): boolean {
