@@ -67,7 +67,7 @@ async function check(trial) {
         bytes += value.byteLength;
         if (bytes > 512 * 1024) throw Error('SSE exceeded diagnostic memory bound');
         buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split('\n\n');
+        const frames = buffer.split(/\r?\n\r?\n/);
         buffer = frames.pop() ?? '';
         for (const frame of frames) {
           const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n');
