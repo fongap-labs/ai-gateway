@@ -12,19 +12,21 @@ assert.equal(validExpectedSha(expectedSha), true);
 assert.equal(validExpectedSha('a'.repeat(7)), false);
 assert.equal(validExpectedSha('not-a-commit'), false);
 
-const evidence = parseCheckEvidence(JSON.stringify({
-  result: 'PASS',
-  check: 'perception-delegate',
-  status: 200,
-  duration_ms: 123,
-  request_id: 'safe-request-01',
-  attempts: '2',
-  dispatches: '2',
-  gateway_code: null,
-  failover: 'true',
-  ignored_field: 'never-keep-this',
-  content: 'never-keep-raw-reply',
-}));
+const evidence = parseCheckEvidence(
+  JSON.stringify({
+    result: 'PASS',
+    check: 'perception-delegate',
+    status: 200,
+    duration_ms: 123,
+    request_id: 'safe-request-01',
+    attempts: '2',
+    dispatches: '2',
+    gateway_code: null,
+    failover: 'true',
+    ignored_field: 'never-keep-this',
+    content: 'never-keep-raw-reply',
+  }),
+);
 assert.equal(evidence.check, 'perception-delegate');
 assert.equal(evidence.dispatches, 2);
 assert.equal(evidence.failover, true);
