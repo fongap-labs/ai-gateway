@@ -89,7 +89,7 @@ try {
       AIG_TIER2_NODES_01: JSON.stringify([{ ...node, models: item.models }]),
     };
     assert.equal(resolvePhysicalModel({ models: item.models }, 'chat-test'), null, item.name);
-    assert.equal(servesModel({ models: item.models }, 'chat-test', new Set(['chat-test'])), false, item.name);
+    assert.equal(servesModel({ models: item.models }, 'chat-test', new Set(['chat-test'])), true, item.name + ' stays catalog-visible only');
     const refused = await handleInferenceCenterRequest(request(), rejectedEnv);
     assert.equal(refused.status, 404, item.name + ' must fail before Provider dispatch');
     assert.equal(refused.headers.get('x-aig-result'), 'skipped', item.name + ' is not an attempted Provider call');
