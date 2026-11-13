@@ -185,6 +185,15 @@ export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): 
   return JSON.stringify([node.id, resolvePhysicalModel(node, logicalModel)]);
 }
 
+/**
+ * A Provider/model/surface incompatibility is a physical route failure,
+ * irrespective of how many distinct Keys advertise that exact same route.
+ * This is request-local and is never persisted as a model capability fact.
+ */
+export function physicalRouteFailureDomainKey(node: RuntimeNode, logicalModel: string, surface: string): string {
+  return JSON.stringify(['physical-route', node.tier, node.provider, node.baseUrl, node.protocol, surface, resolvePhysicalModel(node, logicalModel)]);
+}
+
 /** A real failed Key cannot be tried again under another logical alias. */
 function keyFailureDomainKey(node: RuntimeNode): string {
   return JSON.stringify([node.id, '*failed-key*']);
@@ -194,11 +203,20 @@ function keyFailureDomainKey(node: RuntimeNode): string {
  * Seed a new model pass with both spent Key+model routes and physically failed
  * Keys. A distinct Key remains eligible even if it targets the same model.
  */
-export function failedDomainNodeIds(nodes: ReadonlyArray<RuntimeNode>, logicalModel: string, failedDomains: ReadonlySet<string>): Set<string> {
+export function failedDomainNodeIds(
+  nodes: ReadonlyArray<RuntimeNode>,
+  logicalModel: string,
+  failedDomains: ReadonlySet<string>,
+  surface?: string,
+): Set<string> {
   const attempted = new Set<string>();
   if (failedDomains.size === 0) return attempted;
   for (const node of nodes) {
-    if (failedDomains.has(keyFailureDomainKey(node)) || failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
+    if (
+      failedDomains.has(keyFailureDomainKey(node)) ||
+      failedDomains.has(modelFailureDomainKey(node, logicalModel)) ||
+      (surface !== undefined && failedDomains.has(physicalRouteFailureDomainKey(node, logicalModel, surface)))
+    ) {
       attempted.add(node.id);
     }
   }
@@ -223,8 +241,20 @@ export function rememberFailedDomains(
   // physical model: another model on that Key may still be valid.
   const keyFailures = new Set(['rate_limit', 'auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
   for (const attempt of attempts) {
-    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string' || !keyFailures.has(String(attempt.kind))) continue;
+    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
-    if (node) failedDomains.add(keyFailureDomainKey(node));
+    if (!node) continue;
+    if (keyFailures.has(String(attempt.kind))) failedDomains.add(keyFailureDomainKey(node));
+    // Only a confirmed physical route rejection is shared across different
+    // Keys. No raw error text, capability history or Provider-specific rules.
+    const rejectedRoute =
+      attempt.kind === 'model_missing' ||
+      attempt.kind === 'endpoint_not_found' ||
+      (attempt.kind === 'client' && attempt.status === 422);
+    const attemptSurface = typeof attempt.surface === 'string' ? attempt.surface : '';
+    const attemptedModel = typeof attempt.effective_model === 'string' ? attempt.effective_model : logicalModel;
+    if (rejectedRoute && attemptSurface) {
+      failedDomains.add(physicalRouteFailureDomainKey(node, attemptedModel, attemptSurface));
+    }
   }
 }
