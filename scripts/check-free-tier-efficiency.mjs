@@ -87,7 +87,7 @@ const sessionId = 'free-cost-guard-session-123456';
 const costGuardedEnv = { AIG_COST_GUARDS: 'true', TIER1_AFFINITY: affinityKV };
 assert.equal(await readTier1Affinity(costGuardedEnv, sessionId), undefined);
 assert.equal(affinityReads, 0, 'disabled affinity must consume no KV reads');
-const explicitlyDisabledEnv = { AIG_AFFINITY_WRITE: 'false', TIER1_AFFINITY: affinityKV };
+const explicitlyDisabledEnv = { AIG_AFFINITY_WRITE: '0', TIER1_AFFINITY: affinityKV };
 assert.equal(await readTier1Affinity(explicitlyDisabledEnv, sessionId), undefined);
 assert.equal(affinityReads, 0, 'explicitly disabled affinity also consumes no KV reads');
 const explicitlyEnabledEnv = { ...costGuardedEnv, AIG_AFFINITY_WRITE: 'true' };
