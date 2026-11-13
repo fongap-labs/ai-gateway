@@ -221,11 +221,15 @@ export function classifyUpstreamStatus(
   if (status === 403) {
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false, forbidden: true };
   }
-  // A 400 from one OpenAI-compatible upstream is not proof that the client
-  // request is invalid everywhere. Treat it as request-local incompatibility:
-  // the current node/account is excluded by recordOutcome(), then routing may
-  // continue through another provider/key without applying shared cooldown.
+  // A malformed client payload cannot be repaired by rotating Keys.
+  // Unrecognized 400 errors may still be Provider-specific incompatibility,
+  // so keep a conservative request-local rotation for ambiguous responses.
   if (status === 400) {
+    return { kind: KIND.CLIENT, action: looksLikeInvalidRequestPayload(body) ? 'stop' : 'rotate', cooldownMs: 0, counted: false };
+  }
+  // A 422 naming an unsupported parameter/feature is route-specific, unlike
+  // malformed JSON. Try another Key only for an explicit incompatibility.
+  if (status === 422 && looksLikeUnsupportedRequestFeature(body)) {
     return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
   }
   // Some compatible-model routers report a missing physical model as
@@ -259,6 +263,17 @@ export function classifyUpstreamStatus(
     return { kind: KIND.SERVER, action: 'rotate', cooldownMs: 0, counted: true };
   }
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+}
+
+function looksLikeInvalidRequestPayload(body: unknown): boolean {
+  const text = String(body || '');
+  return /\b(?:invalid|malformed)\s+json\b|\bjson\s+parse\s+error\b|\binvalid\s+request\s+body\b|\b(?:missing|required)\s+(?:a\s+)?required\s+(?:field|parameter)\b|\brequired\s+field\s+missing\b|\bmessages\s+must\s+be\s+an?\s+(?:array|list)\b/i.test(text);
+}
+
+function looksLikeUnsupportedRequestFeature(body: unknown): boolean {
+  const text = String(body || '');
+  return /\b(?:unsupported|unknown|unrecognized|not supported|does not support)\s+(?:request\s+)?(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b/i.test(text) ||
+    /\b(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b.{0,90}\b(?:unsupported|not supported|does not support|not available for this model)\b/i.test(text);
 }
 
 function looksLikeModelMissing(body: unknown): boolean {
