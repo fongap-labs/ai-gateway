@@ -267,13 +267,21 @@ export function classifyUpstreamStatus(
 
 function looksLikeInvalidRequestPayload(body: unknown): boolean {
   const text = String(body || '');
-  return /\b(?:invalid|malformed)\s+json\b|\bjson\s+parse\s+error\b|\binvalid\s+request\s+body\b|\b(?:missing|required)\s+(?:a\s+)?required\s+(?:field|parameter)\b|\brequired\s+field\s+missing\b|\bmessages\s+must\s+be\s+an?\s+(?:array|list)\b/i.test(text);
+  return /\b(?:invalid|malformed)\s+json\b|\bjson\s+parse\s+error\b|\binvalid\s+request\s+body\b|\b(?:missing|required)\s+(?:a\s+)?required\s+(?:field|parameter)\b|\brequired\s+field\s+missing\b|\bmessages\s+must\s+be\s+an?\s+(?:array|list)\b/i.test(
+    text,
+  );
 }
 
 function looksLikeUnsupportedRequestFeature(body: unknown): boolean {
   const text = String(body || '');
-  return /\b(?:unsupported|unknown|unrecognized|not supported|does not support)\s+(?:request\s+)?(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b/i.test(text) ||
-    /\b(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b.{0,90}\b(?:unsupported|not supported|does not support|not available for this model)\b/i.test(text);
+  return (
+    /\b(?:unsupported|unknown|unrecognized|not supported|does not support)\s+(?:request\s+)?(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b/i.test(
+      text,
+    ) ||
+    /\b(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b.{0,90}\b(?:unsupported|not supported|does not support|not available for this model)\b/i.test(
+      text,
+    )
+  );
 }
 
 function looksLikeModelMissing(body: unknown): boolean {
