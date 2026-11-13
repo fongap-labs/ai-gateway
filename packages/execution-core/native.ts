@@ -88,7 +88,7 @@ function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocat
   if (!node.surfaces.includes(invocation.surface)) return null;
   const knownModels = collectKnownModels(configuredNodes, env);
   if (!knownModels.has(invocation.logicalModel)) return null;
-  if (!resolvePhysicalModel(node, invocation.logicalModel)) return null;
+  if (!resolvePhysicalModel(node, invocation.logicalModel, knownModels)) return null;
   return node;
 }
 
@@ -185,7 +185,7 @@ async function executeAdmittedNative(
   }
   // Enforce the mapping again at the physical dispatch boundary. A missing,
   // wildcard, or identity mapping must never send the public alias upstream.
-  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel);
+  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, collectKnownModels(config.nodes, env));
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const clientRequest = buildProviderForwardRequest(request);
   outboundBody = { ...outboundBody, model: physicalModel };
