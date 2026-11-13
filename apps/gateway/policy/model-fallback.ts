@@ -184,17 +184,20 @@ export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): 
   return JSON.stringify([node.id, upstreamModel]);
 }
 
+/** A real failed Key cannot be tried again under another logical alias. */
+function keyFailureDomainKey(node: RuntimeNode): string {
+  return JSON.stringify([node.id, '*failed-key*']);
+}
+
 /**
- * Seed a new logical-model pass with nodes whose real account/model domain has
- * already failed earlier in this request. A node mapped to a DIFFERENT real
- * upstream model stays eligible, even when it is the same configured account.
- * A different node/account mapped to the same model also stays eligible.
+ * Seed a new model pass with both spent Key+model routes and physically failed
+ * Keys. A distinct Key remains eligible even if it targets the same model.
  */
 export function failedDomainNodeIds(nodes: ReadonlyArray<RuntimeNode>, logicalModel: string, failedDomains: ReadonlySet<string>): Set<string> {
   const attempted = new Set<string>();
   if (failedDomains.size === 0) return attempted;
   for (const node of nodes) {
-    if (failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
+    if (failedDomains.has(keyFailureDomainKey(node)) || failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
       attempted.add(node.id);
     }
   }
@@ -207,9 +210,18 @@ export function rememberFailedDomains(
   nodesById: ReadonlyMap<string, RuntimeNode>,
   attemptedNodeIds: ReadonlySet<string>,
   logicalModel: string,
+  attempts: ReadonlyArray<Record<string, unknown>> = [],
 ): void {
   for (const nodeId of attemptedNodeIds) {
     const node = nodesById.get(nodeId);
     if (node) failedDomains.add(modelFailureDomainKey(node, logicalModel));
+  }
+  // Only actual dispatches exhaust a Key globally. Scheduler-excluded peers
+  // (for example identical broken endpoints) were never called, and may still
+  // serve a different compatible physical model later in this request.
+  for (const attempt of attempts) {
+    if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
+    const node = nodesById.get(attempt.node_id);
+    if (node) failedDomains.add(keyFailureDomainKey(node));
   }
 }
