@@ -11,6 +11,7 @@
 //   id, provider, base_url, models
 // Optional:
 //   priority (non-negative integer number, default 100)
+//   key_group (optional non-secret credential group)
 //
 // Protocol and surfaces are NOT account-level configuration. They come from
 // the provider wire profile so one provider contract is defined exactly once.
@@ -34,7 +35,7 @@ export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces', 'key_group']);
 
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
@@ -393,9 +394,15 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces, key_group)`);
       return null;
     }
+  }
+
+  const keyGroup = rec.key_group === undefined ? undefined : typeof rec.key_group === 'string' ? rec.key_group.trim() : null;
+  if (keyGroup === null || (keyGroup !== undefined && !ID_PATTERN.test(keyGroup))) {
+    diagnostics.push(`node "${id}": key_group must be a lowercase non-secret identifier (1-64 characters)`);
+    return null;
   }
 
   // Provider identifiers are normalized once and resolved by the wire registry.
@@ -445,6 +452,7 @@ function buildRuntimeNode(
 
   return {
     id,
+    ...(keyGroup ? { keyGroup } : {}),
     tier,
     provider,
     protocol,

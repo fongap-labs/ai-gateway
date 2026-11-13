@@ -8,6 +8,7 @@
 
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
+import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
@@ -182,7 +183,7 @@ export function modelFallbackCandidates(
  */
 export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): string {
   // An unmapped logical alias is not a physical model failure domain.
-  return JSON.stringify([node.id, resolvePhysicalModel(node, logicalModel)]);
+  return JSON.stringify([credentialSlotId(node), resolvePhysicalModel(node, logicalModel)]);
 }
 
 /**
@@ -196,7 +197,7 @@ export function physicalRouteFailureDomainKey(node: RuntimeNode, logicalModel: s
 
 /** A real failed Key cannot be tried again under another logical alias. */
 function keyFailureDomainKey(node: RuntimeNode): string {
-  return JSON.stringify([node.id, '*failed-key*']);
+  return JSON.stringify([credentialSlotId(node), '*failed-key*']);
 }
 
 /**
@@ -239,18 +240,20 @@ export function rememberFailedDomains(
   // Key for this request, regardless of which logical model is tried next.
   // Model-missing and endpoint-specific refusals remain scoped to the failing
   // physical model: another model on that Key may still be valid.
-  const keyFailures = new Set(['rate_limit', 'auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
+  const keyFailures = new Set(['auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
   for (const attempt of attempts) {
     if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
     if (!node) continue;
-    if (keyFailures.has(String(attempt.kind))) failedDomains.add(keyFailureDomainKey(node));
-    // Only a confirmed physical route rejection is shared across different
-    // Keys. No raw error text, capability history or Provider-specific rules.
+    // A model-window 429 does not remove unrelated models of the same Key.
+    if (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account')) {
+      failedDomains.add(keyFailureDomainKey(node));
+    }
+    // The exact physical route may have failed independently of Key identity.
     const rejectedRoute =
       (attempt.kind === 'model_missing' && attempt.status === 404) ||
-        attempt.kind === 'endpoint_not_found' ||
-        (attempt.kind === 'client' && attempt.status === 422);
+      attempt.kind === 'endpoint_not_found' ||
+      (attempt.kind === 'client' && attempt.status === 422);
     const attemptSurface = typeof attempt.surface === 'string' ? attempt.surface : '';
     const attemptedModel = typeof attempt.effective_model === 'string' ? attempt.effective_model : logicalModel;
     if (rejectedRoute && attemptSurface) {
