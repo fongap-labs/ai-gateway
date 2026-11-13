@@ -82,11 +82,10 @@ function translatedObject(native: Record<string, unknown>, invocation: Invocatio
   }
 }
 
-function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocation, env: GatewayEnv): RuntimeNode | null {
+function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocation, knownModels: ReadonlySet<string>): RuntimeNode | null {
   const node = configuredNodes.find((entry) => entry.id === invocation.nodeId);
   if (!node) return null;
   if (!node.surfaces.includes(invocation.surface)) return null;
-  const knownModels = collectKnownModels(configuredNodes, env);
   if (!knownModels.has(invocation.logicalModel)) return null;
   if (!resolvePhysicalModel(node, invocation.logicalModel, knownModels)) return null;
   return node;
@@ -98,7 +97,8 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   // former Gateway did. Invalid nodes and missing secrets are already excluded
   // by loadExecutionConfig; an entirely unusable center still fails closed.
   if (!config.ready) return problem(503, 'center_configuration_invalid');
-  const node = nativeNode(config.nodes, invocation, env);
+  const knownModels = collectKnownModels(config.nodes, env);
+  const node = nativeNode(config.nodes, invocation, knownModels);
   // This node is absent from the center's strictly validated physical pool.
   // Tell Gateway no Provider execution occurred so it may try another
   // metadata-visible node without falsely marking the Provider unhealthy.
@@ -123,7 +123,7 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
     return rejected;
   }
   try {
-    return await executeAdmittedNative(request, env, invocation, node, maxRequestBytes, options);
+    return await executeAdmittedNative(request, env, invocation, node, maxRequestBytes, options, knownModels);
   } finally {
     releaseBody();
   }
@@ -136,6 +136,7 @@ async function executeAdmittedNative(
   node: RuntimeNode,
   maxRequestBytes: number,
   options: ExecutionOptions,
+  knownModels: ReadonlySet<string>,
 ): Promise<Response> {
   let rawBody: string;
   let clientBody: Record<string, unknown>;
@@ -185,7 +186,7 @@ async function executeAdmittedNative(
   }
   // Enforce the mapping again at the physical dispatch boundary. A missing,
   // wildcard, or identity mapping must never send the public alias upstream.
-  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, collectKnownModels(config.nodes, env));
+  const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const clientRequest = buildProviderForwardRequest(request);
   outboundBody = { ...outboundBody, model: physicalModel };
