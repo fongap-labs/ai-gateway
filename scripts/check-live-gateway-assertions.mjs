@@ -4,8 +4,8 @@
 // Pure offline contract checks: no Gateway, Key or Provider request.
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
-import { visionColors } from './live-gateway-vision-fixtures.mjs';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
+import { visionColors } from './live-gateway-vision-fixtures.mjs';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGN8JiLCwMDAxMDAwMDAAAANpAESe7q5qgAAAABJRU5ErkJggg==';
 for (const mime of ['png', 'jpeg', 'webp', 'gif']) {
