@@ -75,13 +75,12 @@ try {
   assert.equal((await handleInferenceCenterRequest(request({ ...validBody, model: 'other' }), env)).status, 400);
   assert.equal(attempts, 0);
 
-  // Public logical aliases are never valid upstream model IDs, even when a
-  // wildcard catalog knows the alias or an operator configures identity mapping.
-  const unmappedCases = [
-    { name: 'wildcard', models: {} },
-    { name: 'identity', models: { 'chat-test': 'chat-test' } },
-    { name: 'case-identity', models: { 'chat-test': 'CHAT-TEST' } },
-  ];
+  // Wildcard or missing mappings must never be forwarded. Explicit identity
+  // mappings are legitimate when the upstream model has that exact name.
+  const unmappedCases = [{ name: 'wildcard', models: {} }];
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'chat-test' } }, 'chat-test'), 'chat-test');
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'CHAT-TEST' } }, 'chat-test'), 'CHAT-TEST');
+  assert.equal(resolvePhysicalModel({ models: { 'chat-test': '  ' } }, 'chat-test'), null);
   for (const item of unmappedCases) {
     const rejectedEnv = {
       ...env,
