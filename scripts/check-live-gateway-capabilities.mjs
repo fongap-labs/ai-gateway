@@ -5,8 +5,8 @@
 // Real public Gateway smoke checks. No Provider simulation, no deployment,
 // and no stored credentials. Only --run-image authorizes a billable image call.
 import { randomInt } from 'node:crypto';
-import { visionColors } from './live-gateway-vision-fixtures.mjs';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
+import { visionColors } from './live-gateway-vision-fixtures.mjs';
 
 const options = {};
 for (let index = 2; index < process.argv.length; index++) {
