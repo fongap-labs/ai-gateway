@@ -248,7 +248,9 @@ export function rememberFailedDomains(
     // Only a confirmed physical route rejection is shared across different
     // Keys. No raw error text, capability history or Provider-specific rules.
     const rejectedRoute =
-      attempt.kind === 'model_missing' || attempt.kind === 'endpoint_not_found' || (attempt.kind === 'client' && attempt.status === 422);
+      (attempt.kind === 'model_missing' && attempt.status === 404) ||
+        attempt.kind === 'endpoint_not_found' ||
+        (attempt.kind === 'client' && attempt.status === 422);
     const attemptSurface = typeof attempt.surface === 'string' ? attempt.surface : '';
     const attemptedModel = typeof attempt.effective_model === 'string' ? attempt.effective_model : logicalModel;
     if (rejectedRoute && attemptSurface) {
