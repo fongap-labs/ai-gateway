@@ -996,7 +996,8 @@ const inferencePreflight = readFileSync(join(root, 'apps/inference/preflight.ts'
 const delegatedFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
 const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport/inference-preflight-client.ts'), 'utf8');
 const legacyPreflightShim = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
-assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Center may run full conversion preflight when bound');
+assert.match(protocolPreflightOwner, /convertMatrixRequest\(/, 'Shared Protocol Core must own full conversion preflight');
+assert.match(inferencePreflight, /protocol-center-core\/preflight\.ts/, 'Inference preflight must remain a compatibility facade');
 assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
 assert.match(
   delegatedFallback,
