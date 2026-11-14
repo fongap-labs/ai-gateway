@@ -4,7 +4,7 @@
 // Offline Key+model cooldown and 422 terminal response contracts.
 
 import assert from 'node:assert/strict';
-import { buildClientErrorResponse } from '../apps/gateway/response/errors.ts';
+import { buildClientErrorResponse, buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
 import {
   __resetTier1StateForTests,
@@ -83,5 +83,54 @@ const details = JSON.parse(raw).error.details;
 assert.equal(details.attempts, 4);
 assert.deepEqual(details.failure_kinds, { server: 2, headers_timeout: 1, client: 1 });
 assert.ok(!raw.includes('private upstream details'));
+// A client-visible 504 with 7 transient failures plus one route-local 422
+// must not be tagged permanently invalid. Do not replay malformed 400s.
+const exhaustionRequest = new Request('https://gateway.example/v1/chat/completions', { method: 'POST' });
+const exhaustionDescriptor = { model: 'Code-Max', route: 'openai_chat', protocol: 'openai', surface: 'chat_completions', bodyChars: 300 };
+const exhaustionTiers = { 'tier-1': [], 'tier-2': [] };
+const mixedState = {
+  requestedModel: 'Code-Max',
+  logicalAttempts: 8,
+  dispatches: 8,
+  hedges: 0,
+  failureKinds: { client: 1, rate_limit: 3, headers_timeout: 4 },
+  attempts: [
+    { dispatched: true, kind: 'client', status: 422, effective_model: 'Code-Max' },
+    ...Array.from({ length: 3 }, () => ({ dispatched: true, kind: 'rate_limit', status: 429, effective_model: 'Code-Max' })),
+    ...Array.from({ length: 4 }, () => ({ dispatched: true, kind: 'headers_timeout', status: 0, effective_model: 'Code-Max' })),
+  ],
+  logger: { info() {} },
+};
+const mixedResponse = buildExhaustedResponse(
+  exhaustionRequest,
+  {},
+  'openai_chat',
+  'offline-mixed-exhaustion',
+  'Code-Max',
+  mixedState,
+  exhaustionTiers,
+  false,
+  exhaustionDescriptor,
+  new Set(['Code-Max']),
+  true,
+);
+assert.equal(mixedResponse.status, 503, 'route-local 422 must not mask transient family exhaustion');
+assert.equal(JSON.parse(await mixedResponse.text()).error.details.retryable, true);
+const malformedMixed = { ...mixedState, attempts: [{ ...mixedState.attempts[0], status: 400 }, ...mixedState.attempts.slice(1)] };
+const invalidMixedResponse = buildExhaustedResponse(
+  exhaustionRequest,
+  {},
+  'openai_chat',
+  'offline-invalid-exhaustion',
+  'Code-Max',
+  malformedMixed,
+  exhaustionTiers,
+  false,
+  exhaustionDescriptor,
+  new Set(['Code-Max']),
+  true,
+);
+assert.equal(invalidMixedResponse.status, 504, 'malformed client request must not be recast as transient');
+assert.equal(JSON.parse(await invalidMixedResponse.text()).error.details.retryable, false);
 __resetTier1StateForTests();
 console.log('Tier 1 Key+model cooldown and scoped 422 diagnostics passed offline.');
