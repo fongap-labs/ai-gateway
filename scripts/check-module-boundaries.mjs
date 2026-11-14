@@ -61,7 +61,13 @@ for (const [legacy, owner, exports] of [
     assert.match(readFileSync(join(root, 'packages/contracts', owner.split('/').at(-1)), 'utf8'), new RegExp(`export type ${typeName}\\b`));
   }
 }
-for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/generation/index.ts', 'operations/index.ts']) {
+for (const entry of [
+  'apps/gateway/index.ts',
+  'apps/inference/index.ts',
+  'apps/protocol/index.ts',
+  'apps/generation/index.ts',
+  'operations/index.ts',
+]) {
   const source = readFileSync(join(root, entry), 'utf8');
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
@@ -743,9 +749,14 @@ for (const center of ['inference', 'perception']) {
   );
 }
 const inferencePreflightSource = readFileSync(join(root, 'apps/inference/preflight.ts'), 'utf8');
+const protocolPreflightOwner = readFileSync(join(root, 'packages/protocol-center-core/preflight.ts'), 'utf8');
 assert.ok(
-  inferencePreflightSource.includes("from '../../packages/execution-core/response.ts'"),
-  'Inference preflight must use the same neutral error envelope',
+  inferencePreflightSource.includes("from '../../packages/protocol-center-core/preflight.ts'"),
+  'Legacy Inference preflight must forward to the neutral protocol owner',
+);
+assert.ok(
+  protocolPreflightOwner.includes("from '../execution-core/response.ts'"),
+  'Shared Protocol Center preflight must use the same neutral error envelope',
 );
 for (const center of ['inference', 'generation']) {
   const entry = readFileSync(join(root, 'apps', center, 'index.ts'), 'utf8');
@@ -985,7 +996,8 @@ const inferencePreflight = readFileSync(join(root, 'apps/inference/preflight.ts'
 const delegatedFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
 const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport/inference-preflight-client.ts'), 'utf8');
 const legacyPreflightShim = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
-assert.match(inferencePreflight, /convertMatrixRequest\(/, 'Only Inference Center may run full conversion preflight when bound');
+assert.match(protocolPreflightOwner, /convertMatrixRequest\(/, 'Shared Protocol Core must own full conversion preflight');
+assert.match(inferencePreflight, /protocol-center-core\/preflight\.ts/, 'Inference preflight must remain a compatibility facade');
 assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
 assert.match(
   delegatedFallback,

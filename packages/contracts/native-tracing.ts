@@ -11,7 +11,7 @@ export type SpanTags = {
   requestId: string;
   nodeId?: string;
   model?: string;
-  center?: 'gateway' | 'inference' | 'perception' | 'generation';
+  center?: 'gateway' | 'inference' | 'perception' | 'generation' | 'protocol';
   phase?: string;
 };
 
