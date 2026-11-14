@@ -16,13 +16,13 @@ import type { GatewayEnv } from '../contracts/runtime.ts';
 import type { RuntimeNode } from '../contracts/runtime-node.ts';
 import { childTraceparent } from '../contracts/trace-context.ts';
 import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
+import { convertPrivateMatrixResponse } from '../protocol-center-core/response.ts';
 import { withUsageStreamOptions } from '../protocol-core/openai.ts';
 import { createBodyAdmissionPool } from '../transport/body-admission.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit } from '../transport/http.ts';
 import { dispatchProviderAttempt } from '../transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../transport/provider-forward-request.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/provider-routing.ts';
-import { convertPrivateMatrixResponse } from '../protocol-center-core/response.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 // The physical center uses the same clamped maximum as Gateway preflight.
@@ -31,8 +31,6 @@ const centerBodyPool = createBodyAdmissionPool();
 type Invocation = ExecutionInvocation;
 type ExecutionOptions = { center?: 'perception' };
 
-// Only authenticated v5 stream tickets carry explicit, validated budgets.
-// v4 streams remain byte-for-byte unchanged and cannot silently inherit one.
 function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocation, knownModels: ReadonlySet<string>): RuntimeNode | null {
   const node = configuredNodes.find((entry) => entry.id === invocation.nodeId);
   if (!node) return null;
