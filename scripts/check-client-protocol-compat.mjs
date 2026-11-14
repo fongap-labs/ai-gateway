@@ -22,7 +22,12 @@ const fixtures = [
     status: 503,
     code: 'gateway_attempt_budget_exhausted',
     message: 'Transient failures exhausted the model family.',
-    details: { requested_model: 'Code-Max', attempts: 8, failure_kinds: { rate_limit: 3, headers_timeout: 2 }, failover_summary: { private_node: 'never-expose-me' } },
+    details: {
+      requested_model: 'Code-Max',
+      attempts: 8,
+      failure_kinds: { rate_limit: 3, headers_timeout: 2 },
+      failover_summary: { private_node: 'never-expose-me' },
+    },
     retryAfter: '10',
     retryable: true,
     suppressReplay: true,
@@ -50,10 +55,16 @@ const fixtures = [
 for (const route of routes) {
   for (const fixture of fixtures) {
     const response = gatewayError(
-      request, {}, route, fixture.status, fixture.message, 'wire-contract-id',
+      request,
+      {},
+      route,
+      fixture.status,
+      fixture.message,
+      'wire-contract-id',
       fixture.details,
       fixture.retryAfter ? { 'retry-after': fixture.retryAfter } : undefined,
-      fixture.code, fixture.retryable,
+      fixture.code,
+      fixture.retryable,
     );
     assert.equal(response.status, fixture.status, route);
     assert.match(response.headers.get('content-type') ?? '', /application\/json/);
@@ -85,9 +96,10 @@ for (const route of routes) {
         // This PR can merge independently of the optional compact retry
         // evidence fix; both forms must remain wire-compatible.
         const evidence = error.details.failure_kinds;
-        assert.ok(evidence === undefined || (
-          Object.keys(evidence).length === 1 && evidence.headers_timeout === 2
-        ), 'never expose the full failover classification graph');
+        assert.ok(
+          evidence === undefined || (Object.keys(evidence).length === 1 && evidence.headers_timeout === 2),
+          'never expose the full failover classification graph',
+        );
       }
     }
   }
