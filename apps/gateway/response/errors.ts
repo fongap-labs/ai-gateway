@@ -422,7 +422,7 @@ export function buildClientErrorResponse(
     attempts: state.logicalAttempts,
     dispatches: state.dispatches,
     hedges: state.hedges,
-    ...(Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
     ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {}),
   });
 }
