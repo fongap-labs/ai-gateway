@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Fongap Labs
 //
 // Single cross-protocol response owner. Called from legacy Inference and,
- // after opt-in handoff, Protocol Center. Never schedules Provider attempts.
+// after opt-in handoff, Protocol Center. Never schedules Provider attempts.
 import { getLimits } from '../config-core/timeouts.ts';
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
@@ -13,12 +13,13 @@ import { buildFramedMatrixObjectFallback, buildFramedMatrixResponse } from '../c
 import { replyFromNativeObject, replyToObject } from '../conversion-core/matrix/response.ts';
 import { collectMatrixObject, type MatrixStreamBudget } from '../conversion-core/matrix/stream.ts';
 import { protocolForSurface } from '../conversion-core/surface-protocol.ts';
+import { problem } from '../execution-core/response.ts';
 import { estimateAnthropicInputTokens } from '../protocol-core/anthropic.ts';
 import { readBufferedReplyText } from '../transport/http.ts';
-import { problem } from '../execution-core/response.ts';
 
 type Invocation = ExecutionInvocation;
 
+// Versioned v5 budgeted streams and v4 legacy framing share one conversion owner.
 function streamFramingOptions(invocation: Invocation, clientProtocol: IrProtocol): { model?: string; budget?: MatrixStreamBudget } {
   if (!invocation.streamBudget) return { model: invocation.displayModel };
   const { cfg, mode } = invocation.streamBudget;
@@ -58,7 +59,6 @@ function translatedObject(native: Record<string, unknown>, invocation: Invocatio
     return null;
   }
 }
-
 
 /**
  * Convert one already-dispatched Provider response while preserving physical
