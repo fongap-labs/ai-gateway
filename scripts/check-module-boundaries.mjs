@@ -351,7 +351,8 @@ assert.doesNotMatch(
 const gatewayFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
 assert.ok(gatewayFallback.includes("from './transport/inference-preflight-client.ts'"));
 assert.ok(gatewayFallback.includes("from '../../packages/conversion-core/protocol-pairs.ts'"));
-assert.match(gatewayFallback, /await checkInferenceConversion\(/);
+assert.match(gatewayFallback, /await reuseRequestConversionPreflight\(/, 'Gateway fallback must use request-local conversion preflight');
+assert.match(gatewayFallback, /checkInferenceConversion\(env, \{/, 'Gateway fallback must still call the private conversion preflight on cache miss');
 assert.doesNotMatch(gatewayFallback, /\bconvertMatrixRequest\s*\(/);
 assert.doesNotMatch(gatewayFallback, /from ['"][^'"]*\/conversion\/matrix\/pipeline\.ts['"]/);
 const pairContract = readFileSync(join(root, 'packages/conversion-core/protocol-pairs.ts'), 'utf8');
@@ -1025,7 +1026,8 @@ const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport
 const legacyPreflightShim = readFileSync(join(root, 'src/inference/inference-preflight-client.ts'), 'utf8');
 assert.match(protocolPreflightOwner, /convertMatrixRequest\(/, 'Shared Protocol Core must own full conversion preflight');
 assert.match(inferencePreflight, /protocol-center-core\/preflight\.ts/, 'Inference preflight must remain a compatibility facade');
-assert.match(delegatedFallback, /await checkInferenceConversion\(/, 'Bound Gateway must delegate fallback conversion preflight');
+assert.match(delegatedFallback, /await reuseRequestConversionPreflight\(/, 'Gateway must reuse only same-request private preflight evidence');
+assert.match(delegatedFallback, /checkInferenceConversion\(env, \{/, 'A cache miss must delegate conversion preflight to the private center');
 assert.match(
   delegatedFallback,
   /from '\.\/transport\/inference-preflight-client\.ts'/,
