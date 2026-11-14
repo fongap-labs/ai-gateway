@@ -183,10 +183,9 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version':
-      invocation.preparedRequest
-        ? EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION
-        : invocation.returnStream && invocation.streamBudget
+    'x-aig-contract-version': invocation.preparedRequest
+      ? EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION
+      : invocation.returnStream && invocation.streamBudget
         ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
         : invocation.returnStream
           ? EXECUTION_STREAM_CONTRACT_VERSION
@@ -291,7 +290,13 @@ export function parseExecutionInvocation(
   )
     return null;
   if (rawInputSurface === null) {
-    if (modeVersion !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
+    if (
+      modeVersion !== EXECUTION_CONTRACT_VERSION ||
+      preferNonstream !== null ||
+      returnObject !== null ||
+      returnStream !== null ||
+      displayModel !== null
+    )
       return null;
     return {
       requestId,
