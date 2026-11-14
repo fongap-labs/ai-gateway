@@ -140,6 +140,14 @@ export function gatewayError(
   // Explicit upstream diagnostics remain opt-in, preserving forensic access.
   // The stable gateway code, counters, classifications, request ID and retry
   // timing are available in response headers for clients and observability.
+  // Client-side validation failures must remain actionable: callers need to
+  // know which unsupported field to remove without receiving retry internals.
+  const unsupportedFields = details?.failure_kind === 'unsupported_request_field' && Array.isArray(details.unsupported_fields)
+    ? details.unsupported_fields.filter((field): field is string => typeof field === 'string' && field.length > 0).map((field) => trimDiagnostic(field, 64)).slice(0, 16)
+    : [];
+  const validationDetails = status === 400 && details?.failure_kind === 'unsupported_request_field'
+    ? { failure_kind: 'unsupported_request_field', unsupported_fields: unsupportedFields }
+    : {};
   const exposeDetails = details !== undefined && Object.hasOwn(details, 'attempts_detail');
   const errorDetails = exposeDetails
     ? { ...details, ...(gatewayCode ? { gateway_code: gatewayCode } : {}), retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
@@ -148,13 +156,14 @@ export function gatewayError(
           gateway_code: gatewayCode,
           retryable,
           ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
+          ...validationDetails,
           // A rejected client field is actionable, unlike internal failover
           // graphs. Preserve this bounded machine-readable API contract.
           ...(typeof details?.unsupported_request_field === 'string'
             ? { unsupported_request_field: trimDiagnostic(details.unsupported_request_field, 64) }
             : {}),
         }
-      : undefined;
+      : Object.keys(validationDetails).length > 0 ? validationDetails : undefined;
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
       JSON.stringify({
