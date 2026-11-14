@@ -34,7 +34,7 @@ const sameKeyPeer = { ...sameProvider, id: 'slot-b' };
 const otherKeyPeer = { ...sameProvider, id: 'slot-c', keyGroup: 'another-credential' };
 const attempted = new Set(['slot-a']);
 const preferred = preferUntriedCredentials([sameKeyPeer, otherKeyPeer], [sameProvider, sameKeyPeer, otherKeyPeer], ['slot-a'], attempted);
-assert.deepEqual([...preferred ?? []].sort(), ['slot-a', 'slot-b'], 'prefer an untried Key over a second node sharing the failed credential');
+assert.deepEqual([...(preferred ?? [])].sort(), ['slot-a', 'slot-b'], 'prefer an untried Key over a second node sharing the failed credential');
 assert.equal(attempted.has('slot-b'), false, 'request-wide preference must not mutate the actual attempted set');
 assert.equal(preferUntriedCredentials([otherKeyPeer], [sameProvider, otherKeyPeer], ['slot-a'], attempted), null);
 assert.equal(preferUntriedCredentials([sameKeyPeer], [sameProvider, sameKeyPeer], ['unknown-node'], attempted), null);
