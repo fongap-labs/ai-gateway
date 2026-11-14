@@ -7,14 +7,12 @@
 // so a few concurrent large bodies can exceed it, and the isolate is then killed
 // together with every request and stream it serves and all learned Tier 1 state.
 //
-// The budget charges each request its declared Content-Length. A request with no
-// usable Content-Length (missing, non-numeric, or <= 0) is charged the worst case,
-// the configured maximum body size, because chunked transfer can carry any size.
-// Without this, chunked uploads would bypass the budget entirely. A request that
-// would push the total past BODY_BYTES_IN_FLIGHT_BUDGET is refused with a retryable
-// 503, except when nothing else is in flight, so one body up to
-// AIG_REQUEST_BODY_MAX_BYTES always fits. The release function returns the charged
-// amount, so an over-estimate is refunded in full.
+// The legacy API continues to reserve the declared body or worst-case amount.
+// The Gateway now uses an incrementally metered reservation: unknown-length
+// bodies initially reserve a small allowance, then must grow the shared charge
+// before preflight buffers each chunk. This prevents the old 20 MB placeholder
+// and 512 KB cutoff from rejecting normal Code requests while retaining the
+// shared per-isolate 32 MB budget. A denied growth returns a retryable 503.
 
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 
