@@ -268,7 +268,15 @@ export function classifyUpstreamStatus(
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
   if (status === 404) {
-    if (looksLikeModelMissing(body)) {
+    // A 404 can mean that the credential cannot access this particular model.
+    // Do not poison the endpoint for other Keys when the upstream explicitly
+    // identifies a model-scoped denial or a missing model.
+    const error = structuredUpstreamError(body);
+    if (
+      (error && (MODEL_ROUTE_ERROR_CODES.has(error.code) || MODEL_ACCESS_ERROR_CODES.has(error.code))) ||
+      looksLikeModelAccessDenied(body) ||
+      looksLikeModelMissing(body)
+    ) {
       return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 5_000, counted: false, modelScoped: true };
     }
     return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
@@ -297,6 +305,15 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
   'no_such_model',
   'deployment_not_found',
   'no_available_providers',
+]);
+// Permission or entitlement to one physical model is Key-scoped, not
+// evidence that an entire Provider endpoint is absent for other Keys.
+const MODEL_ACCESS_ERROR_CODES = new Set([
+  'model_access_denied',
+  'model_forbidden',
+  'model_permission_denied',
+  'model_not_authorized',
+  'model_not_enabled',
 ]);
 const CLIENT_REQUEST_ERROR_CODES = new Set([
   'invalid_request_error',
@@ -350,6 +367,14 @@ const OPTIONAL_UPSTREAM_FIELDS = new Set([
   'max_completion_tokens',
   'include',
   'store',
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'stop',
+  'seed',
+  'logprobs',
+  'top_logprobs',
 ]);
 
 function looksLikeSchemaRejectedOptionalFields(body: unknown): boolean {
@@ -405,6 +430,20 @@ function looksLikeUnsupportedRequestFeature(body: unknown): boolean {
       text,
     ) ||
     /\b(?:parameter|field|option|feature|argument|tool(?:s| calling)?|image(?: input)?|reasoning|thinking|streaming)\b.{0,90}\b(?:unsupported|not supported|does not support|not available for this model)\b/i.test(
+      text,
+    )
+  );
+}
+
+function looksLikeModelAccessDenied(body: unknown): boolean {
+  const text = String(body || '');
+  // Require an explicit model reference. Generic access-denied responses are
+  // not proof that a physical route is missing or that all Keys are broken.
+  return (
+    /\b(?:model|deployment)\b.{0,100}\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed|not available to (?:your|this) (?:account|organization|key))\b/i.test(
+      text,
+    ) ||
+    /\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed)\b.{0,100}\b(?:model|deployment)\b/i.test(
       text,
     )
   );

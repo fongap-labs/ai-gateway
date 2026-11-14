@@ -65,6 +65,17 @@ const schema422 = classifyUpstreamStatus(
   JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', 'reasoning_effort'], msg: 'Extra inputs are not permitted' }] }),
 );
 assert.equal(schema422.action, 'rotate', 'top-level unsupported Code parameter may use another node');
+for (const field of ['temperature', 'top_p', 'presence_penalty', 'frequency_penalty', 'seed', 'logprobs']) {
+  const optionalField422 = classifyUpstreamStatus(
+    422,
+    new Headers(),
+    {},
+    Date.now(),
+    JSON.stringify({ detail: [{ type: 'extra_forbidden', loc: ['body', field] }] }),
+  );
+  assert.equal(optionalField422.action, 'rotate', field + ' is an optional upstream parameter, not malformed client JSON');
+  assert.equal(optionalField422.physicalRouteFailure, true);
+}
 const malformedSchema422 = classifyUpstreamStatus(
   422,
   new Headers(),
@@ -401,6 +412,22 @@ for (const id of ['different-endpoint', 'different-model', 'paid-same-endpoint',
 }
 assert.equal(endpointState.logicalAttempts, 1, 'skipped duplicate endpoints must consume no extra attempts');
 assert.equal(endpointState.dispatches, 1, 'skipped duplicate endpoints must consume no extra physical dispatch');
+// A 404 that explicitly concerns model entitlement must not exclude an
+// independent Key on the same physical endpoint. Machine-readable missing
+// model codes follow the same Key-local rule.
+for (const body of [
+  '{"error":{"code":"model_not_found"}}',
+  '{"error":{"code":"model_access_denied"}}',
+  '{"error":{"message":"You are not authorized to access model physical-max"}}',
+]) {
+  const modelAccess404 = classifyUpstreamStatus(404, new Headers(), {}, Date.now(), body);
+  assert.equal(modelAccess404.kind, KIND.MODEL_MISSING, body);
+  assert.equal(modelAccess404.modelScoped, true, body);
+  const accessState = makeState();
+  accessState.nodes = endpointPeers;
+  recordOutcome(accessState, endpointPeers[0], modelAccess404, makeContext(accessState), { status: 404, latencyMs: 20 });
+  assert.equal(accessState.attempted.has('same-endpoint-b'), false, 'model access 404 must preserve alternate Key');
+}
 const missingModelState = makeState();
 missingModelState.nodes = endpointPeers;
 recordOutcome(
