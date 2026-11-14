@@ -27,6 +27,14 @@ export function admitRequestBody(declaredBytes: number, worstCaseBytes: number):
   return gatewayBodyPool.admit(declaredBytes, worstCaseBytes);
 }
 
+/** The preflight reader grows this reservation using observed UTF-8 bytes. */
+export function admitMeteredRequestBody(
+  declaredBytes: number,
+  hasBody: boolean,
+): { observe: (actualBytes: number) => boolean; release: () => void } | null {
+  return gatewayBodyPool.admitGrowing(declaredBytes, hasBody);
+}
+
 export function __resetBodyBudgetForTests(): void {
   gatewayBodyPool.reset();
 }
