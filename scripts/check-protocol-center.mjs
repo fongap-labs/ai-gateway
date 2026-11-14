@@ -46,7 +46,10 @@ try {
     providerAttempts++;
     throw new Error('Forbidden Provider request');
   };
-  const health = await handleProtocolCenterRequest(new Request('https://protocol.internal/internal/health'), env);
+  const health = await handleProtocolCenterRequest(
+    new Request('https://protocol.internal/internal/health', { headers: { 'x-aig-protocol-auth': key } }),
+    env,
+  );
   assert.equal(health.status, 200);
   const unauthorized = await handleProtocolCenterRequest(new Request('https://protocol.internal/internal/health'), {});
   assert.equal(unauthorized.status, 403);
