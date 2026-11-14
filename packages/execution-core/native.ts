@@ -17,14 +17,12 @@ import type { RuntimeNode } from '../contracts/runtime-node.ts';
 import { childTraceparent } from '../contracts/trace-context.ts';
 import { ConversionBudgetStop } from '../conversion-core/budget.ts';
 import { conversionBudgetErrorChunk } from '../conversion-core/budget-error.ts';
-import { highRiskSemanticLoss } from '../conversion-core/fidelity-policy.ts';
 import type { IrProtocol } from '../conversion-core/ir.ts';
 import { buildFramedMatrixObjectFallback, buildFramedMatrixResponse } from '../conversion-core/matrix/framed-stream.ts';
-import { convertMatrixRequest, isMatrixPair } from '../conversion-core/matrix/request.ts';
+import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
 import { replyFromNativeObject, replyToObject } from '../conversion-core/matrix/response.ts';
 import { collectMatrixObject, type MatrixStreamBudget } from '../conversion-core/matrix/stream.ts';
 import { protocolForSurface } from '../conversion-core/surface-protocol.ts';
-import { ConversionError } from '../conversion-core/validation.ts';
 import { estimateAnthropicInputTokens } from '../protocol-core/anthropic.ts';
 import { withUsageStreamOptions } from '../protocol-core/openai.ts';
 import { createBodyAdmissionPool } from '../transport/body-admission.ts';
@@ -168,21 +166,14 @@ async function executeAdmittedNative(
   let outboundBody: Record<string, unknown> = clientBody;
   let isMutated = false;
   if (invocation.inputSurface) {
-    const from = protocolForSurface(invocation.inputSurface);
-    const to = protocolForSurface(invocation.surface);
     const matchesNode = node.protocol === 'anthropic' ? invocation.surface === 'messages' : invocation.surface !== 'messages';
-    if (!matchesNode || !from || !to || !isMatrixPair(from, to)) return problem(400, 'center_conversion_route_invalid');
-    try {
-      // Independently validate and convert the original client shape BEFORE
-      // any physical Provider attempt. Gateway's dry-run is not trusted.
-      const converted = convertMatrixRequest(from, to, clientBody, { isNonstreamPreferred: invocation.preferNonstream === true });
-      if (highRiskSemanticLoss(converted).length > 0) return problem(422, 'center_conversion_semantic_loss');
-      outboundBody = converted.body;
-      isMutated = true;
-    } catch (error) {
-      if (error instanceof ConversionError) return problem(400, 'center_conversion_invalid');
-      throw error;
-    }
+    if (!matchesNode) return problem(400, 'center_conversion_route_invalid');
+    // Run the same pure adapter at the private dispatch boundary, regardless
+    // of any Gateway-side feasibility/preflight decision.
+    const prepared = prepareProtocolRequest(clientBody, invocation.inputSurface, invocation.surface, invocation.preferNonstream === true);
+    if (!prepared.ok) return problem(prepared.status, prepared.code);
+    outboundBody = prepared.body;
+    isMutated = prepared.converted;
   }
   // Enforce the mapping again at the physical dispatch boundary. A missing,
   // wildcard, or identity mapping must never send the public alias upstream.
