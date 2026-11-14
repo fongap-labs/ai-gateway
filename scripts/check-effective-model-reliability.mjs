@@ -531,12 +531,31 @@ const rejectedResponse = buildClientErrorResponse(
 );
 assert.equal(rejectedResponse.status, 422);
 const rejectedText = await rejectedResponse.text();
-assert.deepEqual(JSON.parse(rejectedText).error.details.failover_summary, failover);
+const rejectedJson = JSON.parse(rejectedText);
+assert.match(rejectedJson.error.message, /^422 \| Upstream rejected the request/);
+assert.equal(rejectedJson.error.details?.failover_summary, undefined, 'client errors must not leak internal failover traces');
+assert.equal(rejectedResponse.headers.get('x-gateway-attempts'), '3');
+assert.equal(rejectedResponse.headers.get('x-gateway-failure-kinds'), 'headers_timeout:1,rate_limit:1,server:1');
 assert.equal(rejectedText.includes('secret-'), false);
+const optInClientError = buildClientErrorResponse(
+  diagnosticRequest,
+  {},
+  'openai_chat',
+  'offline-debug-request',
+  'Code-Max',
+  422,
+  'redacted downstream context',
+  diagnosticState,
+  true,
+);
+const optInDetails = (await optInClientError.json()).error.details;
+assert.equal(optInDetails.attempts_detail.length, diagnosticState.attempts.length > 0 ? 1 : 0, 'debug mode retains bounded diagnostics');
 const exhaustedResponse = buildBudgetExhaustedResponse(diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', diagnosticState, false);
 assert.equal(exhaustedResponse.status, 504);
 const exhaustedText = await exhaustedResponse.text();
-assert.deepEqual(JSON.parse(exhaustedText).error.details.failover_summary, failover);
+assert.equal(JSON.parse(exhaustedText).error.details?.failover_summary, undefined, 'exhausted errors must not expose the full failover graph');
+assert.equal(exhaustedResponse.headers.get('x-gateway-attempts'), String(diagnosticState.logicalAttempts));
+assert.equal(exhaustedResponse.headers.get('x-gateway-dispatches'), String(diagnosticState.dispatches));
 assert.equal(exhaustedText.includes('secret-'), false);
 
 console.log('Tier 1 effective-model attribution and anonymous failover diagnostics contracts passed offline.');

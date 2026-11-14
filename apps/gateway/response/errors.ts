@@ -73,6 +73,33 @@ function formatFailureKinds(value: unknown): string | null {
   return entries.length ? entries.map(([kind, count]) => `${kind}:${count}`).join(',') : null;
 }
 
+/** The client receives one readable reason; detailed failure telemetry belongs in headers/logs. */
+function clientErrorMessage(
+  status: number,
+  message: string,
+  details: Record<string, unknown> | undefined,
+  gatewayCode: string | null,
+  retryAfterMs: number,
+): string {
+  const model = typeof details?.requested_model === 'string' ? trimDiagnostic(details.requested_model, 64).replace(/\s+/g, ' ') : null;
+  const attempts = typeof details?.attempts === 'number' && Number.isSafeInteger(details.attempts) && details.attempts > 0 ? details.attempts : 0;
+  const exhausted =
+    gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED ||
+    gatewayCode === GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED ||
+    gatewayCode === GATEWAY_ERROR_CODE.UPSTREAM_EXHAUSTED;
+  if (exhausted) {
+    const subject = model || 'Model';
+    const reason = status === 408 ? 'request deadline exceeded' : 'temporarily unavailable';
+    const attemptsText = attempts ? ` after ${attempts} ${attempts === 1 ? 'attempt' : 'attempts'}` : '';
+    const retryText = retryAfterMs > 0 ? `; retry after ${Math.ceil(retryAfterMs / 1000)}s` : '';
+    return `${status} | ${subject} ${reason}${attemptsText}${retryText}.`;
+  }
+  // Preserve a useful diagnostic for request errors while preventing multi-line
+  // Provider/internal messages from taking over the client's failure display.
+  const singleLine = trimDiagnostic(message.replace(/\s+/g, ' ').trim(), 150);
+  return `${status} | ${singleLine || 'Request failed.'}`;
+}
+
 export function gatewayError(
   request: Request,
   env: GatewayEnv,
@@ -108,14 +135,54 @@ export function gatewayError(
     diagnosticHeaders['x-gateway-budget-exhausted'] = 'true';
   }
   const retryAfterMs = parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER);
-  const errorDetails = gatewayCode
-    ? { ...details, gateway_code: gatewayCode, retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
-    : details;
+  const briefMessage = clientErrorMessage(status, message, details, gatewayCode, retryAfterMs);
+  // Never serialize the full retry/failover graph into a standard error body.
+  // Explicit upstream diagnostics remain opt-in, preserving forensic access.
+  // The stable gateway code, counters, classifications, request ID and retry
+  // timing are available in response headers for clients and observability.
+  // Client-side validation failures must remain actionable: callers need to
+  // know which unsupported field to remove without receiving retry internals.
+  const unsupportedFields =
+    details?.failure_kind === 'unsupported_request_field' && Array.isArray(details.unsupported_fields)
+      ? details.unsupported_fields
+          .filter((field): field is string => typeof field === 'string' && field.length > 0)
+          .map((field) => trimDiagnostic(field, 64))
+          .slice(0, 16)
+      : [];
+  const validationDetails =
+    status === 400 && details?.failure_kind === 'unsupported_request_field'
+      ? { failure_kind: 'unsupported_request_field', unsupported_fields: unsupportedFields }
+      : status === 502 && details?.failure_kind === 'conversion_not_supported'
+        ? {
+            failure_kind: 'conversion_not_supported',
+            ...(typeof details.dispatches === 'number' && Number.isSafeInteger(details.dispatches) && details.dispatches >= 0
+              ? { dispatches: details.dispatches }
+              : {}),
+          }
+        : {};
+  const exposeDetails = details !== undefined && Object.hasOwn(details, 'attempts_detail');
+  const errorDetails = exposeDetails
+    ? { ...details, ...(gatewayCode ? { gateway_code: gatewayCode } : {}), retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
+    : gatewayCode
+      ? {
+          gateway_code: gatewayCode,
+          retryable,
+          ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
+          ...validationDetails,
+          // A rejected client field is actionable, unlike internal failover
+          // graphs. Preserve this bounded machine-readable API contract.
+          ...(typeof details?.unsupported_request_field === 'string'
+            ? { unsupported_request_field: trimDiagnostic(details.unsupported_request_field, 64) }
+            : {}),
+        }
+      : Object.keys(validationDetails).length > 0
+        ? validationDetails
+        : undefined;
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
       JSON.stringify({
         type: 'error',
-        error: { type: anthropicErrorTypeForStatus(status), message, ...(errorDetails ? { details: errorDetails } : {}) },
+        error: { type: anthropicErrorTypeForStatus(status), message: briefMessage, ...(errorDetails ? { details: errorDetails } : {}) },
       }),
       {
         status,
@@ -132,9 +199,9 @@ export function gatewayError(
     );
   }
   if (route === 'openai_responses') {
-    return responsesErrorResponse(request, env, status, message, requestId, diagnosticHeaders, gatewayCode, isRetryable);
+    return responsesErrorResponse(request, env, status, briefMessage, requestId, diagnosticHeaders, gatewayCode, isRetryable);
   }
-  return new Response(JSON.stringify({ error: { message, ...(errorDetails ? { details: errorDetails } : {}) } }), {
+  return new Response(JSON.stringify({ error: { message: briefMessage, ...(errorDetails ? { details: errorDetails } : {}) } }), {
     status,
     headers: {
       'content-type': 'application/json;charset=UTF-8',
@@ -347,67 +414,17 @@ export function buildClientErrorResponse(
 ): Response {
   const genericDetail = `Upstream rejected the request with HTTP ${status}.`;
   const detail = shouldExposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
-  const attemptsDetail = shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {};
-  if (route === 'anthropic_messages') {
-    return new Response(
-      JSON.stringify({
-        type: 'error',
-        error: { type: anthropicErrorTypeForStatus(status), message: detail },
-      }),
-      {
-        status,
-        headers: {
-          'content-type': 'application/json;charset=UTF-8',
-          'cache-control': 'no-store',
-          'request-id': requestId,
-          'x-request-id': requestId,
-          ...shouldNotRetryHeaders(status),
-          ...corsHeaders(request, env),
-        },
-      },
-    );
-  }
-  if (route === 'openai_responses') {
-    return responsesErrorResponse(
-      request,
-      env,
-      status,
-      detail,
-      requestId,
-      responsesDiagnosticHeaders({
-        requested_model: requestedModel,
-        attempts: state.logicalAttempts,
-        dispatches: state.dispatches,
-        hedges: state.hedges,
-      }),
-    );
-  }
-  return new Response(
-    JSON.stringify({
-      error: {
-        message: detail,
-        details: {
-          requested_model: requestedModel,
-          attempts: state.logicalAttempts,
-          dispatches: state.dispatches,
-          hedges: state.hedges,
-          ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
-          ...summarizeFailoverAttempts(state.attempts),
-          ...attemptsDetail,
-        },
-      },
-    }),
-    {
-      status,
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-        'cache-control': 'no-store',
-        'x-request-id': requestId,
-        ...shouldNotRetryHeaders(status),
-        ...corsHeaders(request, env),
-      },
-    },
-  );
+  // The terminal client-error path must use the same short, status-first
+  // envelope as exhaustion and admission errors. Attempt graphs are only
+  // available when the caller deliberately enables upstream diagnostics.
+  return gatewayError(request, env, route, status, detail, requestId, {
+    requested_model: requestedModel,
+    attempts: state.logicalAttempts,
+    dispatches: state.dispatches,
+    hedges: state.hedges,
+    ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {}),
+  });
 }
 
 function extractErrorMessage(text: string | Uint8Array | null | undefined): string {
