@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 // One cross-protocol request conversion, one physical Provider dispatch, no key leaks.
 import assert from 'node:assert/strict';
-import { buildExecutionHeaders, parseExecutionInvocation } from '../packages/contracts/execution.ts';
 import { invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 import { handleProtocolCenterRequest } from '../apps/protocol/index.ts';
+import { buildExecutionHeaders, parseExecutionInvocation } from '../packages/contracts/execution.ts';
 
 const protocolKey = 'test-only-private-protocol-center-auth-32';
 const inferenceKey = 'test-only-private-inference-center-auth-32';
@@ -129,10 +129,7 @@ try {
   assert.equal(seen[2].body.tools[0].function.name, 'local_lookup');
   assert.equal(JSON.stringify(seen[2].body).includes(nativeToolName), false);
 
-  await assert.rejects(
-    invokeInferenceNode({ ...env, AIG_PROTOCOL_AUTH_KEY: undefined }, invocation()),
-    /Private inference center is not configured/,
-  );
+  await assert.rejects(invokeInferenceNode({ ...env, AIG_PROTOCOL_AUTH_KEY: undefined }, invocation()), /Private inference center is not configured/);
   assert.equal(seen.length, 3, 'explicit Protocol binding cannot silently fall back');
 
   const mode = invocation({ ...message, stream: true }, { returnStream: true, displayModel: 'chat-test' });
