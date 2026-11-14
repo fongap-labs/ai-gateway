@@ -147,6 +147,8 @@ async function executeAdmittedNative(
     return problem(error instanceof BodyTooLargeError ? 413 : 400, 'center_body_invalid');
   }
 
+  // Only the Inference execution ticket can accept a prepared protocol request.
+  if (options.center === 'perception' && invocation.preparedRequest) return problem(400, 'center_prepared_request_not_allowed');
   if (options.center === 'perception') {
     const visionDeclared = modelRegistryEntry(env, invocation.logicalModel).catalog.capabilities.vision === true;
     if (!hasImageInput(clientBody) || !visionDeclared || !getProviderProfile(node.provider).imageInput) {
@@ -158,7 +160,7 @@ async function executeAdmittedNative(
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
   // v6 is exclusively a non-streaming public reply, even if the physical
   // upstream is later forced into SSE by Matrix conversion.
-  if (invocation.returnObject && clientBody.stream === true) return problem(400, 'center_stream_invalid');
+  if (invocation.returnObject && clientBody.stream === true && !invocation.preparedRequest) return problem(400, 'center_stream_invalid');
   // v4 is solely for real streaming requests; never synthesize an object
   // protocol response under a private framed-stream ticket.
   if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
@@ -170,10 +172,16 @@ async function executeAdmittedNative(
     if (!matchesNode) return problem(400, 'center_conversion_route_invalid');
     // Run the same pure adapter at the private dispatch boundary, regardless
     // of any Gateway-side feasibility/preflight decision.
-    const prepared = prepareProtocolRequest(clientBody, invocation.inputSurface, invocation.surface, invocation.preferNonstream === true);
-    if (!prepared.ok) return problem(prepared.status, prepared.code);
-    outboundBody = prepared.body;
-    isMutated = prepared.converted;
+    if (!invocation.preparedRequest) {
+      const prepared = prepareProtocolRequest(clientBody, invocation.inputSurface, invocation.surface, invocation.preferNonstream === true);
+      if (!prepared.ok) return problem(prepared.status, prepared.code);
+      outboundBody = prepared.body;
+      isMutated = prepared.converted;
+    } else {
+      // A private v7 ticket proves Protocol Center already prepared the body.
+      // Preserve reply conversion below without charging twice for request conversion.
+      isMutated = true;
+    }
   }
   // Enforce the mapping again at the physical dispatch boundary. A missing,
   // wildcard, or identity mapping must never send the public alias upstream.
