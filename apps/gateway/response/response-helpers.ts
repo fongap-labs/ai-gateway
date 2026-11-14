@@ -13,6 +13,27 @@ import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const streamErrorEncoder = new TextEncoder();
 
+// Only internal stream-state codes can appear in a committed client error.
+// A syntactically clean upstream string may still contain credentials.
+const STREAM_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'first_event_timeout',
+  'empty_stream',
+  'done_only_stream',
+  'client_aborted',
+  'malformed_first_event',
+  'first_event_error_envelope',
+  'first_event_pre_bytes_exceeded',
+  'first_event_sse_line_exceeded',
+  'reader_error',
+  'idle_timeout',
+  'upstream_terminal_failure',
+  'missing_completion_marker',
+  'incomplete_response',
+  'sse_observation_truncated',
+  'malformed_sse',
+  'bytes_after_terminal',
+]);
+
 // Build the final Response Headers for a gateway response, preserving the
 // content-type and x-accel-buffering from the upstream response, layering
 // extra headers on top, and finally adding the CORS headers derived from
@@ -61,7 +82,11 @@ export function streamInterruptionChunk(
     code = 'stream_interrupted',
   }: { nextSequenceNumber?: number; message?: string; code?: string } = {},
 ): Uint8Array {
-  const message = messageOverride ?? `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
+  // A stream is already committed (HTTP 200), so emit a protocol-specific SSE
+  // error instead of retrying or leaking arbitrary upstream failure text.
+  // Never treat arbitrary upstream strings as machine-readable identifiers.
+  const safeReason = reason && STREAM_FAILURE_CODES.has(reason) ? reason : 'unknown';
+  const message = messageOverride ?? `Gateway upstream stream interrupted (${safeReason}).`;
   let event: string;
   if (route === 'openai_responses') {
     event = `event: error\ndata: ${JSON.stringify({ type: 'error', code, message, param: null, sequence_number: nextSequenceNumber })}\n\n`;
