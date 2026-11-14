@@ -18,7 +18,7 @@ import { getProviderProfile } from '../../packages/contracts/provider-profiles.t
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
 import { modelRegistryEntry, servesModel } from '../../src/config/registry.ts';
-import { getLimits } from '../../src/config/timeouts.ts';
+import { getLimits, requestSizeAllowanceMs } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
 import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { trackIsolateRequest } from '../../src/ratelimit/isolate-concurrency.ts';
@@ -45,9 +45,10 @@ import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
 import { preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
 
-// A streaming attempt on a model that still has a sibling after it gives up
-// after this long when the upstream stays silent. Only the last model in the
-// plan may use the whole remaining request budget.
+// An attempt with a still-untried sibling gets a bounded waiting window.
+// The base cap grows with the same prompt-size allowance as the request
+// budget, so long Code prefill is not cut off at the short-prompt deadline.
+// The absolute attempt budget still reserves escape time for later models.
 const SIBLING_HOP_CAP_MS = 45_000;
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
@@ -561,7 +562,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
         ...loopCtx,
         feasibility: effectiveFeasibility,
         policy: passPolicy,
-        attemptCapMs: untriedLater ? SIBLING_HOP_CAP_MS : null,
+        attemptCapMs: untriedLater ? SIBLING_HOP_CAP_MS + requestSizeAllowanceMs(reqDescriptor.bodyChars) : null,
         takeRemainingWindow: earlierModelTried && !untriedLater,
         futureAttemptReserve,
       };
