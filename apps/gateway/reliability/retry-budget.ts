@@ -27,6 +27,36 @@ export function isIndependentKeyRecovery(previousNode: RuntimeNode | undefined, 
   return previousNode !== undefined && credentialSlotId(previousNode) !== credentialSlotId(candidate);
 }
 
+/**
+ * Prefer fresh credentials across the entire request, not only a fresh node ID.
+ * This is a soft preference: the tier loop falls back to the original candidate
+ * set when every remaining node shares a previously attempted credential.
+ * Only explicitly declared keyGroup identities may be treated as shared.
+ */
+export function preferUntriedCredentials(
+  candidates: ReadonlyArray<RuntimeNode>,
+  allNodes: ReadonlyArray<RuntimeNode>,
+  priorAttemptNodeIds: Iterable<string>,
+  attempted: ReadonlySet<string>,
+): Set<string> | null {
+  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+  const usedCredentialIds = new Set<string>();
+  for (const id of priorAttemptNodeIds) {
+    const node = nodeById.get(id);
+    if (node) usedCredentialIds.add(credentialSlotId(node));
+  }
+  if (!usedCredentialIds.size) return null;
+  const preferredAttempted = new Set(attempted);
+  let hasExcluded = false;
+  for (const node of candidates) {
+    if (!attempted.has(node.id) && usedCredentialIds.has(credentialSlotId(node))) {
+      preferredAttempted.add(node.id);
+      hasExcluded = true;
+    }
+  }
+  return hasExcluded ? preferredAttempted : null;
+}
+
 let activeRequests = 0;
 let retryingRequests = 0;
 let deniedTotal = 0;

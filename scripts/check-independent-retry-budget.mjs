@@ -7,6 +7,7 @@ import {
   __resetRetryBudgetForTests,
   isIndependentKeyRecovery,
   isSpeculativeRetryAfter,
+  preferUntriedCredentials,
   RETRY_BUDGET_RATIO,
   RETRY_INDEPENDENT_KEY_RATIO,
   RetrySlot,
@@ -29,6 +30,15 @@ assert.equal(isIndependentKeyRecovery(sameProvider, { ...sameProvider, id: 'slot
 assert.equal(isIndependentKeyRecovery(sameProvider, { ...sameProvider, id: 'slot-c', keyGroup: 'another-credential' }), true);
 assert.equal(isIndependentKeyRecovery(undefined, sameProvider), false);
 
+const sameKeyPeer = { ...sameProvider, id: 'slot-b' };
+const otherKeyPeer = { ...sameProvider, id: 'slot-c', keyGroup: 'another-credential' };
+const attempted = new Set(['slot-a']);
+const preferred = preferUntriedCredentials([sameKeyPeer, otherKeyPeer], [sameProvider, sameKeyPeer, otherKeyPeer], ['slot-a'], attempted);
+assert.deepEqual([...(preferred ?? [])].sort(), ['slot-a', 'slot-b'], 'prefer an untried Key over a second node sharing the failed credential');
+assert.equal(attempted.has('slot-b'), false, 'request-wide preference must not mutate the actual attempted set');
+assert.equal(preferUntriedCredentials([otherKeyPeer], [sameProvider, otherKeyPeer], ['slot-a'], attempted), null);
+assert.equal(preferUntriedCredentials([sameKeyPeer], [sameProvider, sameKeyPeer], ['unknown-node'], attempted), null);
+
 __resetRetryBudgetForTests();
 const active = Array.from({ length: 10 }, () => new RetrySlot());
 assert.equal(active[0].tryAcquire(), true);
@@ -47,6 +57,8 @@ assert.deepEqual(snapshotRetryBudget(), { active: 0, retrying: 0, denied: 2 });
 
 const tierLoop = readFileSync(new URL('../apps/gateway/tier-loop.ts', import.meta.url), 'utf8');
 assert.match(tierLoop, /if \(!mayDispatchNextAttempt\(state, node\)\)/);
+assert.match(tierLoop, /preferUntriedCredentials\(/);
+assert.match(tierLoop, /pickForTier\(tierNumber, tiers\[tierNumber\], reqDescriptor, state\.attempted, pickOpts\)/);
 assert.match(tierLoop, /releaseTier1Slot\(node\.id, pick\.tier1ReleaseToken/);
 assert.doesNotMatch(tierLoop, /if \(!mayDispatchNextAttempt\(state\)\) return null;/);
 console.log('Independent-Key retry budget passed: strict normal lane, bounded recovery lane, shared-credential exclusion, slot cleanup.');

@@ -12,7 +12,7 @@ import type { ConversionContext, LoopContext, LoopState } from '../../src/types/
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { dispatchWithHedge } from './attempt/hedge.ts';
 import { TIER_ORDER } from './policy/router.ts';
-import { isIndependentKeyRecovery, isSpeculativeRetryAfter } from './reliability/retry-budget.ts';
+import { isIndependentKeyRecovery, isSpeculativeRetryAfter, preferUntriedCredentials } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse } from './response/errors.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from './scheduling/tier-policy.ts';
 import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
@@ -92,14 +92,26 @@ export async function runTierLoop(
       );
       const requestRemaining = Math.max(1, state.maxAttempts - state.logicalAttempts);
       const remainingDispatchableAttempts = Math.max(1, Math.min(requestRemaining, currentPassRemaining + Math.max(0, futureAttemptReserve)));
-      const pick = pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, {
+      const pickOpts = {
         affinityAccountId: tierNumber === 1 ? tier1Affinity : null,
         evaluateAffinity: tierNumber === 1 && tier1EvaluateAffinity,
         rng: tier1Rng,
         knownModels,
         raceLostIds,
         maxInFlight: policy.maxInFlight ?? null,
-      });
+      };
+      // A model fallback can expose another node backed by a Key already tried
+      // earlier in the same request. Prefer a fresh Key before revisiting it;
+      // keep the ordinary picker as a fallback rather than stranding capacity.
+      const preferredAttempted = preferUntriedCredentials(
+        tiers[tierNumber],
+        state.nodes ?? [...tiers[1], ...tiers[2]],
+        state.attempts.map((attempt) => String(attempt.node_id ?? '')),
+        state.attempted,
+      );
+      const pick =
+        (preferredAttempted ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts) : null) ??
+        pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, pickOpts);
       if (!pick) break;
       if (pick.raceLost) {
         if (!pick.raceLostNodeId) break;
