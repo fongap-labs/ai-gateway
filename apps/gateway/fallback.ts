@@ -60,6 +60,7 @@ import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { buildBudgetExhaustedResponse, gatewayError } from './response/errors.ts';
 import { computeTierCaps } from './scheduling/tier-policy.ts';
 import { checkInferenceConversion } from './transport/inference-preflight-client.ts';
+import { reuseRequestConversionPreflight } from './transport/request-conversion-cache.ts';
 
 /** client route -> canonical IR protocol. */
 function routeToIrProtocol(route: string): IrProtocol | null {
@@ -140,15 +141,24 @@ export async function runFallbackChain({
       // clients still get the forced upstream stream).
       // The public Gateway is never allowed to run the private body translator.
       // Missing/invalid center bindings reject before any physical attempt.
-      conversionResult = await checkInferenceConversion(env, {
-        request,
-        requestId,
-        from,
-        to,
-        body: bodyJson,
-        isNonstreamPreferred,
-        deadlineMs: requestStartMs + failoverBudgetMs,
-      });
+      // Family alias fallback can reach the same protocol pair repeatedly.
+      // Reuse only a successful check for this exact body within this request.
+      // No failure or Provider capability is cached across requests.
+      conversionResult = await reuseRequestConversionPreflight(
+        state,
+        bodyJson,
+        JSON.stringify([from, to, isNonstreamPreferred]),
+        () =>
+          checkInferenceConversion(env, {
+            request,
+            requestId,
+            from,
+            to,
+            body: bodyJson,
+            isNonstreamPreferred,
+            deadlineMs: requestStartMs + failoverBudgetMs,
+          }),
+      );
     } catch (e) {
       if (e instanceof InferenceCenterUnavailable) {
         // A preflight RPC failure is not a Provider failure. Fail closed
