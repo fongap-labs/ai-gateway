@@ -77,7 +77,7 @@ const invalid = gatewayError(
   400,
   'The request contains a field that is not supported by any configured target.\nDo not retry.',
   'bad-id',
-  { unsupported_fields: ['unknown_field'] },
+  { failure_kind: 'unsupported_request_field', unsupported_fields: ['unknown_field'] },
   undefined,
   'gateway_unsupported_request_field',
   false,
@@ -87,6 +87,8 @@ assert.equal(invalid.status, 400);
 assert.match(invalidJson.error.message, /^400 \| /);
 assert.ok(!invalidJson.error.message.includes('\n'));
 assert.equal(invalid.headers.get('x-gateway-retryable'), 'false');
+assert.equal(invalidJson.error.details.failure_kind, 'unsupported_request_field');
+assert.deepEqual(invalidJson.error.details.unsupported_fields, ['unknown_field']);
 
 const debug = gatewayError(
   request,
