@@ -47,14 +47,14 @@ export function preferUntriedCredentials(
   }
   if (!usedCredentialIds.size) return null;
   const preferredAttempted = new Set(attempted);
-  let excluded = false;
+  let hasExcluded = false;
   for (const node of candidates) {
     if (!attempted.has(node.id) && usedCredentialIds.has(credentialSlotId(node))) {
       preferredAttempted.add(node.id);
-      excluded = true;
+      hasExcluded = true;
     }
   }
-  return excluded ? preferredAttempted : null;
+  return hasExcluded ? preferredAttempted : null;
 }
 
 let activeRequests = 0;
