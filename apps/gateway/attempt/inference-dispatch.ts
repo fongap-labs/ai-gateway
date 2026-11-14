@@ -271,6 +271,33 @@ export async function dispatchInferenceAttempt(
   // signal lets the scheduler try another candidate without charging usage.
   if (execution.result !== EXECUTION_WIRE_RESULT.DISPATCHED) {
     detach();
+    // A private Protocol Center can reject conversion before any Provider fetch.
+    // Preserve its precise 400/422 rather than reporting a generic 503 outage.
+    const preDispatchCode = upstream.headers.get('x-aig-error-kind');
+    if (
+      execution.result === EXECUTION_WIRE_RESULT.NOT_DISPATCHED &&
+      (upstream.status === 400 || upstream.status === 422) &&
+      (preDispatchCode === 'center_conversion_invalid' ||
+        preDispatchCode === 'center_conversion_route_invalid' ||
+        preDispatchCode === 'center_conversion_semantic_loss')
+    ) {
+      const semanticLoss = preDispatchCode === 'center_conversion_semantic_loss';
+      return {
+        budgetCharged: false,
+        response: gatewayError(
+          request,
+          env,
+          route,
+          upstream.status,
+          semanticLoss ? 'Cross-protocol request would lose required tool or reasoning semantics.' : 'Cross-protocol request is not valid.',
+          c.requestId,
+          undefined,
+          undefined,
+          semanticLoss ? 'gateway_protocol_semantic_loss' : 'gateway_protocol_invalid_request',
+          false,
+        ),
+      };
+    }
     // A center-isolate memory refusal is request-local, not evidence of a bad
     // Provider or an unavailable center. Preserve the Gateway's retryable
     // body-budget 503 and never charge an upstream execution.
