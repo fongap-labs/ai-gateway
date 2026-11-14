@@ -985,6 +985,22 @@ assert.match(requestAdapter, /highRiskSemanticLoss\(converted\)/, 'Protocol adap
 assert.doesNotMatch(requestAdapter, /from ['"][^'"]*\/apps\/gateway\//, 'Protocol adapter must not depend on Gateway');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
 const responseCenter = readFileSync(join(root, 'packages/protocol-center-core/response.ts'), 'utf8');
+const protocolExecutionOwner = readFileSync(join(root, 'packages/protocol-center-core/execute.ts'), 'utf8');
+assert.match(
+  inferenceExecutor,
+  /if \(invocation.rawResponse\) return new Response\(upstream.body/,
+  'Only authenticated v8 tickets may hand raw Provider bytes to Protocol',
+);
+assert.match(
+  protocolExecutionOwner,
+  /return convertPrivateMatrixResponse\(raw, invocation, prepared\.body/,
+  'Protocol Core must translate the raw response once',
+);
+assert.doesNotMatch(
+  protocolExecutionOwner,
+  /dispatchProviderAttempt|await fetch\(|getProviderAdapter|runTierLoop/,
+  'Protocol response owner must not execute physical Provider requests or retry',
+);
 assert.match(
   inferenceExecutor,
   /return convertPrivateMatrixResponse\(/,
@@ -1002,6 +1018,7 @@ assert.match(responseCenter, /replyToObject\(reply, clientProtocol\)/, 'Inferenc
 assert.match(responseGateway, /isTranslatedObjectEnvelope\(native\)/, 'Gateway must strictly validate pretranslated objects');
 assert.match(responseGateway, /recordTokens\(c, node, native.upstreamUsage\)/, 'Gateway must settle the physical upstream usage once');
 assert.match(responseContract, /EXECUTION_OBJECT_CONTRACT_VERSION = '3'/, 'v3 object conversion must use its own contract version');
+assert.match(responseContract, /EXECUTION_RAW_RESPONSE_CONTRACT_VERSION = '8'/, 'Raw provider handoff must require a new v8 contract');
 const inferencePreflight = readFileSync(join(root, 'apps/inference/preflight.ts'), 'utf8');
 const delegatedFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
 const inferencePreflightClient = readFileSync(join(root, 'apps/gateway/transport/inference-preflight-client.ts'), 'utf8');

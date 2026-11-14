@@ -8,6 +8,7 @@ import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation,
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
 import { BodyTooLargeError, readBodyTextWithLimit } from '../transport/http.ts';
+import { convertPrivateMatrixResponse } from './response.ts';
 
 function rejected(status: number, code: string): Response {
   return serializeExecutionError(status, code, { retryable: false, result: EXECUTION_WIRE_RESULT.NOT_DISPATCHED });
@@ -48,7 +49,7 @@ export async function executeProtocolRequest(request: Request, env: GatewayEnv, 
   if (Date.now() >= invocation.deadlineMs) return rejected(504, 'protocol_execution_deadline');
 
   const headers = buildExecutionHeaders(
-    { ...invocation, traceparent: request.headers.get('traceparent') ?? undefined, preparedRequest: true },
+    { ...invocation, traceparent: request.headers.get('traceparent') ?? undefined, preparedRequest: true, rawResponse: true },
     'x-aig-inference-auth',
     auth,
   );
@@ -63,12 +64,18 @@ export async function executeProtocolRequest(request: Request, env: GatewayEnv, 
     body,
     signal: request.signal,
   });
-  // Do not buffer or inspect the response: streaming and settled usage remain
-  // owned by Inference, including framed cross-protocol SSE.
+  // Inference owns the one physical Provider dispatch. Protocol alone handles
+  // native-object conversion, framed SSE, output budgets and raw usage relay.
+  // Never buffer raw streamed bytes before passing them to the shared codec.
   try {
-    return await center.fetch(forwarding);
+    const raw = await center.fetch(forwarding);
+    if (!raw.ok || raw.headers.get('x-aig-result') !== EXECUTION_WIRE_RESULT.DISPATCHED) return raw;
+    // Token seeding (when upstream usage is absent) must inspect the physical
+    // protocol body, not the original client's different message schema.
+    return convertPrivateMatrixResponse(raw, invocation, prepared.body, env, request.signal, new Headers(raw.headers));
   } catch {
-    // Provider execution may already have begun; do not claim NOT_DISPATCHED.
+    // The Provider may already have executed. This is an ambiguous outcome;
+    // do not claim NOT_DISPATCHED or retry the original request.
     return serializeExecutionError(503, 'protocol_inference_outcome_unknown', { retryable: false });
   }
 }

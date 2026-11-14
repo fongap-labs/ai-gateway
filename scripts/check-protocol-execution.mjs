@@ -51,7 +51,8 @@ env.AIG_INFERENCE_SERVICE = {
     assert.ok(ticket, 'Inference must validate the versioned ticket');
     if (ticket.inputSurface) {
       assert.equal(ticket.preparedRequest, true, 'Inference must not translate the same request twice');
-      assert.equal(request.headers.get('x-aig-contract-version'), '7');
+      assert.equal(request.headers.get('x-aig-contract-version'), '8');
+      assert.equal(ticket.rawResponse, true, 'Inference must only return raw bytes to Protocol on a v8 ticket');
       assert.equal(request.headers.get('x-aig-prepared-request'), 'true');
     }
     assert.equal(request.headers.get('x-aig-inference-auth'), inferenceKey);
@@ -139,7 +140,7 @@ try {
     AIG_INFERENCE_SERVICE: {
       async fetch(request) {
         streamed++;
-        assert.equal(request.headers.get('x-aig-contract-version'), '7');
+        assert.equal(request.headers.get('x-aig-contract-version'), '8');
         const ticket = parseExecutionInvocation(request, new Set(['chat_completions', 'responses', 'messages']));
         assert.equal(ticket?.preparedRequest, true);
         return new Response('framed-stream-data', {
