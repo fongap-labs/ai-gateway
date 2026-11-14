@@ -52,12 +52,7 @@ export function configuredInferenceService(env: GatewayEnv): InferenceService {
 }
 
 /** Build one request. Caller remains responsible for retries, budgets and SSE commit. */
-function buildPrivateCenterRequest(
-  invocation: InferenceInvocation,
-  authHeader: string,
-  key: string,
-  destination: 'inference' | 'protocol',
-): Request {
+function buildPrivateCenterRequest(invocation: InferenceInvocation, authHeader: string, key: string, destination: 'inference' | 'protocol'): Request {
   const headers = buildExecutionHeaders(
     {
       requestId: invocation.requestId,
