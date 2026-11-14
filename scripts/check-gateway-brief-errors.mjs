@@ -46,9 +46,14 @@ for (const [route, field] of cases) {
   assert.equal(message.includes('\n'), false);
   assert.ok(message.length < 100);
   assert.equal(JSON.stringify(json).includes('failover_summary'), false, 'diagnostic object must not flood the client');
-  assert.equal(JSON.stringify(json).includes('failure_kinds'), false);
+  if (route === 'openai_responses') assert.equal(JSON.stringify(json).includes('failure_kinds'), false);
   if (route !== 'openai_responses')
-    assert.deepEqual(json[field]?.details, { gateway_code: 'gateway_attempt_budget_exhausted', retryable: true, retry_after_ms: 9000 });
+    assert.deepEqual(json[field]?.details, {
+      gateway_code: 'gateway_attempt_budget_exhausted',
+      retryable: true,
+      retry_after_ms: 9000,
+      failure_kinds: { headers_timeout: 2 },
+    });
   if (route === 'openai_responses') assert.equal(json.error.code, null, 'Responses SDK contract is unchanged');
   if (route === 'anthropic_messages') assert.equal(json.type, 'error');
 }

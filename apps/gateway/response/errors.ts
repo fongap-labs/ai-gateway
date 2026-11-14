@@ -130,6 +130,12 @@ export function gatewayError(
     hadHeadersTimeout &&
     parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
+  // Some protocol adapters retain a JSON error but drop response headers.
+  // Carry only the single bounded classification needed to honor this
+  // no-immediate-replay decision; never restore the full failure graph.
+  const compactRetryEvidence = deferredFamilyRetry
+    ? { failure_kinds: { headers_timeout: Math.trunc(Number((kinds as Record<string, unknown>).headers_timeout)) } }
+    : {};
   if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
   if (gatewayCode === GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED || gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
     diagnosticHeaders['x-gateway-budget-exhausted'] = 'true';
@@ -168,6 +174,7 @@ export function gatewayError(
           gateway_code: gatewayCode,
           retryable,
           ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
+          ...compactRetryEvidence,
           ...validationDetails,
           // A rejected client field is actionable, unlike internal failover
           // graphs. Preserve this bounded machine-readable API contract.
