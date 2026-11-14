@@ -4,7 +4,7 @@
 // One stateless request conversion before private Inference execution.
 // Provider secrets, Key rotation, retries and upstream networking stay in Inference/Gateway.
 import { getLimits } from '../config-core/timeouts.ts';
-import { buildExecutionHeaders, type ExecutionInvocation, EXECUTION_WIRE_RESULT, serializeExecutionError } from '../contracts/execution.ts';
+import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation, serializeExecutionError } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
 import { BodyTooLargeError, readBodyTextWithLimit } from '../transport/http.ts';
