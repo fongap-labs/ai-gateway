@@ -414,67 +414,17 @@ export function buildClientErrorResponse(
 ): Response {
   const genericDetail = `Upstream rejected the request with HTTP ${status}.`;
   const detail = shouldExposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
-  const attemptsDetail = shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {};
-  if (route === 'anthropic_messages') {
-    return new Response(
-      JSON.stringify({
-        type: 'error',
-        error: { type: anthropicErrorTypeForStatus(status), message: detail },
-      }),
-      {
-        status,
-        headers: {
-          'content-type': 'application/json;charset=UTF-8',
-          'cache-control': 'no-store',
-          'request-id': requestId,
-          'x-request-id': requestId,
-          ...shouldNotRetryHeaders(status),
-          ...corsHeaders(request, env),
-        },
-      },
-    );
-  }
-  if (route === 'openai_responses') {
-    return responsesErrorResponse(
-      request,
-      env,
-      status,
-      detail,
-      requestId,
-      responsesDiagnosticHeaders({
-        requested_model: requestedModel,
-        attempts: state.logicalAttempts,
-        dispatches: state.dispatches,
-        hedges: state.hedges,
-      }),
-    );
-  }
-  return new Response(
-    JSON.stringify({
-      error: {
-        message: detail,
-        details: {
-          requested_model: requestedModel,
-          attempts: state.logicalAttempts,
-          dispatches: state.dispatches,
-          hedges: state.hedges,
-          ...(state.failureKinds && Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
-          ...summarizeFailoverAttempts(state.attempts),
-          ...attemptsDetail,
-        },
-      },
-    }),
-    {
-      status,
-      headers: {
-        'content-type': 'application/json;charset=UTF-8',
-        'cache-control': 'no-store',
-        'x-request-id': requestId,
-        ...shouldNotRetryHeaders(status),
-        ...corsHeaders(request, env),
-      },
-    },
-  );
+  // The terminal client-error path must use the same short, status-first
+  // envelope as exhaustion and admission errors. Attempt graphs are only
+  // available when the caller deliberately enables upstream diagnostics.
+  return gatewayError(request, env, route, status, detail, requestId, {
+    requested_model: requestedModel,
+    attempts: state.logicalAttempts,
+    dispatches: state.dispatches,
+    hedges: state.hedges,
+    ...(Object.keys(state.failureKinds).length ? { failure_kinds: state.failureKinds } : {}),
+    ...(shouldExposeUpstreamInfo && state.attempts.length ? { attempts_detail: state.attempts.slice(-1) } : {}),
+  });
 }
 
 function extractErrorMessage(text: string | Uint8Array | null | undefined): string {
