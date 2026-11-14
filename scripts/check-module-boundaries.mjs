@@ -61,7 +61,13 @@ for (const [legacy, owner, exports] of [
     assert.match(readFileSync(join(root, 'packages/contracts', owner.split('/').at(-1)), 'utf8'), new RegExp(`export type ${typeName}\\b`));
   }
 }
-for (const entry of ['apps/gateway/index.ts', 'apps/inference/index.ts', 'apps/protocol/index.ts', 'apps/generation/index.ts', 'operations/index.ts']) {
+for (const entry of [
+  'apps/gateway/index.ts',
+  'apps/inference/index.ts',
+  'apps/protocol/index.ts',
+  'apps/generation/index.ts',
+  'operations/index.ts',
+]) {
   const source = readFileSync(join(root, entry), 'utf8');
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
