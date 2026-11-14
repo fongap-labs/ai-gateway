@@ -150,11 +150,7 @@ export class BodyAdmissionBudgetError extends Error {
 
 // Collects the raw chunks and decodes once. A multi-byte UTF-8 sequence split across
 // chunks is then decoded whole, and the body is never built up as a string piece by piece.
-export async function readBodyTextWithLimit(
-  request: Request,
-  maxBytes: number,
-  observeBytes?: (actualBytes: number) => boolean,
-): Promise<string> {
+export async function readBodyTextWithLimit(request: Request, maxBytes: number, observeBytes?: (actualBytes: number) => boolean): Promise<string> {
   if (!request.body) return '';
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
