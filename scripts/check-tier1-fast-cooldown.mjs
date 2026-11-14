@@ -59,6 +59,7 @@ assert.equal(recovering.failureState, 'cooldown');
 
 const rejected = classifyUpstreamStatus(422, new Headers(), {}, t, 'unprocessable');
 assert.equal(rejected.action, 'rotate', 'opaque 422 permits a bounded alternate physical route');
+assert.equal(rejected.uncertain422, true, 'opaque upstream 422 must remain distinguishable from malformed client payloads');
 assert.equal(rejected.counted, false);
 const invalidRequest = classifyUpstreamStatus(422, new Headers(), {}, t, '{"error":{"code":"invalid_json"}}');
 assert.equal(invalidRequest.action, 'stop', 'explicit invalid request must not be replayed');
