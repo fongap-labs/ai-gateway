@@ -152,7 +152,14 @@ export function gatewayError(
   const validationDetails =
     status === 400 && details?.failure_kind === 'unsupported_request_field'
       ? { failure_kind: 'unsupported_request_field', unsupported_fields: unsupportedFields }
-      : {};
+      : status === 502 && details?.failure_kind === 'conversion_not_supported'
+        ? {
+            failure_kind: 'conversion_not_supported',
+            ...(typeof details.dispatches === 'number' && Number.isSafeInteger(details.dispatches) && details.dispatches >= 0
+              ? { dispatches: details.dispatches }
+              : {}),
+          }
+        : {};
   const exposeDetails = details !== undefined && Object.hasOwn(details, 'attempts_detail');
   const errorDetails = exposeDetails
     ? { ...details, ...(gatewayCode ? { gateway_code: gatewayCode } : {}), retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
