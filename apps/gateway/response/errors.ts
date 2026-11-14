@@ -90,7 +90,7 @@ function clientErrorMessage(
   if (exhausted) {
     const subject = model || 'Model';
     const reason = status === 408 ? 'request deadline exceeded' : 'temporarily unavailable';
-    const attemptsText = attempts ? ` after ${attempts} attempts` : '';
+    const attemptsText = attempts ? ` after ${attempts} ${attempts === 1 ? 'attempt' : 'attempts'}` : '';
     const retryText = retryAfterMs > 0 ? `; retry after ${Math.ceil(retryAfterMs / 1000)}s` : '';
     return `${status} | ${subject} ${reason}${attemptsText}${retryText}.`;
   }
