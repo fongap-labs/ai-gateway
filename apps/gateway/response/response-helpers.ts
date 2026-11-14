@@ -61,7 +61,11 @@ export function streamInterruptionChunk(
     code = 'stream_interrupted',
   }: { nextSequenceNumber?: number; message?: string; code?: string } = {},
 ): Uint8Array {
-  const message = messageOverride ?? `Gateway upstream stream interrupted (${reason || 'unknown'}).`;
+  // A stream is already committed (HTTP 200), so emit a protocol-specific SSE
+  // error instead of retrying or leaking arbitrary upstream failure text.
+  // Only finite machine-readable reason codes are safe in the client payload.
+  const safeReason = typeof reason === 'string' && /^[a-zA-Z0-9_.-]{1,64}$/.test(reason) ? reason : 'unknown';
+  const message = messageOverride ?? `Gateway upstream stream interrupted (${safeReason}).`;
   let event: string;
   if (route === 'openai_responses') {
     event = `event: error\ndata: ${JSON.stringify({ type: 'error', code, message, param: null, sequence_number: nextSequenceNumber })}\n\n`;
