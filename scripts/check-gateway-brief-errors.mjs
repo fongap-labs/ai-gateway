@@ -90,6 +90,27 @@ assert.equal(invalid.headers.get('x-gateway-retryable'), 'false');
 assert.equal(invalidJson.error.details.failure_kind, 'unsupported_request_field');
 assert.deepEqual(invalidJson.error.details.unsupported_fields, ['unknown_field']);
 
+// A pre-dispatch codec rejection retains a bounded machine-readable reason
+// without exposing the physical routing or retry graph.
+const conversionValidation = gatewayError(
+  request,
+  {},
+  'anthropic_messages',
+  502,
+  'Configured protocol fallback cannot represent this request.',
+  'conversion-id',
+  { failure_kind: 'conversion_not_supported', dispatches: 0 },
+  undefined,
+  'gateway_conversion_not_supported',
+  false,
+);
+const conversionValidationBody = await conversionValidation.json();
+assert.equal(conversionValidationBody.error.message, '502 | Configured protocol fallback cannot represent this request.');
+assert.equal(conversionValidationBody.error.details.gateway_code, 'gateway_conversion_not_supported');
+assert.equal(conversionValidationBody.error.details.failure_kind, 'conversion_not_supported');
+assert.equal(conversionValidationBody.error.details.dispatches, 0);
+assert.equal(conversionValidation.headers.get('x-gateway-dispatches'), '0');
+
 const debug = gatewayError(
   request,
   {},
