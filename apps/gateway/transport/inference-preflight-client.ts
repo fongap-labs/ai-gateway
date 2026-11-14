@@ -7,8 +7,8 @@ import {
   buildProtocolPreflightHeaders,
   type ConversionPreflightApproval,
   INFERENCE_PREFLIGHT_PATH,
-  PROTOCOL_PREFLIGHT_PATH,
   isConversionPreflightResult,
+  PROTOCOL_PREFLIGHT_PATH,
 } from '../../../packages/contracts/conversion-preflight.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import type { IrProtocol } from '../../../packages/conversion-core/ir.ts';
@@ -35,7 +35,10 @@ export async function checkInferenceConversion(
   // An installed but misconfigured binding must fail closed, without silent bypass.
   const protocolService = env.AIG_PROTOCOL_SERVICE as { fetch?: (request: Request) => Promise<Response> } | undefined;
   const useProtocol = protocolService !== undefined;
-  if (useProtocol && (typeof protocolService?.fetch !== 'function' || typeof env.AIG_PROTOCOL_AUTH_KEY !== 'string' || env.AIG_PROTOCOL_AUTH_KEY.length < 32)) {
+  if (
+    useProtocol &&
+    (typeof protocolService?.fetch !== 'function' || typeof env.AIG_PROTOCOL_AUTH_KEY !== 'string' || env.AIG_PROTOCOL_AUTH_KEY.length < 32)
+  ) {
     throw new InferenceCenterUnavailable();
   }
   const service = useProtocol ? (protocolService as { fetch: (request: Request) => Promise<Response> }) : configuredInferenceService(env);
@@ -51,17 +54,20 @@ export async function checkInferenceConversion(
   if (invocation.request.signal.aborted) onAbort();
   else invocation.request.signal.addEventListener('abort', onAbort, { once: true });
   try {
-    const request = new Request(`https://${useProtocol ? 'protocol' : 'inference'}.internal${useProtocol ? PROTOCOL_PREFLIGHT_PATH : INFERENCE_PREFLIGHT_PATH}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        from: invocation.from,
-        to: invocation.to,
-        body: invocation.body,
-        isNonstreamPreferred: invocation.isNonstreamPreferred,
-      }),
-      signal: controller.signal,
-    });
+    const request = new Request(
+      `https://${useProtocol ? 'protocol' : 'inference'}.internal${useProtocol ? PROTOCOL_PREFLIGHT_PATH : INFERENCE_PREFLIGHT_PATH}`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          from: invocation.from,
+          to: invocation.to,
+          body: invocation.body,
+          isNonstreamPreferred: invocation.isNonstreamPreferred,
+        }),
+        signal: controller.signal,
+      },
+    );
     const response = await service.fetch(request);
     if (response.status !== 200 && response.status !== 422) throw new InferenceCenterUnavailable();
     const read = await readBodyTextBounded(response, 8192, deadlineMs);
