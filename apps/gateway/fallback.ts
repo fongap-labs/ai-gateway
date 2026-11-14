@@ -144,20 +144,16 @@ export async function runFallbackChain({
       // Family alias fallback can reach the same protocol pair repeatedly.
       // Reuse only a successful check for this exact body within this request.
       // No failure or Provider capability is cached across requests.
-      conversionResult = await reuseRequestConversionPreflight(
-        state,
-        bodyJson,
-        JSON.stringify([from, to, isNonstreamPreferred]),
-        () =>
-          checkInferenceConversion(env, {
-            request,
-            requestId,
-            from,
-            to,
-            body: bodyJson,
-            isNonstreamPreferred,
-            deadlineMs: requestStartMs + failoverBudgetMs,
-          }),
+      conversionResult = await reuseRequestConversionPreflight(state, bodyJson, JSON.stringify([from, to, isNonstreamPreferred]), () =>
+        checkInferenceConversion(env, {
+          request,
+          requestId,
+          from,
+          to,
+          body: bodyJson,
+          isNonstreamPreferred,
+          deadlineMs: requestStartMs + failoverBudgetMs,
+        }),
       );
     } catch (e) {
       if (e instanceof InferenceCenterUnavailable) {
