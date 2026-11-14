@@ -3,7 +3,7 @@
 // Private Protocol Center admission. No public routes, Provider credentials,
 // model selection, Tier dispatch or retries in this Worker.
 import { PROTOCOL_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
-import { type ExecutionSurface, EXECUTION_PATH, authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
+import { authorizeExecutionRequest, EXECUTION_PATH, type ExecutionSurface, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { problem } from '../../packages/execution-core/response.ts';
@@ -23,11 +23,8 @@ export async function handleProtocolCenterRequest(request: Request, env: Gateway
   if (path === EXECUTION_PATH && request.method === 'POST') {
     const execution = parseExecutionInvocation(request, ALLOWED_SURFACES);
     if (!execution || !execution.inputSurface || execution.preparedRequest) return problem(400, 'protocol_execution_contract_invalid');
-    return withNativeSpan(
-      ctx,
-      'aig.protocol.execute',
-      { requestId: execution.requestId, center: 'protocol', phase: 'prepare' },
-      () => executeProtocolRequest(request, env, execution),
+    return withNativeSpan(ctx, 'aig.protocol.execute', { requestId: execution.requestId, center: 'protocol', phase: 'prepare' }, () =>
+      executeProtocolRequest(request, env, execution),
     );
   }
   if (path !== PROTOCOL_PREFLIGHT_PATH || request.method !== 'POST') return problem(404, 'center_route_not_found');
