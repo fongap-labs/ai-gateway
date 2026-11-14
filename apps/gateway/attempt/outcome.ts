@@ -159,22 +159,41 @@ export function recordOutcome(
       kind: classification.kind,
     });
   }
-  // A confirmed endpoint 404 is a route failure, not a quota failure.
-  // In this request only, do not probe other free keys pointing at the exact
-  // same Provider URL, protocol, surface and physical model. Paid Tier 2
-  // remains eligible, as do other URLs/models and subsequent requests.
+  // Endpoint/physical-route rejections are not credential failures.
+  // Once two equivalent 422 dispatches fail, exclude remaining sibling Keys
+  // for this request. Explicit endpoint 404s are excluded immediately.
+  // Other physical routes and subsequent requests remain eligible.
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
-  if (classification.kind === KIND.ENDPOINT_NOT_FOUND && failedSurface) {
-    for (const peer of state.nodes ?? []) {
-      if (
-        peer.tier === node.tier &&
-        peer.provider === node.provider &&
-        peer.baseUrl === node.baseUrl &&
-        peer.protocol === node.protocol &&
-        peer.surfaces.includes(failedSurface) &&
-        upstreamModelOf(peer, effectiveModel) === physicalModel
-      ) {
-        state.attempted.add(peer.id);
+  if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
+    // An opaque 422 is not proof that every Key on this physical route is
+    // unusable. Permit one alternate Key before excluding equivalent routes.
+    // Do not persist this as a model capability fact between requests.
+    const previousSameRoute422 =
+      status === 422 &&
+      state.attempts.some((attempt) => {
+        if (attempt.dispatched !== true || attempt.status !== 422) return false;
+        const previousNode = (state.nodes ?? []).find((candidate) => candidate.id === attempt.node_id);
+        return (
+          previousNode?.tier === node.tier &&
+          previousNode.provider === node.provider &&
+          previousNode.baseUrl === node.baseUrl &&
+          previousNode.protocol === node.protocol &&
+          (attempt.surface ?? failedSurface) === failedSurface &&
+          upstreamModelOf(previousNode, String(attempt.effective_model ?? effectiveModel)) === physicalModel
+        );
+      });
+    if (status !== 422 || !classification.uncertain422 || previousSameRoute422) {
+      for (const peer of state.nodes ?? []) {
+        if (
+          peer.tier === node.tier &&
+          peer.provider === node.provider &&
+          peer.baseUrl === node.baseUrl &&
+          peer.protocol === node.protocol &&
+          peer.surfaces.includes(failedSurface) &&
+          upstreamModelOf(peer, effectiveModel) === physicalModel
+        ) {
+          state.attempted.add(peer.id);
+        }
       }
     }
   }

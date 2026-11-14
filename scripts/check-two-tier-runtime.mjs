@@ -474,11 +474,15 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '', schemaError 
   const first = `tier1-rotate-a-${failureStatus}${suffix}`;
   const second = `tier1-rotate-b-${failureStatus}${suffix}`;
   const dispatches = [];
+  // A confirmed protocol incompatibility must be rerouted to a different
+  // physical model, not replayed across Keys of the same model.
+  const isConfirmedIncompatible = errorCode === 'unsupported_parameter' || schemaError;
+  const alternateNode = isConfirmedIncompatible ? node(second, { models: { [CUTOVER_MODEL]: 'mock-alternate-upstream-model' } }) : node(second);
   const env = {
     AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
     AIG_ACCESS_MODELS_AIR: '*',
     AIG_INFERENCE_AUTH_KEY: 'a'.repeat(32),
-    AIG_TIER1_NODES_01: JSON.stringify([node(first), node(second)]),
+    AIG_TIER1_NODES_01: JSON.stringify([node(first), alternateNode]),
     AIG_MODELS_CONFIG: JSON.stringify({ [CUTOVER_MODEL]: { policy: 'default' } }),
     AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 2, tier_attempts: { tier1: 2 }, hedge: { enabled: false } } }),
     AIG_INFERENCE_SERVICE: {
@@ -630,7 +634,7 @@ await verifyCrossModelProviderFailover(503, 'temporarily unavailable');
 await verifyCrossModelProviderFailover(422, 'No endpoints found for model physical-primary');
 
 // Preserve legacy 400-as-node-incompatibility routing (tested above), but
-// a terminal Provider 422 must NOT be replayed on other Keys or paid fallback.
+// a structured invalid client request 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
   const freeId = `free-terminal-${status}`;
   const dispatched = [];
@@ -647,7 +651,7 @@ async function verifyTerminalClientError(status) {
     AIG_INFERENCE_SERVICE: {
       async fetch(request) {
         dispatched.push(request.headers.get('x-aig-node-id'));
-        return new Response(JSON.stringify({ error: { message: 'mock invalid input' } }), {
+        return new Response(JSON.stringify({ error: { code: 'invalid_json', message: 'mock invalid input' } }), {
           status,
           headers: { 'content-type': 'application/json', 'x-aig-result': 'dispatched' },
         });
