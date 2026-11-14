@@ -186,6 +186,15 @@ export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): 
   return JSON.stringify([credentialSlotId(node), resolvePhysicalModel(node, logicalModel)]);
 }
 
+/**
+ * A Provider/model/surface incompatibility is a physical route failure,
+ * irrespective of how many distinct Keys advertise that exact same route.
+ * This is request-local and is never persisted as a model capability fact.
+ */
+export function physicalRouteFailureDomainKey(node: RuntimeNode, logicalModel: string, surface: string): string {
+  return JSON.stringify(['physical-route', node.tier, node.provider, node.baseUrl, node.protocol, surface, resolvePhysicalModel(node, logicalModel)]);
+}
+
 /** A real failed Key cannot be tried again under another logical alias. */
 function keyFailureDomainKey(node: RuntimeNode): string {
   return JSON.stringify([credentialSlotId(node), '*failed-key*']);
@@ -195,11 +204,20 @@ function keyFailureDomainKey(node: RuntimeNode): string {
  * Seed a new model pass with both spent Key+model routes and physically failed
  * Keys. A distinct Key remains eligible even if it targets the same model.
  */
-export function failedDomainNodeIds(nodes: ReadonlyArray<RuntimeNode>, logicalModel: string, failedDomains: ReadonlySet<string>): Set<string> {
+export function failedDomainNodeIds(
+  nodes: ReadonlyArray<RuntimeNode>,
+  logicalModel: string,
+  failedDomains: ReadonlySet<string>,
+  surface?: string,
+): Set<string> {
   const attempted = new Set<string>();
   if (failedDomains.size === 0) return attempted;
   for (const node of nodes) {
-    if (failedDomains.has(keyFailureDomainKey(node)) || failedDomains.has(modelFailureDomainKey(node, logicalModel))) {
+    if (
+      failedDomains.has(keyFailureDomainKey(node)) ||
+      failedDomains.has(modelFailureDomainKey(node, logicalModel)) ||
+      (surface !== undefined && failedDomains.has(physicalRouteFailureDomainKey(node, logicalModel, surface)))
+    ) {
       attempted.add(node.id);
     }
   }
@@ -226,9 +244,20 @@ export function rememberFailedDomains(
   for (const attempt of attempts) {
     if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
-    // A model-scoped 429 must not exclude unrelated physical models on the Key.
-    if (node && (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account'))) {
+    if (!node) continue;
+    // A model-window 429 does not remove unrelated models of the same Key.
+    if (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account')) {
       failedDomains.add(keyFailureDomainKey(node));
+    }
+    // The exact physical route may have failed independently of Key identity.
+    const rejectedRoute =
+      (attempt.kind === 'model_missing' && attempt.status === 404) ||
+      attempt.kind === 'endpoint_not_found' ||
+      (attempt.kind === 'client' && attempt.status === 422);
+    const attemptSurface = typeof attempt.surface === 'string' ? attempt.surface : '';
+    const attemptedModel = typeof attempt.effective_model === 'string' ? attempt.effective_model : logicalModel;
+    if (rejectedRoute && attemptSurface) {
+      failedDomains.add(physicalRouteFailureDomainKey(node, attemptedModel, attemptSurface));
     }
   }
 }

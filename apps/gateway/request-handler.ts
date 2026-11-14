@@ -411,7 +411,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
     for (let i = 0; i < futurePasses.length && slotsLeft > 0; i++) {
       const futurePass = futurePasses[i];
       if (!futurePass) continue;
-      const excluded = failedDomainNodeIds(config.nodes, futurePass.model, failedDomains);
+      const excluded = failedDomainNodeIds(config.nodes, futurePass.model, failedDomains, reqDescriptor.surface);
       if (!feasibilityForModel(futurePass.model, excluded).reachable) continue;
       const cap = futurePass.attemptCap == null ? slotsLeft : futurePass.attemptCap;
       const take = Math.min(slotsLeft, Math.max(0, cap));
@@ -526,7 +526,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       const passPolicy = passAttemptCeiling === requestPolicy.maxAttempts ? requestPolicy : { ...requestPolicy, maxAttempts: passAttemptCeiling };
 
       const effectiveReqDescriptor = { ...reqDescriptor, model: effectiveModel };
-      state.attempted = failedDomainNodeIds(config.nodes, effectiveModel, failedDomains);
+      state.attempted = failedDomainNodeIds(config.nodes, effectiveModel, failedDomains, reqDescriptor.surface);
       const domainExcluded = state.attempted.size;
       const effectiveFeasibility = feasibilityForModel(effectiveModel, state.attempted);
 
