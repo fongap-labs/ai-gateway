@@ -70,7 +70,9 @@ export async function executeProtocolRequest(request: Request, env: GatewayEnv, 
   try {
     const raw = await center.fetch(forwarding);
     if (!raw.ok || raw.headers.get('x-aig-result') !== EXECUTION_WIRE_RESULT.DISPATCHED) return raw;
-    return convertPrivateMatrixResponse(raw, invocation, original, env, request.signal, new Headers(raw.headers));
+    // Token seeding (when upstream usage is absent) must inspect the physical
+    // protocol body, not the original client's different message schema.
+    return convertPrivateMatrixResponse(raw, invocation, prepared.body, env, request.signal, new Headers(raw.headers));
   } catch {
     // The Provider may already have executed. This is an ambiguous outcome;
     // do not claim NOT_DISPATCHED or retry the original request.
