@@ -4,8 +4,10 @@
 // A private, bounded conversion check: no node selection or Provider attempt.
 import {
   buildInferencePreflightHeaders,
+  buildProtocolPreflightHeaders,
   type ConversionPreflightApproval,
   INFERENCE_PREFLIGHT_PATH,
+  PROTOCOL_PREFLIGHT_PATH,
   isConversionPreflightResult,
 } from '../../../packages/contracts/conversion-preflight.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
@@ -29,18 +31,27 @@ export async function checkInferenceConversion(
     deadlineMs: number;
   },
 ): Promise<ConversionResult> {
-  const service = configuredInferenceService(env);
+  // Only a completely absent Protocol binding uses the legacy Inference preflight.
+  // An installed but misconfigured binding must fail closed, without silent bypass.
+  const protocolService = env.AIG_PROTOCOL_SERVICE as { fetch?: (request: Request) => Promise<Response> } | undefined;
+  const useProtocol = protocolService !== undefined;
+  if (useProtocol && (typeof protocolService?.fetch !== 'function' || typeof env.AIG_PROTOCOL_AUTH_KEY !== 'string' || env.AIG_PROTOCOL_AUTH_KEY.length < 32)) {
+    throw new InferenceCenterUnavailable();
+  }
+  const service = useProtocol ? (protocolService as { fetch: (request: Request) => Promise<Response> }) : configuredInferenceService(env);
   const now = Date.now();
   const deadlineMs = Math.min(invocation.deadlineMs, now + MAX_PREFLIGHT_WAIT_MS);
   if (deadlineMs <= now) throw new InferenceCenterUnavailable();
-  const headers = buildInferencePreflightHeaders({ requestId: invocation.requestId, deadlineMs }, env.AIG_INFERENCE_AUTH_KEY as string);
+  const headers = useProtocol
+    ? buildProtocolPreflightHeaders({ requestId: invocation.requestId, deadlineMs }, env.AIG_PROTOCOL_AUTH_KEY as string)
+    : buildInferencePreflightHeaders({ requestId: invocation.requestId, deadlineMs }, env.AIG_INFERENCE_AUTH_KEY as string);
   const controller = new AbortController();
   const timerId = setTimeout(() => controller.abort(), deadlineMs - now);
   const onAbort = () => controller.abort();
   if (invocation.request.signal.aborted) onAbort();
   else invocation.request.signal.addEventListener('abort', onAbort, { once: true });
   try {
-    const request = new Request(`https://inference.internal${INFERENCE_PREFLIGHT_PATH}`, {
+    const request = new Request(`https://${useProtocol ? 'protocol' : 'inference'}.internal${useProtocol ? PROTOCOL_PREFLIGHT_PATH : INFERENCE_PREFLIGHT_PATH}`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
