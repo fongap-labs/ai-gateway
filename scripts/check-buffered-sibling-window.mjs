@@ -76,7 +76,10 @@ async function exercise(hasSibling, promptChars = 0) {
       },
     },
   };
-  const requestBody = JSON.stringify({ model: source, messages: [{ role: 'user', content: promptChars > 0 ? 'x'.repeat(promptChars) : 'Do the task' }] });
+  const requestBody = JSON.stringify({
+    model: source,
+    messages: [{ role: 'user', content: promptChars > 0 ? 'x'.repeat(promptChars) : 'Do the task' }],
+  });
   const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
