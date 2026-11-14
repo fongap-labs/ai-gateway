@@ -984,7 +984,17 @@ assert.match(requestAdapter, /convertMatrixRequest\(from, to, body/, 'Protocol a
 assert.match(requestAdapter, /highRiskSemanticLoss\(converted\)/, 'Protocol adapter must reject high-risk semantic loss');
 assert.doesNotMatch(requestAdapter, /from ['"][^'"]*\/apps\/gateway\//, 'Protocol adapter must not depend on Gateway');
 assert.match(centerDispatch, /c\.conversionContext \? c\.bodyJson : sourceBody/, 'Gateway must send original body for v2 center conversion');
-const responseCenter = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
+const responseCenter = readFileSync(join(root, 'packages/protocol-center-core/response.ts'), 'utf8');
+assert.match(
+  inferenceExecutor,
+  /return convertPrivateMatrixResponse\(/,
+  'Inference must delegate response conversion to the single Protocol Core owner',
+);
+assert.doesNotMatch(
+  inferenceExecutor,
+  /\b(?:replyFromNativeObject|replyToObject|collectMatrixObject|buildFramedMatrixResponse)\s*\(/,
+  'Inference must not duplicate protocol response codecs',
+);
 const responseGateway = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 const responseContract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
 assert.match(responseCenter, /replyFromNativeObject\(upstreamProtocol, native\)/, 'Inference must decode native reply objects before forwarding');
@@ -1040,7 +1050,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(frameContract, /from ['"][^'"]*\/src\//, 'Neutral frame contract cannot import legacy Gateway source');
 
 const inferenceV4Contract = readFileSync(join(root, 'packages/contracts/execution.ts'), 'utf8');
-const inferenceV4Executor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
+const inferenceV4Executor = readFileSync(join(root, 'packages/protocol-center-core/response.ts'), 'utf8');
 const inferenceV4Dispatcher = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const inferenceV4Success = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(inferenceV4Contract, /EXECUTION_STREAM_CONTRACT_VERSION = '4'/, 'v4 must have dedicated fail-closed execution contract');
@@ -1062,7 +1072,7 @@ assert.doesNotMatch(
 );
 assert.match(inferenceV4Success, /responseFormat !== INFERENCE_TRANSLATED_OBJECT_FORMAT/, 'Gateway must reject untagged converted objects');
 assert.match(inferenceV4Success, /responseFormat !== INFERENCE_FRAMED_STREAM_FORMAT/, 'Gateway must reject unframed converted SSE');
-const centerBudget = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
+const centerBudget = readFileSync(join(root, 'packages/protocol-center-core/response.ts'), 'utf8');
 const budgetGateway = readFileSync(join(root, 'apps/gateway/attempt/inference-dispatch.ts'), 'utf8');
 const budgetSettlement = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.match(centerBudget, /streamFramingOptions\(invocation, to\)/, 'Inference must enforce v5 stream budgets');
@@ -1072,18 +1082,22 @@ assert.match(budgetSettlement, /budgetExceeded: \(\) => centerBudgetStop/, 'Gate
 assert.match(responseContract, /EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION = '6'/, 'v6 must isolate center-owned nonstream SSE collection');
 assert.match(centerDispatch, /returnCollectedObject = Boolean\(/, 'Gateway must request v6 for default nonstream Matrix calls');
 assert.match(centerDispatch, /gateway_inference_object_format_invalid/, 'Gateway must reject untagged v6 objects and SSE');
-assert.match(inferenceExecutor, /await collectMatrixObject\(/, 'Only private center may collect v6 SSE into a reply object');
+assert.match(responseCenter, /await collectMatrixObject\(/, 'Only private Protocol Core may collect v6 SSE into a reply object');
 assert.match(
   inferenceV4Contract,
   /CENTER_CONVERSION_BUDGET_EXCEEDED: 'center_conversion_budget_exceeded'/,
   'The shared execution contract must declare the v6 budget stop code',
 );
-assert.match(inferenceExecutor, /EXECUTION_ERROR_CODE\.CENTER_CONVERSION_BUDGET_EXCEEDED/, 'Center must signal v6 budget stop using the shared code');
+assert.match(
+  responseCenter,
+  /EXECUTION_ERROR_CODE\.CENTER_CONVERSION_BUDGET_EXCEEDED/,
+  'Conversion owner must signal v6 budget stop using the shared code',
+);
 assert.match(centerDispatch, /returnTranslatedObject = Boolean\(/, 'Gateway must verify tagged objects for both v3 and v6');
 assert.match(centerDispatch, /returnTranslatedObject &&\s*\(upstream.headers.get/, 'Gateway must reject untagged v3/v6 responses');
-assert.match(inferenceExecutor, /if \(invocation.returnObject && upstream.ok && content\?\.toLowerCase/, 'Inference must collect unexpected v3 SSE');
+assert.match(responseCenter, /if \(invocation.returnObject && upstream.ok && content\?\.toLowerCase/, 'Protocol Core must collect unexpected v3 SSE');
 assert.doesNotMatch(
-  inferenceExecutor,
+  responseCenter,
   /if \(!invocation.preferNonstream\) return dispatchedConversionProblem/,
   'v3 cannot pass raw successful JSON back to Gateway',
 );
