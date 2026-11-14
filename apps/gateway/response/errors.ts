@@ -450,7 +450,9 @@ function familyFailureSetIsRetryable(
   // must still prevent this classification; pure 422 exhaustion is not transient.
   const transient = observed.some(([kind]) => retryableKinds.has(kind));
   if (!transient) return false;
-  const routeLocal422Count = attempts.filter((attempt) => attempt.dispatched === true && attempt.kind === FAILURE_KIND.CLIENT && attempt.status === 422).length;
+  const routeLocal422Count = attempts.filter(
+    (attempt) => attempt.dispatched === true && attempt.kind === FAILURE_KIND.CLIENT && attempt.status === 422,
+  ).length;
   return observed.every(([kind, count]) => retryableKinds.has(kind) || (kind === FAILURE_KIND.CLIENT && Number(count) <= routeLocal422Count));
 }
 
