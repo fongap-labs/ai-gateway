@@ -190,5 +190,9 @@ async function executeAdmittedNative(
       }),
     );
   }
+  // Only a versioned v8 ticket, received over the authenticated Inference
+  // binding, may transfer raw response ownership to Protocol Center.
+  // Inference still owns the physical Provider attempt and quota normalization.
+  if (invocation.rawResponse) return new Response(upstream.body, { status: upstream.status, headers: outgoing });
   return convertPrivateMatrixResponse(upstream, invocation, clientBody, env, request.signal, outgoing);
 }
