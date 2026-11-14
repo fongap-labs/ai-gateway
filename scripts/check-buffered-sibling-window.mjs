@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
+import { requestSizeAllowanceMs } from '../src/config/timeouts.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
@@ -13,7 +14,7 @@ const source = 'Code-Ultra';
 const fallback = 'Code-Max';
 const key = 'offline-buffered-hop-test-key';
 
-async function exercise(hasSibling) {
+async function exercise(hasSibling, promptChars = 0) {
   __resetAllStateForTests();
   __resetTier1StateForTests();
   __resetTier1AffinityForTests();
@@ -75,10 +76,11 @@ async function exercise(hasSibling) {
       },
     },
   };
+  const requestBody = JSON.stringify({ model: source, messages: [{ role: 'user', content: promptChars > 0 ? 'x'.repeat(promptChars) : 'Do the task' }] });
   const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: source, messages: [{ role: 'user', content: 'Do the task' }] }),
+    body: requestBody,
   });
 
   const response = await handleRequest(request, env, { waitUntil() {}, passThroughOnException() {} });
@@ -90,7 +92,9 @@ async function exercise(hasSibling) {
       [source, fallback],
       'a failed buffered source must leave a viable compatible-model fallback',
     );
-    assert.ok(calls[0].remainingMs <= 45_000, 'the first model must honor the existing 45s sibling-hop cap');
+    const expectedHopMs = 45_000 + requestSizeAllowanceMs(requestBody.length);
+    assert.ok(calls[0].remainingMs <= expectedHopMs, 'the first model must honor the prompt-aware sibling-hop cap');
+    assert.ok(calls[0].remainingMs > expectedHopMs - 2_000, 'prompt allowance must reach the first model before abort');
     assert.ok(calls[1].remainingMs > 45_000, 'the fallback may use the remaining request window');
   } else {
     assert.equal(calls.length, 1);
@@ -100,4 +104,5 @@ async function exercise(hasSibling) {
 
 await exercise(true);
 await exercise(false);
+await exercise(true, 120_000);
 console.log('Buffered sibling hop caps and single-model full-window contracts passed offline.');
