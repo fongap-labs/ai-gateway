@@ -35,10 +35,10 @@ export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET
       let charged = hasBody ? Math.max(minimum, declared) : 0;
       if (charged > 0 && inFlightBytes > 0 && inFlightBytes + charged > limitBytes) return null;
       inFlightBytes += charged;
-      let released = false;
+      let isReleased = false;
       return {
         observe(actualBytes) {
-          if (released || !Number.isSafeInteger(actualBytes) || actualBytes < 0) return false;
+          if (isReleased || !Number.isSafeInteger(actualBytes) || actualBytes < 0) return false;
           if (actualBytes <= charged) return true;
           const otherBytes = Math.max(0, inFlightBytes - charged);
           if (otherBytes > 0 && otherBytes + actualBytes > limitBytes) return false;
@@ -47,8 +47,8 @@ export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET
           return true;
         },
         release() {
-          if (released) return;
-          released = true;
+          if (isReleased) return;
+          isReleased = true;
           inFlightBytes = Math.max(0, inFlightBytes - charged);
         },
       };
