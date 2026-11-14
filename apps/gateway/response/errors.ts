@@ -144,7 +144,16 @@ export function gatewayError(
   const errorDetails = exposeDetails
     ? { ...details, ...(gatewayCode ? { gateway_code: gatewayCode } : {}), retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
     : gatewayCode
-      ? { gateway_code: gatewayCode, retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
+      ? {
+          gateway_code: gatewayCode,
+          retryable,
+          ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
+          // A rejected client field is actionable, unlike internal failover
+          // graphs. Preserve this bounded machine-readable API contract.
+          ...(typeof details?.unsupported_request_field === 'string'
+            ? { unsupported_request_field: trimDiagnostic(details.unsupported_request_field, 64) }
+            : {}),
+        }
       : undefined;
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
