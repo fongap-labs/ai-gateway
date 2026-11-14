@@ -77,4 +77,6 @@ assert.ok(utf8Budget);
 assert.equal(await readBodyTextWithLimit(utf8, 1024, utf8Budget.observe), '甲🎯乙');
 utf8Budget.release();
 
-console.log('Measured admission passed: unknown-length concurrency, growth rejection, under-declared sizes, large Code bodies, cap, UTF-8 and release.');
+console.log(
+  'Measured admission passed: unknown-length concurrency, growth rejection, under-declared sizes, large Code bodies, cap, UTF-8 and release.',
+);
