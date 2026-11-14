@@ -532,7 +532,7 @@ const rejectedResponse = buildClientErrorResponse(
 assert.equal(rejectedResponse.status, 422);
 const rejectedText = await rejectedResponse.text();
 const rejectedJson = JSON.parse(rejectedText);
-assert.match(rejectedJson.error.message, /^422 \\| Upstream rejected the request/);
+assert.match(rejectedJson.error.message, /^422 \| Upstream rejected the request/);
 assert.equal(rejectedJson.error.details?.failover_summary, undefined, 'client errors must not leak internal failover traces');
 assert.equal(rejectedResponse.headers.get('x-gateway-attempts'), '3');
 assert.equal(rejectedResponse.headers.get('x-gateway-failure-kinds'), 'headers_timeout:1,rate_limit:1,server:1');
