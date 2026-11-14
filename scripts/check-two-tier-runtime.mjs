@@ -667,8 +667,10 @@ async function verifyTerminalClientError(status) {
   assert.equal(response.status, status, `Provider ${status} must remain terminal: ${await response.clone().text()}`);
   assert.deepEqual(dispatched, [freeId], `Provider ${status} must not consume fallback dispatches`);
   const payload = await response.json();
-  assert.equal(payload.error?.details?.attempts, 1, 'error details must reflect exactly one physical dispatch');
-  assert.equal(payload.error?.details?.dispatches, 1);
+  assert.match(payload.error?.message, /^422 \| /, 'terminal client errors must start with the HTTP status');
+  assert.equal(payload.error?.details?.attempts, undefined, 'internal attempt graph must not leak into client errors');
+  assert.equal(response.headers.get('x-gateway-attempts'), '1', 'attempt count stays available in diagnostic headers');
+  assert.equal(response.headers.get('x-gateway-dispatches'), '1', 'dispatch count stays available in diagnostic headers');
 }
 
 await verifyTerminalClientError(422);
