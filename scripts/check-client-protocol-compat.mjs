@@ -108,6 +108,8 @@ for (const route of routes) {
 for (const route of routes) {
   const chunk = new TextDecoder().decode(streamInterruptionChunk(route, 'stream-id', 'secret bearer token with whitespace'));
   assert.equal(chunk.includes('secret bearer'), false, 'never leak an arbitrary upstream reason in client SSE');
+  const compactSecret = new TextDecoder().decode(streamInterruptionChunk(route, 'stream-id', 'sk-private-token'));
+  assert.equal(compactSecret.includes('sk-private-token'), false, 'a token without whitespace must also be hidden');
   const dataLine = chunk.split('\n').find((line) => line.startsWith('data: '));
   assert.ok(dataLine);
   const event = JSON.parse(dataLine.slice(6));
