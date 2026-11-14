@@ -8,6 +8,8 @@ import { createInternalTraceparent } from './trace-context.ts';
 
 export const INFERENCE_PREFLIGHT_PATH = '/internal/conversion/preflight' as const;
 export const INFERENCE_PREFLIGHT_VERSION = '1' as const;
+/** Transitional wire contract: existing Inference installations remain compatible. */
+export const PROTOCOL_PREFLIGHT_PATH = INFERENCE_PREFLIGHT_PATH;
 
 export type InferencePreflightInvocation = { requestId: string; deadlineMs: number };
 export type ConversionPreflightApproval = Pick<ConversionResult, 'fidelity' | 'diagnostics' | 'structuredOutput'> & { ok: true };
@@ -24,6 +26,14 @@ export function buildInferencePreflightHeaders(invocation: InferencePreflightInv
   });
   const traceparent = createInternalTraceparent(invocation.requestId);
   if (traceparent) headers.set('traceparent', traceparent);
+  return headers;
+}
+
+/** Protocol Center authenticates with a separate private credential. */
+export function buildProtocolPreflightHeaders(invocation: InferencePreflightInvocation, key: string): Headers {
+  const headers = buildInferencePreflightHeaders(invocation, key);
+  headers.delete('x-aig-inference-auth');
+  headers.set('x-aig-protocol-auth', key);
   return headers;
 }
 
