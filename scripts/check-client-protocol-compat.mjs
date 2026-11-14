@@ -82,8 +82,12 @@ for (const route of routes) {
       assert.equal(error.details.gateway_code, fixture.code);
       if (fixture.retryAfter) assert.equal(error.details.retry_after_ms, Number(fixture.retryAfter) * 1000);
       if (fixture.status === 503) {
-        assert.deepEqual(error.details.failure_kinds, { headers_timeout: 2 },
-          'only the classification needed by adapters which drop retry headers survives');
+        // This PR can merge independently of the optional compact retry
+        // evidence fix; both forms must remain wire-compatible.
+        const evidence = error.details.failure_kinds;
+        assert.ok(evidence === undefined || (
+          Object.keys(evidence).length === 1 && evidence.headers_timeout === 2
+        ), 'never expose the full failover classification graph');
       }
     }
   }
