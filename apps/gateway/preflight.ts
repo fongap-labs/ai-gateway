@@ -21,7 +21,7 @@ import {
   validateAnthropicCountTokensRequest,
   validateAnthropicMessagesRequest,
 } from '../../src/protocol/anthropic.ts';
-import { BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../../src/protocol/http.ts';
+import { BodyAdmissionBudgetError, BodyTooLargeError, corsHeaders, readBodyTextWithLimit } from '../../src/protocol/http.ts';
 import { validateOpenAIChatRequest } from '../../src/protocol/openai.ts';
 import { validateOpenAIResponsesRequest } from '../../src/protocol/responses/index.ts';
 import { admitAuthAttempt, admitKeyRequest, clearAuthFailures, hasTrackedAuthFailures, recordAuthFailure } from '../../src/ratelimit/key-rpm.ts';
@@ -115,7 +115,12 @@ function rateLimitedResponse(request: Request, env: GatewayEnv, retryAfterSec: n
   );
 }
 
-export async function preflight(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<PreflightResult> {
+export async function preflight(
+  request: Request,
+  env: GatewayEnv,
+  ctx: ExecutionContextLike,
+  observeBodyBytes?: (actualBytes: number) => boolean,
+): Promise<PreflightResult> {
   const requestId = crypto.randomUUID();
   const requestUrl = new URL(request.url);
   const pathname = normalizePath(requestUrl.pathname);
@@ -302,16 +307,33 @@ export async function preflight(request: Request, env: GatewayEnv, ctx: Executio
     if (Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes) {
       return { ok: false, response: gatewayError(request, env, route, 413, 'Request body exceeds limit.', requestId) };
     }
-    // AIG_REQUEST_ADMISSION: a body carrying no usable Content-Length (chunked
-    // transfer) is read under the dedicated chunked cap — the same value it was
-    // admitted against in handler.ts — instead of the full body cap. Bodies
-    // WITH a Content-Length keep the full read ceiling.
+    // The Gateway handler supplies an incrementally metered body reservation.
+    // Legacy standalone preflight retains the historical chunked cap until
+    // all callers adopt measured admission.
     const chunked = !Number.isFinite(declaredLength) || declaredLength <= 0;
-    const text = await readBodyTextWithLimit(request, limits.requestAdmission && chunked ? limits.chunkedBodyMaxBytes : limits.maxBodyBytes);
+    const maxReadBytes = !observeBodyBytes && limits.requestAdmission && chunked ? limits.chunkedBodyMaxBytes : limits.maxBodyBytes;
+    const text = await readBodyTextWithLimit(request, maxReadBytes, observeBodyBytes);
     bodyChars = text.length;
     bodyJson = JSON.parse(text || '{}');
     if (bodyChars > 0) rawBody = { text };
   } catch (error) {
+    if (error instanceof BodyAdmissionBudgetError) {
+      return {
+        ok: false,
+        response: gatewayError(
+          request,
+          env,
+          route,
+          503,
+          error.message,
+          requestId,
+          undefined,
+          { 'retry-after': '1' },
+          'gateway_body_budget_exhausted',
+          true,
+        ),
+      };
+    }
     if (error instanceof BodyTooLargeError) {
       return { ok: false, response: gatewayError(request, env, route, 413, error.message, requestId) };
     }
