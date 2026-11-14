@@ -6,12 +6,13 @@
 // request-wide attempt accounting and retry admission. Capability centers
 // only execute one physical attempt, and must not introduce a second scheduler.
 
+import { releaseTier1Slot } from '../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { ConversionContext, LoopContext, LoopState } from '../../src/types/request.ts';
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { dispatchWithHedge } from './attempt/hedge.ts';
 import { TIER_ORDER } from './policy/router.ts';
-import { isSpeculativeRetryAfter } from './reliability/retry-budget.ts';
+import { isIndependentKeyRecovery, isSpeculativeRetryAfter } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse } from './response/errors.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from './scheduling/tier-policy.ts';
 import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
@@ -19,13 +20,17 @@ import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
 // Whether the next attempt may be dispatched. A retry after an upstream that was
 // slow or failing (not a plain pool rotation) draws on the isolate retry budget;
 // once it is refused the request stops trying instead of walking the whole pool.
-function mayDispatchNextAttempt(state: LoopState): boolean {
+function mayDispatchNextAttempt(state: LoopState, candidate: RuntimeNode): boolean {
   if (state.retryShed) return false;
   const last = state.attempts.at(-1);
   if (!last || !isSpeculativeRetryAfter(last.kind)) return true;
-  if (!state.retrySlot || state.retrySlot.tryAcquire()) return true;
+  const lastNode = typeof last.node_id === 'string' ? state.nodes?.find((node) => node.id === last.node_id) : undefined;
+  const independentKey = isIndependentKeyRecovery(lastNode, candidate);
+  if (!state.retrySlot || state.retrySlot.tryAcquire(independentKey)) return true;
   state.retryShed = true;
-  state.logger.info(`retry-budget shed request=${state.requestId} after=${String(last.kind)} attempts=${state.logicalAttempts}`);
+  state.logger.info(
+    `retry-budget shed request=${state.requestId} after=${String(last.kind)} attempts=${state.logicalAttempts} independent_key=${independentKey}`,
+  );
   return false;
 }
 
@@ -74,7 +79,6 @@ export async function runTierLoop(
       if (remainingBudgetMs <= 0) {
         return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
       }
-      if (!mayDispatchNextAttempt(state)) return null;
       const currentPassRemaining = countRemainingDispatchableAttempts(
         tiers,
         reqDescriptor,
@@ -103,6 +107,13 @@ export async function runTierLoop(
         continue;
       }
       const node = pick.node as RuntimeNode;
+      // Check retry capacity only after a real, dispatchable candidate is
+      // selected. This avoids paying retry budget for empty/race-lost picks.
+      // Release an acquired Tier 1 slot if the retry budget refuses dispatch.
+      if (!mayDispatchNextAttempt(state, node)) {
+        if (tierNumber === 1) releaseTier1Slot(node.id, pick.tier1ReleaseToken ?? null);
+        return null;
+      }
       if (tierNumber === 1) {
         recordTier1AffinityDecision({
           affinityHit: pick.tier1AffinityHit,
