@@ -231,7 +231,7 @@ export function buildExhaustedResponse(
       message = `Configured upstreams do not recognize the mapped model for "${requestedModel}". Check node model mapping.`;
     }
 
-    if (isRetryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds)) {
+    if (isRetryableFamilyExhaustion && familyFailureSetIsRetryable(state.failureKinds, state.attempts)) {
       const originalStatus = status;
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
@@ -279,7 +279,7 @@ export function buildExhaustedResponse(
     details,
     retryAfterSec ? { 'retry-after': String(retryAfterSec) } : undefined,
     gatewayCode,
-    !nothingAttempted && familyFailureSetIsRetryable(state.failureKinds),
+    !nothingAttempted && familyFailureSetIsRetryable(state.failureKinds, state.attempts),
   );
 }
 
@@ -427,7 +427,10 @@ function conversionRejectedDetails(state: LoopState): { conversion_rejected?: nu
   return state.conversionRejections ? { conversion_rejected: state.conversionRejections } : {};
 }
 
-function familyFailureSetIsRetryable(failureKinds?: Partial<Record<FailureKind, number>>): boolean {
+function familyFailureSetIsRetryable(
+  failureKinds?: Partial<Record<FailureKind, number>>,
+  attempts: ReadonlyArray<Record<string, unknown>> = [],
+): boolean {
   const observed = Object.entries(failureKinds || {}).filter(([, count]) => (count || 0) > 0);
   if (observed.length === 0) return false;
 
@@ -440,7 +443,17 @@ function familyFailureSetIsRetryable(failureKinds?: Partial<Record<FailureKind, 
     FAILURE_KIND.FIRST_EVENT_TIMEOUT,
     FAILURE_KIND.STREAM_INTERRUPTED,
   ]);
-  return observed.every(([kind]) => retryableKinds.has(kind));
+  // An upstream's route-local 422 can be recorded under the generic client
+  // kind even though the Gateway already rotated away from that bad route.
+  // Do not let one such failure turn seven transient failures into a terminal
+  // non-retryable request. A genuine client error (400, invalid JSON, etc.)
+  // must still prevent this classification; pure 422 exhaustion is not transient.
+  const transient = observed.some(([kind]) => retryableKinds.has(kind));
+  if (!transient) return false;
+  const routeLocal422Count = attempts.filter(
+    (attempt) => attempt.dispatched === true && attempt.kind === FAILURE_KIND.CLIENT && attempt.status === 422,
+  ).length;
+  return observed.every(([kind, count]) => retryableKinds.has(kind) || (kind === FAILURE_KIND.CLIENT && Number(count) <= routeLocal422Count));
 }
 
 function terminalStatusForKind(kind: string): 429 | 502 | 504 {
