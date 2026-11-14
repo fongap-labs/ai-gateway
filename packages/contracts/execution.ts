@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 //
-// Internal execution contract v1-v6 with optional phase deadlines. This module is intentionally runtime-neutral:
+// Internal execution contract v1-v7 with optional phase deadlines. This module is intentionally runtime-neutral:
 // no Provider, Gateway, Cloudflare, Node.js or database imports.
 
 import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
@@ -13,6 +13,8 @@ export const EXECUTION_OBJECT_CONTRACT_VERSION = '3' as const;
 export const EXECUTION_STREAM_CONTRACT_VERSION = '4' as const;
 export const EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5' as const;
 export const EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION = '6' as const;
+/** A Protocol Center has prepared the outbound request; Inference still owns response adaptation. */
+export const EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION = '7' as const;
 export const INFERENCE_TRANSLATED_OBJECT_FORMAT = 'translated-object-v1' as const;
 export const EXECUTION_PATH = '/internal/execute' as const;
 export const MAX_EXECUTION_DEADLINE_AHEAD_MS = 10 * 60 * 1000;
@@ -125,6 +127,8 @@ export type ExecutionInvocation = {
   bufferedResponseDeadlineMs?: number;
   /** The original client shape when Inference performs cross-protocol conversion. */
   inputSurface?: ExecutionInputSurface;
+  /** v7 only: authenticated Protocol Center performed request conversion; do not prepare it again. */
+  preparedRequest?: true;
   /** Absent unless the Gateway explicitly prefers a non-streaming upstream. */
   preferNonstream?: true;
   /** v3: translate a buffered object; v6: collect an upstream stream into a translated object in the private center. */
@@ -179,8 +183,9 @@ export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-aig-contract-version':
-      invocation.returnStream && invocation.streamBudget
+    'x-aig-contract-version': invocation.preparedRequest
+      ? EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION
+      : invocation.returnStream && invocation.streamBudget
         ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
         : invocation.returnStream
           ? EXECUTION_STREAM_CONTRACT_VERSION
@@ -203,6 +208,7 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   if (invocation.bufferedResponseDeadlineMs !== undefined)
     headers.set('x-aig-buffered-response-deadline-ms', String(invocation.bufferedResponseDeadlineMs));
   if (invocation.inputSurface) headers.set('x-aig-input-surface', invocation.inputSurface);
+  if (invocation.preparedRequest) headers.set('x-aig-prepared-request', 'true');
   if (invocation.preferNonstream) headers.set('x-aig-conversion-prefer-nonstream', 'true');
   if (invocation.returnObject) headers.set('x-aig-return-object', 'true');
   if (invocation.returnStream) headers.set('x-aig-return-stream', 'true');
@@ -226,7 +232,8 @@ export function parseExecutionInvocation(
     version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
     version !== EXECUTION_STREAM_CONTRACT_VERSION &&
     version !== EXECUTION_BUDGET_STREAM_CONTRACT_VERSION &&
-    version !== EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION
+    version !== EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION &&
+    version !== EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION
   )
     return null;
   const requestId = request.headers.get('x-aig-request-id') ?? '';
@@ -257,17 +264,39 @@ export function parseExecutionInvocation(
   const returnStream = request.headers.get('x-aig-return-stream');
   const displayModel = request.headers.get('x-aig-display-model');
   const rawStreamBudget = request.headers.get('x-aig-stream-budget');
+  const rawPreparedRequest = request.headers.get('x-aig-prepared-request');
+  const preparedRequest = version === EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION;
+  if (preparedRequest ? rawPreparedRequest !== 'true' : rawPreparedRequest !== null) return null;
+  // v7 is a transport ownership flag, not a new response mode. Validate every
+  // existing v2-v6 response-mode rule exactly as if the request were not prepared.
+  const modeVersion = preparedRequest
+    ? returnStream === 'true'
+      ? rawStreamBudget !== null
+        ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+        : EXECUTION_STREAM_CONTRACT_VERSION
+      : returnObject === 'true'
+        ? preferNonstream === 'true'
+          ? EXECUTION_OBJECT_CONTRACT_VERSION
+          : EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION
+        : EXECUTION_TRANSLATION_CONTRACT_VERSION
+    : version;
   if (bufferedResponseDeadlineMs !== undefined && returnObject !== 'true' && returnStream !== 'true') return null;
-  const budgetCapable = version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION || version === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION;
+  const budgetCapable = modeVersion === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION || modeVersion === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION;
   const streamBudget = budgetCapable && rawStreamBudget !== null ? parseInferenceStreamBudget(rawStreamBudget) : null;
   if (
-    version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+    modeVersion === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
       ? streamBudget === null
       : rawStreamBudget !== null && (!budgetCapable || streamBudget === null)
   )
     return null;
   if (rawInputSurface === null) {
-    if (version !== EXECUTION_CONTRACT_VERSION || preferNonstream !== null || returnObject !== null || returnStream !== null || displayModel !== null)
+    if (
+      modeVersion !== EXECUTION_CONTRACT_VERSION ||
+      preferNonstream !== null ||
+      returnObject !== null ||
+      returnStream !== null ||
+      displayModel !== null
+    )
       return null;
     return {
       requestId,
@@ -279,20 +308,20 @@ export function parseExecutionInvocation(
     };
   }
   if (
-    (version !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
-      version !== EXECUTION_OBJECT_CONTRACT_VERSION &&
-      version !== EXECUTION_STREAM_CONTRACT_VERSION &&
-      version !== EXECUTION_BUDGET_STREAM_CONTRACT_VERSION &&
-      version !== EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION) ||
+    (modeVersion !== EXECUTION_TRANSLATION_CONTRACT_VERSION &&
+      modeVersion !== EXECUTION_OBJECT_CONTRACT_VERSION &&
+      modeVersion !== EXECUTION_STREAM_CONTRACT_VERSION &&
+      modeVersion !== EXECUTION_BUDGET_STREAM_CONTRACT_VERSION &&
+      modeVersion !== EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION) ||
     rawSurface === 'images_generations' ||
     !['chat_completions', 'responses', 'messages'].includes(rawInputSurface) ||
     rawInputSurface === rawSurface
   )
     return null;
   if (preferNonstream !== null && preferNonstream !== 'true') return null;
-  if (version === EXECUTION_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== 'true')) return null;
-  if (version === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== null)) return null;
-  if (version === EXECUTION_STREAM_CONTRACT_VERSION || version === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION) {
+  if (modeVersion === EXECUTION_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== 'true')) return null;
+  if (modeVersion === EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION && (returnObject !== 'true' || preferNonstream !== null)) return null;
+  if (modeVersion === EXECUTION_STREAM_CONTRACT_VERSION || modeVersion === EXECUTION_BUDGET_STREAM_CONTRACT_VERSION) {
     if (
       returnStream !== 'true' ||
       returnObject !== null ||
@@ -303,7 +332,7 @@ export function parseExecutionInvocation(
     )
       return null;
   } else if (returnStream !== null || displayModel !== null) return null;
-  if (version === EXECUTION_TRANSLATION_CONTRACT_VERSION && returnObject !== null) return null;
+  if (modeVersion === EXECUTION_TRANSLATION_CONTRACT_VERSION && returnObject !== null) return null;
   return {
     requestId,
     nodeId,
@@ -313,6 +342,7 @@ export function parseExecutionInvocation(
     ...(upstreamHeadersDeadlineMs !== undefined ? { upstreamHeadersDeadlineMs } : {}),
     ...(bufferedResponseDeadlineMs !== undefined ? { bufferedResponseDeadlineMs } : {}),
     inputSurface: rawInputSurface as ExecutionInputSurface,
+    ...(preparedRequest ? { preparedRequest: true as const } : {}),
     ...(preferNonstream === 'true' ? { preferNonstream: true as const } : {}),
     ...(returnObject === 'true' ? { returnObject: true as const } : {}),
     ...(returnStream === 'true' ? { returnStream: true as const, displayModel: displayModel as string } : {}),
