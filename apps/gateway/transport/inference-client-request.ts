@@ -52,9 +52,12 @@ export function configuredInferenceService(env: GatewayEnv): InferenceService {
 }
 
 /** Build one request. Caller remains responsible for retries, budgets and SSE commit. */
-export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
-  configuredInferenceService(env);
-  const key = env.AIG_INFERENCE_AUTH_KEY as string;
+function buildPrivateCenterRequest(
+  invocation: InferenceInvocation,
+  authHeader: string,
+  key: string,
+  destination: 'inference' | 'protocol',
+): Request {
   const headers = buildExecutionHeaders(
     {
       requestId: invocation.requestId,
@@ -72,7 +75,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
       streamBudget: invocation.streamBudget,
       displayModel: invocation.displayModel,
     },
-    'x-aig-inference-auth',
+    authHeader,
     key,
   );
   for (const name of ['accept', 'anthropic-version', 'anthropic-beta', 'idempotency-key']) {
@@ -83,7 +86,7 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
   // client's Content-Length. This lets the center charge the real private
   // payload size before reading it, even when the client used chunked upload.
   headers.set('content-length', String(new Blob([invocation.body]).size));
-  return new Request('https://inference.internal/internal/execute', {
+  return new Request(`https://${destination}.internal/internal/execute`, {
     method: 'POST',
     headers,
     body: invocation.body,
@@ -91,8 +94,33 @@ export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvo
   });
 }
 
-/** No implicit fallback to the legacy provider network path. */
+/** Existing native execution remains directly bound to Inference. */
+export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
+  configuredInferenceService(env);
+  return buildPrivateCenterRequest(invocation, 'x-aig-inference-auth', env.AIG_INFERENCE_AUTH_KEY as string, 'inference');
+}
+
+function configuredProtocolService(env: GatewayEnv): InferenceService {
+  const service = env.AIG_PROTOCOL_SERVICE as InferenceService | undefined;
+  const key = env.AIG_PROTOCOL_AUTH_KEY;
+  if (!service || typeof service.fetch !== 'function' || typeof key !== 'string' || key.length < 32) {
+    throw new InferenceCenterUnavailable();
+  }
+  return service;
+}
+
+/** Cross-protocol execution enters Protocol Center only when explicitly bound. */
+export function buildProtocolExecutionRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
+  configuredProtocolService(env);
+  return buildPrivateCenterRequest(invocation, 'x-aig-protocol-auth', env.AIG_PROTOCOL_AUTH_KEY as string, 'protocol');
+}
+
+/** No implicit fallback to Provider network or legacy protocol execution after a bound center fails. */
 export async function invokeInferenceNode(env: GatewayEnv, invocation: InferenceInvocation): Promise<Response> {
+  if (invocation.inputSurface && env.AIG_PROTOCOL_SERVICE !== undefined) {
+    const service = configuredProtocolService(env);
+    return service.fetch(buildProtocolExecutionRequest(env, invocation));
+  }
   const service = configuredInferenceService(env);
   return service.fetch(buildInferenceRequest(env, invocation));
 }
