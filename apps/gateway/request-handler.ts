@@ -20,7 +20,7 @@ import { loadModelsConfig } from '../../src/config/models.ts';
 import { modelRegistryEntry, servesModel } from '../../src/config/registry.ts';
 import { getLimits, requestSizeAllowanceMs } from '../../src/config/timeouts.ts';
 import { getLogger, logLazy } from '../../src/observability/logger.ts';
-import { admitRequestBody } from '../../src/ratelimit/body-budget.ts';
+import { admitMeteredRequestBody } from '../../src/ratelimit/body-budget.ts';
 import { trackIsolateRequest } from '../../src/ratelimit/isolate-concurrency.ts';
 import { configureTier1ProbeGate } from '../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
@@ -61,22 +61,13 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   // of concurrent requests. The byte-budget below remains a hard memory gate
   // regardless of AIG_ISOLATE_MAX_IN_FLIGHT (legacy variable, now ignored).
   const releaseActivity = request.body !== null ? trackIsolateRequest() : () => {};
-  // Concurrent large bodies can exhaust the isolate's memory; past the budget the
-  // client is asked to retry instead (see ratelimit/body-budget.ts).
-  // A request without a body is charged nothing, whatever its Content-Length says.
-  // AIG_REQUEST_ADMISSION: a body carrying no usable Content-Length (chunked
-  // transfer) is charged the dedicated chunked cap instead of the full body
-  // cap; its read is bounded by the same value (preflight), so the charge
-  // remains a true worst case at a fraction of AIG_REQUEST_BODY_MAX_BYTES.
+  // A missing Content-Length no longer pre-charges 20 MB (or imposes a 512 KB
+  // chunked cutoff). Instead reserve an initial allowance, and grow from the
+  // actual streamed bytes before preflight stores the next chunk. Declared
+  // lengths are still reserved upfront; either path retains the 32 MB guard.
   const declaredLength = Number(request.headers.get('content-length'));
-  const worstCaseBodyBytes =
-    request.body === null
-      ? 0
-      : limits.requestAdmission && !(Number.isFinite(declaredLength) && declaredLength > 0)
-        ? limits.chunkedBodyMaxBytes
-        : limits.maxBodyBytes;
-  const releaseBody = admitRequestBody(declaredLength, worstCaseBodyBytes);
-  if (!releaseBody) {
+  const bodyAdmission = admitMeteredRequestBody(declaredLength, request.body !== null);
+  if (!bodyAdmission) {
     releaseActivity();
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
     return gatewayError(
@@ -93,27 +84,38 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
     );
   }
   try {
-    return await handleAdmittedRequest(request, env, ctx);
+    return await handleAdmittedRequest(request, env, ctx, bodyAdmission.observe);
   } finally {
     // Count only the Gateway execution stage. Existing stream metrics observe
     // active downstream SSE connections; do not wrap or buffer SSE to count it.
-    releaseBody();
+    bodyAdmission.release();
     releaseActivity();
   }
 }
 
-async function handleAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
+async function handleAdmittedRequest(
+  request: Request,
+  env: GatewayEnv,
+  ctx: ExecutionContextLike,
+  observeBodyBytes: (actualBytes: number) => boolean,
+): Promise<Response> {
   const retrySlot = new RetrySlot();
   try {
-    return await runAdmittedRequest(request, env, ctx, retrySlot);
+    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes);
   } finally {
     retrySlot.end();
   }
 }
 
-async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike, retrySlot: RetrySlot): Promise<Response> {
+async function runAdmittedRequest(
+  request: Request,
+  env: GatewayEnv,
+  ctx: ExecutionContextLike,
+  retrySlot: RetrySlot,
+  observeBodyBytes: (actualBytes: number) => boolean,
+): Promise<Response> {
   const logger = getLogger(env);
-  const pre = await runPreflight(request, env, ctx);
+  const pre = await runPreflight(request, env, ctx, observeBodyBytes);
   if (pre.ok === false) return pre.response;
   if ('group' in pre.authResult && pre.authResult.group) {
     logger.info('request authorized', { key_group: pre.authResult.group, request_id: pre.requestId });
@@ -154,7 +156,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       knownModels,
       requestedModel,
       requestId,
-      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
   }
 
@@ -168,8 +170,8 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       requestedModel,
       requestId,
       deadlineMs: requestStartMs + failoverBudgetMs,
-      executeChat: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
-      executeImage: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      executeChat: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
+      executeImage: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
   }
 
@@ -241,7 +243,7 @@ async function runAdmittedRequest(request: Request, env: GatewayEnv, ctx: Execut
       // An internal vision request is derived from the admitted body.
       // Keep normal preflight and authorization but do not charge it twice
       // to the isolate body admission budget.
-      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
     if (!visualResult.ok) {
       return gatewayError(

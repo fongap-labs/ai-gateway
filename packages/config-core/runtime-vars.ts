@@ -51,13 +51,10 @@ export const RUNTIME_TUNABLES = [
   // Keep the name for existing deployment variable compatibility; do not
   // re-enable hard count-based HTTP 503 through it.
   { name: 'AIG_ISOLATE_MAX_IN_FLIGHT', type: 'int', min: 0, max: 512, def: 0 },
-  // (AIG_REQUEST_ADMISSION) Worst-case charge AND read ceiling for a request
-  // body without a usable Content-Length (chunked transfer): its true size is
-  // unknowable before reading, but charging AIG_REQUEST_BODY_MAX_BYTES (20MB)
-  // per chunked request would admit almost none once the 32MB in-flight budget
-  // is busy. The read in preflight is bounded by the same value, so the charge
-  // stays a true worst case at a fraction of the full-body cap. Bodies WITH a
-  // Content-Length keep the declared charge and the full-body read ceiling.
+  // Legacy direct-preflight fallback cap when no measured-admission callback
+  // is provided. Gateway requests now use streaming byte accounting and retain
+  // the configured full body maximum, including when Content-Length is absent.
+  // Keep the existing variable name for backward compatibility.
   { name: 'AIG_CHUNKED_BODY_MAX_BYTES', type: 'int', min: 16_384, max: 32 * 1024 * 1024, def: 524_288 },
   // (AIG_REQUEST_ADMISSION) Logical-attempt ceilings per streaming mode. A wide
   // failover plan fans out into the whole node pool — each attempt bills at

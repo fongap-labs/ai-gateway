@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: Gateway 请求体按实际收到的字节动态计入内存预算，避免无 Content-Length 的 Code 长上下文请求被 20MB 占位或 512KB 分块限制误拒绝；保留 32MB 并发内存保护与 413/503 分类。
+
 - 新增: 跨协议响应对象和流式封装由独立 Protocol Center 单次转换，Inference 通过 v8 私有契约原样转交物理响应；维持原生直通、上下游错误分类、用量结算与生产默认旧绑定。
 
 - 维护: 统一推理响应转换与流式封装的源码归属，抽取公共 Protocol Core，保持现有 Inference 对外协议、流式预算、用量结算及执行行为不变，为独立 Protocol Center 接管响应准备。
