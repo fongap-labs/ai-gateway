@@ -141,9 +141,20 @@ export class BodyTooLargeError extends Error {
   }
 }
 
+export class BodyAdmissionBudgetError extends Error {
+  constructor() {
+    super('Gateway is busy with other large requests; retry shortly.');
+    this.name = 'BodyAdmissionBudgetError';
+  }
+}
+
 // Collects the raw chunks and decodes once. A multi-byte UTF-8 sequence split across
 // chunks is then decoded whole, and the body is never built up as a string piece by piece.
-export async function readBodyTextWithLimit(request: Request, maxBytes: number): Promise<string> {
+export async function readBodyTextWithLimit(
+  request: Request,
+  maxBytes: number,
+  observeBytes?: (actualBytes: number) => boolean,
+): Promise<string> {
   if (!request.body) return '';
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -155,6 +166,12 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number):
     if (total > maxBytes) {
       await reader.cancel().catch(() => {});
       throw new BodyTooLargeError();
+    }
+    // Reserve measured bytes before retaining a chunk. A rejected growth is
+    // a transient isolate budget failure, not a malformed client request.
+    if (observeBytes && !observeBytes(total)) {
+      await reader.cancel().catch(() => {});
+      throw new BodyAdmissionBudgetError();
     }
     chunks.push(value);
   }
