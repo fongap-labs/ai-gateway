@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 统一推理响应转换与流式封装的源码归属，抽取公共 Protocol Core，保持现有 Inference 对外协议、流式预算、用量结算及执行行为不变，为独立 Protocol Center 接管响应准备。
+
 - 新增: 跨协议请求可经私有 Protocol Center 单次转换后交由 Inference 执行，原生协议直通；增加 v7 已转换票据、防重复转换和端到端工具/流式契约测试，生产默认不切换。
 
 - 新增: 独立私有 Protocol Center 预检入口、六向协议契约与 CI 构建验证，保留未绑定时的 Inference 旧链路并禁止意外生产切换。
