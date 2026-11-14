@@ -156,7 +156,7 @@ async function runAdmittedRequest(
       knownModels,
       requestedModel,
       requestId,
-      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
   }
 
@@ -170,8 +170,8 @@ async function runAdmittedRequest(
       requestedModel,
       requestId,
       deadlineMs: requestStartMs + failoverBudgetMs,
-      executeChat: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
-      executeImage: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      executeChat: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
+      executeImage: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
   }
 
@@ -243,7 +243,7 @@ async function runAdmittedRequest(
       // An internal vision request is derived from the admitted body.
       // Keep normal preflight and authorization but do not charge it twice
       // to the isolate body admission budget.
-      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx),
+      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
     if (!visualResult.ok) {
       return gatewayError(
