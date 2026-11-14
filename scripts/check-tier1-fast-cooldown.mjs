@@ -79,9 +79,11 @@ const response = buildClientErrorResponse(
 );
 assert.equal(response.status, 422);
 const raw = await response.text();
-const details = JSON.parse(raw).error.details;
-assert.equal(details.attempts, 4);
-assert.deepEqual(details.failure_kinds, { server: 2, headers_timeout: 1, client: 1 });
+const error = JSON.parse(raw).error;
+assert.match(error.message, /^422 \| /, 'client error must be status-first');
+assert.equal(error.details?.attempts, undefined, 'client body must not expose internal dispatch details');
+assert.equal(response.headers.get('x-gateway-attempts'), '4');
+assert.equal(response.headers.get('x-gateway-failure-kinds'), 'client:1,headers_timeout:1,server:2');
 assert.ok(!raw.includes('private upstream details'));
 // A client-visible 504 with 7 transient failures plus one route-local 422
 // must not be tagged permanently invalid. Do not replay malformed 400s.
