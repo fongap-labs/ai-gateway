@@ -3,11 +3,14 @@
 // Private Protocol Center admission. No public routes, Provider credentials,
 // model selection, Tier dispatch or retries in this Worker.
 import { PROTOCOL_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
-import { authorizeExecutionRequest } from '../../packages/contracts/execution.ts';
+import { type ExecutionSurface, EXECUTION_PATH, authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { problem } from '../../packages/execution-core/response.ts';
+import { executeProtocolRequest } from '../../packages/protocol-center-core/execute.ts';
 import { handleInferencePreflight } from '../../packages/protocol-center-core/preflight.ts';
+
+const ALLOWED_SURFACES: ReadonlySet<ExecutionSurface> = new Set(['chat_completions', 'responses', 'messages']);
 
 export async function handleProtocolCenterRequest(request: Request, env: GatewayEnv, ctx?: ExecutionContextLike): Promise<Response> {
   const path = new URL(request.url).pathname;
@@ -16,6 +19,16 @@ export async function handleProtocolCenterRequest(request: Request, env: Gateway
     return new Response(JSON.stringify({ status: 'ok', center: 'protocol' }), {
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     });
+  }
+  if (path === EXECUTION_PATH && request.method === 'POST') {
+    const execution = parseExecutionInvocation(request, ALLOWED_SURFACES);
+    if (!execution || !execution.inputSurface || execution.preparedRequest) return problem(400, 'protocol_execution_contract_invalid');
+    return withNativeSpan(
+      ctx,
+      'aig.protocol.execute',
+      { requestId: execution.requestId, center: 'protocol', phase: 'prepare' },
+      () => executeProtocolRequest(request, env, execution),
+    );
   }
   if (path !== PROTOCOL_PREFLIGHT_PATH || request.method !== 'POST') return problem(404, 'center_route_not_found');
   const invocation = parseInferencePreflightInvocation(request);
