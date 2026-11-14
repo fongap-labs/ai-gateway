@@ -73,6 +73,33 @@ function formatFailureKinds(value: unknown): string | null {
   return entries.length ? entries.map(([kind, count]) => `${kind}:${count}`).join(',') : null;
 }
 
+/** The client receives one readable reason; detailed failure telemetry belongs in headers/logs. */
+function clientErrorMessage(
+  status: number,
+  message: string,
+  details: Record<string, unknown> | undefined,
+  gatewayCode: string | null,
+  retryAfterMs: number,
+): string {
+  const model = typeof details?.requested_model === 'string' ? trimDiagnostic(details.requested_model, 64).replace(/\s+/g, ' ') : null;
+  const attempts = typeof details?.attempts === 'number' && Number.isSafeInteger(details.attempts) && details.attempts > 0 ? details.attempts : 0;
+  const exhausted =
+    gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED ||
+    gatewayCode === GATEWAY_ERROR_CODE.FAILOVER_BUDGET_EXHAUSTED ||
+    gatewayCode === GATEWAY_ERROR_CODE.UPSTREAM_EXHAUSTED;
+  if (exhausted) {
+    const subject = model || 'Model';
+    const reason = status === 408 ? 'request deadline exceeded' : 'temporarily unavailable';
+    const attemptsText = attempts ? ` after ${attempts} attempts` : '';
+    const retryText = retryAfterMs > 0 ? `; retry after ${Math.ceil(retryAfterMs / 1000)}s` : '';
+    return `${status} | ${subject} ${reason}${attemptsText}${retryText}.`;
+  }
+  // Preserve a useful diagnostic for request errors while preventing multi-line
+  // Provider/internal messages from taking over the client's failure display.
+  const singleLine = trimDiagnostic(message.replace(/\s+/g, ' ').trim(), 150);
+  return `${status} | ${singleLine || 'Request failed.'}`;
+}
+
 export function gatewayError(
   request: Request,
   env: GatewayEnv,
@@ -108,14 +135,22 @@ export function gatewayError(
     diagnosticHeaders['x-gateway-budget-exhausted'] = 'true';
   }
   const retryAfterMs = parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER);
-  const errorDetails = gatewayCode
-    ? { ...details, gateway_code: gatewayCode, retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
-    : details;
+  const briefMessage = clientErrorMessage(status, message, details, gatewayCode, retryAfterMs);
+  // Never serialize the full retry/failover graph into a standard error body.
+  // Explicit upstream diagnostics remain opt-in, preserving forensic access.
+  // The stable gateway code, counters, classifications, request ID and retry
+  // timing are available in response headers for clients and observability.
+  const exposeDetails = details !== undefined && Object.hasOwn(details, 'attempts_detail');
+  const errorDetails = exposeDetails
+    ? { ...details, ...(gatewayCode ? { gateway_code: gatewayCode } : {}), retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
+    : gatewayCode
+      ? { gateway_code: gatewayCode, retryable, ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}) }
+      : undefined;
   if (route === 'anthropic_messages' || route === 'anthropic_count_tokens') {
     return new Response(
       JSON.stringify({
         type: 'error',
-        error: { type: anthropicErrorTypeForStatus(status), message, ...(errorDetails ? { details: errorDetails } : {}) },
+        error: { type: anthropicErrorTypeForStatus(status), message: briefMessage, ...(errorDetails ? { details: errorDetails } : {}) },
       }),
       {
         status,
@@ -132,9 +167,9 @@ export function gatewayError(
     );
   }
   if (route === 'openai_responses') {
-    return responsesErrorResponse(request, env, status, message, requestId, diagnosticHeaders, gatewayCode, isRetryable);
+    return responsesErrorResponse(request, env, status, briefMessage, requestId, diagnosticHeaders, gatewayCode, isRetryable);
   }
-  return new Response(JSON.stringify({ error: { message, ...(errorDetails ? { details: errorDetails } : {}) } }), {
+  return new Response(JSON.stringify({ error: { message: briefMessage, ...(errorDetails ? { details: errorDetails } : {}) } }), {
     status,
     headers: {
       'content-type': 'application/json;charset=UTF-8',

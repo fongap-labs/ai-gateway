@@ -536,7 +536,9 @@ assert.equal(rejectedText.includes('secret-'), false);
 const exhaustedResponse = buildBudgetExhaustedResponse(diagnosticRequest, {}, 'openai_chat', 'offline-request', 'Code-Max', diagnosticState, false);
 assert.equal(exhaustedResponse.status, 504);
 const exhaustedText = await exhaustedResponse.text();
-assert.deepEqual(JSON.parse(exhaustedText).error.details.failover_summary, failover);
+assert.equal(JSON.parse(exhaustedText).error.details?.failover_summary, undefined, 'exhausted errors must not expose the full failover graph');
+assert.equal(exhaustedResponse.headers.get('x-gateway-attempts'), String(diagnosticState.logicalAttempts));
+assert.equal(exhaustedResponse.headers.get('x-gateway-dispatches'), String(diagnosticState.dispatches));
 assert.equal(exhaustedText.includes('secret-'), false);
 
 console.log('Tier 1 effective-model attribution and anonymous failover diagnostics contracts passed offline.');
