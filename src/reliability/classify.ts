@@ -308,7 +308,13 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
 ]);
 // Permission or entitlement to one physical model is Key-scoped, not
 // evidence that an entire Provider endpoint is absent for other Keys.
-const MODEL_ACCESS_ERROR_CODES = new Set(['model_access_denied', 'model_forbidden', 'model_permission_denied', 'model_not_authorized', 'model_not_enabled']);
+const MODEL_ACCESS_ERROR_CODES = new Set([
+  'model_access_denied',
+  'model_forbidden',
+  'model_permission_denied',
+  'model_not_authorized',
+  'model_not_enabled',
+]);
 const CLIENT_REQUEST_ERROR_CODES = new Set([
   'invalid_request_error',
   'invalid_json',
@@ -434,8 +440,12 @@ function looksLikeModelAccessDenied(body: unknown): boolean {
   // Require an explicit model reference. Generic access-denied responses are
   // not proof that a physical route is missing or that all Keys are broken.
   return (
-    /\b(?:model|deployment)\b.{0,100}\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed|not available to (?:your|this) (?:account|organization|key))\b/i.test(text) ||
-    /\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed)\b.{0,100}\b(?:model|deployment)\b/i.test(text)
+    /\b(?:model|deployment)\b.{0,100}\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed|not available to (?:your|this) (?:account|organization|key))\b/i.test(
+      text,
+    ) ||
+    /\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed)\b.{0,100}\b(?:model|deployment)\b/i.test(
+      text,
+    )
   );
 }
 
