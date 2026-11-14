@@ -191,17 +191,17 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
       ? EXECUTION_RAW_RESPONSE_CONTRACT_VERSION
       : invocation.preparedRequest
         ? EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION
-      : invocation.returnStream && invocation.streamBudget
-        ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
-        : invocation.returnStream
-          ? EXECUTION_STREAM_CONTRACT_VERSION
-          : invocation.returnObject
-            ? invocation.preferNonstream
-              ? EXECUTION_OBJECT_CONTRACT_VERSION
-              : EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION
-            : invocation.inputSurface
-              ? EXECUTION_TRANSLATION_CONTRACT_VERSION
-              : EXECUTION_CONTRACT_VERSION,
+        : invocation.returnStream && invocation.streamBudget
+          ? EXECUTION_BUDGET_STREAM_CONTRACT_VERSION
+          : invocation.returnStream
+            ? EXECUTION_STREAM_CONTRACT_VERSION
+            : invocation.returnObject
+              ? invocation.preferNonstream
+                ? EXECUTION_OBJECT_CONTRACT_VERSION
+                : EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION
+              : invocation.inputSurface
+                ? EXECUTION_TRANSLATION_CONTRACT_VERSION
+                : EXECUTION_CONTRACT_VERSION,
     'x-aig-request-id': invocation.requestId,
     'x-aig-node-id': invocation.nodeId,
     'x-aig-model': invocation.logicalModel,
