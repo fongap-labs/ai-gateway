@@ -993,7 +993,7 @@ assert.match(
 );
 assert.match(
   protocolExecutionOwner,
-  /return convertPrivateMatrixResponse\(raw, invocation, original/,
+  /return convertPrivateMatrixResponse\(raw, invocation, prepared\.body/,
   'Protocol Core must translate the raw response once',
 );
 assert.doesNotMatch(
