@@ -477,9 +477,7 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '', schemaError 
   // A confirmed protocol incompatibility must be rerouted to a different
   // physical model, not replayed across Keys of the same model.
   const isConfirmedIncompatible = errorCode === 'unsupported_parameter' || schemaError;
-  const alternateNode = isConfirmedIncompatible
-    ? node(second, { models: { [CUTOVER_MODEL]: 'mock-alternate-upstream-model' } })
-    : node(second);
+  const alternateNode = isConfirmedIncompatible ? node(second, { models: { [CUTOVER_MODEL]: 'mock-alternate-upstream-model' } }) : node(second);
   const env = {
     AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
     AIG_ACCESS_MODELS_AIR: '*',
