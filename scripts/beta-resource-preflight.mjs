@@ -32,10 +32,7 @@ export function planAiGatewayBetaResources(input) {
     throw new Error('AI Gateway Beta requires an immutable source SHA.');
   }
   for (const name of Object.keys(input)) {
-    if (
-      PUBLIC_VARIABLE_SECRET.test(name) ||
-      /(?:^|_)(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|KEYRING|CREDENTIALS)(?:$|_)/.test(name)
-    ) {
+    if (PUBLIC_VARIABLE_SECRET.test(name) || /(?:^|_)(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|KEYRING|CREDENTIALS)(?:$|_)/.test(name)) {
       throw new Error('AI Gateway Beta resource preflight must not receive Secrets.');
     }
   }
