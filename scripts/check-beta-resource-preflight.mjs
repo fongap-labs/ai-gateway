@@ -57,6 +57,8 @@ for (const invalid of [
   { AIG_INFERENCE_AUTH_KEY: 'do-not-accept' },
   { AIG_ACCESS_KEY_AIR: 'do-not-accept' },
   { AIG_TIER1_CREDENTIALS_01: 'do-not-accept' },
+  { MODEL_PROVIDER_API_KEY: 'do-not-accept' },
+  { EXTRA_SECRET: 'do-not-accept' },
 ]) {
   assert.throws(
     () => planAiGatewayBetaResources({ ...input, ...invalid }),
