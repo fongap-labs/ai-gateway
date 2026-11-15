@@ -121,5 +121,15 @@ reject((p) => (p.gateway.main = 'apps/gateway/index.ts'));
 reject((p) => (p.inference.services = []));
 reject((p) => (p.generation.triggers = { crons: [] }));
 const deploy = JSON.parse(readFileSync(new URL('../.github/deploy.json', import.meta.url), 'utf8'));
-assert.equal(deploy.automatic, false, 'Cutover must keep automatic production dispatch disabled');
+assert.equal(deploy.schema_version, '2', 'Gateway release must declare independent source branches');
+assert.deepEqual(
+  deploy.environments,
+  {
+    production: {},
+    'ai-gateway-beta': { source_branch: 'dev' },
+  },
+  'Beta must be dev-bound and both environments require an explicit manual trigger',
+);
+const script = readFileSync(new URL('./deploy.sh', import.meta.url), 'utf8');
+assert.match(script, /DEPLOY_ENVIRONMENT:-.*production/, 'Production deploy script must reject Beta before any write');
 console.log('Five-worker offline release gate passed: private centers, Secret names, SHA, D1 and one cron owner.');
