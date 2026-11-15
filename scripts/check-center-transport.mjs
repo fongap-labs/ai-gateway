@@ -8,9 +8,9 @@ import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNo
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
-import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '../src/config/timeouts.ts';
 import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
+import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '../src/config/timeouts.ts';
 
 // A center must have time to return an explicit attempted timeout before the
 // caller aborts its Service Binding (and loses the upstream outcome).
