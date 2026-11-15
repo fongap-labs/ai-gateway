@@ -12,7 +12,7 @@ import type { ConversionContext, LoopContext, LoopState } from '../../src/types/
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { dispatchWithHedge } from './attempt/hedge.ts';
 import { TIER_ORDER } from './policy/router.ts';
-import { isIndependentKeyRecovery, isSpeculativeRetryAfter, preferUntriedCredentials } from './reliability/retry-budget.ts';
+import { isCredentialWideFailure, isIndependentKeyRecovery, isSpeculativeRetryAfter, preferUntriedCredentials } from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse } from './response/errors.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from './scheduling/tier-policy.ts';
 import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
@@ -100,22 +100,29 @@ export async function runTierLoop(
         raceLostIds,
         maxInFlight: policy.maxInFlight ?? null,
       };
-      // A different model/surface may expose a new node backed by the same
-      // physical credential. Never revisit a credential that was actually
-      // dispatched and failed within this request: retrying that allowance
-      // cannot create new free capacity and may amplify a 429/timeout storm.
-      // Pre-dispatch rejections are not evidence against the credential.
+      // Prefer a different free Key after any dispatched failure, but do not
+      // misclassify a 422 or a model-scoped 429 as an exhausted credential.
+      // An actual 401 or account-scoped 429 is a hard exclusion across sibling
+      // models. Other failures permit a bounded fallback to a different route
+      // on the same Key only when no independent credential is dispatchable.
+      const knownNodes = state.nodes ?? [...tiers[1], ...tiers[2]];
+      const dispatchedAttempts = state.attempts.filter((attempt) => attempt.dispatched === true);
+      const strictlyAttempted =
+        preferUntriedCredentials(
+          tiers[tierNumber],
+          knownNodes,
+          dispatchedAttempts.filter(isCredentialWideFailure).map((attempt) => String(attempt.node_id ?? '')),
+          state.attempted,
+        ) ?? state.attempted;
       const preferredAttempted = preferUntriedCredentials(
         tiers[tierNumber],
-        state.nodes ?? [...tiers[1], ...tiers[2]],
-        state.attempts.filter((attempt) => attempt.dispatched === true).map((attempt) => String(attempt.node_id ?? '')),
-        state.attempted,
+        knownNodes,
+        dispatchedAttempts.map((attempt) => String(attempt.node_id ?? '')),
+        strictlyAttempted,
       );
-      // No soft fallback to already-failed credentials. If no distinct Key is
-      // available, let the tier/model fallback logic choose a different pool.
-      const pick = preferredAttempted
-        ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts)
-        : pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, pickOpts);
+      const pick =
+        (preferredAttempted ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts) : null) ??
+        pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, strictlyAttempted, pickOpts);
       if (!pick) break;
       if (pick.raceLost) {
         if (!pick.raceLostNodeId) break;
