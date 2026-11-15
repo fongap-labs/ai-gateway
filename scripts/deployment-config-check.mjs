@@ -163,13 +163,16 @@ assert.deepEqual(
 
 const deployManifest = JSON.parse(read('.github/deploy.json'));
 assert.deepEqual(deployManifest, {
-  schema_version: '1',
+  schema_version: '2',
   adapter: 'source-script',
-  automatic: false,
-  ignore_docs_only: true,
-  runner_profile: 'production-deploy',
-  environment: 'production',
+  root: '',
   entrypoint: 'scripts/deploy.sh',
+  runner_profile: 'production-deploy',
+  ignore_docs_only: true,
+  environments: {
+    production: {},
+    'ai-gateway-beta': { source_branch: 'dev' },
+  },
 });
 const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
