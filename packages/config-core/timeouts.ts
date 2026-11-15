@@ -41,7 +41,7 @@ export function centerResponseDeadlineMs(deadlineMs: number, nowMs: number = Dat
   const now = Math.floor(nowMs);
   const deadline = Number.isFinite(deadlineMs) ? Math.floor(deadlineMs) : now + 1;
   const remaining = Math.max(1, deadline - now);
-  const reserve = Math.min(PRIVATE_CENTER_RESPONSE_RESERVE_MS, Math.max(1, Math.floor(remaining / 10)));
+  const reserve = Math.min(PRIVATE_CENTER_RESPONSE_RESERVE_MS, Math.max(1, Math.floor(remaining / 20)));
   return Math.max(now + 1, deadline - reserve);
 }
 
