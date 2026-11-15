@@ -40,10 +40,10 @@ export function planAiGatewayBetaResources(input) {
   const productionD1 = input.AIG_PRODUCTION_D1_ID ?? '';
   const betaKv = input.AIG_BETA_KV_ID ?? '';
   const productionKv = input.AIG_PRODUCTION_KV_ID ?? '';
-  if (!D1_ID.test(betaD1) || !D1_ID.test(productionD1) || betaD1 === productionD1) {
+  if (!D1_ID.test(betaD1) || !D1_ID.test(productionD1) || betaD1.toLowerCase() === productionD1.toLowerCase()) {
     throw new Error('Beta requires a dedicated D1 ID distinct from production.');
   }
-  if (!KV_ID.test(betaKv) || !KV_ID.test(productionKv) || betaKv === productionKv) {
+  if (!KV_ID.test(betaKv) || !KV_ID.test(productionKv) || betaKv.toLowerCase() === productionKv.toLowerCase()) {
     throw new Error('Beta requires a dedicated KV namespace distinct from production.');
   }
 
