@@ -212,15 +212,27 @@ export async function dispatchInferenceAttempt(
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - dispatchStartMs });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
     }
-    // Missing Service Bindings still fail closed: never bypass the private
-    // center for a direct Provider call. Once dispatch began, restore
-    // legacy/v0.1.5's bounded network/timeout candidate rotation instead.
+    // Missing Service Bindings are verifiably pre-dispatch. In contrast, a
+    // Service Binding rejection/timeout AFTER invocation has an unknown outcome:
+    // the private center may already have contacted the Provider. Do not blame
+    // the Key, or multiply a failing free Worker into eight more dispatches.
     if (error instanceof InferenceCenterUnavailable || error instanceof PerceptionCenterUnavailable) {
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
-    const classification = classifyNetworkError(hasTimedOut);
-    recordOutcome(state, node, classification, c, { latencyMs: Date.now() - dispatchStartMs });
-    return { rotate: true, kind: classification.kind };
+    return stopAfterDispatchedCenterFault(
+      c,
+      gatewayError(
+        request,
+        env,
+        route,
+        hasTimedOut ? 504 : 502,
+        'Private execution transport failed; upstream outcome is unknown.',
+        c.requestId,
+        undefined,
+        undefined,
+        'gateway_center_outcome_unknown',
+      ),
+    );
   }
   clearTimeout(timer);
   c.headersMs = Date.now() - dispatchStartMs;
