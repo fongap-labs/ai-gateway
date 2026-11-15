@@ -34,7 +34,8 @@ export const MIN_ATTEMPT_FIRST_EVENT_MS = 5_000;
 
 // Give a private center a small scheduling/Service Binding handoff window to
 // report an attempted timeout instead of losing the outcome to a Gateway abort.
-// The reserve shrinks automatically for short attempt windows.
+// The reserve shrinks to 5% for short windows so free-model header waits
+// retain at least 95% of their configured budget.
 export const PRIVATE_CENTER_RESPONSE_RESERVE_MS = 1_500;
 
 export function centerResponseDeadlineMs(deadlineMs: number, nowMs: number = Date.now()): number {
