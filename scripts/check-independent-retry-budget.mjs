@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   __resetRetryBudgetForTests,
+  isCredentialWideFailure,
   isIndependentKeyRecovery,
   isSpeculativeRetryAfter,
   preferUntriedCredentials,
@@ -18,6 +19,14 @@ assert.equal(RETRY_BUDGET_RATIO, 0.2);
 assert.equal(RETRY_INDEPENDENT_KEY_RATIO, 0.4);
 assert.equal(isSpeculativeRetryAfter('headers_timeout'), true);
 assert.equal(isSpeculativeRetryAfter('rate_limit'), false);
+
+assert.equal(isCredentialWideFailure({ dispatched: false, status: 401, kind: 'auth' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 401, kind: 'auth' }), true);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 403, kind: 'auth' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 422, kind: 'client' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 504, kind: 'headers_timeout' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 429, kind: 'rate_limit', rate_limit_scope: 'model' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 429, kind: 'rate_limit', rate_limit_scope: 'account' }), true);
 
 const sameProvider = {
   id: 'slot-a',
@@ -64,9 +73,13 @@ const tierLoop = readFileSync(new URL('../apps/gateway/tier-loop.ts', import.met
 assert.match(tierLoop, /if \(!mayDispatchNextAttempt\(state, node\)\)/);
 assert.match(tierLoop, /preferUntriedCredentials\(/);
 assert.match(tierLoop, /state\.attempts\.filter\(\(attempt\) => attempt\.dispatched === true\)/, 'skip pre-dispatch refusals');
-assert.match(tierLoop, /const pick = preferredAttempted\s*\? pickForTier/, 'use strict credential exclusion');
-assert.doesNotMatch(tierLoop, /\) \?\?\s*pickForTier/, 'never retry the same shared credential when a distinct picker is empty');
-assert.match(tierLoop, /pickForTier\(tierNumber, tiers\[tierNumber\], reqDescriptor, state\.attempted, pickOpts\)/);
+assert.match(tierLoop, /dispatchedAttempts\.filter\(isCredentialWideFailure\)/, 'hard-exclude only proven credential-wide failures');
+assert.match(tierLoop, /const pick =\s*\(preferredAttempted \? pickForTier/, 'prefer independent Key first');
+assert.match(
+  tierLoop,
+  /pickForTier\(tierNumber, tiers\[tierNumber\], reqDescriptor, strictlyAttempted, pickOpts\)/,
+  'retain a bounded same-Key sibling-model fallback for model-scoped failures',
+);
 assert.match(tierLoop, /releaseTier1Slot\(node\.id, pick\.tier1ReleaseToken/);
 assert.doesNotMatch(tierLoop, /if \(!mayDispatchNextAttempt\(state\)\) return null;/);
 console.log('Independent-Key retry budget passed: strict normal lane, bounded recovery lane, shared-credential exclusion, slot cleanup.');

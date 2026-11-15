@@ -116,5 +116,9 @@ assert.throws(
 );
 assert.throws(() => validateDeploymentInputs({ ...env, AIG_PERCEPTION_TARGET: 'untrusted-worker' }), /AIG_PERCEPTION_TARGET/);
 
-assert.equal(JSON.parse(read('.github/deploy.json')).automatic, false);
+const deployManifest = JSON.parse(read('.github/deploy.json'));
+assert.deepEqual(deployManifest.environments, {
+  production: {},
+  'ai-gateway-beta': { source_branch: 'dev' },
+});
 console.log('Perception binding, bootstrap fail-closed behavior, private ingress, and source-deploy ordering passed offline.');
