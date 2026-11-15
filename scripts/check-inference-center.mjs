@@ -264,6 +264,58 @@ try {
   assert.equal(bufferedWindow.result.rotate, true);
   assert.equal(bufferedWindow.state.logicalAttempts, 0);
 
+  // A native or cross-protocol streaming Provider can take longer than the
+  // generic 15s headers default to produce the first byte. The configured
+  // first-event budget must protect that prefill without exceeding the attempt
+  // deadline or creating another upstream dispatch.
+  const streamingBody = { ...validBody, stream: true };
+  const streamingDescriptor = { model: 'chat-test', surface: 'chat_completions', bodyChars: JSON.stringify(streamingBody).length };
+  for (const crossProtocol of [false, true]) {
+    const streamed = await runCenterGatewayAttempt(
+      async (incoming) => {
+        const headersRemaining = Number(incoming.headers.get('x-aig-upstream-headers-deadline-ms')) - Date.now();
+        const attemptRemaining = Number(incoming.headers.get('x-aig-deadline-ms')) - Date.now();
+        assert.ok(headersRemaining > 25_000, 'streaming prefill must not be killed at the generic 15s header default');
+        assert.ok(headersRemaining <= attemptRemaining, 'streaming header deadline cannot exceed its attempt budget');
+        assert.equal(incoming.headers.get('x-aig-return-stream'), crossProtocol ? 'true' : null);
+        return returnedByCenter(404, 'center_route_unavailable', 'skipped');
+      },
+      {
+        bodyJson: streamingBody,
+        reqDescriptor: streamingDescriptor,
+        clientWantsStream: true,
+        ...(crossProtocol
+          ? {
+              route: 'anthropic_messages',
+              conversionContext: {
+                clientRoute: 'anthropic_messages',
+                fallbackProtocol: 'openai',
+                fallbackSurface: 'chat_completions',
+                convertedBody: streamingBody,
+                isNonstreamPreferred: false,
+              },
+            }
+          : {}),
+      },
+    );
+    assert.equal(streamed.result.rotate, true);
+    assert.equal(streamed.state.logicalAttempts, 0, 'pre-dispatch refusal never consumes a Provider attempt');
+  }
+  const explicitlyShortHeaders = await runCenterGatewayAttempt(
+    async (incoming) => {
+      const wait = Number(incoming.headers.get('x-aig-upstream-headers-deadline-ms')) - Date.now();
+      assert.ok(wait > 8_000 && wait <= 10_000, 'explicit operator header timeout must not be widened');
+      return returnedByCenter(404, 'center_route_unavailable', 'skipped');
+    },
+    {
+      bodyJson: streamingBody,
+      reqDescriptor: streamingDescriptor,
+      clientWantsStream: true,
+      policy: { headersTimeoutMs: 10_000 },
+    },
+  );
+  assert.equal(explicitlyShortHeaders.result.rotate, true);
+
   for (const [status, code] of [
     [502, 'center_upstream_network'],
     [504, 'center_upstream_headers_timeout'],

@@ -5,6 +5,7 @@
 // accounting, retry budget, and response finalizers as direct dispatch.
 // Once the binding exists there is NO automatic direct-provider fallback.
 
+import { readEnv } from '../../../packages/config-core/env.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -134,7 +135,18 @@ export async function dispatchInferenceAttempt(
         }
       : undefined;
   const hasBufferedResponse = (!c.conversionContext && !c.clientWantsStream && !c.fakeStream) || returnTranslatedObject;
-  const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + requestSizeAllowanceMs(reqDescriptor.bodyChars);
+  const sizeAllowanceMs = requestSizeAllowanceMs(reqDescriptor.bodyChars);
+  const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + sizeAllowanceMs;
+  // A streaming Provider may withhold HTTP headers until its first token.
+  // Before that point, the header wait and first-output wait are the same
+  // prefill phase; treating the generic 15s header default as a separate hard
+  // stop repeatedly kills otherwise viable slow free-model attempts.
+  // Explicit policy/operator header timeouts remain authoritative.
+  const explicitHeaderTimeout = policy.headersTimeoutMs != null || readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS') !== undefined;
+  const streamingHeadersMs =
+    c.clientWantsStream && !c.fakeStream && !explicitHeaderTimeout
+      ? Math.max(configuredHeadersMs, (policy.firstEventTimeoutMs ?? limits.firstEventTimeoutMs) + sizeAllowanceMs)
+      : configuredHeadersMs;
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
   const attemptBudgetMs =
     c.hedgedAttempt && c.attemptDeadlineMs
@@ -151,14 +163,14 @@ export async function dispatchInferenceAttempt(
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
   const centerMayBufferResponse = hasBufferedResponse || returnStream;
   const headersTimeout = attemptHeadersTimeoutMs(
-    centerMayBufferResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
+    centerMayBufferResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
   // Restore legacy/v0.1.5: a buffered Provider call may take the whole
   // attempt window before response headers arrive, even via private Inference.
   const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
-    hasBufferedResponse || c.takeRemainingWindow ? Math.max(configuredHeadersMs, windowMs) : configuredHeadersMs,
+    hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
