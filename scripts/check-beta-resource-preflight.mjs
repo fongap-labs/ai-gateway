@@ -17,13 +17,7 @@ const plan = planAiGatewayBetaResources(input);
 assert.equal(plan.environment, 'ai-gateway-beta');
 assert.equal(plan.source_branch, 'dev');
 assert.equal(plan.source_sha, input.DEPLOY_SOURCE_SHA);
-assert.deepEqual(Object.keys(plan.workers).sort(), [
-  'gateway',
-  'generation',
-  'inference',
-  'operations',
-  'perception',
-]);
+assert.deepEqual(Object.keys(plan.workers).sort(), ['gateway', 'generation', 'inference', 'operations', 'perception']);
 assert.equal(new Set(Object.values(BETA_WORKERS)).size, 5);
 assert.equal(plan.workers.gateway, 'ai-gateway-beta');
 assert.equal(plan.workers.inference, 'ai-inference-center-beta');
