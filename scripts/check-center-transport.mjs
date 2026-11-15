@@ -16,8 +16,9 @@ import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '..
 // caller aborts its Service Binding (and loses the upstream outcome).
 assert.equal(PRIVATE_CENTER_RESPONSE_RESERVE_MS, 1_500);
 assert.equal(centerResponseDeadlineMs(100_000, 0), 98_500);
-assert.equal(centerResponseDeadlineMs(1_000, 0), 900, 'tight windows reserve only 10%');
-assert.equal(centerResponseDeadlineMs(20, 0), 18, 'short requests must not lose the whole budget');
+assert.equal(centerResponseDeadlineMs(15_000, 0), 14_250, 'a normal header wait reserves at most 5%');
+assert.equal(centerResponseDeadlineMs(1_000, 0), 950, 'tight windows reserve only 5%');
+assert.equal(centerResponseDeadlineMs(20, 0), 19, 'short requests must not lose the whole budget');
 
 const privateRequest = new Request('https://perception.internal/internal/execute', {
   method: 'POST',
