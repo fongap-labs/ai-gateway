@@ -8,8 +8,16 @@ import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNo
 import { buildInferenceRequest, InferenceCenterUnavailable, invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailable } from '../apps/gateway/transport/perception-client-request.ts';
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
+import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '../src/config/timeouts.ts';
 import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
+
+// A center must have time to return an explicit attempted timeout before the
+// caller aborts its Service Binding (and loses the upstream outcome).
+assert.equal(PRIVATE_CENTER_RESPONSE_RESERVE_MS, 1_500);
+assert.equal(centerResponseDeadlineMs(100_000, 0), 98_500);
+assert.equal(centerResponseDeadlineMs(1_000, 0), 900, 'tight windows reserve only 10%');
+assert.equal(centerResponseDeadlineMs(20, 0), 18, 'short requests must not lose the whole budget');
 
 const privateRequest = new Request('https://perception.internal/internal/execute', {
   method: 'POST',
