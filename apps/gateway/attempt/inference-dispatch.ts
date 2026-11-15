@@ -207,6 +207,10 @@ export async function dispatchInferenceAttempt(
   } catch (error) {
     clearTimeout(timer);
     detach();
+    // Preserve the elapsed private-hop wait even when Service Binding never
+    // returns headers. Previously these expensive attempts appeared with
+    // headers_ms=-1 and no HTTP status in cross-isolate attempt telemetry.
+    c.headersMs = Math.max(0, Date.now() - dispatchStartMs);
     if (c.hedgeAbort?.signal.aborted) return hedgeLoserOutcome(c, node, 'center_headers');
     if (request.signal.aborted) {
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - dispatchStartMs });
@@ -219,6 +223,14 @@ export async function dispatchInferenceAttempt(
     if (error instanceof InferenceCenterUnavailable || error instanceof PerceptionCenterUnavailable) {
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
+    c.upstreamStatus = hasTimedOut ? 504 : 502;
+    // Do not log the raw exception or request body: a transport rejection can
+    // contain private URLs or headers. The stage and duration are enough to
+    // distinguish a Gateway deadline from an early Service Binding failure.
+    c.logger.error?.(
+      `center-transport request=${c.requestId} center=${center} stage=${hasTimedOut ? 'gateway_headers_deadline' : 'binding_rejection'}` +
+        ` elapsed_ms=${c.headersMs} status=${c.upstreamStatus} outcome=unknown`,
+    );
     return stopAfterDispatchedCenterFault(
       c,
       gatewayError(
