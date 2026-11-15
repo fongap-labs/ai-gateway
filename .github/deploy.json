@@ -1,14 +1,9 @@
 {
-  "schema_version": "2",
+  "schema_version": "1",
   "adapter": "source-script",
-  "root": "",
-  "entrypoint": "scripts/deploy.sh",
-  "runner_profile": "production-deploy",
+  "automatic": false,
   "ignore_docs_only": true,
-  "environments": {
-    "production": {},
-    "ai-gateway-beta": {
-      "source_branch": "dev"
-    }
-  }
+  "runner_profile": "production-deploy",
+  "environment": "production",
+  "entrypoint": "scripts/deploy.sh"
 }

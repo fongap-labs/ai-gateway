@@ -4,14 +4,6 @@ set -Eeuo pipefail
 # center authentication. Application access keys stay in Cloudflare.
 umask 077
 
-# This existing release script still targets only the production Worker topology.
-# Any Beta request must fail before reading credentials, installing dependencies,
-# contacting Cloudflare, or mutating a production resource.
-if [[ "${DEPLOY_ENVIRONMENT:-}" != "production" || "${DEPLOY_SOURCE_REPOSITORY:-}" != "fongap-labs/ai-gateway" ]]; then
-  echo "ERROR: AI Gateway source-script deploy is production-only until the isolated Beta stack exists." >&2
-  exit 77
-fi
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

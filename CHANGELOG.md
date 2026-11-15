@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 撤销 2026-11-15 的 dev/Beta 部署实验逻辑，恢复 main 的正式发布与中央 CI；保留原历史变更记录及无关修复。
+
 - 维护: 增加 DSH JSONL 日志的本地匿名化重试报告与合成数据回归，统计免费 Worker 1102、失败分类和等待时间，不提交原始会话数据。
 
 - 新增: 五 Worker Beta 纯离线资源预检，固定独立 Worker/内部绑定，要求专用 D1 和 KV ID 与正式版不同，拒绝 Secrets、Cron、公共路由及远端写入；尚未配置或部署 Cloudflare Beta 实例。
