@@ -558,7 +558,8 @@ assert.doesNotMatch(modelDiscoveryScript, /AW_CONTROL_TOKEN|AW_ADMIN_TOKEN|AIG_A
 // Action Worker product discovery forbids mixing root deployment manifests with
 // product manifests under projects/. Task-only projects remain supported.
 const rootDeployManifest = JSON.parse(read('.github/deploy.json'));
-assert.equal(rootDeployManifest.environment, 'production');
+assert.deepEqual(rootDeployManifest.environments.production, {}, 'Production remains explicitly manual');
+assert.deepEqual(rootDeployManifest.environments['ai-gateway-beta'], { source_branch: 'dev' });
 for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })) {
   if (!item.isDirectory()) continue;
   for (const marker of ['deploy.json', 'follows.json', 'release.manifest.json']) {
