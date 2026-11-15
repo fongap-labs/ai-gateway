@@ -21,7 +21,11 @@ export function summarizeSessionJsonl(text) {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let event;
-    try { event = JSON.parse(line); } catch { continue; }
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (event?.type !== 'llm/retry') continue;
     retries++;
     const data = event.data ?? {};
@@ -45,7 +49,16 @@ export function summarizeSessionJsonl(text) {
 
 export function summarizeSessionFiles(files) {
   const perFile = files.map((file) => summarizeSessionJsonl(file));
-  const totals = { retries: 0, retriedSteps: 0, failures: {}, statuses: {}, cloudflare1102: 0, retryDelayMs: 0, firstRetryAtMs: null, lastRetryAtMs: null };
+  const totals = {
+    retries: 0,
+    retriedSteps: 0,
+    failures: {},
+    statuses: {},
+    cloudflare1102: 0,
+    retryDelayMs: 0,
+    firstRetryAtMs: null,
+    lastRetryAtMs: null,
+  };
   for (const part of perFile) {
     totals.retries += part.retries;
     totals.retriedSteps += part.retriedSteps;
@@ -53,8 +66,10 @@ export function summarizeSessionFiles(files) {
     totals.retryDelayMs += part.retryDelayMs;
     for (const [key, value] of Object.entries(part.failures)) totals.failures[key] = (totals.failures[key] ?? 0) + value;
     for (const [key, value] of Object.entries(part.statuses)) totals.statuses[key] = (totals.statuses[key] ?? 0) + value;
-    if (part.firstRetryAtMs !== null) totals.firstRetryAtMs = totals.firstRetryAtMs === null ? part.firstRetryAtMs : Math.min(totals.firstRetryAtMs, part.firstRetryAtMs);
-    if (part.lastRetryAtMs !== null) totals.lastRetryAtMs = totals.lastRetryAtMs === null ? part.lastRetryAtMs : Math.max(totals.lastRetryAtMs, part.lastRetryAtMs);
+    if (part.firstRetryAtMs !== null)
+      totals.firstRetryAtMs = totals.firstRetryAtMs === null ? part.firstRetryAtMs : Math.min(totals.firstRetryAtMs, part.firstRetryAtMs);
+    if (part.lastRetryAtMs !== null)
+      totals.lastRetryAtMs = totals.lastRetryAtMs === null ? part.lastRetryAtMs : Math.max(totals.lastRetryAtMs, part.lastRetryAtMs);
   }
   return totals;
 }
