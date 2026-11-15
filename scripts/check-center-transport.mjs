@@ -10,6 +10,15 @@ import { buildPerceptionRequest, invokePerceptionNode, PerceptionCenterUnavailab
 import { createInternalTraceparent, parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
+import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '../src/config/timeouts.ts';
+
+// A center must have time to return an explicit attempted timeout before the
+// caller aborts its Service Binding (and loses the upstream outcome).
+assert.equal(PRIVATE_CENTER_RESPONSE_RESERVE_MS, 1_500);
+assert.equal(centerResponseDeadlineMs(100_000, 0), 98_500);
+assert.equal(centerResponseDeadlineMs(15_000, 0), 14_250, 'a normal header wait reserves at most 5%');
+assert.equal(centerResponseDeadlineMs(1_000, 0), 950, 'tight windows reserve only 5%');
+assert.equal(centerResponseDeadlineMs(20, 0), 19, 'short requests must not lose the whole budget');
 
 const privateRequest = new Request('https://perception.internal/internal/execute', {
   method: 'POST',

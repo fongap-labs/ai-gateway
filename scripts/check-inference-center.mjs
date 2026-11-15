@@ -230,7 +230,7 @@ try {
       requestedModel: 'chat-test',
       logger: { info: () => {} },
     };
-    const result = await attemptNode({
+    const context = {
       request: new Request('https://client.example/v1/chat/completions', { method: 'POST' }),
       env: { ...env, AIG_INFERENCE_SERVICE: { fetch } },
       node: { ...node, tier: 'tier-2', protocol: 'openai', surfaces: ['chat_completions'], baseUrl: node.base_url, credential: providerSecret },
@@ -246,8 +246,9 @@ try {
       failoverBudgetMs: 60_000,
       requestStartMs: Date.now(),
       ...overrides,
-    });
-    return { result, state };
+    };
+    const result = await attemptNode(context);
+    return { result, state, context };
   };
   const returnedByCenter = (status, code, disposition) =>
     new Response(null, { status, headers: { 'x-aig-result': disposition, 'x-aig-error-kind': code } });
@@ -293,6 +294,21 @@ try {
   assert.equal(bindingFailure.state.logicalAttempts, 1);
   assert.equal(bindingFailure.state.dispatches, 1);
   assert.equal(bindingFailure.state.attempts[0]?.kind, 'unknown', 'center faults must not cool down a healthy Provider Key');
+  // An aborted Service Binding must record the actual wait and 504 status,
+  // not an opaque -1ms sample that hides capacity lost to internal transport.
+  const timedOutCenter = await runCenterGatewayAttempt(
+    async (incoming) =>
+      new Promise((_resolve, reject) => {
+        incoming.signal.addEventListener('abort', () => reject(new Error('test-only Service Binding abort')), { once: true });
+      }),
+    { remainingDispatchableAttempts: 1, failoverBudgetMs: 100 },
+  );
+  assert.equal(timedOutCenter.result.response?.status, 504);
+  assert.ok(timedOutCenter.context.headersMs > 0, 'private center timeout duration must be observable');
+  assert.equal(timedOutCenter.context.upstreamStatus, 504, 'private center timeout status must be observable');
+  assert.notEqual(timedOutCenter.result.rotate, true, 'unknown upstream outcome must never be replayed');
+  assert.equal(timedOutCenter.state.logicalAttempts, 1);
+  assert.equal(timedOutCenter.state.dispatches, 1);
 
   // Contract faults occur AFTER the private center dispatched a Provider.
   // They must fail closed, charge exactly one physical attempt and never
