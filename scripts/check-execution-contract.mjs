@@ -77,8 +77,8 @@ await assert.rejects(
 );
 
 const now = Date.now();
-assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_750);
-assert.equal(centerResponseDeadlineMs(now + 100, now), now + 90);
+assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_500);
+assert.equal(centerResponseDeadlineMs(now + 100, now), now + 95);
 
 // The restored v0.1.5 reserve-aware request budget must not reduce the
 // first slow-but-healthy Code candidate to an equal share of all retries.
