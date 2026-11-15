@@ -227,7 +227,7 @@ export async function dispatchInferenceAttempt(
     // Do not log the raw exception or request body: a transport rejection can
     // contain private URLs or headers. The stage and duration are enough to
     // distinguish a Gateway deadline from an early Service Binding failure.
-    c.logger.error?.(
+    c.logger?.error?.(
       `center-transport request=${c.requestId} center=${center} stage=${hasTimedOut ? 'gateway_headers_deadline' : 'binding_rejection'}` +
         ` elapsed_ms=${c.headersMs} status=${c.upstreamStatus} outcome=unknown`,
     );
