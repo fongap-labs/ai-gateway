@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 维护: AI Gateway 中央测试包 SHA 锁定到已撤销 dev/Beta 部署逻辑、通过 CI 的 Action Worker 正式版本。
+
+
 - 维护: 撤销 2026-11-15 的 dev/Beta 部署实验逻辑，恢复 main 的正式发布与中央 CI；保留原历史变更记录及无关修复。
 
 - 维护: 增加 DSH JSONL 日志的本地匿名化重试报告与合成数据回归，统计免费 Worker 1102、失败分类和等待时间，不提交原始会话数据。
