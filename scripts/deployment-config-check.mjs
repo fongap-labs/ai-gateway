@@ -583,13 +583,34 @@ for (const [setting, expectedExit, message] of [
     cwd: root,
     encoding: 'utf8',
     timeout: 5000,
-    env: { ...process.env, AIG_IS_DEPLOY_ENABLED: setting, DEPLOY_SOURCE_SHA: '' },
+    env: {
+      ...process.env,
+      AIG_IS_DEPLOY_ENABLED: setting,
+      DEPLOY_SOURCE_SHA: '',
+      DEPLOY_SOURCE_REPOSITORY: 'fongap-labs/ai-gateway',
+      DEPLOY_ENVIRONMENT: 'production',
+    },
   });
   assert.equal(result.error, undefined, 'Disabled deploy must execute Bash without external API access');
   assert.equal(result.status, expectedExit, 'Unexecuted deploy must never return a successful exit status');
   assert.match(result.stderr, message);
   assert.doesNotMatch(result.stdout, /Deployment complete|deployment completed/i);
 }
+const betaProbe = spawnSync('bash', [path.join(root, 'scripts/deploy.sh')], {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 5000,
+  env: {
+    ...process.env,
+    AIG_IS_DEPLOY_ENABLED: 'true',
+    DEPLOY_SOURCE_REPOSITORY: 'fongap-labs/ai-gateway',
+    DEPLOY_ENVIRONMENT: 'ai-gateway-beta',
+    DEPLOY_SOURCE_SHA: 'a'.repeat(40),
+  },
+});
+assert.equal(betaProbe.status, 77, 'Unconfigured Beta must never reach production deployment');
+assert.match(betaProbe.stderr, /production-only/);
+assert.doesNotMatch(betaProbe.stdout + betaProbe.stderr, /npm ci|wrangler deploy|Deployment complete/);
 assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
 assert.match(deployScript, /sync-runtime-secrets/);
 assert.ok(deployScript.indexOf('private-center-config.mjs prepare') < deployScript.indexOf('sync_runtime_secrets preflight'));
