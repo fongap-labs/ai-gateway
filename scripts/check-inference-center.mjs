@@ -130,6 +130,29 @@ try {
   assert.equal((await ok.json()).model, 'gpt-test-upstream');
   assert.equal(attempts, 1);
 
+  // Free Workers CPU regression: an identity physical mapping must preserve
+  // native request bytes (including whitespace/Unicode), not stringify a
+  // potentially very large Code prompt again inside Inference Center.
+  const mappedFetch = globalThis.fetch;
+  const identityBody = { model: 'chat-test', messages: [{ role: 'user', content: '中文 native prompt' }] };
+  const originalText = JSON.stringify(identityBody, null, 2);
+  const identityHeaders = new Headers(request(identityBody).headers);
+  identityHeaders.set('content-length', String(new Blob([originalText]).size));
+  const identityEnv = { ...env, AIG_TIER2_NODES_01: JSON.stringify([{ ...node, models: { 'chat-test': 'chat-test' } }]) };
+  globalThis.fetch = async (_url, opts) => {
+    assert.equal(opts.body, originalText, 'identity-mapped native request must not be reserialized');
+    return new Response(JSON.stringify({ id: 'cmpl-identity', model: 'chat-test', choices: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const identityResponse = await handleInferenceCenterRequest(
+    new Request('https://inference.internal/internal/execute', { method: 'POST', headers: identityHeaders, body: originalText }),
+    identityEnv,
+  );
+  assert.equal(identityResponse.status, 200);
+  globalThis.fetch = mappedFetch;
+
   globalThis.fetch = async () => {
     attempts++;
     throw new Error('test-only provider network failure');
@@ -265,8 +288,11 @@ try {
   const bindingFailure = await runCenterGatewayAttempt(async () => {
     throw new Error('Service Binding failed after dispatch');
   });
-  assert.equal(bindingFailure.result.rotate, true, 'legacy network failure rotates without bypassing the private center');
+  assert.equal(bindingFailure.result.response?.status, 502, 'unknown center outcome must return a bounded transport error');
+  assert.notEqual(bindingFailure.result.rotate, true, 'an unknown center outcome cannot trigger duplicate Provider dispatch');
   assert.equal(bindingFailure.state.logicalAttempts, 1);
+  assert.equal(bindingFailure.state.dispatches, 1);
+  assert.equal(bindingFailure.state.attempts[0]?.kind, 'unknown', 'center faults must not cool down a healthy Provider Key');
 
   // Contract faults occur AFTER the private center dispatched a Provider.
   // They must fail closed, charge exactly one physical attempt and never

@@ -139,8 +139,13 @@ async function executeAdmittedNative(
   const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const clientRequest = buildProviderForwardRequest(request);
-  outboundBody = { ...outboundBody, model: physicalModel };
-  isMutated = true;
+  // Identity mappings are common on free endpoints. Do not stringify a
+  // potentially multi-megabyte native prompt a second time when neither the
+  // protocol nor the physical model changes.
+  if (outboundBody.model !== physicalModel) {
+    outboundBody = { ...outboundBody, model: physicalModel };
+    isMutated = true;
+  }
   if (invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env)) {
     outboundBody = withUsageStreamOptions(outboundBody);
     isMutated = true;
