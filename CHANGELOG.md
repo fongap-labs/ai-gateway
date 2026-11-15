@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 新增: dev 测试分支声明 ai-gateway-beta 手动环境，同时部署脚本继续只允许生产路径；未创建独立测试版 Worker 或关联密钥。
+- 新增: dev 测试分支声明 ai-gateway-beta 手动环境，同时部署脚本继续只允许生产路径；未创建独立测试版 Worker 或关联密钥；中央部署合同测试现已同时验证旧生产清单与 dev Beta 新声明，不因此开放真实 Beta 发布。
 
 - 维护: 新增 Chat、Responses、Anthropic 三协议错误与已提交流的 SSE 中断契约测试，纳入中央合并和部署校验，限制上游原始故障原因外泄。
 
