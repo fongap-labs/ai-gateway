@@ -28,6 +28,16 @@ export function isIndependentKeyRecovery(previousNode: RuntimeNode | undefined, 
 }
 
 /**
+ * A single route/model refusal does not prove the physical Key is exhausted.
+ * Only a dispatched credential rejection (401) or an account-scoped 429 can
+ * exclude that Key across sibling models for the remainder of this request.
+ */
+export function isCredentialWideFailure(attempt: Readonly<Record<string, unknown>>): boolean {
+  if (attempt.dispatched !== true) return false;
+  return attempt.status === 401 || (attempt.kind === KIND.RATE_LIMIT && attempt.rate_limit_scope === 'account');
+}
+
+/**
  * Prefer fresh credentials across the entire request, not only a fresh node ID.
  * This is a soft preference: the tier loop falls back to the original candidate
  * set when every remaining node shares a previously attempted credential.
