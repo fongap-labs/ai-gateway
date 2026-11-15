@@ -38,6 +38,11 @@ assert.deepEqual([...(preferred ?? [])].sort(), ['slot-a', 'slot-b'], 'prefer an
 assert.equal(attempted.has('slot-b'), false, 'request-wide preference must not mutate the actual attempted set');
 assert.equal(preferUntriedCredentials([otherKeyPeer], [sameProvider, otherKeyPeer], ['slot-a'], attempted), null);
 assert.equal(preferUntriedCredentials([sameKeyPeer], [sameProvider, sameKeyPeer], ['unknown-node'], attempted), null);
+assert.deepEqual(
+  [...preferUntriedCredentials([sameKeyPeer], [sameProvider, sameKeyPeer], ['slot-a'], attempted)],
+  ['slot-a', 'slot-b'],
+  'a pool containing only a failed shared credential must not be retried',
+);
 
 __resetRetryBudgetForTests();
 const active = Array.from({ length: 10 }, () => new RetrySlot());
@@ -58,6 +63,9 @@ assert.deepEqual(snapshotRetryBudget(), { active: 0, retrying: 0, denied: 2 });
 const tierLoop = readFileSync(new URL('../apps/gateway/tier-loop.ts', import.meta.url), 'utf8');
 assert.match(tierLoop, /if \(!mayDispatchNextAttempt\(state, node\)\)/);
 assert.match(tierLoop, /preferUntriedCredentials\(/);
+assert.match(tierLoop, /state\.attempts\.filter\(\(attempt\) => attempt\.dispatched === true\)/, 'skip pre-dispatch refusals');
+assert.match(tierLoop, /const pick = preferredAttempted\s*\? pickForTier/, 'use strict credential exclusion');
+assert.doesNotMatch(tierLoop, /\) \?\?\s*pickForTier/, 'never retry the same shared credential when a distinct picker is empty');
 assert.match(tierLoop, /pickForTier\(tierNumber, tiers\[tierNumber\], reqDescriptor, state\.attempted, pickOpts\)/);
 assert.match(tierLoop, /releaseTier1Slot\(node\.id, pick\.tier1ReleaseToken/);
 assert.doesNotMatch(tierLoop, /if \(!mayDispatchNextAttempt\(state\)\) return null;/);

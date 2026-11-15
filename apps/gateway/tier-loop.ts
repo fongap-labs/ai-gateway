@@ -100,18 +100,22 @@ export async function runTierLoop(
         raceLostIds,
         maxInFlight: policy.maxInFlight ?? null,
       };
-      // A model fallback can expose another node backed by a Key already tried
-      // earlier in the same request. Prefer a fresh Key before revisiting it;
-      // keep the ordinary picker as a fallback rather than stranding capacity.
+      // A different model/surface may expose a new node backed by the same
+      // physical credential. Never revisit a credential that was actually
+      // dispatched and failed within this request: retrying that allowance
+      // cannot create new free capacity and may amplify a 429/timeout storm.
+      // Pre-dispatch rejections are not evidence against the credential.
       const preferredAttempted = preferUntriedCredentials(
         tiers[tierNumber],
         state.nodes ?? [...tiers[1], ...tiers[2]],
-        state.attempts.map((attempt) => String(attempt.node_id ?? '')),
+        state.attempts.filter((attempt) => attempt.dispatched === true).map((attempt) => String(attempt.node_id ?? '')),
         state.attempted,
       );
-      const pick =
-        (preferredAttempted ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts) : null) ??
-        pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, pickOpts);
+      // No soft fallback to already-failed credentials. If no distinct Key is
+      // available, let the tier/model fallback logic choose a different pool.
+      const pick = preferredAttempted
+        ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts)
+        : pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, state.attempted, pickOpts);
       if (!pick) break;
       if (pick.raceLost) {
         if (!pick.raceLostNodeId) break;
