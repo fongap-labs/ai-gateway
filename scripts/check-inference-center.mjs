@@ -265,8 +265,11 @@ try {
   const bindingFailure = await runCenterGatewayAttempt(async () => {
     throw new Error('Service Binding failed after dispatch');
   });
-  assert.equal(bindingFailure.result.rotate, true, 'legacy network failure rotates without bypassing the private center');
+  assert.equal(bindingFailure.result.response?.status, 502, 'unknown center outcome must return a bounded transport error');
+  assert.notEqual(bindingFailure.result.rotate, true, 'an unknown center outcome cannot trigger duplicate Provider dispatch');
   assert.equal(bindingFailure.state.logicalAttempts, 1);
+  assert.equal(bindingFailure.state.dispatches, 1);
+  assert.equal(bindingFailure.state.attempts[0]?.kind, 'unknown', 'center faults must not cool down a healthy Provider Key');
 
   // Contract faults occur AFTER the private center dispatched a Provider.
   // They must fail closed, charge exactly one physical attempt and never
