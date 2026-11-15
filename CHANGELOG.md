@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 新增: ai-gateway-beta 手动环境绑定 dev；生产脚本拒绝 Beta；中央合同支持新旧清单，仍要求生产手动部署与独立凭据。
+- 新增: ai-gateway-beta 手动环境绑定 dev；生产脚本拒绝 Beta；中央合同支持新旧清单，仍要求生产手动部署与独立凭据，且不创建 Beta 实例。
 
 - 维护: 新增 Chat、Responses、Anthropic 三协议错误与已提交流的 SSE 中断契约测试，纳入中央合并和部署校验，限制上游原始故障原因外泄。
 
