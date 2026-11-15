@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 新增: 部署清单预声明独立的 ai-gateway-beta/dev 手动环境；现有生产脚本在操作 Cloudflare 前明确拒绝 Beta，生产自动部署规则保持关闭，待完成独立 Worker/数据库与凭据隔离后再启用；中央部署合同测试现已同时验证旧生产清单与 dev Beta 新声明，不因此开放真实 Beta 发布。
+- 新增: ai-gateway-beta 手动环境绑定 dev；生产脚本拒绝 Beta；中央合同支持新旧清单，仍要求生产手动部署与独立凭据。
 
 - 维护: 新增 Chat、Responses、Anthropic 三协议错误与已提交流的 SSE 中断契约测试，纳入中央合并和部署校验，限制上游原始故障原因外泄。
 
