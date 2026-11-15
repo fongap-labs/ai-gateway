@@ -99,15 +99,7 @@ export function assertProductionReleasePreflight(plan) {
   assert.ok(record(plan) && record(plan.phases), 'A three-stage release plan is required');
   assert.deepEqual(Object.keys(plan.phases), RELEASE_PHASE_ORDER, 'Phases must be ordered prepare → detach → activate');
   const deploy = JSON.parse(readFileSync(path.join(ROOT, '.github/deploy.json'), 'utf8'));
-  assert.equal(deploy.schema_version, '2', 'Deployment must use explicit source-bound environments');
-  assert.deepEqual(
-    deploy.environments,
-    {
-      production: {},
-      'ai-gateway-beta': { source_branch: 'dev' },
-    },
-    'Production and Beta must be manual; only dev may be a Beta source',
-  );
+  assert.equal(deploy.automatic, false, 'Automatic production deployment must remain disabled');
 
   const phases = plan.phases;
   const prepared = phases.prepare;

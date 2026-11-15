@@ -163,16 +163,13 @@ assert.deepEqual(
 
 const deployManifest = JSON.parse(read('.github/deploy.json'));
 assert.deepEqual(deployManifest, {
-  schema_version: '2',
+  schema_version: '1',
   adapter: 'source-script',
-  root: '',
-  entrypoint: 'scripts/deploy.sh',
-  runner_profile: 'production-deploy',
+  automatic: false,
   ignore_docs_only: true,
-  environments: {
-    production: {},
-    'ai-gateway-beta': { source_branch: 'dev' },
-  },
+  runner_profile: 'production-deploy',
+  environment: 'production',
+  entrypoint: 'scripts/deploy.sh',
 });
 const deploySecretScope = read('.github/deploy.secrets.allowed')
   .split(/\r?\n/)
@@ -558,8 +555,7 @@ assert.doesNotMatch(modelDiscoveryScript, /AW_CONTROL_TOKEN|AW_ADMIN_TOKEN|AIG_A
 // Action Worker product discovery forbids mixing root deployment manifests with
 // product manifests under projects/. Task-only projects remain supported.
 const rootDeployManifest = JSON.parse(read('.github/deploy.json'));
-assert.deepEqual(rootDeployManifest.environments.production, {}, 'Production remains explicitly manual');
-assert.deepEqual(rootDeployManifest.environments['ai-gateway-beta'], { source_branch: 'dev' });
+assert.equal(rootDeployManifest.environment, 'production');
 for (const item of fs.readdirSync(path.join(root, 'projects'), { withFileTypes: true })) {
   if (!item.isDirectory()) continue;
   for (const marker of ['deploy.json', 'follows.json', 'release.manifest.json']) {
@@ -583,34 +579,13 @@ for (const [setting, expectedExit, message] of [
     cwd: root,
     encoding: 'utf8',
     timeout: 5000,
-    env: {
-      ...process.env,
-      AIG_IS_DEPLOY_ENABLED: setting,
-      DEPLOY_SOURCE_SHA: '',
-      DEPLOY_SOURCE_REPOSITORY: 'fongap-labs/ai-gateway',
-      DEPLOY_ENVIRONMENT: 'production',
-    },
+    env: { ...process.env, AIG_IS_DEPLOY_ENABLED: setting, DEPLOY_SOURCE_SHA: '' },
   });
   assert.equal(result.error, undefined, 'Disabled deploy must execute Bash without external API access');
   assert.equal(result.status, expectedExit, 'Unexecuted deploy must never return a successful exit status');
   assert.match(result.stderr, message);
   assert.doesNotMatch(result.stdout, /Deployment complete|deployment completed/i);
 }
-const betaProbe = spawnSync('bash', [path.join(root, 'scripts/deploy.sh')], {
-  cwd: root,
-  encoding: 'utf8',
-  timeout: 5000,
-  env: {
-    ...process.env,
-    AIG_IS_DEPLOY_ENABLED: 'true',
-    DEPLOY_SOURCE_REPOSITORY: 'fongap-labs/ai-gateway',
-    DEPLOY_ENVIRONMENT: 'ai-gateway-beta',
-    DEPLOY_SOURCE_SHA: 'a'.repeat(40),
-  },
-});
-assert.equal(betaProbe.status, 77, 'Unconfigured Beta must never reach production deployment');
-assert.match(betaProbe.stderr, /production-only/);
-assert.doesNotMatch(betaProbe.stdout + betaProbe.stderr, /npm ci|wrangler deploy|Deployment complete/);
 assert.match(deployScript, /persistent-deployment\.mjs verify-secrets/);
 assert.match(deployScript, /sync-runtime-secrets/);
 assert.ok(deployScript.indexOf('private-center-config.mjs prepare') < deployScript.indexOf('sync_runtime_secrets preflight'));

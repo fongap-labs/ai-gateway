@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 撤销误合并到 dev 的 Beta 发布清单和资源预检代码，恢复原有部署配置与测试行为；保留历史变更记录以便审计。
+
 - 新增: 五 Worker Beta 纯离线资源预检，固定独立 Worker/内部绑定，要求专用 D1 和 KV ID 与正式版不同，拒绝 Secrets、Cron、公共路由及远端写入；尚未配置或部署 Cloudflare Beta 实例。
 
 - 新增: dev 声明 ai-gateway-beta 手动环境；生产脚本拒绝 Beta，中央合同支持新旧清单；未创建 Beta Worker、数据库或密钥。
