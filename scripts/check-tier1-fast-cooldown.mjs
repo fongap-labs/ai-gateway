@@ -75,7 +75,8 @@ assert.equal(classifyUpstreamStatus(400, new Headers(), {}, t, 'opaque request r
 const opaqueGone = classifyUpstreamStatus(410, new Headers(), {}, t, 'HTTP 410');
 assert.equal(opaqueGone.action, 'rotate');
 assert.equal(opaqueGone.physicalRouteFailure, true, 'ambiguous 410 avoids the same physical route without disabling an entire account');
-assert.equal(opaqueGone.cooldownMs, 0);
+assert.equal(opaqueGone.kind, 'endpoint_not_found');
+assert.equal(opaqueGone.cooldownMs, 5_000);
 const mappedGone = classifyUpstreamStatus(410, new Headers(), {}, t, '{"error":{"code":"model_not_found","message":"model removed"}}');
 assert.equal(mappedGone.kind, 'model_missing');
 assert.equal(mappedGone.modelScoped, true);
