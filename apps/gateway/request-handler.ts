@@ -158,10 +158,20 @@ async function runAdmittedRequest(
   }
 
   const requestPolicy = policy;
+  const modelConfig = loadModelsConfig(env);
+  const visionFallbackAvailable = (modelConfig[requestedModel]?.policy.fallback ?? []).some((configuredModel) => {
+    const model = [...knownModels].find((candidate) => candidate.toLowerCase() === configuredModel.toLowerCase());
+    return (
+      !!model &&
+      modelRegistryEntry(env, model).catalog.capabilities.vision === true &&
+      config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, model, knownModels))
+    );
+  });
   const needsVisionBridge =
     (route === 'openai_chat' || route === 'openai_responses' || route === 'anthropic_messages') &&
     hasImageInput(bodyJson) &&
-    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true;
+    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true &&
+    (!!modelConfig[requestedModel]?.policy.vision_delegate || !visionFallbackAvailable);
   if (needsVisionBridge) {
     const delegation = resolveVisionDelegate({
       env,
