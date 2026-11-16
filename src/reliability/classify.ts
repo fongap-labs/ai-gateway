@@ -338,7 +338,9 @@ function looksLikeContextLimit(body: unknown): boolean {
   const code = structuredUpstreamError(body)?.code;
   if (code === 'context_length_exceeded' || code === 'max_context_length_exceeded' || code === 'request_too_large') return true;
   const text = String(body || '');
-  return /\b(?:context (?:length|window|size)|maximum context length|prompt (?:is )?too long|too many (?:input )?tokens|input tokens? (?:exceed|over)|payload too large|request body too large|request size exceeds)\b.{0,100}\b(?:exceed(?:ed|s)?|limit|maximum|too large|too long|overflow|window)\b|\b(?:exceed(?:ed|s)?|over)\b.{0,60}\b(?:context (?:length|window|size)|maximum (?:input )?tokens?)\b|\b(?:payload too large|request body too large|request size exceeds|context_length_exceeded)\b/i.test(text);
+  return /\b(?:context (?:length|window|size)|maximum context length|prompt (?:is )?too long|too many (?:input )?tokens|input tokens? (?:exceed|over)|payload too large|request body too large|request size exceeds)\b.{0,100}\b(?:exceed(?:ed|s)?|limit|maximum|too large|too long|overflow|window)\b|\b(?:exceed(?:ed|s)?|over)\b.{0,60}\b(?:context (?:length|window|size)|maximum (?:input )?tokens?)\b|\b(?:payload too large|request body too large|request size exceeds|context_length_exceeded)\b/i.test(
+    text,
+  );
 }
 
 function looksLikeInvalidRequestPayload(body: unknown): boolean {
