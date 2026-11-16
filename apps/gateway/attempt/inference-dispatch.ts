@@ -170,21 +170,19 @@ export async function dispatchInferenceAttempt(
   // No sibling means attemptCapMs is null and retains the full legacy window.
   const windowMs = c.attemptCapMs ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
-  // Framed real-time streams are not buffered objects. Keep a fair escape
-  // window for other candidates; a slow Service Binding must not monopolize it.
-  const centerMayBufferResponse = hasBufferedResponse;
-  const remainingHeaderCandidates = centerMayBufferResponse || c.takeRemainingWindow ? 1 : Math.min(3, Math.max(1, c.remainingDispatchableAttempts));
+  // Preserve slow free-provider prefill within the already allocated
+  // attempt window. Further slicing this window can terminate valid streams.
   const headersTimeout = attemptHeadersTimeoutMs(
-    centerMayBufferResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
+    hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
-    remainingHeaderCandidates,
+    1,
   );
   // Restore legacy/v0.1.5: a buffered Provider call may take the whole
   // attempt window before response headers arrive, even via private Inference.
   const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
     hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
-    remainingHeaderCandidates,
+    1,
   );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
   // Only a collected object has a buffering deadline. A real-time v4 stream
@@ -250,14 +248,8 @@ export async function dispatchInferenceAttempt(
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
     c.upstreamStatus = hasTimedOut ? 504 : 502;
-    // Only rotate a Gateway-owned header timeout when the logical request
-    // still has another eligible dispatch. With no candidate left, the
-    // private center's outcome remains unknown and must fail closed.
-    if (hasTimedOut && c.remainingDispatchableAttempts > 1 && !c.takeRemainingWindow && Date.now() < c.requestStartMs + c.failoverBudgetMs) {
-      const classified = classifyNetworkError(true);
-      recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: 504 });
-      return { rotate: true, kind: classified.kind };
-    }
+    // A local timeout does not prove that the private center cancelled its
+    // Provider dispatch. Retrying could duplicate work and exhaust free keys.
     // Do not log the raw exception or request body: a transport rejection can
     // contain private URLs or headers. The stage and duration are enough to
     // distinguish a Gateway deadline from an early Service Binding failure.
