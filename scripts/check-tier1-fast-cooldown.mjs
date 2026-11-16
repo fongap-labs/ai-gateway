@@ -59,6 +59,29 @@ applyTier1Outcome('free-key-1', 'Code-Ultra', classifyTier1Failure({ kind: 'rate
 assert.equal(recovering.cooldownUntil, t + 15_000);
 assert.equal(recovering.failureState, 'cooldown');
 
+const contextTooLong = classifyUpstreamStatus(
+  400,
+  new Headers(),
+  {},
+  t,
+  '{"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}',
+);
+assert.equal(contextTooLong.action, 'rotate', 'context overflow can recover on a different Provider or model');
+assert.equal(contextTooLong.requestTooLarge, true);
+assert.equal(contextTooLong.providerModelConstraint, true, 'same Provider and physical model should not be repeated in a single request');
+assert.equal(classifyUpstreamStatus(400, new Headers(), {}, t, '{"error":{"message":"invalid json"}}').action, 'stop');
+assert.equal(classifyUpstreamStatus(400, new Headers(), {}, t, 'opaque request rejected').providerModelConstraint, undefined);
+
+const opaqueGone = classifyUpstreamStatus(410, new Headers(), {}, t, 'HTTP 410');
+assert.equal(opaqueGone.action, 'rotate');
+assert.equal(opaqueGone.physicalRouteFailure, true, 'ambiguous 410 avoids the same physical route without disabling an entire account');
+assert.equal(opaqueGone.kind, 'endpoint_not_found');
+assert.equal(opaqueGone.cooldownMs, 5_000);
+const mappedGone = classifyUpstreamStatus(410, new Headers(), {}, t, '{"error":{"code":"model_not_found","message":"model removed"}}');
+assert.equal(mappedGone.kind, 'model_missing');
+assert.equal(mappedGone.modelScoped, true);
+assert.equal(mappedGone.cooldownMs, 1_800_000);
+
 const rejected = classifyUpstreamStatus(422, new Headers(), {}, t, 'unprocessable');
 assert.equal(rejected.action, 'rotate', 'opaque 422 permits a bounded alternate physical route');
 assert.equal(rejected.uncertain422, true, 'opaque upstream 422 must remain distinguishable from malformed client payloads');
