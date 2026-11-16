@@ -6,7 +6,6 @@
 // Once the binding exists there is NO automatic direct-provider fallback.
 
 import { readEnv } from '../../../packages/config-core/env.ts';
-import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -15,6 +14,7 @@ import {
   parseExecutionResponse,
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
@@ -173,8 +173,7 @@ export async function dispatchInferenceAttempt(
   // Framed real-time streams are not buffered objects. Keep a fair escape
   // window for other candidates; a slow Service Binding must not monopolize it.
   const centerMayBufferResponse = hasBufferedResponse;
-  const remainingHeaderCandidates =
-    centerMayBufferResponse || c.takeRemainingWindow ? 1 : Math.min(3, Math.max(1, c.remainingDispatchableAttempts));
+  const remainingHeaderCandidates = centerMayBufferResponse || c.takeRemainingWindow ? 1 : Math.min(3, Math.max(1, c.remainingDispatchableAttempts));
   const headersTimeout = attemptHeadersTimeoutMs(
     centerMayBufferResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
