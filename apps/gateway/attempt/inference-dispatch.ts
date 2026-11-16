@@ -1,4 +1,5 @@
 import { readEnv } from '../../../packages/config-core/env.ts';
+import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -187,6 +188,7 @@ export async function dispatchInferenceAttempt(
       returnStream: returnStream ? true : undefined,
       streamBudget,
       displayModel: returnStream ? requestedModel : undefined,
+      reasoningPreference: requestReasoningPreference(c.bodyJson),
       deadlineMs: c.attemptDeadlineMs,
       upstreamHeadersDeadlineMs,
       bufferedResponseDeadlineMs,
