@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 文本模型图片通过经授权的视觉节点委托到 Perception Center，补齐 Anthropic Messages 图片输入、模型能力声明及跨协议回归；缺少授权视觉节点或私有绑定时明确失败，不将图片发送到纯文本 Provider。
+
 - 新增: Tier 1 会话亲和性优先读取通用会话头，其他会话头通过可配置别名兼容；保留 Claude Code 默认兼容，协议转换与错误处理保持不变。
 
 - 维护: 增加 OpenCode、DSH、Responses 的离线 422/429/503/504 故障恢复等价性回归矩阵并纳入中央 CI，不执行真实上游请求。

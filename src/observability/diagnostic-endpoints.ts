@@ -1,3 +1,4 @@
+import { gatewayCanAcceptVision } from '../../packages/config-core/vision-delegation.ts';
 import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
@@ -88,6 +89,13 @@ function buildModelsList(
     .filter((e) => e.apiBackends.size > 0 && e.reg.policy.visibility !== 'internal' && allowedSet.has(e.id))
     .map((e) => {
       const backends = [...e.apiBackends];
+      const supportsVision = gatewayCanAcceptVision({
+        env,
+        requestedModel: e.id,
+        knownModels: logicalNames,
+        allowedModels: allowedSet,
+        nodes,
+      });
       return {
         id: e.id,
         object: 'model',
@@ -100,7 +108,7 @@ function buildModelsList(
         supports_reasoning: e.reg.catalog.capabilities.reasoning,
         supports_reasoning_effort: e.reg.catalog.capabilities.reasoning,
         reasoning_efforts: [...e.reg.catalog.reasoning_efforts].sort(),
-        supports_vision: e.reg.catalog.capabilities.vision,
+        supports_vision: supportsVision,
         supports_ocr: e.reg.catalog.capabilities.ocr,
         supports_stream: e.reg.catalog.capabilities.stream,
         ui_visible: e.reg.policy.ui_visible !== false,

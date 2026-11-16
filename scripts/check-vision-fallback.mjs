@@ -21,6 +21,7 @@ async function exercise({
   expectedStatus,
   expectedCode,
   includeUnsupportedVisionSibling = false,
+  restrictAccess = false,
 }) {
   const providerCalls = [];
   const centerCalls = [];
@@ -48,7 +49,7 @@ async function exercise({
   }
   const env = {
     AIG_ACCESS_KEY_AIR: accessKey,
-    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_ACCESS_MODELS_AIR: restrictAccess ? original : '*',
     AIG_TIER1_NODES_01: JSON.stringify(nodes),
     AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
     AIG_PERCEPTION_AUTH_KEY: 'v'.repeat(32),
@@ -132,7 +133,7 @@ async function exercise({
   }
 }
 
-await exercise({ allowFallback: false, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
+await exercise({ allowFallback: false, restrictAccess: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
 await exercise({ allowFallback: true, expectedStatus: 200 });
 await exercise({ allowFallback: true, includeUnsupportedVisionSibling: true, expectedStatus: 200 });
 await exercise({
@@ -180,6 +181,9 @@ bridgeEnv.AIG_PERCEPTION_SERVICE = {
 };
 bridgeEnv.AIG_INFERENCE_SERVICE = {
   async fetch(req) {
+    if (new URL(req.url).pathname === '/internal/conversion/preflight') {
+      return handleInferenceCenterRequest(req, bridgeCenterEnv);
+    }
     bridgeCenterCalls.push('inference');
     assert.equal(req.headers.get('x-aig-node-id'), 'bridge-code');
     const body = await req.clone().json();
@@ -257,18 +261,85 @@ try {
   assert.deepEqual(bridgeCenterCalls, ['perception', 'inference', 'perception', 'inference']);
   assert.deepEqual(bridgeProviderCalls, ['upstream-vision-model', 'upstream-text-model', 'upstream-vision-model', 'upstream-text-model']);
 
+  const anthropicImageRequest = (source) =>
+    new Request('https://gateway.example.invalid/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': accessKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: original,
+        max_tokens: 64,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What is this?' },
+              { type: 'image', source },
+            ],
+          },
+        ],
+      }),
+    });
+  const anthropicImageSource = {
+    type: 'base64',
+    media_type: 'image/png',
+    data: image.image_url.url.split(',')[1],
+  };
+  const anthropicResult = await handleRequest(anthropicImageRequest(anthropicImageSource), bridgeEnv, {
+    waitUntil() {},
+    passThroughOnException() {},
+  });
+  assert.equal(anthropicResult.status, 200, await anthropicResult.clone().text());
+  assert.match(JSON.stringify(await anthropicResult.json()), /red square/i);
+  assert.deepEqual(bridgeCenterCalls.slice(-2), ['perception', 'inference']);
+  assert.deepEqual(bridgeProviderCalls.slice(-2), ['upstream-vision-model', 'upstream-text-model']);
+
+  const listRequest = () => new Request('https://gateway.example.invalid/v1/models', { headers: { 'x-api-key': accessKey } });
+  const list = await (await handleRequest(listRequest(), bridgeEnv, {})).json();
+  assert.equal(list.data.find((entry) => entry.id === original)?.supports_vision, true);
+  assert.equal(list.data.find((entry) => entry.id === bridgeModel)?.supports_vision, true);
+  const unavailableList = await (await handleRequest(listRequest(), { ...bridgeEnv, AIG_PERCEPTION_SERVICE: undefined }, {})).json();
+  assert.equal(unavailableList.data.find((entry) => entry.id === original)?.supports_vision, false);
+  const restrictedList = await (await handleRequest(listRequest(), { ...bridgeEnv, AIG_ACCESS_MODELS_AIR: original }, {})).json();
+  assert.equal(restrictedList.data.find((entry) => entry.id === original)?.supports_vision, false);
+
+  const autoEnv = {
+    ...bridgeEnv,
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [original]: { policy: 'default', capabilities: { vision: false } },
+      [bridgeModel]: { policy: 'default', capabilities: { vision: true } },
+    }),
+  };
+  const autoList = await (await handleRequest(listRequest(), autoEnv, {})).json();
+  assert.equal(autoList.data.find((entry) => entry.id === original)?.supports_vision, true);
+  const autoResult = await handleRequest(bridgeRequest(), autoEnv, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(autoResult.status, 200, await autoResult.clone().text());
+  assert.deepEqual(bridgeCenterCalls.slice(-2), ['perception', 'inference']);
+  const blockedAutoEnv = { ...autoEnv, AIG_ACCESS_MODELS_AIR: original };
+  const blockedAutoList = await (await handleRequest(listRequest(), blockedAutoEnv, {})).json();
+  assert.equal(blockedAutoList.data.find((entry) => entry.id === original)?.supports_vision, false);
+  const blockedAuto = await handleRequest(bridgeRequest(), blockedAutoEnv, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(blockedAuto.status, 400);
+  assert.equal(blockedAuto.headers.get('x-gateway-error-code'), 'gateway_image_input_unsupported');
+
+  const unsupportedAnthropic = await handleRequest(anthropicImageRequest({ type: 'file', file_id: 'file-123' }), bridgeEnv, {
+    waitUntil() {},
+    passThroughOnException() {},
+  });
+  assert.equal(unsupportedAnthropic.status, 400);
+  assert.equal(unsupportedAnthropic.headers.get('x-gateway-error-code'), 'gateway_vision_preprocess_shape_unsupported');
+
   const unsupportedFile = await handleRequest(responsesImageRequest({ type: 'input_image', file_id: 'file-123' }), bridgeEnv, {
     waitUntil() {},
     passThroughOnException() {},
   });
   assert.equal(unsupportedFile.status, 400, 'unsupported image file IDs must not be silently dropped or fetched');
-  assert.equal(bridgeProviderCalls.length, 4, 'no Provider dispatch on unsupported file ID');
+  assert.equal(bridgeProviderCalls.length, 8, 'no Provider dispatch on unsupported file ID');
 
   const unauthorized = { ...bridgeEnv, AIG_ACCESS_MODELS_AIR: original };
   const denied = await handleRequest(bridgeRequest(), unauthorized, { waitUntil() {}, passThroughOnException() {} });
   assert.equal(denied.status, 403, "an unauthorized vision alias must never be used behind the caller's back");
   assert.equal((await denied.json()).error?.details?.gateway_code, 'gateway_vision_preprocess_unauthorized');
-  assert.equal(bridgeProviderCalls.length, 4, 'unauthorized delegate must not dispatch');
+  assert.equal(bridgeProviderCalls.length, 8, 'unauthorized delegate must not dispatch');
 } finally {
   globalThis.fetch = bridgeOriginalFetch;
 }
