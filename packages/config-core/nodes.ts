@@ -347,7 +347,7 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces, key_group)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces, key_group, reasoning)`);
       return null;
     }
   }
@@ -446,6 +446,10 @@ function parseNodeReasoning(
   const efforts = config.efforts;
   if (efforts !== undefined && (!Array.isArray(efforts) || efforts.length === 0 || efforts.some((e) => !['low', 'medium', 'high', 'max'].includes(String(e))))) {
     diagnostics.push(`node "${nodeId}": reasoning.efforts must contain recognized effort levels`);
+    return null;
+  }
+  if (mode === 'effort' && (!Array.isArray(efforts) || efforts.length === 0)) {
+    diagnostics.push(`node "${nodeId}": effort reasoning requires declared efforts`);
     return null;
   }
   const highBudgetTokens = config.high_budget_tokens;
