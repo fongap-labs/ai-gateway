@@ -444,7 +444,10 @@ function parseNodeReasoning(
     return null;
   }
   const efforts = config.efforts;
-  if (efforts !== undefined && (!Array.isArray(efforts) || efforts.length === 0 || efforts.some((e) => !['low', 'medium', 'high', 'max'].includes(String(e))))) {
+  if (
+    efforts !== undefined &&
+    (!Array.isArray(efforts) || efforts.length === 0 || efforts.some((e) => !['low', 'medium', 'high', 'max'].includes(String(e))))
+  ) {
     diagnostics.push(`node "${nodeId}": reasoning.efforts must contain recognized effort levels`);
     return null;
   }
