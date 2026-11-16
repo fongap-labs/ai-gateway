@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { requestReasoningPreference, stripReasoningDefaultMarkers } from '../packages/contracts/reasoning-preference.ts';
 import { buildExecutionHeaders, parseExecutionInvocation } from '../packages/contracts/execution.ts';
+import { requestReasoningPreference, stripReasoningDefaultMarkers } from '../packages/contracts/reasoning-preference.ts';
 import { adaptNodeReasoning } from '../packages/execution-core/reasoning-adapter.ts';
 
 const chat = { model: 'Max', stream: false, messages: [{ role: 'user', content: 'test' }] };
@@ -14,8 +14,10 @@ assert.equal(requestReasoningPreference({ ...chat, output_config: { effort: 'xhi
 assert.equal(stripReasoningDefaultMarkers(chat), chat);
 assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, reasoning_effort: 'default' }), chat);
 assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, reasoning: { effort: 'auto' } }), chat);
-assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, output_config: { effort: 'default', format: { type: 'json_schema' } } }),
-  { ...chat, output_config: { format: { type: 'json_schema' } } });
+assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, output_config: { effort: 'default', format: { type: 'json_schema' } } }), {
+  ...chat,
+  output_config: { format: { type: 'json_schema' } },
+});
 assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, reasoning_effort: 'none' }).reasoning_effort, 'none');
 
 const unchanged = adaptNodeReasoning(chat, 'chat_completions', 'high', undefined);
