@@ -95,8 +95,8 @@ export async function preprocessChatImages({
   const visualRequest = {
     model: visionModel,
     stream: false,
-    reasoning_effort: 'low',
     messages: [{ role: 'user', content: [{ type: 'text', text: VISION_INSTRUCTION + '\nUser task context: ' + userText }, ...images] }],
+    reasoning_effort: 'low',
   };
   const subrequest = new Request(new URL('/v1/chat/completions', request.url), {
     method: 'POST',
