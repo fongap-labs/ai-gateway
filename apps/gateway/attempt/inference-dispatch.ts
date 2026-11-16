@@ -131,10 +131,14 @@ export async function dispatchInferenceAttempt(
       ? Math.max(configuredHeadersMs, (policy.firstEventTimeoutMs ?? limits.firstEventTimeoutMs) + sizeAllowanceMs)
       : configuredHeadersMs;
   const remainingBudgetMs = c.failoverBudgetMs - (Date.now() - c.requestStartMs);
+  const baseAttemptBudgetMs = attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts);
+  const viableReserveMs = viableFailoverWindowMs(reqDescriptor.bodyChars);
   const attemptBudgetMs =
     c.hedgedAttempt && c.attemptDeadlineMs
       ? c.attemptDeadlineMs - Date.now()
-      : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts, viableFailoverWindowMs(reqDescriptor.bodyChars));
+      : viableReserveMs > 0
+        ? attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts, viableReserveMs)
+        : baseAttemptBudgetMs;
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
     return stopForCenter(c, 504, 'gateway_inference_deadline_expired', center);
   }
