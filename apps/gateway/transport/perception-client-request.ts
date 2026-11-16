@@ -38,6 +38,7 @@ export function buildPerceptionRequest(env: GatewayEnv, invocation: InferenceInv
       returnStream: invocation.returnStream,
       streamBudget: invocation.streamBudget,
       displayModel: invocation.displayModel,
+      reasoningPreference: invocation.reasoningPreference,
     },
     'x-aig-perception-auth',
     key,
