@@ -21,6 +21,7 @@ async function exercise({
   expectedStatus,
   expectedCode,
   includeUnsupportedVisionSibling = false,
+  restrictAccess = false,
 }) {
   const providerCalls = [];
   const centerCalls = [];
@@ -48,7 +49,7 @@ async function exercise({
   }
   const env = {
     AIG_ACCESS_KEY_AIR: accessKey,
-    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_ACCESS_MODELS_AIR: restrictAccess ? original : '*',
     AIG_TIER1_NODES_01: JSON.stringify(nodes),
     AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
     AIG_PERCEPTION_AUTH_KEY: 'v'.repeat(32),
@@ -132,7 +133,7 @@ async function exercise({
   }
 }
 
-await exercise({ allowFallback: false, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
+await exercise({ allowFallback: false, restrictAccess: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
 await exercise({ allowFallback: true, expectedStatus: 200 });
 await exercise({ allowFallback: true, includeUnsupportedVisionSibling: true, expectedStatus: 200 });
 await exercise({
