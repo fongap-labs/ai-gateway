@@ -27,7 +27,8 @@ export function perceptionBindingReady(env: Record<string, unknown>): boolean {
 export function hasVisionNode(nodes: ReadonlyArray<RuntimeNode>, model: string, env: Record<string, unknown>): boolean {
   const fallbacks = getFallbackChain('openai_chat', env);
   return nodes.some((node) => {
-    if (!getProviderProfile(node.provider).imageInput || typeof node.models[model] !== 'string' || !node.models[model].trim()) return false;
+    const physicalModel = node.models[model];
+    if (!getProviderProfile(node.provider).imageInput || typeof physicalModel !== 'string' || !physicalModel.trim()) return false;
     if (node.protocol === 'openai' && node.surfaces.includes('chat_completions')) return true;
     return fallbacks.some(({ protocol, surface }) => node.protocol === protocol && node.surfaces.includes(surface));
   });
@@ -53,7 +54,8 @@ export function resolveVisionDelegate({ env, requestedModel, knownModels, allowe
       return registry.catalog.capabilities.vision === true && registry.policy.visibility !== 'internal' && hasVisionNode(nodes, model, env);
     })
     .sort((a, b) => modelRegistryEntry(env, a).policy.display_order - modelRegistryEntry(env, b).policy.display_order || a.localeCompare(b));
-  return candidates.length > 0 ? { kind: 'ready', model: candidates[0] } : { kind: 'none' };
+  const firstCandidate = candidates[0];
+  return firstCandidate ? { kind: 'ready', model: firstCandidate } : { kind: 'none' };
 }
 
 export function gatewayCanAcceptVision(context: VisionRoutingContext): boolean {
