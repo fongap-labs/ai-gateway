@@ -56,6 +56,7 @@ assert.equal(active[2].tryAcquire(), true);
 assert.equal(active[3].tryAcquire(), false, 'speculative retries must remain concurrency-bounded');
 assert.equal(active[3].tryAcquire(true), true, 'independent credential can use recovery lane');
 active[0].release();
+active[3].release();
 assert.equal(active[4].tryAcquire(), true, 'completed physical retry returns admission to other requests');
 for (const slot of active) slot.end();
 assert.equal(snapshotRetryBudget().active, 0);
