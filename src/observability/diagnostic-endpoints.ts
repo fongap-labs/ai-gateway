@@ -89,6 +89,14 @@ function buildModelsList(
     .filter((e) => e.apiBackends.size > 0 && e.reg.policy.visibility !== 'internal' && allowedSet.has(e.id))
     .map((e) => {
       const backends = [...e.apiBackends];
+      const reasoningNodes = nodes.filter((node) => servesModel(node, e.id, logicalNames) && node.reasoning?.mode !== undefined && node.reasoning.mode !== 'none');
+      const availableEfforts = new Set([
+        ...e.reg.catalog.reasoning_efforts,
+        ...reasoningNodes.flatMap((node) => node.reasoning?.efforts ?? []),
+      ]);
+      if (reasoningNodes.length > 0 && availableEfforts.size === 0) availableEfforts.add('high');
+      const effortLevels = ['low', 'medium', 'high', 'max'].filter((level) => availableEfforts.has(level));
+      const hasNativeReasoning = e.reg.catalog.capabilities.reasoning || reasoningNodes.length > 0;
       const supportsVision = gatewayCanAcceptVision({
         env,
         requestedModel: e.id,
@@ -105,9 +113,16 @@ function buildModelsList(
         api_backends: backends,
         protocols: [...e.surfaces].sort(),
         supports_tools: e.reg.catalog.capabilities.tools,
-        supports_reasoning: e.reg.catalog.capabilities.reasoning,
-        supports_reasoning_effort: e.reg.catalog.capabilities.reasoning,
-        reasoning_efforts: [...e.reg.catalog.reasoning_efforts].sort(),
+        supports_reasoning: hasNativeReasoning,
+        supports_reasoning_effort: effortLevels.length > 0,
+        reasoning_efforts: effortLevels,
+        reasoningEfforts: Object.fromEntries(effortLevels.map((level) => [level, level])),
+        reasoning_policy: {
+          default: 'high',
+          mode: 'best_effort',
+          native_confirmed: reasoningNodes.length > 0,
+          fallback: 'native_without_unknown_parameter',
+        },
         supports_vision: supportsVision,
         supports_ocr: e.reg.catalog.capabilities.ocr,
         supports_stream: e.reg.catalog.capabilities.stream,
