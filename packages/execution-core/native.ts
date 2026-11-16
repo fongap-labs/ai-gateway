@@ -172,9 +172,7 @@ async function executeAdmittedNative(
   // is unambiguous, patch only that small JSON value (and optional usage)
   // without stringifying multi-megabyte messages for every physical attempt.
   const patchedNativeBody =
-    !invocation.inputSurface && isMutated
-      ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage)
-      : null;
+    !invocation.inputSurface && isMutated ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage) : null;
   const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   const attempt = await dispatchProviderAttempt({ url, headers, body, signal: request.signal, upstreamHeadersDeadlineMs });
