@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Request orchestration types shared by the request and scheduler layers.
-// Shapes mirror the handleRequest → runTierLoop → dispatchWithHedge → attemptNode pipeline.
 
 import type { Limits } from '../config/timeouts.ts';
 import type { FailureKind } from '../reliability/classify.ts';
@@ -14,7 +11,6 @@ import type { Protocol, Surface } from './protocol.ts';
 import type { ExecutionContextLike, GatewayEnv, GatewayLogger } from './runtime.ts';
 import type { RoutableRequest, Tier, TierMap } from './scheduler.ts';
 
-/** The (protocol, surface, route) triple identifying one client-facing route. */
 export type RequestDescriptor = {
   route: 'openai_chat' | 'openai_responses' | 'anthropic_messages' | 'anthropic_count_tokens' | 'openai_images';
   model: string;
@@ -23,32 +19,13 @@ export type RequestDescriptor = {
   bodyChars?: number;
 };
 
-/**
- * Mutable holder for the original JSON text. A large body is released once
- * dispatch has built or sent the first outbound body, so streaming and fallback
- * paths do not keep it alive.
- */
 export type RawBody = { text: string };
 
-/**
- * Auth result from request authorization. `group` is the credential group
- * label when a user access key was matched.
- */
 export type AuthResult =
   | { authorized: false; mode: 'none' | 'grouped' }
   | { authorized: true; mode: 'grouped'; group: string; allowAll: boolean; allowlist: Set<string> | undefined }
   | { authorized: true; mode: 'skip'; group: null };
 
-/**
- * Result of evaluateRouteFeasibility — the pre-orchestration check that
- * decides whether a request has ANY reachable execution path. Computed
- * once in preflight and carried through the pipeline via LoopContext.
- *
- *   reachable        = nativeSupported || fallbackSupported
- *   nativeSupported  = at least one node matches the client's protocol+surface+model
- *   fallbackSupported = at least one configured fallback has a candidate
- *   fallbacks        = the list of reachable fallback targets (protocol+surface)
- */
 export type RouteFeasibilityResult = {
   reachable: boolean;
   nativeSupported: boolean;
@@ -56,46 +33,24 @@ export type RouteFeasibilityResult = {
   fallbacks: ReadonlyArray<{ protocol: Protocol; surface: Surface }>;
 };
 
-/** Cross-protocol conversion context for one fallback pass (built in
- * fallback.ts; null on the native pass). */
 export type ConversionContext = {
   fallbackProtocol: Protocol;
   fallbackSurface: Surface;
-  /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   convertedBody: Record<string, unknown>;
   clientRoute: string;
-  /** Verbatim preference used for the Gateway dry-run and Inference execution. */
   isNonstreamPreferred: boolean;
 };
 
-/**
- * The shared request-level state object built in handleRequest and threaded
- * through runTierLoop and attempt.ts. Carries the three separate counters
- * (logicalAttempts, dispatches, hedges), the attempted set, the failure-kind
- * histogram, and aliases for logging / config.
- */
 export type LoopState = {
   attempted: Set<string>;
   attempts: Array<Record<string, unknown>>;
   logicalAttempts: number;
   dispatches: number;
   hedges: number;
-  // the failure-kind histogram is typed by FailureKind so
-  // the compiler rejects any new kind string that has not been declared in
-  // src/reliability/classify.ts. Partial because kinds are accumulated
-  // incrementally — an empty `{}` is a valid initial state.
   failureKinds: Partial<Record<FailureKind, number>>;
-  /** Fallback targets the request was rejected for by conversion, across all passes. */
   conversionRejections?: number;
-  /**
-   * Attempts already charged per tier across every pass of this request.
-   * `tier_attempts` is a request-wide hard cap, so a later protocol-fallback
-   * or model-family pass may only use what is left.
-   */
   tierAttemptsUsed?: Record<number, number>;
-  /** This request's share of the isolate retry budget (see reliability/retry-budget.ts). */
   retrySlot?: RetrySlot;
-  /** True once a speculative retry or hedge was refused: the request stops trying. */
   retryShed?: boolean;
   logger: GatewayLogger;
   requestId: string;
@@ -103,15 +58,9 @@ export type LoopState = {
   maxDispatches: number;
   requestedModel: string;
   nodes: ReadonlyArray<RuntimeNode>;
-  /** Preflight-computed known-model catalog shared by downstream call sites. */
   knownModels?: ReadonlySet<string>;
 };
 
-/**
- * The context object carried through the native and fallback tier loops.
- * Built once in handleRequest and passed to runTierLoop, which then threads
- * it into attempt.ts via dispatchWithHedge args.
- */
 export type LoopContext = {
   request: Request;
   env: GatewayEnv;
@@ -122,13 +71,9 @@ export type LoopContext = {
   requestedModel: string;
   clientWantsStream: boolean;
   fakeStream: boolean;
-  /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
-  /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
   rawBody?: RawBody;
-  /** Set after optional visual preprocessing; avoids rescanning the same messages for each retry. */
   imageInputRequired?: boolean;
-  /** Client request body size in characters; fallback descriptors carry it too. */
   bodyChars?: number;
   limits: Limits;
   exposeUpstreamInfo: boolean;
@@ -143,81 +88,40 @@ export type LoopContext = {
   tier1Session: string | null;
   knownModels: Set<string>;
   feasibility: RouteFeasibilityResult;
-  /** Edge cache plan (key + TTL) for requests with explicit cache opt-in. */
   edgeCachePlan: EdgeCachePlan | null;
-  /**
-   * Logical-attempt slots intentionally preserved for later model-family
-   * passes. This is request-plan state, not tier state: the current pass may
-   * use fewer live candidates, but it must not consume the wall-clock reserve
-   * promised to reachable compatible siblings.
-   */
   futureAttemptReserve: number;
-  /**
-   * Upper bound on this pass's streaming header and first-event waits, set while
-   * a later model in the plan could still take over. Null for the last pass.
-   */
   attemptCapMs?: number | null;
-  /** Last untried model after a family switch: its streaming header wait may use the whole remaining window. */
   takeRemainingWindow?: boolean;
 };
 
-/**
- * Physical-attempt settlement state. One holder per physical upstream dispatch:
- * it records the usage report observed on the wire and whether the attempt was
- * already written to the token statistics. The holder is shared by reference
- * between copies of the same attempt context (a model-family fallback copies
- * the context to rewrite the node), so the attempt is settled exactly once.
- */
 export type AttemptSettlement = {
-  /** Usage reported by the upstream for this attempt, merged across events. */
   observedUsage: unknown;
-  /** True once the attempt was written to the token statistics. */
   settled: boolean;
 };
 
-/**
- * Dispatch context for a single attempt. Passed by the tier loop to
- * attempt.ts via dispatchWithHedge. Carries everything one upstream
- * dispatch needs: the chosen node, the request descriptor, budget
- * state, hedge handles, and conversion context.
- */
 export type AttemptContext = {
   request: Request;
   env: GatewayEnv;
   ctx: ExecutionContextLike;
   logger: GatewayLogger;
   requestId: string;
-  /** W3C parent span generated independently for this physical attempt. */
   traceparent?: string;
   route: string;
   node: RuntimeNode;
   requestedModel: string;
   clientWantsStream: boolean;
   fakeStream: boolean;
-  /** Client-controlled parsed JSON body — its shape is validated at use sites. */
   bodyJson: Record<string, unknown>;
-  /** Original JSON text reused for unchanged native requests; released after the outbound body is built or sent. */
   rawBody?: RawBody;
-  /** Trusted Gateway-computed image-input result; absent in older direct test contexts. */
   imageInputRequired?: boolean;
   limits: Limits;
   exposeUpstreamInfo: boolean;
   state: LoopState;
   failoverBudgetMs: number;
   requestStartMs: number;
-  /**
-   * Budget-visible logical opportunities: live dispatches remaining in the
-   * current pass plus request-plan slots reserved for later compatible models.
-   * dispatch.ts uses this only for wall-clock allocation; it does not create
-   * candidates or enlarge maxAttempts.
-   */
   remainingDispatchableAttempts: number;
-  /** Per-attempt cap on streaming header and first-event waits; see LoopContext.attemptCapMs. */
   attemptCapMs?: number | null;
-  /** Last untried model after a family switch; see LoopContext.takeRemainingWindow. */
   takeRemainingWindow?: boolean;
-  /** The active (protocol, surface, model) triple — the fallback passes carry
-   * the fallback descriptor without a client route. */
   reqDescriptor: RoutableRequest;
   policy: PolicyConfig;
   tierNumber: Tier;
@@ -229,36 +133,24 @@ export type AttemptContext = {
   tier1EvaluateAffinity: boolean;
   tier1Session: string | null;
   rng: (() => number) | null;
-  // Fields below are assigned by dispatchWithHedge / dispatchAttempt, not by
-  // the tier loop — they are optional on the caller-facing context.
   hedgedAttempt?: boolean;
   hedgedWithTwin?: boolean;
   hedgeAbort?: AbortController | null;
   attemptDeadlineMs?: number;
   attemptStartMs?: number;
   headersMs?: number;
-  /** HTTP status of the upstream response; unset when no response arrived. */
   upstreamStatus?: number;
   ttftMs?: number;
   upstreamProtocol?: Protocol;
   surface?: Surface;
-  /** Settlement holder of THIS physical attempt; created when the attempt starts. */
   attemptSettlement?: AttemptSettlement;
 };
 
-/**
- * Outcome returned by attemptNode / dispatchWithHedge.
- * Exactly one of: committed response, rotate, or stop.
- */
 export type AttemptOutcome = {
   response?: Response;
   rotate?: boolean;
   stop?: boolean;
   budgetCharged?: boolean;
-  // kind is typed as FailureKind (the full taxonomy) so the
-  // compiler catches any drift between the classifier in
-  // src/reliability/classify.ts and the consumers in attempt/*.ts. The
-  // previous `string` type allowed any literal to leak through.
   kind?: FailureKind;
   hedgedAway?: boolean;
 };

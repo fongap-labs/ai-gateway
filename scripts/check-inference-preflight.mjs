@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Private conversion admission: six protocol pairs, fail-closed and no Provider.
 import assert from 'node:assert/strict';
 import { buildInferencePreflightHeaders, INFERENCE_PREFLIGHT_PATH } from '../packages/contracts/conversion-preflight.ts';
 import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
@@ -87,9 +86,6 @@ try {
   assert.equal(checks, 7);
   assert.equal(upstreamAttempts, 0);
 
-  // Native Provider tools cannot be represented as portable function tools.
-  // A preflight may report loss, but must never disclose translated payloads
-  // or allow Gateway to bypass Inference's independent safety decision.
   const nativeToolName = 'sensitive-native-tool-name';
   const nativeOnly = {
     ...bodyByProtocol.anthropic,
@@ -111,8 +107,6 @@ try {
   assert.equal(checks, 8);
   assert.equal(upstreamAttempts, 0);
 
-  // Optional server tools alongside a portable function tool are a declared
-  // capability loss, not a request whose entire tool interface was lost.
   const mixedTools = {
     ...nativeOnly,
     tools: [
@@ -151,8 +145,6 @@ try {
   );
   assert.equal(upstreamAttempts, 0);
 
-  // An unbound Gateway must fail closed rather than perform an old
-  // in-process conversion or a direct Provider attempt.
   await assert.rejects(
     checkInferenceConversion(
       { AIG_INFERENCE_AUTH_KEY: key },

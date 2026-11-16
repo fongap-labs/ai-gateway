@@ -1,24 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Isolate-local runtime state for nodes: health, latency EWMA, concurrency
-// slots, cooldowns, and the circuit breaker. This is the ONLY module that
-// mutates node runtime state; scheduler and request handler go through it.
-//
-// Circuit breaker (consecutive-failure state machine):
-//   CLOSED --(N consecutive counted failures)--> OPEN --(open period over)->
-//   HALF_OPEN (single probe) --success--> CLOSED / --failure--> OPEN
-//
-// Only transient upstream failures count toward the circuit: 5xx, network
-// errors, timeouts, first-event failures. 429 and 401/403 have their own
-// node-local cooldowns and never open the circuit. Any success resets the
-// consecutive-failure counter.
-//
-// Cooldown jitter: when an automatically-computed cooldown is applied
-// (i.e. no explicit Retry-After header), a small ±10% jitter is added to
-// avoid different isolates re-probing the same upstream simultaneously.
-// This only affects auto-computed defaults; explicit Retry-After values
-// pass through unchanged.
 
 import type { NodeState } from '../types/reliability.ts';
 import { cryptoRng } from '../utils/crypto-rng.ts';
@@ -36,9 +17,9 @@ const LATENCY_EWMA_ALPHA = 0.3;
 const PROBE_EWMA_ALPHA = 0.15;
 const MAX_STATE_ENTRIES = 256;
 const CLEANUP_INTERVAL_MS = 30_000;
-const STALE_FAILURE_MS = 300_000; // consecutive failures older than 5 min idle no longer chain
-const MODEL_MISSING_COOLDOWN_MS = 5_000; // (node,model) cooldown for a 404 mapping mismatch
-const MODEL_PERF_MAX = 16; // per-node model perf entries before LRU eviction
+const STALE_FAILURE_MS = 300_000;
+const MODEL_MISSING_COOLDOWN_MS = 5_000;
+const MODEL_PERF_MAX = 16;
 
 const nodeState = new Map<string, NodeState>();
 let lastCleanup = 0;
@@ -48,33 +29,18 @@ function createState(): NodeState {
     activeRequests: 0,
     healthScore: HEALTH_INITIAL,
     avgLatencyMs: 0,
-    // Time-to-first-event EWMA. Header latency says nothing about how soon
-    // tokens start flowing — an upstream can answer headers fast and stall
-    // before the first token — so latency-aware scheduling compares this for
-    // streaming traffic. 0 = never measured (neutral).
     avgTtftMs: 0,
     cooldownUntil: 0,
     cooldownReason: null,
     circuitState: 'closed',
     consecutiveFailures: 0,
-    // Timestamp of the latest real transport/timeout failure. The scheduler
-    // uses it only as a short-lived preference against this node when a peer
-    // exists; it never makes a sole node unavailable or replaces the circuit.
     lastTransientFailureAt: 0,
     probeInFlight: false,
     totalRequests: 0,
     totalSuccesses: 0,
     totalFailures: 0,
     lastUsedAt: 0,
-    // Per-logical-model cooldown map: a 404 "model not found" cools only the
-    // (node, model) pair, NOT the whole node. Other models on the same node
-    // stay fully dispatchable. Node-level cooldownUntil above is for real node
-    // health issues (429/auth/server/circuit); model_missing never touches it.
     modelCooldowns: new Map(),
-    // Per-logical-model performance EWMA: { avgTtftMs, avgLatencyMs, lastUsedAt }.
-    // A large reasoning model's slow TTFT must not pollute the scheduling score
-    // of the same node's fast small-model service. Bounded to MODEL_PERF_MAX
-    // entries per node (LRU by lastUsedAt); 0 = never measured (neutral).
     modelPerf: new Map(),
   };
 }
@@ -88,22 +54,14 @@ export function getNodeState(nodeId: string): NodeState {
   return s;
 }
 
-// ---- Availability ----------------------------------------------------------
-
-// Pure check used by candidate scoring; does not mutate anything.
-// Returns 'yes', 'probe' (circuit ready for its single half-open probe), or 'no'.
 export function peekAvailability(nodeId: string, now: number = Date.now()): 'yes' | 'probe' | 'no' {
   const s = getNodeState(nodeId);
   if (s.cooldownUntil > now) return 'no';
   if (s.circuitState === 'closed') return 'yes';
   if (s.circuitState === 'open') return s.cooldownUntil <= now ? 'probe' : 'no';
-  // half-open: available only when no probe is in flight
   return s.probeInFlight ? 'no' : 'probe';
 }
 
-// Commit a selection: claims a concurrency slot. When the node was ready to
-// be probed, this request becomes THE single half-open probe.
-// Must only be called after peekAvailability returned 'yes'|'probe'.
 export function acquireSlot(nodeId: string, now: number = Date.now()): boolean {
   const s = getNodeState(nodeId);
   if (peekAvailability(nodeId, now) === 'no') return false;
@@ -119,8 +77,6 @@ export function acquireSlot(nodeId: string, now: number = Date.now()): boolean {
   maybeCleanup(now);
   return true;
 }
-
-// ---- Outcomes --------------------------------------------------------------
 
 export function recordSuccess(nodeId: string, latencyMs: number, model: string, now: number = Date.now()): void {
   const s = releaseAndReturn(nodeId);
@@ -201,12 +157,6 @@ export function markProbeFailure(nodeId: string, model: string, now: number = Da
   entry.lastProbeFailureAt = now;
 }
 
-// Record a failure. `counted` marks transient upstream failures (5xx /
-// network / timeout / first-event) that drive the circuit. `cooldownMs` and
-// `reason` set the node-local cooldown window. When `cooldownMs` comes from
-// an auto-computed fallback (no explicit Retry-After), a light ±10% jitter
-// is applied to avoid synchronized re-probes across isolates. Explicit
-// provider Retry-After values pass through unchanged.
 export function recordFailure(
   nodeId: string,
   {
@@ -220,8 +170,6 @@ export function recordFailure(
   const s = releaseAndReturn(nodeId);
   s.totalFailures++;
   if (cooldownMs > 0) {
-    // Only jitter auto-computed cooldowns; explicit Retry-After must be
-    // honored exactly so a provider's 60s hint is not shortened to ~54s.
     const effectiveCooldown = explicitRetryAfter ? cooldownMs : jitterCooldownMs(cooldownMs, cryptoRng());
     s.cooldownUntil = now + effectiveCooldown;
     s.cooldownReason = reason;
@@ -230,17 +178,11 @@ export function recordFailure(
   if (counted) s.lastTransientFailureAt = now;
 
   if (!counted) {
-    // Non-counted outcomes (429 / 401 / 403 / 404 / client 4xx). These never
-    // open the circuit. If one concludes a half-open probe, the node proved it
-    // was reachable (it gave an HTTP answer, even a reject), so it must leave
-    // half-open and become dispatchable again once any node-local cooldown
-    // expires. NEVER leave probeInFlight stuck true.
     recoverFromHalfOpen(s);
     return;
   }
 
   if (s.circuitState === 'half-open') {
-    // Probe failed: reopen and restart the cooldown period.
     openCircuit(s, now);
     return;
   }
@@ -251,17 +193,9 @@ export function recordFailure(
 
 export function recordNeutralEnd(nodeId: string): void {
   const s = releaseAndReturn(nodeId);
-  // A neutral end (client abort / no-charge) during a half-open probe must not
-  // punish the node nor leave it stuck half-open forever.
   recoverFromHalfOpen(s);
 }
 
-// Record a model_missing (404) outcome. The node answered, so a half-open probe
-// resolves the same way a 429/401 would (recover, become dispatchable), but the
-// cooldown is applied to the (node, model) PAIR only — the node stays healthy
-// for every other model it serves. model_missing never counts toward the
-// circuit (a mapping mismatch is not a transient outage) and never penalizes
-// node health (it says nothing about the node's ability to serve other models).
 export function recordModelMissing(nodeId: string, model: string, cooldownMs: number = MODEL_MISSING_COOLDOWN_MS, now: number = Date.now()): void {
   const s = releaseAndReturn(nodeId);
   if (cooldownMs > 0) {
@@ -270,8 +204,6 @@ export function recordModelMissing(nodeId: string, model: string, cooldownMs: nu
   recoverFromHalfOpen(s);
 }
 
-// True when this (node, model) pair is in a model_missing cooldown. Used by
-// the scheduler to skip the pair without disabling the whole node.
 export function isModelCooling(nodeId: string, model: string, now: number = Date.now()): boolean {
   const s = nodeState.get(nodeId);
   if (!s?.modelCooldowns?.size) return false;
@@ -299,12 +231,6 @@ function openCircuit(s: NodeState, now: number): void {
   s.cooldownReason = `circuit_open_after_${CIRCUIT_FAILURE_THRESHOLD}_failures`;
 }
 
-// Central half-open probe resolution. A probe that ends in anything other than
-// a *counted* transient failure has proved the node is reachable (success, 429,
-// 401/403, 404, client abort, or a neutral end). It must close the circuit,
-// release the probe slot, and clear the consecutive-failure chain so the node
-// can be scheduled again after any node-local cooldown expires. This is the ONLY
-// place that recovers from half-open; it guarantees probeInFlight can never leak.
 function recoverFromHalfOpen(s: NodeState): void {
   if (s.circuitState === 'half-open' || s.probeInFlight) {
     s.circuitState = 'closed';
@@ -312,8 +238,6 @@ function recoverFromHalfOpen(s: NodeState): void {
     s.consecutiveFailures = 0;
   }
 }
-
-// ---- Health penalty helper -------------------------------------------------
 
 const PENALTY: Record<string, number> = {
   rate_limit: 10,
@@ -330,15 +254,6 @@ export function applyHealthPenalty(nodeId: string, kind: string): void {
   s.healthScore = Math.max(HEALTH_MIN, s.healthScore - amount);
 }
 
-// Diagnostic counter mirror for Tier 1 nodes. Tier 1 scheduling state lives in
-// tier1-state.ts (cooldown / failure machine / TTFT / affinity); this ONLY
-// keeps the node-level totals (totalRequests / totalSuccesses /
-// totalFailures / lastUsedAt) observable through the same snapshotNode()
-// surface that /health, /metrics and the existing tests read. It deliberately
-// does NOT touch activeRequests, healthScore, circuitState or cooldown — those
-// stay driven by the real outcome path for Tier 2/3 and stay neutral for
-// Tier 1 (whose slot/concurrency is owned by tier1-state). Mirroring business
-// stats here is explicitly allowed: existing D1/KV business-statistics capabilities stay.
 export function bumpNodeCounters(
   nodeId: string,
   { requests = 0, successes = 0, failures = 0 }: { requests?: number; successes?: number; failures?: number } = {},
@@ -353,8 +268,6 @@ export function bumpNodeCounters(
   if (failures) s.totalFailures += failures;
 }
 
-// ---- Maintenance & snapshots ----------------------------------------------
-
 function maybeCleanup(now: number): void {
   if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
   lastCleanup = now;
@@ -364,15 +277,11 @@ function maybeCleanup(now: number): void {
       s.cooldownReason = null;
       s.healthScore = Math.min(HEALTH_MAX, s.healthScore + HEALTH_COOLDOWN_RECOVERY);
     }
-    // Drop expired (node, model) cooldowns so the map cannot grow unboundedly.
     if (s.modelCooldowns?.size) {
       for (const [model, until] of s.modelCooldowns) {
         if (until <= now) s.modelCooldowns.delete(model);
       }
     }
-    // "Consecutive" must be time-bounded: a failure yesterday and one today
-    // are not consecutive. Decay the counter for idle nodes so old incidents
-    // cannot accumulate into a circuit trip.
     if (s.activeRequests === 0 && s.consecutiveFailures > 0 && now - s.lastUsedAt > STALE_FAILURE_MS) {
       s.consecutiveFailures = 0;
     }
@@ -380,19 +289,7 @@ function maybeCleanup(now: number): void {
   if (nodeState.size > MAX_STATE_ENTRIES) {
     const entries = [...nodeState.entries()].sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
     const target = Math.floor(MAX_STATE_ENTRIES * 0.75);
-    // Capture `excess` ONCE before the loop: nodeState.delete shrinks
-    // nodeState.size inside the loop, so a bound of `nodeState.size - target`
-    // would shrink with every deletion and terminate early, leaving the map
-    // over MAX_STATE_ENTRIES.
     const excess = nodeState.size - target;
-    // NEVER evict a state that is still doing work: an active stream owns a
-    // concurrency slot (activeRequests > 0) and a half-open probe owns
-    // probeInFlight. Deleting either would reset the counters to a fresh
-    // state — the in-flight request's eventual release would then underflow
-    // (clamped to 0) while the node silently gained a phantom free slot, and
-    // an in-flight probe would vanish, re-arming the circuit prematurely.
-    // Such states are skipped here and become evictable once their request
-    // ends; the map may therefore stay above target until they drain.
     let deleted = 0;
     for (let i = 0; i < entries.length && deleted < excess; i++) {
       const entry = entries[i];
@@ -430,16 +327,11 @@ export function snapshotNode(nodeId: string, now: number = Date.now()) {
   };
 }
 
-// Whether a node has ever successfully served a real request on this isolate.
-// Used by availability.js to distinguish 'unobserved' from 'available' for
-// Tier 2/3 — a fresh isolate's default circuitState==='closed' must NOT be
-// reported as 'available' without at least one observed success.
 export function hasBeenObserved(nodeId: string): boolean {
   const s = nodeState.get(nodeId);
   return Boolean(s && s.totalSuccesses > 0);
 }
 
-// Test hook: wipe all isolate-local state between test cases.
 export function __resetAllStateForTests(): void {
   nodeState.clear();
   lastCleanup = 0;

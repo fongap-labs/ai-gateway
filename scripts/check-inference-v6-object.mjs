@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// v6: non-streaming Matrix replies are collected only in private Inference.
 import assert from 'node:assert/strict';
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../packages/contracts/execution.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
@@ -151,16 +150,13 @@ try {
   assert.equal(interrupted.headers.get('x-aig-error-kind'), 'center_conversion_invalid');
   assert.equal(attempts, 5);
 
-  // Advance a controlled wall clock only after the private center dispatches
-  // its Provider request. A 250ms real-time deadline can expire before
-  // dispatch on busy CI runners and falsely turn the expected 504 into 502.
   const realNow = Date.now;
   let simulatedNow = realNow();
   try {
     Date.now = () => simulatedNow;
     globalThis.fetch = async () => {
       attempts++;
-      simulatedNow += 500; // Cross only the buffered-response deadline after dispatch.
+      simulatedNow += 500;
       const ongoing = {
         id: 'cmpl-timeout',
         object: 'chat.completion.chunk',

@@ -1,23 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Key-scoped gateway access.
-//
-// Five independent credential groups — AIR, PRO, MAX, ULTRA, AGENT — each
-// with its own secret and model allowlist:
-//
-//   AIG_ACCESS_KEY_<GROUP>      = <secret>
-//   AIG_ACCESS_MODELS_<GROUP>   = "Model1,Model2"   (CSV; "*" = all)
-//
-// Rules:
-//   * Each group is independent. No inheritance, no implicit defaults.
-//   * Allowlist semantics are fail-closed: a missing or empty
-//     AIG_ACCESS_MODELS_<GROUP> grants ZERO models.
-//   * "*" alone grants every currently-known logical model.
-//   * Access Models referencing a model that is NOT currently known emit a
-//     diagnostic warning. The referenced model is NOT auto-created.
-//   * If no AIG_ACCESS_KEY_<GROUP> is configured, no gateway credential
-//     is accepted.
 
 import type { RuntimeNode } from '../types/node.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
@@ -28,10 +10,6 @@ import { DIAGNOSTICS_GROUPS_DEFAULT } from './runtime-vars.ts';
 
 export const KEY_GROUPS: readonly string[] = Object.freeze(['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT']);
 
-/**
- * Groups whose keys may read /health and /metrics, from AIG_DIAGNOSTICS_GROUPS
- * (unset: DIAGNOSTICS_GROUPS_DEFAULT). null means every valid key may.
- */
 export function diagnosticsGroups(value: unknown): ReadonlySet<string> | null {
   const raw = String(value ?? '').trim() || DIAGNOSTICS_GROUPS_DEFAULT;
   if (raw === '*') return null;
@@ -71,7 +49,6 @@ function parseModelsField(
     .filter(Boolean))
     out.allowlist.add(p);
   if (knownModels) {
-    // Matched case-insensitively, the same as authorization: a casing-only difference is not a missing model.
     const catalog = new Set([...knownModels].map((m) => m.toLowerCase()));
     for (const m of out.allowlist) {
       if (!catalog.has(m.toLowerCase())) {
@@ -84,8 +61,6 @@ function parseModelsField(
   return out;
 }
 
-// Keep one catalog owner. Callers that need catalog construction import it from
-// registry.ts directly rather than through compatibility re-exports.
 export { collectKnownModels } from './registry.ts';
 
 type AccessKeyEntry = { group: string; secret: string; allowAll: boolean; allowlist: Set<string> };
@@ -151,7 +126,6 @@ export function filterVisibleModels(
   if (!configuredModels) return [];
   if (keyEntry?.allowAll) return [...configuredModels].sort();
   if (!keyEntry?.allowlist) return [];
-  // Casing-tolerant, matching authorizeModel: a model callers may request is also listed.
   const allowed = new Set([...keyEntry.allowlist].map((m) => m.toLowerCase()));
   return [...configuredModels].filter((m) => allowed.has(m.toLowerCase())).sort();
 }

@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Enforce dependency direction incrementally: packages are neutral; apps may
-// depend on packages; cross-app source imports are always forbidden.
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -47,8 +45,6 @@ for (const file of [...walk(join(root, 'packages')), ...walk(join(root, 'apps'))
   checked++;
 }
 assert.ok(checked >= 4, 'Missing independently owned app entrypoints or contracts');
-// Runtime and D1 binding types are cross-application contracts, not a
-// dependency on the former monolithic Gateway runtime directory.
 for (const [legacy, owner, exports] of [
   ['src/types/cloudflare.ts', '../../packages/contracts/cloudflare.ts', ['D1Database', 'D1PreparedStatement', 'D1Result']],
   ['src/types/runtime.ts', '../../packages/contracts/runtime.ts', ['ExecutionContextLike', 'GatewayEnv', 'GatewayLogger']],
@@ -72,8 +68,6 @@ for (const entry of [
   assert.ok(source.includes('packages/contracts/runtime.ts'), `${entry} must depend on the shared runtime type contract`);
 }
 
-// One neutral image request validator is shared by Gateway admission and the
-// private Generation Center. Legacy paths are only compatibility exports.
 const legacyImageRequestContract = readFileSync(join(root, 'src/protocol/image.ts'), 'utf8');
 const sharedImageRequestContract = readFileSync(join(root, 'packages/contracts/image-request.ts'), 'utf8');
 assert.ok(
@@ -92,8 +86,6 @@ for (const rule of ['ALLOWED', 'prompt.length > 2048', 'value.n !== 1', "value.r
   assert.ok(sharedImageRequestContract.includes(rule), `Image request validation must preserve ${rule}`);
 }
 
-// Only the public Gateway may consume and validate quota hints from private
-// execution centers. No copy of the parsing rule may remain in legacy src.
 const privateCenterQuotaShim = readFileSync(join(root, 'src/reliability/center-quota.ts'), 'utf8');
 const gatewayCenterQuotaOwner = readFileSync(join(root, 'apps/gateway/reliability/center-quota.ts'), 'utf8');
 assert.ok(
@@ -112,8 +104,6 @@ for (const name of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
   assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/reliability\/center-quota\.ts['"]/);
 }
 
-// Gateway owns the isolate-local speculative retry budget. Legacy imports
-// must share the one live slot counter instead of duplicating mutable state.
 const retryBudgetLegacy = readFileSync(join(root, 'src/reliability/retry-budget.ts'), 'utf8');
 const retryBudgetOwner = readFileSync(join(root, 'apps/gateway/reliability/retry-budget.ts'), 'utf8');
 const retryBudgetRequest = readFileSync(join(root, 'apps/gateway/request-handler.ts'), 'utf8');
@@ -133,8 +123,6 @@ for (const caller of [retryBudgetRequest, retryBudgetLoop]) {
   assert.doesNotMatch(caller, /from ['"]\.\.\/\.\.\/src\/reliability\/retry-budget\.ts['"]/);
 }
 
-// Provider quota observations and protocol/surface vocabulary are shared
-// runtime-neutral contracts consumed directly by the private centers.
 const legacyProtocolTypes = readFileSync(join(root, 'src/types/protocol.ts'), 'utf8');
 const sharedProtocolTypes = readFileSync(join(root, 'packages/contracts/protocol.ts'), 'utf8');
 const legacyQuotaSignal = readFileSync(join(root, 'src/reliability/quota-signal.ts'), 'utf8');
@@ -159,8 +147,6 @@ for (const required of ['OPENAI_REMAINING_REQUESTS', 'ANTHROPIC_REMAINING_REQUES
   assert.ok(sharedQuotaSignal.includes(required), `Quota parsing must retain ${required}`);
 }
 
-// OpenAI/Anthropic native wire contracts are shared transport primitives;
-// legacy provider transport files must not duplicate executable semantics.
 for (const [legacy, owner, symbols] of [
   ['src/transport/openai.ts', 'packages/transport/openai-native.ts', ['buildOpenAIHeaders', 'resolveOpenAIPath', 'isOpenAIChatRealOutput']],
   [
@@ -180,8 +166,6 @@ for (const [legacy, owner, symbols] of [
     assert.ok(code.includes(`function ${symbol}(`), `${owner} must implement ${symbol}`);
   }
 }
-// All private execution dependencies must have an independent packages/ owner.
-// The old src/ entrypoints retain their export identity but cannot hold runtime logic.
 for (const [legacy, canonical] of [
   ['src/config/env.ts', 'packages/config-core/env.ts'],
   ['src/config/models.ts', 'packages/config-core/models.ts'],
@@ -214,8 +198,6 @@ assert.match(neutralProviderUsage, /getProviderProfile\(/, 'Usage hint policy mu
 const physicalExecutor = readFileSync(join(root, 'packages/execution-core/native.ts'), 'utf8');
 assert.doesNotMatch(physicalExecutor, /from ['"][^'"]*\/src\//, 'Private executor must never import src implementation modules');
 
-// Public request policy and cache implementations are Gateway-owned. The
-// former src/request modules may only re-export their owned implementations.
 for (const [legacy, owner, exportedSymbol] of [
   ['src/request/auth.ts', 'apps/gateway/policy/auth.ts', 'authorize'],
   ['src/request/router.ts', 'apps/gateway/policy/router.ts', 'detectRoute'],
@@ -258,8 +240,6 @@ for (const [entry, expectedImports] of [
   );
 }
 
-// Logical-model fallback and per-tier retry admission are Gateway policy,
-// not independent execution center schedulers. Legacy sources only re-export.
 for (const [legacy, owner, symbol] of [
   ['src/request/model-fallback.ts', 'apps/gateway/policy/model-fallback.ts', 'buildModelFallbackPlan'],
   ['src/request/tier-loop.ts', 'apps/gateway/scheduling/tier-policy.ts', 'computeTierCaps'],
@@ -291,9 +271,6 @@ const tierOwnerSource = readFileSync(join(root, 'apps/gateway/scheduling/tier-po
 assert.match(tierOwnerSource, /return applyConsumed\(\)/, 'Tier policy must preserve shared request-wide attempt accounting');
 assert.match(tierOwnerSource, /policy\.tierAttempts/, 'Explicit per-tier attempt caps must stay binding');
 
-// Legacy subscription Tier 2 must be removed, not redirected through a
-// compatibility shim or a dormant feature flag. Historical D1 migrations
-// remain immutable, but no executable OAuth / subscriber owner is permitted.
 for (const obsolete of [
   'apps/gateway/oauth/routes.ts',
   'apps/inference/credentials/resolve.ts',
@@ -345,9 +322,6 @@ assert.doesNotMatch(
   'New Tier 2 nodes must be static Token credentials only',
 );
 
-// Gateway protocol fallback is an orchestration-only control surface.
-// It must use the private Inference Center's bounded preflight and never
-// import the private request converter or execute a local translator.
 const gatewayFallback = readFileSync(join(root, 'apps/gateway/fallback.ts'), 'utf8');
 assert.ok(gatewayFallback.includes("from './transport/inference-preflight-client.ts'"));
 assert.ok(gatewayFallback.includes("from '../../packages/conversion-core/protocol-pairs.ts'"));
@@ -359,8 +333,6 @@ const pairContract = readFileSync(join(root, 'packages/conversion-core/protocol-
 assert.doesNotMatch(pairContract, /from ['"][^'"]*(?:apps\/|src\/|providers\/)/);
 assert.match(pairContract, /export function isMatrixPair\(/);
 
-// Gateway-owned streaming and image success handlers are the only
-// implementations; old request/attempt modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
   ['src/request/attempt/success-image.ts', 'apps/gateway/attempt/success-image.ts', 'handleImageSuccess'],
   ['src/request/attempt/success-stream.ts', 'apps/gateway/attempt/success-stream.ts', 'handleStreamingSuccess'],
@@ -381,9 +353,6 @@ assert.match(successDispatcher, /export async function handleSuccess\(/, 'Gatewa
 assert.ok(successDispatcher.includes("from './success-image.ts'"), 'Image handler must be Gateway-owned');
 assert.ok(successDispatcher.includes("from './success-stream.ts'"), 'Native stream finalizer must be Gateway-owned');
 
-// Matrix reply handling belongs to Gateway; the original request module
-// only forwards its exports. Keep real transport, account, and finalization
-// assertions attached to the owned file rather than its compatibility shim.
 const legacyMatrixSuccess = readFileSync(join(root, 'src/request/attempt/success-matrix.ts'), 'utf8');
 const ownedMatrixSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-matrix.ts'), 'utf8');
 assert.ok(
@@ -408,8 +377,6 @@ for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
   assert.ok(source.includes("from './success.ts'"), `${file} must call Gateway-owned success finalizer`);
 }
 
-// Every physical upstream attempt must settle once through the unique
-// Gateway owner; old request modules cannot maintain parallel mutable state.
 const attemptObservationOwner = readFileSync(join(root, 'apps/gateway/attempt/observability.ts'), 'utf8');
 const attemptObservationLegacy = readFileSync(join(root, 'src/request/attempt/observability.ts'), 'utf8');
 assert.ok(
@@ -435,7 +402,6 @@ for (const name of ['success-image.ts', 'success-matrix.ts', 'success-object.ts'
   assert.doesNotMatch(consumer, /from ['"]\.\.\/\.\.\/\.\.\/src\/request\/attempt\/observability\.ts['"]/);
 }
 
-// Failure, rotation and adaptive 429 state belong to one Gateway owner.
 const legacyOutcome = readFileSync(join(root, 'src/request/attempt/outcome.ts'), 'utf8');
 const ownedOutcome = readFileSync(join(root, 'apps/gateway/attempt/outcome.ts'), 'utf8');
 assert.ok(legacyOutcome.includes("export * from '../../../apps/gateway/attempt/outcome.ts';"), 'Old outcome path must forward');
@@ -457,7 +423,6 @@ for (const file of ['inference-dispatch.ts', 'generation-dispatch.ts']) {
   assert.ok(code.includes("from './outcome.ts'"), `${file} must call Gateway-owned outcome`);
 }
 
-// Private-center request adapters belong to Gateway, never to legacy src.
 for (const [name, functionName] of [
   ['inference-dispatch', 'dispatchInferenceAttempt'],
   ['generation-dispatch', 'dispatchGenerationAttempt'],
@@ -476,8 +441,6 @@ const gatewayAttemptSelector = readFileSync(join(root, 'apps/gateway/attempt/dis
 assert.ok(gatewayAttemptSelector.includes("from './inference-dispatch.ts'"));
 assert.ok(gatewayAttemptSelector.includes("from './generation-dispatch.ts'"));
 
-// Tier 1 KV affinity and P2C candidate selection are Gateway-owned.
-// Legacy imports share one cache, breaker, score and admission state.
 for (const [name, exported] of [
   ['tier1-affinity', ['resolveTier1SessionId', 'readTier1Affinity', 'writeTier1Affinity', '__resetTier1AffinityForTests']],
   ['tier1-scheduler', ['pickTier1Candidate', 'tier1ModelAvailability', 'tier1DeadlineTooSmall']],
@@ -505,8 +468,6 @@ assert.ok(tier1GatewayRequest.includes("from './scheduling/tier1-scheduler.ts'")
 assert.ok(tier1GatewayLoop.includes("from './scheduling/tier1-affinity.ts'"));
 assert.ok(tier1GatewayHedge.includes("from '../scheduling/tier1-scheduler.ts'"));
 
-// Tier 2/3 dynamic selection and request eligibility share a single
-// Gateway-owned implementation. Legacy import paths only re-export it.
 const tier23Compat = readFileSync(join(root, 'src/scheduler/scheduler.ts'), 'utf8');
 const tier23Owner = readFileSync(join(root, 'apps/gateway/scheduling/scheduler.ts'), 'utf8');
 assert.ok(
@@ -532,9 +493,6 @@ assert.ok(
 );
 assert.doesNotMatch(tier23Owner, /dispatchLegacyProvider|fetch\(/, 'Scheduler must not execute physical Provider requests');
 
-// Tier 1 long-lived cooldown KV coordination is Gateway-owned. The old
-// reliability path is a pure forwarding entry so tests, old callers and the
-// active Gateway share the same in-memory cache, refresh state and writer.
 const sharedCooldownCompat = readFileSync(join(root, 'src/reliability/tier1-shared-cooldowns.ts'), 'utf8');
 const sharedCooldownOwner = readFileSync(join(root, 'apps/gateway/reliability/tier1-shared-cooldowns.ts'), 'utf8');
 assert.ok(
@@ -577,8 +535,6 @@ assert.ok(
   'Tier budget policy must use the Gateway-owned Tier 2/3 selector rather than the legacy facade',
 );
 
-// The hedge race and private-center selector are Gateway-owned. Old entry
-// points are compatibility only, and all live callers reach the same code.
 for (const [name, symbol] of [
   ['dispatch', 'attemptNode'],
   ['hedge', 'dispatchWithHedge'],
@@ -600,8 +556,6 @@ assert.ok(legacyAttemptIndex.includes("from '../../../apps/gateway/attempt/hedge
 const gatewayTierLoopOwner = readFileSync(join(root, 'apps/gateway/tier-loop.ts'), 'utf8');
 assert.ok(gatewayTierLoopOwner.includes("from './attempt/hedge.ts'"), 'Tier loop must call owned Gateway hedge');
 
-// Gateway owns safe large-body release, buffered response decisions, and
-// terminal oversized-reply handling; legacy modules are compatibility-only.
 for (const [legacy, owner, symbol] of [
   ['src/request/attempt/body-release.ts', 'apps/gateway/attempt/body-release.ts', 'releaseLargeRequestBody'],
   ['src/request/attempt/attempt-mode.ts', 'apps/gateway/attempt/attempt-mode.ts', 'isBufferedUpstreamReply'],
@@ -618,7 +572,6 @@ assert.ok(
   readFileSync(join(root, 'apps/gateway/attempt/dispatch.ts'), 'utf8').includes("from './attempt-mode.ts'"),
   'Attempt dispatch must export Gateway-owned buffering decision directly',
 );
-// Buffered response completion must be Gateway-owned; old imports are shims.
 const legacyObjectSuccess = readFileSync(join(root, 'src/request/attempt/success-object.ts'), 'utf8');
 const ownedObjectSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-object.ts'), 'utf8');
 assert.ok(
@@ -636,8 +589,6 @@ assert.ok(successDispatcher.includes("from './success-object.ts'"), 'Success dis
 const oversizedResponseSource = readFileSync(join(root, 'apps/gateway/attempt/oversize.ts'), 'utf8');
 assert.ok(oversizedResponseSource.includes("from '../response/errors.ts'"), 'Gateway oversized reply must use its owned response module');
 
-// Native stream finalization uses Gateway response helpers and keeps the
-// first-event guard in its one real owner, not the compatibility facade.
 const ownedStreamSuccess = readFileSync(join(root, 'apps/gateway/attempt/success-stream.ts'), 'utf8');
 assert.match(ownedStreamSuccess, /export async function handleStreamingSuccess\(/);
 assert.match(ownedStreamSuccess, /ensureFirstSseEvent\(/);
@@ -646,8 +597,6 @@ assert.ok(ownedStreamSuccess.includes("from '../response/errors.ts'"));
 assert.ok(ownedStreamSuccess.includes("from '../response/response-helpers.ts'"));
 assert.ok(ownedStreamSuccess.includes("from './observability.ts'"));
 
-// Gateway alone owns client-facing error shaping, Retry-After policy and
-// response headers. The former src/request paths must never implement them.
 for (const [legacy, owner, symbol] of [
   ['src/request/errors.ts', 'apps/gateway/response/errors.ts', 'gatewayError'],
   ['src/request/response-helpers.ts', 'apps/gateway/response/response-helpers.ts', 'finalHeaders'],
@@ -728,7 +677,6 @@ assert.doesNotMatch(
 assert.doesNotMatch(handlerSource, /async function runTierLoop\(/, 'Request handler must not reimplement the Tier loop');
 assert.match(tierLoopSource, /export async function runTierLoop\(/, 'Gateway must own the Tier loop implementation');
 assert.doesNotMatch(tierLoopSource, /getProviderAdapter|resolveSubscriptionCredential/, 'Tier loop must not own Provider implementation');
-// Both private centers must import the same packages/ owner directly.
 for (const retired of ['apps/inference/execution.ts', 'apps/inference/response.ts']) {
   assert.ok(!existsSync(join(root, retired)), `Remove redundant private-center compatibility file: ${retired}`);
 }
@@ -848,8 +796,6 @@ for (const [shim, target] of [
   );
 }
 
-// All request, object and stream Matrix converters have one neutral runtime owner.
-// The application paths must remain pure facades for existing module consumers.
 for (const moduleName of [
   'anthropic-stream',
   'anthropic',
@@ -870,7 +816,6 @@ for (const moduleName of [
   assert.doesNotMatch(shim, /export (?:async )?(?:function|class) /, `Matrix implementation cannot return to app facade: ${moduleName}`);
 }
 
-// Legacy paths must continue exporting the same functions and class identities.
 for (const [shim, owner] of [
   ['src/conversion/matrix/chat.ts', '../../../apps/inference/conversion/chat.ts'],
   ['src/conversion/matrix/chat-stream.ts', '../../../apps/inference/conversion/chat-stream.ts'],
@@ -897,7 +842,6 @@ for (const file of ['packages/conversion-core/matrix/anthropic.ts', 'packages/co
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Inference codec imports legacy src: ${file}`);
 }
 
-// Responses converters and pure SSE event builder must not regress to src.
 for (const [shim, owner] of [
   ['src/conversion/matrix/responses.ts', '../../../apps/inference/conversion/responses.ts'],
   ['src/conversion/matrix/responses-stream.ts', '../../../apps/inference/conversion/responses-stream.ts'],
@@ -916,7 +860,6 @@ for (const file of [
   assert.doesNotMatch(owner, /from ['"][^'"]*\/src\//, `Responses implementation imports legacy src: ${file}`);
 }
 
-// A single Inference-owned implementation must serve every request conversion.
 const matrixRequestOwner = readFileSync(join(root, 'packages/conversion-core/matrix/request.ts'), 'utf8');
 const matrixPipelineCompat = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.ok(
@@ -927,7 +870,6 @@ assert.doesNotMatch(matrixPipelineCompat, /export function convertMatrixRequest\
 assert.match(matrixRequestOwner, /export function convertMatrixRequest\(/, 'Inference must own protocol request conversion');
 assert.doesNotMatch(matrixRequestOwner, /from ['"][^'"]*\/src\//, 'Request conversion must only use shared contracts and local codecs');
 
-// Native reply decode/render is a single Inference-owned implementation.
 const matrixReplyOwner = readFileSync(join(root, 'packages/conversion-core/matrix/response.ts'), 'utf8');
 const matrixReplyLegacy = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 assert.match(matrixReplyOwner, /export function replyFromNativeObject\(/, 'Inference must decode native reply objects');
@@ -940,7 +882,6 @@ assert.ok(
 );
 assert.doesNotMatch(matrixReplyOwner, /from ['"][^'"]*\/src\//, 'Inference object conversion must not import legacy src');
 
-// SSE parsing, deadline reads and conversion relay must use one shared owner.
 for (const [shim, owner] of [
   ['src/conversion/sse.ts', '../../packages/transport/convert-sse.ts'],
   ['src/stream/client-lifecycle.ts', '../../packages/transport/client-lifecycle.ts'],
@@ -956,7 +897,6 @@ for (const file of ['packages/transport/sse.ts', 'packages/transport/convert-sse
   assert.doesNotMatch(readFileSync(join(root, file), 'utf8'), /from ['"][^'"]*\/src\//, `Transport must not import legacy src: ${file}`);
 }
 
-// No Gateway-side duplicate Matrix SSE lifecycle or reverse Inference -> src imports.
 const matrixLegacyPipeline = readFileSync(join(root, 'src/conversion/matrix/pipeline.ts'), 'utf8');
 const inferenceStreamOwner = readFileSync(join(root, 'packages/conversion-core/matrix/stream.ts'), 'utf8');
 assert.ok(
@@ -1040,8 +980,6 @@ assert.ok(
 );
 assert.doesNotMatch(legacyPreflightShim, /export async function /, 'Legacy preflight path must not duplicate execution logic');
 assert.doesNotMatch(inferencePreflight, /fetch\(|dispatchWithHedge|runTierLoop/, 'Inference preflight cannot dispatch or schedule Provider calls');
-// Internal framed streams must have one shared codec and must not carry
-// private Provider accounting data directly to the public response.
 const frameContract = readFileSync(join(root, 'packages/contracts/inference-stream-frames.ts'), 'utf8');
 const frameProducer = readFileSync(join(root, 'packages/conversion-core/matrix/framed-stream.ts'), 'utf8');
 const frameConsumer = readFileSync(join(root, 'apps/gateway/transport/inference-stream-client.ts'), 'utf8');
@@ -1120,9 +1058,6 @@ assert.doesNotMatch(
   /if \(!invocation.preferNonstream\) return dispatchedConversionProblem/,
   'v3 cannot pass raw successful JSON back to Gateway',
 );
-// A response with a verified dispatched marker must never be treated as
-// a pre-dispatch neutral skip just because the private frame/object contract
-// is invalid. The Provider already ran; account once, fail closed, no retry.
 const centerContractSettlement = readFileSync(join(root, 'apps/gateway/attempt/outcome.ts'), 'utf8');
 assert.match(
   centerContractSettlement,
@@ -1140,8 +1075,6 @@ for (const code of ['gateway_inference_stream_format_invalid', 'gateway_inferenc
 }
 assert.match(inferenceV4Success, /stopAfterDispatchedCenterFault\(/, 'All Matrix contract faults must settle the physical dispatch');
 
-// Scheduled maintenance is an application boundary. The D1 primitives
-// shared with request-time accounting belong to the neutral usage-store package.
 for (const [legacy, owner] of [
   ['src/observability/time-buckets.ts', '../../packages/usage-store/time-buckets.ts'],
   ['src/observability/token-usage-store/keys.ts', '../../../packages/usage-store/keys.ts'],
@@ -1176,8 +1109,6 @@ const operationsSource = readFileSync(join(root, 'operations/index.ts'), 'utf8')
 const compositionRoot = readFileSync(join(root, 'src/index.ts'), 'utf8');
 assert.match(operationsSource, /from '\.\/maintenance\/usage\.ts'/, 'Operations must own the scheduled maintenance implementation');
 assert.match(operationsSource, /export async function scheduled\(/, 'Operations must expose an independent scheduled entry');
-// Usage aggregation and retention must have one Operations-owned executor.
-// The former observability source path remains a compatibility export only.
 const usageMaint = readFileSync(join(root, 'operations/maintenance/usage.ts'), 'utf8');
 const retentionOwner = readFileSync(join(root, 'operations/maintenance/retention.ts'), 'utf8');
 const retentionCompat = readFileSync(join(root, 'src/observability/token-usage-store/retention.ts'), 'utf8');

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Offline Key+model cooldown and 422 terminal response contracts.
 
 import assert from 'node:assert/strict';
 import { buildClientErrorResponse, buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
@@ -42,14 +41,12 @@ recordTier1Success('free-key-1', 'Code-Ultra', model.cooldownUntil + 1);
 assert.equal(model.consecutiveFailures, 0);
 assert.equal(model.lastCountedFailureAt, 0);
 
-// Isolated failures from separate windows never accumulate.
 __resetTier1StateForTests();
 applyTier1Outcome('free-key-1', 'Code-Ultra', server, t);
 applyTier1Outcome('free-key-1', 'Code-Ultra', timeout, t + TIER1_FAILURE_STREAK_WINDOW_MS + 1);
 assert.equal(getTier1Model('free-key-1', 'Code-Ultra').consecutiveFailures, 1);
 assert.equal(getTier1Model('free-key-1', 'Code-Ultra').cooldownUntil, 0);
 
-// A half-open 429 must still respect the original adaptive rate-limit wait:
 __resetTier1StateForTests();
 const recovering = getTier1Model('free-key-1', 'Code-Ultra');
 recovering.failureState = 'half_open';
@@ -85,8 +82,6 @@ assert.equal(error.details?.attempts, undefined, 'client body must not expose in
 assert.equal(response.headers.get('x-gateway-attempts'), '4');
 assert.equal(response.headers.get('x-gateway-failure-kinds'), 'client:1,headers_timeout:1,server:2');
 assert.ok(!raw.includes('private upstream details'));
-// A client-visible 504 with 7 transient failures plus one route-local 422
-// must not be tagged permanently invalid. Do not replay malformed 400s.
 const exhaustionRequest = new Request('https://gateway.example/v1/chat/completions', { method: 'POST' });
 const exhaustionDescriptor = { model: 'Code-Max', route: 'openai_chat', protocol: 'openai', surface: 'chat_completions', bodyChars: 300 };
 const exhaustionTiers = { 'tier-1': [], 'tier-2': [] };

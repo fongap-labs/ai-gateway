@@ -19,7 +19,6 @@ const PROVIDER_REGISTRY: Readonly<Record<string, ProviderAdapter>> = Object.free
   'cloudflare-image': cloudflareImageProviderAdapter,
 });
 
-/** Unknown providers use the generic OpenAI-compatible adapter. */
 export function getProviderAdapter(provider: string): ProviderAdapter {
   const key = String(provider || '')
     .trim()

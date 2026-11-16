@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Real v4 center conversion: private SSE, physical usage and upgrade safety.
 import assert from 'node:assert/strict';
 import { INFERENCE_FRAMED_STREAM_FORMAT } from '../packages/contracts/inference-stream-frames.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';

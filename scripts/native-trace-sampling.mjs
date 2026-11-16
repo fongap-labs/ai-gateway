@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Deployment-only native Cloudflare tracing. Missing input preserves the
-// existing logs-only configuration. No runtime Worker variable or new Secret.
 export function applyNativeTraceSampling(observability, raw, exportDestination = '') {
   const destination = exportDestination ?? '';
   if (destination !== '' && (typeof destination !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(destination))) {

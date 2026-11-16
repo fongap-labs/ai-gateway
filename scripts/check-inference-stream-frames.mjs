@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// A v4 transport proof: center SSE conversion + private usage/budget framing.
 import assert from 'node:assert/strict';
 import { decodeFramedInferenceResponse } from '../apps/gateway/transport/inference-stream-client.ts';
 import { buildFramedMatrixResponse } from '../apps/inference/conversion/framed-stream.ts';
@@ -91,10 +90,10 @@ async function rejectBytes(parts) {
 }
 const done = encodeInferenceFrame({ kind: 'done' });
 const chunk = encodeInferenceFrame({ kind: 'chunk', bytes: encoder.encode('data: ok\n\n') });
-await rejectBytes([chunk]); // missing done, never a silently successful stream
-await rejectBytes([done, chunk]); // data after the terminal marker
-await rejectBytes([new Uint8Array([0xa7, 0x02, 0x01, 0, 0, 0, 0])]); // version downgrade
-await rejectBytes([new Uint8Array([0xa7, 0x01, 0x01, 0, 1, 0, 1])]); // oversized advertised payload
+await rejectBytes([chunk]);
+await rejectBytes([done, chunk]);
+await rejectBytes([new Uint8Array([0xa7, 0x02, 0x01, 0, 0, 0, 0])]);
+await rejectBytes([new Uint8Array([0xa7, 0x01, 0x01, 0, 1, 0, 1])]);
 await rejectBytes([encodeInferenceFrame({ kind: 'budget', reason: 'events' }), encodeInferenceFrame({ kind: 'budget', reason: 'events' }), done]);
 
 let wasCancelled = false;

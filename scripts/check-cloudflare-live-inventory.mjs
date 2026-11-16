@@ -119,8 +119,6 @@ function makeFetch(overrides = {}) {
   return { fetchImpl, calls };
 }
 
-// Fault categories are stable and cannot contain Cloudflare error bodies,
-// access token material, account identifiers or arbitrary endpoint URLs.
 const sensitiveApiText = 'private-cloudflare-error-body-must-never-leak';
 async function assertSafeFailure(fetchImpl, expectedCode, expectedStage, expectedStatus = null, call = 'scripts') {
   const client = createReadOnlyCloudflareClient({

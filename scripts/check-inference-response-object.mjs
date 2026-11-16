@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Private Center v3: center-owned JSON/SSE translation and failure-closed usage accounting.
 import assert from 'node:assert/strict';
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../packages/contracts/execution.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
@@ -57,8 +56,6 @@ try {
     attempts++;
     assert.equal(JSON.parse(options.body).stream, undefined);
     assert.equal(new Headers(options.headers).has('x-aig-return-object'), false);
-    // Avoid a dangling tee branch: cancellation after SSE terminal events
-    // would otherwise wait forever for the unconsumed original Response.
     return new Response(await answer.clone().text(), { status: answer.status, headers: answer.headers });
   };
 
@@ -97,8 +94,6 @@ try {
   assert.equal(empty.headers.has('x-aig-response-format'), false);
   assert.equal(attempts, 3);
 
-  // A Provider may stream despite the v3 prefer-nonstream flag. The center
-  // must collect it into a tagged client object rather than leaking raw SSE.
   const chunks = [
     {
       id: 'cmpl-test',

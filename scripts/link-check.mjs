@@ -7,7 +7,6 @@ const markdownFiles = [];
 
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    // .cache holds the local action-worker checkout (scripts/test.mjs); its docs are not this repository's.
     if (['.git', '.cache', 'node_modules', '.wrangler', '.wrangler-dry-run', 'release'].includes(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full);

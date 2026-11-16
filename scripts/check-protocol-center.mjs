@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Private Protocol Center: six protocol pairs, semantic safety, no Provider, no credential leaks.
 import assert from 'node:assert/strict';
 import { checkInferenceConversion } from '../apps/gateway/transport/inference-preflight-client.ts';
 import { handleProtocolCenterRequest } from '../apps/protocol/index.ts';

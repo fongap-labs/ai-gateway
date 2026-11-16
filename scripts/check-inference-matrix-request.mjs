@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// The single request-conversion implementation handles every directed pair.
 import assert from 'node:assert/strict';
 import { buildAnthropicRequest, parseAnthropicRequest } from '../apps/inference/conversion/anthropic.ts';
 import { convertMatrixRequest as ownedConvert, isMatrixPair as ownedPair } from '../apps/inference/conversion/request.ts';
@@ -50,8 +49,6 @@ for (const [from, body] of [
     assert.ok(Array.isArray(converted.diagnostics));
   }
 }
-// A Code client without an explicit ceiling must not be capped to 1024 when
-// translated to Responses; explicit client ceilings must survive unchanged.
 const unboundedResponses = ownedConvert('openai_chat', 'openai_responses', chat);
 assert.equal(unboundedResponses.body.max_output_tokens, undefined);
 assert.equal(
@@ -65,7 +62,6 @@ const preferred = ownedConvert('openai_chat', 'anthropic', chat, { isNonstreamPr
 assert.notEqual(preferred.body.stream, true, 'explicit nonstream preference must be honored');
 assert.throws(() => ownedConvert('openai_chat', 'openai_chat', chat), /conversion_not_supported/);
 assert.throws(() => ownedConvert('openai_chat', 'anthropic', { ...chat, unexpected: true }), /conversion_not_supported/);
-// Encrypted Responses reasoning must never become Anthropic redacted_thinking.
 const encryptedResponses = ownedConvert('openai_responses', 'anthropic', {
   model: 'test-model',
   input: [
@@ -89,7 +85,6 @@ for (const [body, expected] of [
 const regularResponses = ownedConvert('openai_responses', 'openai_chat', responses);
 assert.deepEqual(highRiskSemanticLoss(regularResponses), [], 'ordinary portable Responses requests remain convertible');
 
-// PDF documents, including tool-result attachments, must survive Anthropic rendering.
 const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0xLjQK' } };
 const docRequest = parseAnthropicRequest({
   model: 'test-model',

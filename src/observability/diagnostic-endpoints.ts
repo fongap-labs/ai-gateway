@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Diagnostic HTTP endpoints: /health, /metrics, /v1/models, and public /health/ready.
-// Responses contain runtime state only — never credentials.
-
 import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
@@ -29,8 +26,6 @@ export const APP_META = Object.freeze({
   displayName: 'Smart AI Gateway',
 });
 
-// Build SHA is deployment identity only. Human release labels live outside
-// runtime source and are never generated, inferred, or validated by the app.
 const SHA_RE = /^[0-9a-f]{7,40}$/;
 export function resolveBuildSha(env: Record<string, unknown>): string {
   const raw = String(env?.AIG_BUILD_SHA ?? '').trim();
@@ -117,8 +112,6 @@ function buildModelsList(
   return { object: 'list', data };
 }
 
-// AIG_DIAGNOSTICS_GROUPS names the user key groups that read /health and /metrics (unset: MAX and
-// ULTRA; "*": every valid key). The minimal /health/ready endpoint is public.
 export function canReadDiagnostics(env: Record<string, unknown>, authResult: AuthResult): boolean {
   const allowed = diagnosticsGroups(env?.AIG_DIAGNOSTICS_GROUPS);
   if (allowed === null) return true;
@@ -155,8 +148,6 @@ export function healthResponse(request: Request, env: Record<string, unknown>, r
   const config = loadGatewayConfig(env);
   const now = Date.now();
   const allLogical = collectKnownModels(config.nodes, env);
-  // A key sees only the nodes behind models it may call, matching /v1/models.
-  // Aggregate counts and diagnostics stay gateway-wide.
   const filterShape = authResult.authorized && authResult.mode !== 'skip' ? { allowAll: authResult.allowAll, allowlist: authResult.allowlist } : null;
   const allowedModels = new Set(filterModelsByKey(filterShape, allLogical));
   const visibleNodeIds = new Set(config.nodes.filter((n) => [...allowedModels].some((model) => servesModel(n, model, allLogical))).map((n) => n.id));
@@ -317,8 +308,6 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_token_usage_reports_total', tokenStats.totals.reports);
   emit('gateway_token_usage_missing_total', 'counter', 'Delivered responses with no usable upstream usage report.');
   counter('gateway_token_usage_missing_total', tokenStats.totals.missing);
-  // Isolate-local buffer metrics do not query D1 and do not represent the
-  // account-wide daily quota. Missing row metadata is explicitly recorded.
   const usageBuffer = snapshotUsageBuffer();
   emit('gateway_usage_d1_batches_attempted_total', 'counter', 'D1 usage batch attempts since isolate start.');
   counter('gateway_usage_d1_batches_attempted_total', usageBuffer.batchAttempts);

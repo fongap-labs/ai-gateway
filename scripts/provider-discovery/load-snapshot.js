@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Snapshot loading helpers for Provider Discovery.
-//
-// A "snapshot" is a persisted Provider Capability Catalog written to disk
-// by an operator or a previous Discovery run. The loader normalizes the
-// snapshot and returns a fresh object with stable shape. Secrets are
-// NEVER loaded — the snapshot has no place to store them.
 
 import fs from 'node:fs';
 import { normalizeCatalog } from './normalize.js';
@@ -30,18 +23,6 @@ export function loadSnapshotFromFile(filePath) {
   };
 }
 
-// A "runtime view" is a minimal projection of Runtime Node configuration
-// used only for consistency checks. We never read secrets: the loader
-// expects the caller to pass an already-sanitized array.
-//
-// Allowed input fields per entry:
-//   id (string, required)
-//   provider (string, required)
-//   protocol ("openai" | "anthropic", required)
-//   surfaces (string[], optional)
-//   base_url (string, optional)
-//
-// Extra fields are ignored.
 export function loadRuntimeViewFromFile(filePath) {
   const text = fs.readFileSync(filePath, 'utf8');
   let parsed;
@@ -53,7 +34,6 @@ export function loadRuntimeViewFromFile(filePath) {
   if (!Array.isArray(parsed)) {
     throw new Error(`runtime view at ${filePath} must be a JSON array`);
   }
-  // Sanitize: project only allowed fields. Never include credential.
   const projected = [];
   for (const raw of parsed) {
     if (!raw || typeof raw !== 'object') continue;

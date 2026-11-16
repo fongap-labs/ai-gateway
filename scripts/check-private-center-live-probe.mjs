@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Offline direct test of the production diagnostics path. No network,
-// Cloudflare, actual Secret, or Provider call is permitted.
 
 import assert from 'node:assert/strict';
 import { preflight } from '../apps/gateway/preflight.ts';

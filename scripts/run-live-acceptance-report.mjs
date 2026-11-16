@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Run the existing real-HTTP checks only after verifying the public build SHA.
-// Write one exclusive, local evidence file. No credentials or replies are saved.
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -145,7 +142,6 @@ const report = createAcceptanceReport({
 });
 let reportSaved = false;
 try {
-  // Exclusively create a private file rather than overwriting past evidence.
   await writeFile(reportFile, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   reportSaved = true;
 } catch {

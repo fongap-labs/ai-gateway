@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Report writers for Provider Discovery Catalog diffs + runtime checks.
-//
-// Output surfaces:
-//   - formatChangesMarkdown()    -> human-readable changes.md body
-//   - formatActionSummary()      -> short GitHub Action Summary text
-//   - formatJsonReport()         -> machine-readable artifact
-//
-// None of these writers persist secrets; they read only from
-// already-normalized input and emit plain strings.
 
 import {
   SUPPORT_TRUE,
@@ -31,7 +21,6 @@ function renderBaseUrl(v) {
   return v ? v : '(none)';
 }
 
-// One-bullet rendering per `changed` item. Stable, deterministic.
 function renderChangeBullet(c) {
   const prov = c.provider;
   const proto = c.protocol && c.protocol !== '*' ? ` ${c.protocol}` : '';
@@ -61,8 +50,6 @@ export function formatChangesMarkdown({ diff, catalog, warnings, generatedAt }) 
     if (diff.changed.length > 0) {
       lines.push('## Changed');
       lines.push('');
-      // Group bullets by provider for readability, preserving the catalog
-      // sort order we already produced upstream.
       let lastProvider = null;
       for (const c of diff.changed) {
         if (c.provider !== lastProvider) {
@@ -93,10 +80,6 @@ export function formatChangesMarkdown({ diff, catalog, warnings, generatedAt }) 
     }
   }
 
-  // Runtime warnings section. Always present so reviewers see either
-  // "no warnings" or the warnings list. We do NOT escalate these to
-  // "remove this node" or "this node is broken" — the catalog is
-  // auxiliary and warnings require human review.
   lines.push('## Runtime consistency');
   lines.push('');
   if (!warnings || warnings.length === 0) {
@@ -109,7 +92,6 @@ export function formatChangesMarkdown({ diff, catalog, warnings, generatedAt }) 
     lines.push('');
   }
 
-  // Catalog capability snapshot — small, deterministic, sorted.
   lines.push('## Catalog snapshot');
   lines.push('');
   lines.push('| Provider | Protocol | Supported | Surfaces | Evidence | Base URL |');
@@ -137,8 +119,6 @@ export function formatChangesMarkdown({ diff, catalog, warnings, generatedAt }) 
   return lines.join('\n');
 }
 
-// Short summary suitable for $GITHUB_STEP_SUMMARY. Numbers only; no
-// detail. Detailed differences are in changes.md / artifact JSON.
 export function formatActionSummary({ diff, warnings, capability: capabilityAgg, generatedAt }) {
   const lines = [];
   lines.push('# Provider Discovery');
@@ -183,8 +163,6 @@ export function formatActionSummary({ diff, warnings, capability: capabilityAgg,
   return lines.join('\n');
 }
 
-// Machine-readable artifact. Stable key order; safe for diffing across
-// runs of the workflow.
 export function formatJsonReport({ diff, warnings, catalog, generatedAt }) {
   return JSON.stringify({
     generated_at: generatedAt || null,

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tier 1 score construction belongs to scheduling. Reliability exposes
-// isolate-local observations/state; this module decides how those facts are
-// combined into a bounded ranking score. No state is mutated here.
 
 import { tier1ProviderModelHeatFactor } from '../reliability/tier1-heat.ts';
 import { getTier1ModelPerf, TIER1_FAILURE_STATES } from '../reliability/tier1-state.ts';
@@ -11,13 +7,10 @@ import type { RuntimeNode } from '../types/node.ts';
 
 export const TIER1_EXPLORATION_FACTOR = 0.9;
 export const TIER1_HALF_OPEN_SCORE_PENALTY = 1.4;
-export const TIER1_NEUTRAL_TTFT_MS = 800; // scheduling fallback, never persisted
+export const TIER1_NEUTRAL_TTFT_MS = 800;
 
-// TTFT scoring: bounded multiplicative demotion (not a raw latency sort).
 export const TIER1_SCORE_BASE = 1000;
 export const TIER1_TTFT_WEIGHT = 0.25;
-// One slow first response is weak evidence. Restore full TTFT ranking only
-// after a small number of real, successfully observed requests.
 export const TIER1_TTFT_CONFIDENCE_SAMPLES = 2;
 export const TIER1_TTFT_FACTOR_MIN = 0.85;
 export const TIER1_TTFT_FACTOR_MAX = 1.5;
@@ -49,9 +42,6 @@ function failureFactor(accountId: string, modelId: string): number {
   return getTier1ModelPerf(accountId, modelId)?.failureState === TIER1_FAILURE_STATES.HALF_OPEN ? TIER1_HALF_OPEN_SCORE_PENALTY : 1;
 }
 
-// Never demote a healthy free key just to preserve the unused end of a
-// Provider quota window. Confirmed exhaustion remains an admission gate.
-
 function explorationFactor(accountId: string, modelId: string): number {
   const metric = getTier1ModelPerf(accountId, modelId);
   return !metric || metric.ttftEwma == null || metric.sampleCount === 0 ? TIER1_EXPLORATION_FACTOR : 1;
@@ -71,12 +61,10 @@ function tier1TtftBaseline(modelId: string, candidates: ReadonlyArray<RuntimeNod
 function ttftFactor(accountId: string, modelId: string, candidates: ReadonlyArray<RuntimeNode>): number {
   const metric = getTier1ModelPerf(accountId, modelId);
   if (!metric || metric.ttftEwma == null || metric.sampleCount === 0) {
-    return 1; // unknown nodes are handled by explorationFactor, not demoted here
+    return 1;
   }
   const baseline = tier1TtftBaseline(modelId, candidates);
   const ratio = metric.ttftEwma / Math.max(1, baseline);
-  // Do not damp unmistakable speed differences: one very slow affinity key
-  // must still escape to a much faster peer on its first real observation.
   const clearDifference = ratio <= 0.5 || ratio >= 1.5;
   const confidence = clearDifference ? 1 : Math.min(1, metric.sampleCount / TIER1_TTFT_CONFIDENCE_SAMPLES);
   return Math.min(TIER1_TTFT_FACTOR_MAX, Math.max(TIER1_TTFT_FACTOR_MIN, 1 + TIER1_TTFT_WEIGHT * confidence * (ratio - 1)));

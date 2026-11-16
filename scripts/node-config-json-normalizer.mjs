@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Repair IME commas only outside quoted JSON strings. The deployment bridge
-// and read-only model discovery must apply the same narrow transformation.
 export function normalizeNodeConfigJsonText(text) {
   const source = String(text ?? '');
   let out = '';

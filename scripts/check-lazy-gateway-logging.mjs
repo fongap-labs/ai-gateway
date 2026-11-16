@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Disabled log levels must skip expensive per-attempt message construction.
-// Keep existing console output and custom Logger mocks unchanged.
 import assert from 'node:assert/strict';
 import { getLogger, logLazy } from '../src/observability/logger.ts';
 

@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Read-only Cloudflare deployment identity ledger for fail-closed Gateway recovery.
-// Cloudflare API Token reads deployment identity; no secret values are stored.
 import { lstatSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,7 +19,6 @@ export function parseActiveDeployment(body) {
   if (body?.success !== true || !Array.isArray(deployments) || deployments.length === 0) {
     throw new Error('Cloudflare active Worker deployment is unavailable.');
   }
-  // Cloudflare specifies the first entry as the deployment serving traffic.
   const deployment = deployments[0];
   const versions = deployment?.versions;
   if (
@@ -179,7 +176,6 @@ async function main() {
     confirmPublishedIdentity(snapshot, await active());
     console.log('Gateway production deployment identity confirmed after health checks.');
   } else if (operation === 'rollback-target') {
-    // Print only the validated, pre-publish immutable Cloudflare version ID.
     console.log(guardedRollbackTarget(snapshot, await active()));
   } else {
     confirmRestoredIdentity(snapshot, await active());

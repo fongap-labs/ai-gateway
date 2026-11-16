@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Operations Cron handoff: read-only by default. Activation/reversal require
-// explicit operator approval, an offline five-Worker plan, and live CF checks.
-// Never print credentials, response bodies, account identifiers or D1 IDs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,7 +64,6 @@ export function createCloudflareCronClient({ accountId, token, fetchImpl = fetch
 }
 
 export async function readCronSnapshot(client) {
-  // Deliberately re-read both Worker schedules around each mutation.
   return { gateway: await client.read(GATEWAY), operations: await client.read(OPERATIONS) };
 }
 
@@ -83,14 +79,10 @@ export async function activateOperationsCron(client) {
     if (after !== 'activate') throw new Error('Operations Cron activation could not be confirmed.');
     return 'activated';
   } catch {
-    // A timed-out PUT could still have changed Cloudflare state. Best-effort
-    // disable Operations and require human intervention if postflight failed.
     if (attempted) {
       try {
         await client.writeOperations([]);
-      } catch {
-        // Never claim ownership is safe after failed reversal.
-      }
+      } catch {}
     }
     throw new Error('Operations Cron activation failed; verify both live schedules before retry or rollback.');
   }
@@ -106,8 +98,6 @@ export async function deactivateOperationsCron(client) {
     throw new Error('Operations has an unexpected Cron; refusing to modify unrecognized schedules.');
   }
   if (before.operations.length === 0) return 'already-disabled';
-  // Emergency reversal also works when both Workers are active, so an operator
-  // can immediately remove a duplicate Operations Cron owner.
   await client.writeOperations([]);
   const after = await readCronSnapshot(client);
   if (after.operations.length !== 0 || ![[], [MAINTENANCE_CRON]].some((value) => same(value, after.gateway))) {

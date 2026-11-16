@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// SSE transport ownership and Gateway guard compatibility contract.
 import assert from 'node:assert/strict';
 import { markSyntheticClientStreamHeaders as ownedMarker } from '../packages/transport/client-lifecycle.ts';
 import { convertSseStream as ownedRelay } from '../packages/transport/convert-sse.ts';
@@ -49,8 +48,6 @@ const stream = ownedRelay(
 );
 assert.equal(await new Response(stream).text(), '{"value":"ok"}');
 
-// A slow consumer may leave the output queue full indefinitely. The
-// conversion must stop upstream reads until another downstream read occurs.
 let upstreamReads = 0;
 let cancelledReason = null;
 let firstFrameReady;
@@ -86,9 +83,6 @@ const slowReader = slowRelay.getReader();
 assert.equal(new TextDecoder().decode((await slowReader.read()).value), '{"backpressure":1}');
 await slowReader.cancel('client-stopped-reading');
 assert.equal(cancelledReason, 'client-stopped-reading', 'downstream cancellation propagates to the upstream source');
-// Repeated SSE output of several hundred KiB must be consumed one event at
-// a time without the upstream racing ahead when downstream demand is absent.
-// Use a zero-prefetch upstream so only the converter's reads are measured.
 const pressureFrameCount = 256;
 const pressurePayload = 'x'.repeat(2048);
 let pressureReads = 0;
@@ -130,9 +124,6 @@ for (let i = 1; i <= pressureFrameCount; i++) {
 assert.equal((await pressureReader.read()).done, true, 'the accepted upstream EOF closes the output');
 assert.equal(pressureReads, pressureFrameCount);
 
-// A single Provider chunk can contain multiple SSE messages; the conversion
-// must preserve them all. Backpressure applies to subsequent reader.read()
-// calls, not to events already present in a chunk.
 const batchCount = 32;
 const batchedFrames = Array.from({ length: batchCount }, (_, i) => `data: ${JSON.stringify({ index: i + 1 })}\n\n`).join('');
 const batchSource = new ReadableStream({
@@ -156,8 +147,6 @@ assert.deepEqual(
   Array.from({ length: batchCount }, (_, i) => i + 1),
 );
 
-// Verify UTF-8 continuation bytes split across Provider chunks are decoded
-// once, and the SSE size guard still rejects a single oversized data line.
 const unicodeEvent = `data: ${JSON.stringify({ value: 'hello 🌟 中文' })}\n\n`;
 const unicodeBytes = encoder.encode(unicodeEvent);
 const starBytes = encoder.encode('🌟');

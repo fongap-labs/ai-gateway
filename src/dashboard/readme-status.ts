@@ -130,9 +130,7 @@ export async function readmeStatusSvgResponse(env: GatewayEnv, now: number = Dat
         available: true,
       };
     }
-  } catch {
-    // Keep the README image renderable when D1 is temporarily unavailable.
-  }
+  } catch {}
 
   return new Response(renderReadmeStatusSvg(data), {
     status: 200,

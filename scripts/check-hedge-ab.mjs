@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Deterministic Hedge on/off comparison against an in-process fake center.
-// This is NOT a live Provider benchmark and makes no network/Token requests.
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
@@ -41,8 +38,6 @@ async function runScenario(enabled) {
       async fetch(request) {
         const first = dispatches.length === 0;
         dispatches.push(request.headers.get('x-aig-node-id'));
-        // Whichever free Key is picked first is slow; the alternate is fast.
-        // This is a controlled tail-latency comparison, not a quota policy.
         await pause(first ? 250 : 5);
         return new Response(
           JSON.stringify({
@@ -69,7 +64,6 @@ async function runScenario(enabled) {
   const elapsedMs = Date.now() - start;
   assert.equal(response.status, 200, `${label} must return a usable response`);
   assert.equal((await response.json()).choices?.[0]?.message?.content, 'ok');
-  // Account for a cancelled slow loser that is still settling asynchronously.
   await pause(265);
   return { elapsedMs, dispatches, events: datasetEvents };
 }

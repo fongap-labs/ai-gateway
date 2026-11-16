@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Calendar Heatmap — SSR renderer.
-//
-// The renderer consumes a `HeatmapResult` from `heatmap.ts` and emits
-// a static HTML grid. All cells are rendered with `data-tooltip` (the
-// client-side `PAGE_SCRIPT` in pages.ts attaches the floating tooltip
-// element); level 0/1/2/3/4 are CSS-driven via the `data-level` attribute.
 
 import { escapeHtml, fmtInt, fmtTokens, fmtTooltipDate } from './format.ts';
 import type { HeatmapResult } from './heatmap.ts';

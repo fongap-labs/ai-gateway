@@ -62,9 +62,6 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
     return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'server', reason: kind };
   }
   if (kind === 'upstream_200_non_json_body' || kind === 'upstream_200_no_meaningful_output') {
-    // A structurally broken 200 response keeps the documented short cooldown.
-    // Without it the node is re-picked immediately and the broken upstream is
-    // hammered again inside the same request.
     const short = Math.min(Math.max(0, classification?.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
     return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: short, backoff: 'default', reason: kind };
   }

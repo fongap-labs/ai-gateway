@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Native object reply conversion and compatibility identity contracts.
 import assert from 'node:assert/strict';
 import {
   replyToAnthropicObject as ownerAnthropic,

@@ -27,8 +27,6 @@ check('docs/ root has no stray .md files', unexpectedDocsRoot.length === 0, unex
 const unexpectedDocsDirs = docsDirs.filter((d) => !ALLOWED_DOCS_DIRS.includes(d));
 check(`docs/ only contains allowed subdirectories: ${ALLOWED_DOCS_DIRS.join(', ')}`, unexpectedDocsDirs.length === 0, unexpectedDocsDirs.join(', '));
 
-// Single-README policy (docs/governance/documentation-policy.md): the root holds only README.md,
-// so localized copies such as README.zh-CN.md are rejected like any other unexpected file.
 const ALLOWED_ROOT_MDS = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'CLAUDE.md', 'CHANGELOG.md'];
 const rootEntries = fs.readdirSync(root, { withFileTypes: true });
 const rootMds = rootEntries.filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => e.name);

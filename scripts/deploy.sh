@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# The protected ai-gateway-ops Environment supplies private Provider shards and
-# center authentication. Application access keys stay in Cloudflare.
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
-# A central successful job is recorded as a successful production deployment.
-# Disabled deployments must not silently return success and generate an audit.
 case "${AIG_IS_DEPLOY_ENABLED:-true}" in
   true) ;;
   false)
@@ -59,7 +55,6 @@ finish() {
 }
 trap finish EXIT
 
-# Only the Secret synchronization subprocess needs Provider keys.
 provider_secret_names=()
 for name in "${!AIG_TIER1_CREDENTIALS_@}" "${!AIG_TIER2_CREDENTIALS_@}"; do
   if [[ "$name" =~ ^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$ ]]; then
@@ -81,16 +76,12 @@ npm ci
 npm run validate:deploy
 npm run check:deploy
 
-# Verify ALL configured private centers before printing success or mutating Cloudflare.
-# Missing custom policies and missing image/vision capacity are reported together.
 node scripts/private-center-config.mjs preflight
 node scripts/persistent-deployment.mjs preflight
 node scripts/persistent-deployment.mjs prepare \
   --wrangler "$RUNNER_TEMP/wrangler.github.json" \
   --summary "$RUNNER_TEMP/deployment-summary.txt"
 
-# The existing Action Worker source-script deployment is the ONE release entry.
-# Build all private center manifests before mutating any Worker.
 for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
@@ -103,22 +94,14 @@ read_gateway_secret_names() {
     --format json --config "$RUNNER_TEMP/wrangler.github.json" > "$RUNNER_TEMP/worker-secrets.json"
 }
 
-# Check the live Gateway's application Secret names before touching any Worker.
 read_gateway_secret_names
 node scripts/persistent-deployment.mjs check-secret-source \
   --file "$RUNNER_TEMP/worker-secrets.json" --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
-# Verify the protected environment covers every prepared private node before any write.
 sync_runtime_secrets preflight
 
-# Snapshot the live Gateway identity before the FIRST center mutation.
-# The Cloudflare API gives us the rollback version ID for the current Worker.
-# This guard does not make a multi-Worker rollout atomic; never report success
-# if a later center Secret inventory or Gateway health check fails.
 node scripts/deployment-recovery.mjs snapshot "$recovery_evidence"
 
-# Prepare all three private centers under the same audited commit. No center
-# has public routes or Workers.dev. Their credentials are applied below.
 for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   center_update_attempted+=("$center")
@@ -127,12 +110,8 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --config "$config"
 done
 
-# Apply the Provider shards to their private Workers and mirror center auth
-# to the Gateway bindings. Inspect all four Workers before changing any Secret.
 sync_runtime_secrets reconcile
 
-# Read only Secret names for each center, then fail closed BEFORE switching
-# the public Gateway if either internal auth or provider shard is missing.
 for center in ai-inference-center ai-perception-center ai-generation-center; do
   config="$RUNNER_TEMP/private-center-$center.json"
   manifest="$RUNNER_TEMP/private-center-$center-manifest.json"
@@ -143,15 +122,10 @@ for center in ai-inference-center ai-perception-center ai-generation-center; do
     --worker "$center" --inventory "$inventory" --manifest "$manifest"
 done
 
-# Plan inheritance from the live Secret names after center authentication sync.
 read_gateway_secret_names
 node scripts/persistent-deployment.mjs prepare-publish \
   --file "$RUNNER_TEMP/worker-secrets.json" --wrangler "$RUNNER_TEMP/wrangler.github.json"
 
-# The previous Gateway version was recorded before center publication.
-# Attach the exact source SHA to Cloudflare's deployment metadata. The recovery
-# guard refuses to claim an unrelated/concurrent deploy as this job's publish.
-# Only retained Secret names are inherited by the new version.
 gateway_update_attempted=true
 node scripts/cloudflare-wrangler.mjs deploy \
   --message "action-worker:deploy:$DEPLOY_SOURCE_SHA" \
@@ -175,8 +149,6 @@ done
 
 if [[ "$health_ok" != "true" ]]; then
   echo "Post-deploy Secret or readiness verification failed; checking exact rollback eligibility." >&2
-  # Never default to Wrangler's unpinned previous-version selection, and never
-  # overwrite a concurrent production deployment. Both decisions use live API.
   if ! rollback_version="$(node scripts/deployment-recovery.mjs rollback-target "$recovery_evidence")"; then
     echo "ERROR: Rollback refused: production no longer matches this deployment." >&2
     exit 77
@@ -196,7 +168,6 @@ if [[ "$health_ok" != "true" ]]; then
   exit 1
 fi
 
-# No success audit if another actor replaced this version during health probes.
 node scripts/deployment-recovery.mjs verify-published "$recovery_evidence"
 
 if [[ -f "$RUNNER_TEMP/deployment-summary.txt" ]]; then

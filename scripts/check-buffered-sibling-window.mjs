@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Buffered model fallback must preserve a sibling's waiting budget.
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';

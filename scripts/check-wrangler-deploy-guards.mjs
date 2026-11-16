@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Five-Worker production deployment guard regression (no Wrangler calls).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Opt-in live acceptance. Requires a real Gateway and an access key; never runs in CI.
-// Validates the selected logical model/route, not every configured physical node.
 import assert from 'node:assert/strict';
 
 const opts = {};
@@ -108,9 +106,7 @@ async function check(trial) {
     let error = null;
     try {
       error = (await response.json())?.error;
-    } catch {
-      /* no trusted JSON */
-    }
+    } catch {}
     console.log(
       JSON.stringify({
         ...summary,
@@ -176,8 +172,6 @@ async function check(trial) {
   }
   console.log(JSON.stringify({ ...summary, result: 'PASS' }));
 }
-// Keep running every opted-in surface: a broken chat route must not hide an
-// otherwise healthy Responses route (or vice versa).
 let completed = 0;
 const failed = [];
 for (const trial of trials) {

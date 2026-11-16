@@ -155,10 +155,6 @@ root.addEventListener('focusout',function(e){
 export async function dashboardResponse(request: Request, env: Record<string, unknown>): Promise<Response> {
   const nonce = base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-  // The footer link identifies the running build: the label carries the
-  // deployment ID and the link opens the commit the worker was built from.
-  // Without a commit SHA there is no ref to point at, so the label falls back
-  // to a build timestamp and the link stays on the default branch docs.
   const gatewayEnv = env as GatewayEnv;
   const buildSha = String(gatewayEnv?.AIG_BUILD_SHA ?? '').trim();
   let docLabel = 'Documentation';

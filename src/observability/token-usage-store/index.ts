@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Public re-export surface for the token-usage store.
 
 export { aggregateDailyToWeekly, aggregateHourlyToDaily } from './aggregation.ts';
 export { __resetUsageBufferForTests, flushBeforeRead, flushUsageBuffer } from './buffer.ts';
@@ -15,7 +13,6 @@ export {
   ttftBucketIndex,
   utc8DayStartUtcMs,
 } from './keys.ts';
-// Delivered-response queries remain the source for Public Model Status / TTFT.
 export {
   MODEL_STATUS_HISTORICAL_WINDOW_MS,
   MODEL_STATUS_RECENT_WINDOW_MS,
@@ -31,8 +28,6 @@ export {
   cleanupUsageRetention,
   maintainUsageStats,
 } from './retention.ts';
-// Dashboard consumption queries: physical upstream attempts, including failed
-// fallback/retry/hedge work when the upstream reported usage.
 export {
   loadUpstreamDaily,
   loadUpstreamModels,

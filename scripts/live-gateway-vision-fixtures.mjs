@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Synthetic 96x96 solid-color PNG fixtures for public Gateway vision smoke tests.
 
 export const visionColors = [
   {

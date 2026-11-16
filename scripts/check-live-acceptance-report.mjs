@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Entirely offline: no Gateway, Provider, D1 or credential access.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Native OpenAI Responses stream helpers.
-//
-// The gateway forwards /v1/responses requests to a NATIVE /v1/responses
-// upstream — there is no Chat Completions conversion anywhere in this path.
-// These helpers cover the two defensive corners a native upstream can still
-// present:
-//   * collectResponsesObject     — upstream streamed although the client asked
-//                                  for JSON: assemble the final response
-//                                  object from the SSE event sequence.
-//   * synthesizeResponsesFromObject — upstream answered JSON although the
-//                                  client asked for a stream: emit a
-//                                  well-formed Responses SSE event sequence.
-//
-// Nothing here touches scheduling / reliability. Failover semantics: both
-// helpers run BEFORE any byte reaches the client, so a failure inside them
-// still rotates to another node.
 
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
 import { createSseScanner, readWithDeadline } from '../../stream/guard.ts';
@@ -25,11 +8,6 @@ import { ResponsesEventBuilder } from './events.ts';
 
 const MAX_COLLECTED_BYTES = 2 * 1024 * 1024;
 
-// Assemble the complete Responses object from an upstream Responses SSE
-// stream. Terminal events own the result:
-//   response.completed / response.incomplete -> resolve with `response`
-//   response.failed                          -> throw (rotate; client saw nothing)
-// EOF without a terminal event                -> throw (truncated stream)
 export async function collectResponsesObject(
   upstream: Response,
   clientSignal: AbortSignal | null | undefined,
@@ -81,10 +59,6 @@ export async function collectResponsesObject(
       if (receivedBytes > MAX_COLLECTED_BYTES) {
         await fail(UPSTREAM_PROCESSING_ERROR.TOO_LARGE, 'Assembled response exceeded gateway memory safety limit. Use stream:true.');
       }
-      // Semantic EOF: response.completed / response.incomplete observed — the
-      // protocol stream is logically finished. Cancel the reader instead of
-      // waiting for HTTP EOF so a provider that leaves the connection open
-      // doesn't stall the failover budget.
       if (isSemanticEof) {
         await reader.cancel().catch(() => {});
         break;
@@ -102,12 +76,6 @@ export async function collectResponsesObject(
   return collected;
 }
 
-// Synthesize a complete, well-formed Responses SSE event sequence around a
-// full Responses object (the "upstream answered JSON but the client wants a
-// stream" case). Event order follows the Responses contract:
-// response.created -> per-item added/delta/done -> response.completed.
-// Synthetic streams carry an internal lifecycle marker consumed and stripped
-// by the outer request boundary; real upstream streams never carry it.
 export function synthesizeResponsesFromObject(
   response: Record<string, unknown> | null | undefined,
   requestedModel: string,

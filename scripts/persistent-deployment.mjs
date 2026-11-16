@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Prepare Gateway variables and verify its existing Cloudflare Secret names.
-// Provider keys are handled separately by the private center Secret plan.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,7 +57,6 @@ export function validateDeploymentInputs(env) {
   const nodeConfigNames = Object.keys(vars).filter((name) => NODE_VAR.test(name));
   if (nodeConfigNames.length === 0) errors.push('At least one AIG_TIER{1,2}_NODES_XX variable is required.');
   for (const name of nodeConfigNames) {
-    // Subscription nodes are not API Token capacity; reject them before cutover.
     let parsed;
     try {
       parsed = JSON.parse(vars[name]);
@@ -146,8 +143,6 @@ export function planGatewaySecretInheritance(secretList, config, { pendingCenter
   const names = [...readSecretNames(secretList)];
   const excluded = names.filter((name) => RETIRED_SECRET.test(name) || NODE_SECRET.test(name)).sort();
   const retained = new Set(names.filter((name) => !excluded.includes(name)));
-  // The initial read runs before synchronization. The publishing check still
-  // requires these three bindings to be present in Cloudflare.
   if (pendingCenterAuth) for (const name of CENTER_AUTH) retained.add(name);
   validateGatewaySecretNames(retained, config);
 
@@ -155,9 +150,6 @@ export function planGatewaySecretInheritance(secretList, config, { pendingCenter
     excluded,
     config: {
       ...config,
-      // Wrangler forwards these fields into Cloudflare upload metadata. Inherit
-      // the retained text Secrets by name so legacy bindings stay on the old
-      // version only. Other Secret binding types retain Wrangler's normal behavior.
       unsafe: {
         metadata: { keep_bindings: ['secret_key'] },
         bindings: [...retained].sort().map((name) => ({ name, type: 'inherit' })),

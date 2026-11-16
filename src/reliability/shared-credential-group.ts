@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Explicit non-secret identity for nodes intentionally sharing an upstream Key.
 import type { RuntimeNode } from '../../packages/contracts/runtime-node.ts';
 import { TIER1_429_ACCOUNT_ESCALATION_MODELS, TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS } from './tier1-definitions.ts';
 
@@ -20,8 +19,6 @@ export function credentialPeers(nodes: readonly RuntimeNode[], node: RuntimeNode
   );
 }
 
-// Short-lived quota-scope evidence across physical models on the SAME Key.
-// Not a capability memory, not a global quota counter, and never persisted.
 const recentModels = new Map<string, Map<string, number>>();
 export function noteKeyGroup429(node: RuntimeNode, physicalModel: string, now: number = Date.now()): 'model' | 'account' {
   if (!node.keyGroup) return 'model';

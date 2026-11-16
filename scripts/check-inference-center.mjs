@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Deterministic private inference executor tests: no real Provider or Cloudflare.
 import assert from 'node:assert/strict';
 import { resolvePhysicalModel, servesModel } from '../packages/config-core/registry.ts';
 import { executeNative } from '../packages/execution-core/native.ts';
@@ -75,8 +74,6 @@ try {
   assert.equal((await handleInferenceCenterRequest(request({ ...validBody, model: 'other' }), env)).status, 400);
   assert.equal(attempts, 0);
 
-  // API surfaces are physical endpoint configuration, not fixed model
-  // capabilities. The Gateway and private center must normalize identically.
   const surfaceEnv = (provider, surfaces) => ({
     ...env,
     AIG_TIER2_NODES_01: JSON.stringify([{ ...node, provider, surfaces }]),
@@ -102,8 +99,6 @@ try {
     ['messages'],
   );
 
-  // Wildcard or missing mappings must never be forwarded. Explicit identity
-  // mappings are legitimate when the upstream model has that exact name.
   const unmappedCases = [{ name: 'wildcard', models: {} }];
   assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'chat-test' } }, 'chat-test'), 'chat-test');
   assert.equal(resolvePhysicalModel({ models: { 'chat-test': 'CHAT-TEST' } }, 'chat-test'), 'CHAT-TEST');
@@ -130,9 +125,6 @@ try {
   assert.equal((await ok.json()).model, 'gpt-test-upstream');
   assert.equal(attempts, 1);
 
-  // Free Workers CPU regression: an identity physical mapping must preserve
-  // native request bytes (including whitespace/Unicode), not stringify a
-  // potentially very large Code prompt again inside Inference Center.
   const mappedFetch = globalThis.fetch;
   const identityBody = { model: 'chat-test', messages: [{ role: 'user', content: '中文 native prompt' }] };
   const originalText = JSON.stringify(identityBody, null, 2);
@@ -162,15 +154,12 @@ try {
   assert.equal(failed.headers.get('x-aig-result'), 'attempted');
   assert.equal(failed.headers.get('x-aig-error-kind'), 'center_upstream_network');
   assert.equal(attempts, 2, 'center executes one physical attempt and never retries');
-  // Only a verified route-unavailable outcome may be marked pre-dispatch.
   const invalidRoute = preDispatchProblem(404, 'center_route_unavailable');
   assert.equal(invalidRoute.headers.get('x-aig-result'), 'skipped');
   assert.equal(invalidRoute.headers.get('x-aig-error-kind'), 'center_route_unavailable');
   assert.equal((await invalidRoute.json()).error.retryable, false);
 
-  // Deployment intent must prevent a silent direct-Provider fallback even if
-  // the private Service Binding is absent. No physical attempt is chargeable.
-  const unboundEnv = { ...env }; // No binding or activation flag may ever re-enable direct Provider execution.
+  const unboundEnv = { ...env };
   const unboundState = {
     attempted: new Set(),
     attempts: [],
@@ -215,9 +204,6 @@ try {
   assert.equal(unboundState.dispatches, 0);
   assert.equal(attempts, 2, 'missing private inference binding must not call any Provider');
 
-  // Legacy/v0.1.5 scheduling regression: a failed Provider fetch rotates
-  // to another eligible node, bounded by the existing request retry budget.
-  // Missing private bindings still fail closed without direct Provider calls.
   const runCenterGatewayAttempt = async (fetch, overrides = {}) => {
     const state = {
       attempted: new Set(),
@@ -252,8 +238,6 @@ try {
   };
   const returnedByCenter = (status, code, disposition) =>
     new Response(null, { status, headers: { 'x-aig-result': disposition, 'x-aig-error-kind': code } });
-  // Preserve the old long wait for non-streaming requests after moving the
-  // physical Provider fetch from Gateway to Inference.
   const bufferedWindow = await runCenterGatewayAttempt(async (incoming) => {
     const headerDeadline = Number(incoming.headers.get('x-aig-upstream-headers-deadline-ms'));
     const attemptDeadline = Number(incoming.headers.get('x-aig-deadline-ms'));
@@ -264,10 +248,6 @@ try {
   assert.equal(bufferedWindow.result.rotate, true);
   assert.equal(bufferedWindow.state.logicalAttempts, 0);
 
-  // A native or cross-protocol streaming Provider can take longer than the
-  // generic 15s headers default to produce the first byte. The configured
-  // first-event budget must protect that prefill without exceeding the attempt
-  // deadline or creating another upstream dispatch.
   const streamingBody = { ...validBody, stream: true };
   const streamingDescriptor = { model: 'chat-test', surface: 'chat_completions', bodyChars: JSON.stringify(streamingBody).length };
   for (const crossProtocol of [false, true]) {
@@ -346,8 +326,6 @@ try {
   assert.equal(bindingFailure.state.logicalAttempts, 1);
   assert.equal(bindingFailure.state.dispatches, 1);
   assert.equal(bindingFailure.state.attempts[0]?.kind, 'unknown', 'center faults must not cool down a healthy Provider Key');
-  // An aborted Service Binding must record the actual wait and 504 status,
-  // not an opaque -1ms sample that hides capacity lost to internal transport.
   const timedOutCenter = await runCenterGatewayAttempt(
     async (incoming) =>
       new Promise((_resolve, reject) => {
@@ -362,9 +340,6 @@ try {
   assert.equal(timedOutCenter.state.logicalAttempts, 1);
   assert.equal(timedOutCenter.state.dispatches, 1);
 
-  // Even with more candidate slots, a local Service Binding abort gives
-  // no proof that the private center cancelled its Provider call. Do not
-  // multiply the same slow request across free Provider accounts.
   const ambiguousCenterTimeout = await runCenterGatewayAttempt(
     async (incoming) =>
       new Promise((_resolve, reject) => {
@@ -378,9 +353,6 @@ try {
   assert.equal(ambiguousCenterTimeout.state.dispatches, 1);
   assert.equal(ambiguousCenterTimeout.state.attempts[0]?.kind, 'unknown');
 
-  // Contract faults occur AFTER the private center dispatched a Provider.
-  // They must fail closed, charge exactly one physical attempt and never
-  // masquerade as pre-dispatch skips (which would undercount paid usage).
   for (const stream of [false, true]) {
     let centerCalls = 0;
     const body = { ...validBody, stream };
@@ -416,9 +388,6 @@ try {
     assert.equal(state.attempts.length, 1, 'center contract faults must settle exactly once');
   }
 
-  // A center-owned Gateway must be routable with NO static Provider secrets.
-  // A public Gateway can route secretless metadata even when a private binding
-  // is missing; the dispatch layer must fail closed rather than use Provider keys.
   const secretless = {
     AIG_ACCESS_KEY_AGENT: 'center-metadata-test-client-key',
     AIG_TIER2_NODES_01: env.AIG_TIER2_NODES_01,
@@ -466,10 +435,6 @@ try {
   );
   assert.equal(loadExecutionConfig(env).nodes[0].credential, providerSecret, 'private center owns the Provider credential');
 
-  // Size and memory compatibility are a hard prerequisite for removing the
-  // Gateway's legacy Provider dispatch. Both sides share the same 20 MiB
-  // default ceiling, while each worker isolate has an independent 32 MiB
-  // in-flight body budget.
   const MIB = 1024 * 1024;
   assert.equal(getLimits(env).maxBodyBytes, 20 * MIB);
   const providerOk = () =>
@@ -505,8 +470,6 @@ try {
   );
   assert.equal(attempts, attemptsAfterLarge, 'oversized or invalid bodies never execute Provider requests');
 
-  // Even if two independent Gateway isolates can each admit a large request,
-  // a single private center isolate must not retain both 17 MiB bodies.
   const heldBody = { model: 'chat-test', messages: [{ role: 'user', content: 'c'.repeat(17 * MIB) }] };
   let releaseProvider;
   let notifyStarted;

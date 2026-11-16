@@ -23,7 +23,6 @@ const env = {
     { id: 'text-02', provider: 'anthropic', base_url: 'https://provider.example.test', models: { coding: 'physical-code' } },
   ]),
 };
-// Unknown model names do not imply a tier or fallback family.
 const named = {
   'Write-Vivid': { policy: 'deep', fallback: ['Write-Basic'] },
   'Write-Basic': { policy: 'normal', fallback: ['Write-Vivid'] },
@@ -72,7 +71,6 @@ for (const name of ['ai-inference-center', 'ai-perception-center', 'ai-generatio
 }
 
 assert.deepEqual(preflightPrivateCenters(env), { workers: 3 });
-// AIG_POLICIES_CONFIG is optional when models use the same built-in policies as the Gateway.
 const withBuiltinPolicies = { ...env, AIG_POLICIES_CONFIG: '' };
 assert.equal(preflightPrivateCenters(withBuiltinPolicies).workers, 3);
 assert.equal(Object.hasOwn(buildPrivateCenterConfig('ai-inference-center', withBuiltinPolicies).config.vars, 'AIG_POLICIES_CONFIG'), false);
@@ -81,7 +79,6 @@ const customPolicyModels = JSON.stringify({
   coding: { policy: 'coding' },
   vision: { capabilities: { vision: true } },
 });
-// chat and coding are built in; no operator-side policy Variable is needed.
 const withNamedBuiltinPolicies = { ...env, AIG_MODELS_CONFIG: customPolicyModels, AIG_POLICIES_CONFIG: '' };
 assert.equal(preflightPrivateCenters(withNamedBuiltinPolicies).workers, 3);
 assert.equal(isBuiltinPolicyName('chat'), true);
@@ -96,7 +93,6 @@ assert.deepEqual(defaultPolicies.coding.hedge, { enabled: false });
 assert.equal(defaultPolicies.coding.tierAttempts, null, 'No artificial Tier 1 attempt quota');
 assert.equal(getPolicy('Air', { Air: { policy: { policy: 'chat' } } }, defaultPolicies).maxAttempts, 8);
 assert.equal(getPolicy('Code-Max', { 'Code-Max': { policy: { policy: 'coding' } } }, defaultPolicies).maxAttempts, 8);
-// Explicit overrides take precedence, without changing any other built-in policy.
 const overridden = loadPoliciesConfig({ AIG_POLICIES_CONFIG: '{"chat":{"max_attempts":2}}' });
 assert.equal(overridden.chat.maxAttempts, 2);
 assert.equal(overridden.coding.maxAttempts, 8);

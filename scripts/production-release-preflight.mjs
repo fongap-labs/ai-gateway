@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline-only, fail-closed production release preflight. It accepts generated
-// Worker metadata and Secret names only; it never calls Cloudflare or deploys.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -91,10 +89,6 @@ function compareOperationsPlanner(preparePhase, phases) {
   }
 }
 
-/**
- * Validate three complete offline topology snapshots in strict order. Passing
- * means ready for protected operator review only; it never authorizes deploy.
- */
 export function assertProductionReleasePreflight(plan) {
   assert.ok(record(plan) && record(plan.phases), 'A three-stage release plan is required');
   assert.deepEqual(Object.keys(plan.phases), RELEASE_PHASE_ORDER, 'Phases must be ordered prepare → detach → activate');
@@ -161,7 +155,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     main(process.argv.slice(2));
   } catch {
-    // Source manifests may contain private operational metadata; never echo it.
     process.stderr.write('Offline production release preflight rejected; inspect protected inputs and stage requirements.\n');
     process.exitCode = 2;
   }

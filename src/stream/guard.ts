@@ -1,19 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// First Event Guard — the single streaming failover boundary implementation.
-//
-// Consumes the upstream SSE stream until the first valid data event has been
-// observed (parseable JSON payload other than "[DONE]"), then returns a new
-// Response that replays the consumed bytes and continues transparently.
-//
-// Before the first valid event the request can safely fail over to another
-// node; AFTER it, transparent failover is forbidden (the client already saw
-// model A's output). Callers must therefore run this guard before returning
-// any streaming Response to the client.
-//
-// Throws on: timeout, empty stream, [DONE]-only stream, client abort, or a
-// malformed first event. The caller records a node failure and rotates.
 
 const guardedStreamState = new WeakMap<object, { failureReason: string | null }>();
 
@@ -24,20 +10,12 @@ export { createSseScanner, FIRST_EVENT_MAX_SSE_LINE, GUARD_ERROR, readWithDeadli
 
 export const FIRST_EVENT_MAX_PRE_BYTES = 2 * 1024 * 1024;
 
-// Pre-event budget for the pass-through streaming mode: the guard only needs
-// enough bytes to see the first meaningful SSE event, not the worst-case
-// prefix it used to absorb. Configured via AIG_STREAM_GUARD_PREFIX_BYTES.
 export const FIRST_EVENT_MAX_PRE_BYTES_PASSTHROUGH = 64 * 1024;
 
 export function guardedStreamFailureReason(response: Response): string | null {
   return guardedStreamState.get(response)?.failureReason || null;
 }
 
-// `onParsedEvent` is intentionally observation-only. It runs after a data event
-// has parsed as JSON but BEFORE the failover boundary commits. This lets the
-// request layer retain upstream-reported usage from lifecycle/usage events even
-// when the stream later fails before first real output. The callback cannot
-// change commit semantics and any callback exception is ignored.
 export async function ensureFirstSseEvent(
   upstreamResponse: Response,
   timeoutMs: number,
@@ -62,8 +40,6 @@ export async function ensureFirstSseEvent(
       clearTimeout(timerId);
       clientSignal?.removeEventListener('abort', abort);
       const state: { failureReason: string | null } = { failureReason: null };
-      // Pull-driven: the upstream is read only as fast as the client drains the
-      // stream, so a slow client cannot make the isolate buffer a whole reply.
       const stream = new ReadableStream({
         start(controller) {
           for (const chunk of consumed) controller.enqueue(chunk);
@@ -108,9 +84,7 @@ export async function ensureFirstSseEvent(
       }
       try {
         onParsedEvent?.(json);
-      } catch {
-        /* observability must not affect failover */
-      }
+      } catch {}
       if (json && typeof json === 'object' && !Array.isArray(json) && json.error) {
         finishErr(GUARD_ERROR.ERROR_ENVELOPE);
         return;
@@ -174,8 +148,6 @@ async function pull(
     state.failureReason = 'reader_error';
     try {
       controller.close();
-    } catch {
-      /* already closed */
-    }
+    } catch {}
   }
 }

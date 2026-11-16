@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Offline image-routing contract: real Gateway and Perception center, fake Provider only.
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
@@ -11,7 +10,6 @@ import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
 const original = 'Code-Max';
 const vision = 'Vision-Explicit';
 const accessKey = 'local-vision-contract-key';
-// A valid 2x2 red PNG: image bytes are sent through the full private-center path.
 const image = {
   type: 'image_url',
   image_url: {
@@ -65,7 +63,6 @@ async function exercise({
       default: { max_attempts: 2, tier_attempts: { tier1: 2 }, hedge: { enabled: false } },
     }),
   };
-  // The public Gateway has only routing metadata; credentials stay inside Perception.
   const centerEnv = {
     ...env,
     AIG_TIER1_CREDENTIALS_01: JSON.stringify({
@@ -100,8 +97,6 @@ async function exercise({
     body: JSON.stringify({ model: original, messages: [{ role: 'user', content: [{ type: 'text', text: 'What is shown?' }, image] }] }),
   });
 
-  // The only simulated hop is the external Provider; all internal production
-  // entrypoints, credential resolution, model mapping, and transport execute.
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
@@ -281,8 +276,6 @@ try {
   globalThis.fetch = bridgeOriginalFetch;
 }
 
-// A declared incompatible capability is a zero-dispatch client error, not a
-// Provider 422 with speculative retries across keys and models.
 for (const [field, payload] of [
   ['tools', { tools: [{ type: 'function', function: { name: 'run', parameters: { type: 'object' } } }] }],
   ['stream', { stream: true }],

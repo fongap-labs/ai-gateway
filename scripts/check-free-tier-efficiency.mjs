@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Deterministic free-tier reliability contracts. No keys or Provider calls.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,9 +21,6 @@ import {
 } from '../src/reliability/tier1-state.ts';
 import { calculateTier1Score, TIER1_TTFT_CONFIDENCE_SAMPLES } from '../src/scheduler/tier1-scoring.ts';
 
-// Keep Free D1 budgeting tied to the actual buffer constants. A previous
-// operations document assumed five-minute windows while code used one minute,
-// underestimating the maximum number of SQL statements under steady traffic.
 const bufferSource = readFileSync(new URL('../packages/usage-store/buffer.ts', import.meta.url), 'utf8');
 const budgetDoc = readFileSync(new URL('../docs/operations/free-tier-budget.md', import.meta.url), 'utf8');
 const intervalLiteral = /const FLUSH_INTERVAL_MS = ([0-9_]+);/.exec(bufferSource)?.[1];
@@ -91,8 +86,6 @@ assert.equal(recordTier1Ttft('warming', model, 1_800), true);
 const firstScore = calculateTier1Score(nodes[1], model, nodes);
 const healthyFreeScore = calculateTier1Score(nodes[0], model, nodes);
 const now = Date.now();
-// A nearly depleted *but still usable* free key must not be artificially
-// demoted when it may still complete the next request.
 assert.equal(recordTier1QuotaSignal('baseline', { remainingRatio: 0.01, resetAtMs: now + 60_000 }, now), true);
 assert.equal(tier1QuotaState('baseline', now), 'near_limit');
 assert.equal(calculateTier1Score(nodes[0], model, nodes), healthyFreeScore);
@@ -109,9 +102,6 @@ const matureScore = calculateTier1Score(nodes[1], model, nodes);
 assert.ok(matureScore > firstScore, 'one slow sample must not penalize a new free key as strongly as established evidence');
 __resetTier1StateForTests();
 
-// Free-cost-guard affinity is intentionally disabled: no digest, KV read, or
-// escape-window work should occur. Explicitly enabling writes restores the
-// historical session-binding read path without changing the default.
 __resetTier1AffinityForTests();
 let affinityReads = 0;
 const affinityKV = {
@@ -134,8 +124,6 @@ assert.equal(await readTier1Affinity(explicitlyEnabledEnv, sessionId), 'sticky-k
 assert.equal(affinityReads, 1, 'enabled affinity reuses the isolate cache');
 __resetTier1AffinityForTests();
 
-// With the affinity candidate in the middle, P2C must sample either peer
-// uniformly without excluding or duplicating a candidate.
 __resetTier1StateForTests();
 const routingModel = 'free-p2c';
 const routingNodes = ['peer-a', 'preferred', 'peer-b'].map((id) => ({
@@ -169,8 +157,6 @@ for (const [rngValue, expected] of [
   assert.equal(pick?.node?.id, expected, 'P2C must choose the deterministic eligible peer');
   assert.equal(pick?.escapedFromAffinity, true);
 }
-// Tier 1 selection and recovery must agree with the private executor: a
-// catalog-visible wildcard without a physical model is NOT dispatchable.
 const knownRoutingModels = new Set([routingModel]);
 const unmappedNode = { ...routingNodes[0], id: 'tier1-no-physical-map', models: {} };
 const mappedNode = { ...routingNodes[1], id: 'tier1-explicit-map' };

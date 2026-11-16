@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Public re-exports for the Provider Discovery module. Tests and CLI
-// drivers should import from `./provider-discovery/index.js` rather than
-// reaching into the individual files; this keeps the surface narrow.
 
 export {
   PROTOCOLS,

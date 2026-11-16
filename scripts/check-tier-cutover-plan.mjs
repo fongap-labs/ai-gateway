@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Local contract checks for the read-only two-Tier cutover planner.
 
 import assert from 'node:assert/strict';
 import { planTwoTierCutover } from './tier-cutover-plan.mjs';

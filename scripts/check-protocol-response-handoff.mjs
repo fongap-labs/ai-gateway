@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// v8 Protocol owns response translation; Inference owns exactly one physical attempt.
 import assert from 'node:assert/strict';
 import { invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { decodeFramedInferenceResponse } from '../apps/gateway/transport/inference-stream-client.ts';

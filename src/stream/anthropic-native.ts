@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Native Anthropic Messages stream helpers.
-//
-// The gateway forwards /v1/messages requests to a NATIVE /v1/messages
-// upstream — there is no OpenAI Chat conversion anywhere in this path. These
-// helpers cover the two defensive corners a native upstream can still
-// present:
-//   * collectAnthropicMessageObject  — upstream streamed although the client
-//     asked for JSON: assemble the final message object from the SSE event
-//     lifecycle.
-//   * synthesizeAnthropicFromMessage — upstream answered JSON although the
-//     client asked for a stream: emit a well-formed Anthropic SSE event
-//     sequence.
-//
-// Nothing here touches scheduling / reliability. Failover semantics: both
-// helpers run BEFORE any byte reaches the client, so a failure inside them
-// still rotates to another node.
 
 import { mergeReportedUsage } from '../observability/token-usage.ts';
 import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../types/upstream-processing.ts';
@@ -170,10 +153,6 @@ function anthropicBlockFromState(
   return { type: 'text', text: state.text || '' };
 }
 
-// Synthesize a complete Anthropic SSE event sequence around a full message
-// object (the "upstream answered JSON but the client wants a stream" case).
-// Event order follows the Anthropic contract. The internal lifecycle marker is
-// consumed and stripped by the outer request boundary.
 export function synthesizeAnthropicFromMessage(message: Record<string, unknown> | null | undefined, extraHeaders?: Record<string, string>): Response {
   const encoder = new TextEncoder();
   const emit = (chunks: string[], event: string, data: unknown) => chunks.push(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);

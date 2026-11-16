@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Normalization for Provider Discovery Catalog data.
-//
-// Two guarantees before diff/compare happens:
-//   1. Stable ordering: providers, surfaces, base_urls are sorted.
-//   2. Independent of upstream reordering: a /models endpoint returning
-//      models in a different order, or JSON key-order differing, must
-//      produce identical normalized output.
-//
-// No synthetic URL guessing, no support inference. Normalize keeps the
-// three-state (true / false / null) semantics intact.
 
 import {
   PROTOCOLS,
@@ -26,34 +15,19 @@ import {
 } from './catalog-schema.js';
 import { isSafeDiscoveryUrl } from './ssrf-guard.js';
 
-// ---------- base URL canonicalization -------------------------------------
 
-// Strip trailing slashes from the path component of a URL; keep query /
-// fragment / userinfo untouched (but userinfo is filtered downstream — see
-// stripCredentialLikeUrl). Trailing-slash variance is the most common
-// source of false CHANGED signals. Returns { value, warning } so callers
-// can surface a diagnostic explaining why a URL was dropped.
 export function canonicalizeBaseUrl(raw) {
   if (typeof raw !== 'string') return { value: null, warning: null };
   const trimmed = raw.trim();
   if (!trimmed) return { value: null, warning: null };
   try {
     const u = new URL(trimmed);
-    // Refuse userinfo-bearing URLs entirely. Catalog MUST NOT carry
-    // username:password@host fragments, even if the source had them; we
-    // intentionally do not throw here so that a single bad URL surfaces
-    // as a warning instead of failing the whole snapshot.
     if (u.username || u.password) {
       return { value: null, warning: 'base_url contained credential-like userinfo; value dropped' };
     }
-    // Forbid http (matches runtime policy unless explicitly opted in;
-    // Discovery is conservative and refuses http outright).
     if (u.protocol !== 'https:') {
       return { value: null, warning: 'base_url must use https:// (Discovery refuses http)' };
     }
-    // SSRF defense: reject loopback, link-local, cloud-metadata, private
-    // addresses, and invalid hostnames. A provider that points at
-    // 169.254.169.254 or localhost must surface as a warning, not a fetch.
     const guard = isSafeDiscoveryUrl(trimmed);
     if (!guard.safe) {
       return { value: null, warning: `base_url SSRF guard: ${guard.reason}; value dropped` };
@@ -65,9 +39,6 @@ export function canonicalizeBaseUrl(raw) {
   }
 }
 
-// Defense-in-depth against secret leakage. Returns the original string when
-// it is safe; returns null (and a synthetic warning) when it is not. We do
-// NOT keep the original — the secret must NOT persist.
 const SENSITIVE_TOKEN_HINT = /(bearer|sk-|ghp_|akia|ghu_|ghs_|xox[abp]-|AIza)/i;
 function stripCredentialLikeUrl(raw) {
   if (typeof raw !== 'string') return { value: null, suspect: false };
@@ -75,10 +46,7 @@ function stripCredentialLikeUrl(raw) {
   return { value: raw, suspect: false };
 }
 
-// ---------- per-entry normalization ---------------------------------------
 
-// Normalize one protocol entry. Returns { entry, warnings }. The returned
-// shape is a fresh object whose JSON serialization is canonical.
 export function normalizeCapabilityEntry(protocol, entry) {
   const warnings = [];
   if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
@@ -96,17 +64,12 @@ export function normalizeCapabilityEntry(protocol, entry) {
   if (canon.warning) warnings.push(canon.warning);
   const baseUrl = canon.value;
 
-  // Support: keep the tri-state intact. NEVER collapse null -> false.
   let supported = SUPPORT_NULL;
   if (isSupportTriState(entry?.supported)) supported = entry.supported;
   else if (entry?.supported !== undefined && entry?.supported !== null) {
     warnings.push(`supported value coerced to null (expected true/false/null)`);
   }
 
-  // Surfaces: trim, dedupe, sort. Anything not a known surface for this
-  // protocol is dropped with a warning rather than silently kept. This is
-  // intentional: a stale surface name in an old snapshot must not turn
-  // into a runtime-relevant entry.
   const known = SURFACES_BY_PROTOCOL[protocol] || [];
   const seen = new Set();
   const surfaces = [];
@@ -127,9 +90,6 @@ export function normalizeCapabilityEntry(protocol, entry) {
   }
   surfaces.sort();
 
-  // Enforce the supported/surfaces invariant. v1.1 forbids inferring
-  // `false` from `surfaces not present` — we only enforce the inverse:
-  // surfaces MUST be empty when supported is explicitly false / null.
   let surfacesOut = surfaces;
   if (supported === SUPPORT_FALSE || supported === SUPPORT_NULL) {
     if (surfaces.length > 0) {
@@ -138,7 +98,6 @@ export function normalizeCapabilityEntry(protocol, entry) {
     }
   }
 
-  // Evidence: must be in the enum. Default to 'unknown' (we do not guess).
   let evidence = 'unknown';
   if (isEvidence(entry?.evidence)) evidence = entry.evidence;
   else if (entry?.evidence !== undefined) {
@@ -156,11 +115,7 @@ export function normalizeCapabilityEntry(protocol, entry) {
   };
 }
 
-// ---------- per-provider normalization ------------------------------------
 
-// Normalize one provider. Always returns an object keyed only by valid
-// protocols; unknown protocols produce a warning and are dropped so they
-// cannot pollute downstream diffs.
 export function normalizeProvider(providerName, rawProvider) {
   const warnings = [];
   const out = {};
@@ -183,13 +138,7 @@ export function normalizeProvider(providerName, rawProvider) {
   return { provider: out, warnings };
 }
 
-// ---------- whole-catalog normalization -----------------------------------
 
-// Normalize a whole catalog snapshot. The output is a fresh object whose
-// `providers` keys are sorted alphabetically and whose every value has
-// been canonicalized. Two snapshots that differ only in JSON key order,
-// surface array order, or trailing-slash base URL produce byte-identical
-// normalized output.
 export function normalizeCatalog(catalog) {
   const warnings = [];
   const providersIn = catalog?.providers;
@@ -219,18 +168,7 @@ export function normalizeCatalog(catalog) {
   };
 }
 
-// ---------- runtime-side normalization ------------------------------------
 
-// Normalize a minimal runtime view into the shape the runtime-check module
-// expects. The runtime view is intentionally a *projection* — it carries
-// only fields relevant to capability comparison (id, provider, protocol,
-// surfaces, base_url). Secrets are NEVER read.
-//
-// Output shape:
-//   [
-//     { id, provider, protocol, surfaces:[...sorted], base_url: string|null },
-//     ...
-//   ]
 export function normalizeRuntimeView(nodes) {
   if (!Array.isArray(nodes)) return [];
   const out = [];
@@ -251,9 +189,6 @@ export function normalizeRuntimeView(nodes) {
       }
     }
     const surfaces = [...surfaceSet].sort();
-    // For runtime comparison we keep the raw base_url as long as it
-    // parses to a non-credential-bearing https URL. We do NOT mutate it
-    // (runtime is the source of truth, not discovery).
     let baseUrl = null;
     if (typeof raw.base_url === 'string') {
       const trimmed = raw.base_url.trim();
@@ -264,7 +199,7 @@ export function normalizeRuntimeView(nodes) {
             const guard = isSafeDiscoveryUrl(trimmed);
             if (guard.safe) baseUrl = u.toString();
           }
-        } catch { /* invalid -> null */ }
+        } catch {   }
       }
     }
     out.push({ id, provider, protocol, surfaces, base_url: baseUrl });
@@ -277,5 +212,4 @@ export function normalizeRuntimeView(nodes) {
   return out;
 }
 
-// Re-exports that may be useful to callers.
 export { PROTOCOLS, SURFACES_BY_PROTOCOL, EVIDENCE_LEVELS };

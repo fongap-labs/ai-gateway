@@ -1,26 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Token Usage Writer.
-//
-// Two accounting views intentionally coexist in the SAME aggregate tables:
-//
-//   delivered columns  — one successfully delivered response; these keep the
-//                        established model-status / TTFT evidence semantics.
-//   upstream_* columns — one real physical upstream dispatch, including failed
-//                        fallback/retry/hedge work. Tokens are counted only
-//                        when the upstream actually reports usage; missing
-//                        reports are counted and NEVER estimated.
-//
-// A successfully delivered response is also one physical upstream attempt, so
-// persistTokenUsage() updates both views in the same merged upsert. Non-delivered
-// physical attempts use persistUpstreamAttemptUsage(), which touches only
-// upstream_* columns and therefore cannot fabricate success evidence in
-// `requests` / `usage_reports` / TTFT histograms.
-//
-// Both entry points go through the isolate-local write buffer (buffer.ts). The
-// SQL lives in statements.ts. A caller's promise settles when the event's flush
-// has been written, and events that do not trigger a flush resolve immediately.
 
 import { getLimits } from '../../config/timeouts.ts';
 import type { GatewayEnv } from '../../types/runtime.ts';
@@ -28,13 +7,6 @@ import { normalizeUsageReport } from '../token-usage.ts';
 import { bufferPersist } from './buffer.ts';
 import type { UsagePayload } from './statements.ts';
 
-/**
- * AIG_TOKEN_D1_SAMPLE_PCT (default 100; cost-guard profile defaults to 1%)
- * samples per-model token and physical-attempt details. Successful request
- * counts and TTFT histograms remain unsampled for public model status. Global
- * hourly and lifetime aggregates are also unsampled; model token detail is
- * never extrapolated. Isolate-local counters remain best-effort and separate.
- */
 function shouldSampleModel(env: GatewayEnv): boolean {
   const pct = getLimits(env).tokenD1SamplePct;
   if (pct >= 100) return true;
@@ -77,8 +49,6 @@ export function tokenUsagePayload(usage: unknown): UsagePayload {
   };
 }
 
-// Buffer one SUCCESSFULLY DELIVERED response. The buffer applies the delivered
-// columns, the TTFT histogram (when a model is given) and the upstream columns.
 export function persistTokenUsage(
   env: GatewayEnv,
   usage: unknown,
@@ -96,9 +66,6 @@ export function persistTokenUsage(
   });
 }
 
-// Buffer one physical upstream attempt that did NOT become the delivered
-// response (failure, retry/fallback loss, hedge loser, or client-cancelled live
-// upstream). It touches upstream_* columns only.
 export function persistUpstreamAttemptUsage(env: GatewayEnv, usage: unknown, now: number = Date.now(), model: string | null = null): Promise<void> {
   return bufferPersist(env, 'upstream', {
     now,

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// One cross-protocol request conversion, one physical Provider dispatch, no key leaks.
 import assert from 'node:assert/strict';
 import { invokeInferenceNode } from '../apps/gateway/transport/inference-client-request.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';

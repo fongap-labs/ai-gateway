@@ -1,23 +1,6 @@
 // SPDX-License-Identifier: MIT
 // @ts-check
 // Copyright (c) 2026 Fongap Labs
-//
-// D1 migration governance check (PR 5 / P1-D).
-//
-// Enforces the rules in migrations/README.md so a careless commit cannot
-// silently break a rolling deploy:
-//   1. file naming follows NNN_<slug>.sql (monotonic, zero-padded, unique);
-//   2. applied files are immutable — re-running the check refuses a file
-//      whose content drifts from the previous git tree;
-//   3. every CREATE statement uses IF NOT EXISTS (so re-applying the
-//      sequence is a no-op — D1 has no migrations table to track history);
-//   4. destructive SQL (DROP TABLE, DROP COLUMN, RENAME COLUMN, RENAME TABLE,
-//      DELETE FROM) is blocked by default — the old Worker must remain
-//      compatible with the new schema after a rollback. Only explicitly
-//      allowlisted destructive migrations pass (e.g. index cleanup that the
-//      previous Worker version can tolerate).
-//
-// This is a pure-Node check; it does not need a D1 binding.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -32,15 +15,7 @@ const migDir = path.join(root, 'migrations');
 const FILENAME_RE = /^(\d{3,})_([a-z0-9_]+)\.sql$/;
 const _MIGRATION_NUMBER_RE = /^(\d+)_/;
 
-// Explicit allowlist of migration files that contain destructive SQL but are
-// verified to be backward-compatible with the previous Worker version.
-// To add a new exception: verify the old Worker still runs with the new
-// schema, then add the filename here with a comment explaining why.
-const DESTRUCTIVE_ALLOWLIST = new Set([
-  // Index cleanup: DROP INDEX only removes redundant indexes; the previous
-  // Worker version uses the PK index and is unaffected.
-  '0007_drop_redundant_usage_indexes.sql',
-]);
+const DESTRUCTIVE_ALLOWLIST = new Set(['0007_drop_redundant_usage_indexes.sql']);
 
 function listMigrations() {
   return fs
@@ -85,24 +60,17 @@ function checkIdempotent(files) {
 }
 
 function getBaseCommit() {
-  // Determine the base commit for comparison.
-  // PR context: GITHUB_BASE_REF or git merge-base with origin/main
-  // Push context: HEAD~1 or merge-base with origin/main
-  // CI provides GITHUB_BASE_REF for PRs; for pushes we use HEAD~1.
   const envBase = process.env.GITHUB_BASE_REF;
   if (envBase) {
-    // PR: try to get the merge-base with the base branch
     const r = spawnSync('git', ['merge-base', `origin/${envBase}`, 'HEAD'], { cwd: root, encoding: 'utf8' });
     if (r.status === 0 && r.stdout.trim()) {
       return r.stdout.trim();
     }
-    // Fallback: try origin/main
     const r2 = spawnSync('git', ['merge-base', 'origin/main', 'HEAD'], { cwd: root, encoding: 'utf8' });
     if (r2.status === 0 && r2.stdout.trim()) {
       return r2.stdout.trim();
     }
   }
-  // Push or fallback: use HEAD~1 (parent of current commit)
   const r3 = spawnSync('git', ['rev-parse', 'HEAD~1'], { cwd: root, encoding: 'utf8' });
   if (r3.status === 0 && r3.stdout.trim()) {
     return r3.stdout.trim();
@@ -120,21 +88,15 @@ function isRootCommit() {
 }
 
 function ensureHistory(baseCommit) {
-  // If the base commit is not reachable (shallow checkout), fetch more history.
   if (!baseCommit) return;
   const r = spawnSync('git', ['merge-base', '--is-ancestor', baseCommit, 'HEAD'], { cwd: root });
   if (r.status !== 0) {
-    // Not an ancestor — need more history. Fetch the base branch.
     const baseBranch = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : 'origin/main';
     spawnSync('git', ['fetch', '--no-tags', '--depth=50', 'origin', baseBranch.replace('origin/', '')], { cwd: root, stdio: 'ignore' });
   }
 }
 
 function isCommentOnlyModification(baseCommit, file) {
-  // A modification is schema-safe when every changed line is a SQL line
-  // comment (`--`) or blank. Comment-only edits (copyright headers, prose)
-  // do not alter executed SQL and cannot drift the live schema from a fresh
-  // apply, so they do not violate the immutability contract's intent.
   const r = spawnSync('git', ['diff', '--unified=0', baseCommit, '--', file], { cwd: root, encoding: 'utf8' });
   if (r.status !== 0) return false;
   for (const line of r.stdout.split('\n')) {
@@ -151,11 +113,6 @@ function isCommentOnlyModification(baseCommit, file) {
 }
 
 function checkImmutability(files) {
-  // Compare against base commit using git diff --name-status.
-  // Only migrations/ paths are considered.
-  // New files (A) are allowed. Modified (M) files are allowed only when the
-  // change is comment-only; any change to executed SQL is blocked. Deleted
-  // (D), Renamed (R), Copied (C) are always blocked.
   const baseCommit = getBaseCommit();
   if (!baseCommit) {
     if (isRootCommit()) {
@@ -175,9 +132,6 @@ function checkImmutability(files) {
     const code = line.slice(0, 1);
     const file = line.slice(2).trim();
     if (!file.endsWith('.sql')) continue;
-    // Allow: Added (A) — new migration files
-    // Allow: Modified (M) when comment-only (header/prose) — no executed SQL changes
-    // Block: Deleted (D), Renamed (R), Copied (C), and Modified files touching executed SQL
     if (code === 'A') continue;
     if (code === 'M' && isCommentOnlyModification(baseCommit, file)) continue;
     assert.ok(false, `${file} is in a non-add state (${code}). Applied migrations are immutable; create a new NNN_*.sql file instead.`);
@@ -185,11 +139,6 @@ function checkImmutability(files) {
 }
 
 function checkDestructiveOps(files) {
-  // Destructive SQL (DROP TABLE, DROP COLUMN, RENAME COLUMN, RENAME TABLE,
-  // DELETE FROM) is blocked by default. A destructive migration can break a
-  // rolling deploy: the old Worker code runs against the new schema and may
-  // reference columns/tables that no longer exist. Only explicitly allowlisted
-  // migrations pass — each exception must be verified backward-compatible.
   for (const f of files) {
     const sql = fs.readFileSync(path.join(migDir, f), 'utf8');
     const destructive = [];
@@ -210,7 +159,6 @@ function checkDestructiveOps(files) {
 }
 
 function run() {
-  // README is allowed to be edited (governance doc) — exclude it.
   const files = listMigrations();
   checkMonotonicAndUnique(files);
   checkIdempotent(files);

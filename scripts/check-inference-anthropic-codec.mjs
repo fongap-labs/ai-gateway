@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Anthropic converter compatibility and streaming contracts without providers.
 import assert from 'node:assert/strict';
 import { parseAnthropicRequest as ownedParse } from '../apps/inference/conversion/anthropic.ts';
 import { AnthropicStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/anthropic-stream.ts';

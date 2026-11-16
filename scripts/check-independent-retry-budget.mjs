@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Independent Key fallback can use bounded extra retry capacity, never unbounded fanout.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {

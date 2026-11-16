@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Real public Gateway smoke checks. No Provider simulation, no deployment,
-// and no stored credentials. Only --run-image authorizes a billable image call.
 import { randomInt } from 'node:crypto';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 import { visionColors } from './live-gateway-vision-fixtures.mjs';
@@ -57,7 +54,6 @@ async function checkedRequest(label, key, route, body, assertion, timeoutMs = 90
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  // Never log raw replies: image responses contain potentially sensitive data.
   let json;
   try {
     json = await response.json();

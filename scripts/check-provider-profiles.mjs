@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Provider routing metadata must match actual Provider adapters, including
-// unknown/custom providers which use the generic OpenAI-compatible wire.
 import assert from 'node:assert/strict';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
 import { streamUsageEnabled } from '../packages/contracts/provider-usage.ts';
@@ -27,8 +25,6 @@ for (const [provider, acceptsImages] of [
 }
 assert.deepEqual(getProviderProfile(' OPENAI '), getProviderProfile('openai'));
 assert.deepEqual(getProviderProfile('unknown-custom-provider'), getProviderProfile('generic-openai'));
-// Never alter a free Provider request with an optional usage field unless
-// explicitly opted in by configuration.
 const chatNode = { provider: 'openai', protocol: 'openai', surfaces: ['chat_completions'] };
 assert.equal(streamUsageEnabled(chatNode), false, 'implicit stream usage must be disabled by default');
 assert.equal(streamUsageEnabled(chatNode, {}), false);

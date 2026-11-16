@@ -1,13 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-//
-// Provider / Model Discovery CLI.
-//
-// Offline commands keep the original catalog-audit behavior. `live` reads the
-// gateway's configured provider nodes + credentials, calls /v1/models, performs
-// zero-generation-cost surface probes, and writes sanitized before/after model
-// snapshots. No command mutates Runtime Node config, Model Registry, Variables
-// or Secrets.
 
 import fs from 'node:fs';
 import path from 'node:path';

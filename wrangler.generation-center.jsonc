@@ -1,6 +1,4 @@
 {
-  // Private only. Deploy and verify the center before enabling the gateway binding.
-  // No public workers.dev or route. Credentials are configured as Secrets.
   "name": "ai-generation-center",
   "main": "src/generation/generation-center-entry.ts",
   "compatibility_date": "2026-08-06",
