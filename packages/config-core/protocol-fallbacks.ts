@@ -1,43 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// AIG_PROTOCOL_FALLBACKS: cross-protocol route fallback chains.
-//
-// Shape:
-//   {
-//     "anthropic:messages": ["openai:chat_completions"]
-//   }
-//
-// Keys are "protocol:surface" pairs of the CLIENT route that the fallback
-// triggers for; values are ordered arrays of "protocol:surface" pairs of
-// alternative upstreams to try after the native pool is exhausted.
-//
-// When the gateway exhausts every native node for a request, the first
-// matching fallback chain is consumed in order: each entry is attempted via
-// the same scheduling / reliability / hedging / budget machinery as a native
-// node, with cross-protocol request/response conversion applied at the
-// boundary.
-//
-// Modes:
-//   (1) unset / empty string  -> built-in default chain (Default ON).
-//   (2) "disable" (case-insensitive) -> empty config (legacy Native Only).
-//   (3) JSON object            -> parsed verbatim; any parse error or
-//                                unsupported target is a blocking config
-//                                error. An explicit JSON value ALWAYS
-//                                overrides the default — there is no silent
-//                                merge. `{"anthropic:messages":[]}` is a
-//                                valid operator choice that means "explicitly
-//                                turn off fallback for this route".
-//
-// Rationale for Default ON: the Chat <-> Messages pair is the established
-// safe fallback for operators who carry both an Anthropic pool and an
-// OpenAI-compatible pool, and the Responses pairs go through the canonical IR
-// matrix with the same diagnostic vocabulary and conservative loss rules.
-// Operators who want the legacy Native-Only behavior can opt out with
-// `AIG_PROTOCOL_FALLBACKS=disable`.
-//
-// Only explicitly supported conversions are allowed. Unsupported conversions
-// produce blocking configuration errors (not warnings).
 
 import type { Protocol, Surface } from '../contracts/protocol.ts';
 import { readEnv } from './env.ts';
@@ -47,37 +9,18 @@ const PROTOCOL_SURFACES = new Map<string, Set<string>>([
   ['anthropic', new Set(['messages'])],
 ]);
 
-// Single source of truth for supported cross-protocol conversions.
-// Key: client route (protocol:surface), Value: array of allowed fallback targets.
-// A conversion is listed here ONLY after the full Request + Response + Stream +
-// Error Converter has been implemented and tested.
-//
-// Chat <-> Messages keeps the established pairwise converters. Every pair
-// involving Responses runs through the canonical IR matrix
-// (conversion/matrix/): Chat / Messages / Responses are mutually translatable
-// including streaming SSE, tool calls and reasoning, with effort <-> budget
-// thinking-level mapping.
 export const SUPPORTED_CONVERSIONS: Readonly<Record<string, string[]>> = Object.freeze({
   'anthropic:messages': ['openai:chat_completions', 'openai:responses'],
   'openai:chat_completions': ['anthropic:messages', 'openai:responses'],
   'openai:responses': ['anthropic:messages', 'openai:chat_completions'],
 });
 
-// Built-in default chain. Applied when AIG_PROTOCOL_FALLBACKS is unset/empty.
-// The default is the only one allowed without an explicit operator JSON
-// value; see header for the three-mode contract.
-// Default ON covers all six directed pairs: native pools remain first, but an
-// exhausted native tier may serve a client from any other protocol pool that
-// the matrix can represent. Operators who want the legacy behavior for any
-// route can pin it explicitly, or opt out entirely with `disable`.
 export const DEFAULT_FALLBACK_CHAIN: Readonly<Record<string, string[]>> = Object.freeze({
   'anthropic:messages': ['openai:chat_completions', 'openai:responses'],
   'openai:chat_completions': ['anthropic:messages', 'openai:responses'],
   'openai:responses': ['anthropic:messages', 'openai:chat_completions'],
 });
 
-// Magic literal that turns the default off. Compared case-insensitively after
-// trimming surrounding whitespace.
 const DISABLE_LITERAL = 'disable';
 
 const ROUTE_PROTOCOL_SURFACE: Readonly<Record<string, string>> = Object.freeze({
@@ -104,19 +47,14 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   const errors: string[] = [];
   const config: Record<string, string[]> = {};
-  // Mode (1): unset / empty -> built-in default chain (Default ON).
   if (!trimmed) {
     cached = { config: { ...DEFAULT_FALLBACK_CHAIN }, errors };
     return cached;
   }
-  // Mode (2): explicit opt-out -> legacy Native Only.
   if (trimmed.toLowerCase() === DISABLE_LITERAL) {
     cached = { config, errors };
     return cached;
   }
-  // Mode (3): explicit JSON value — overrides the default verbatim, even if
-  // it ends up empty. Parse errors are still blocking; an operator typo is
-  // a config bug, not an excuse to silently fall back to the default.
   {
     let parsed: unknown;
     try {
@@ -137,13 +75,6 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
           errors.push(`AIG_PROTOCOL_FALLBACKS: "${key}" must be a JSON array of "protocol:surface" strings`);
           continue;
         }
-        // Empty array is a valid operator choice — it pins this route to
-        // "off" while leaving the rest of the operator's config alone. The
-        // route key is preserved (with an empty target list) so
-        // getFallbackChain() can tell "explicitly turned off" from "no entry
-        // at all". This is what makes the Default-ON contract safe: an
-        // operator can always pin a single route to off without giving up
-        // the rest of the default.
         if (value.length === 0) {
           config[parsedKey] = [];
           continue;
@@ -166,7 +97,6 @@ function analyzeProtocolFallbacks(env: Record<string, unknown>): { config: Recor
               }
             }
           }
-          // Only add valid targets (those that pass SUPPORTED_CONVERSIONS check)
           const validTargets = targets.filter((t) => allowed?.includes(t));
           if (validTargets.length > 0) config[parsedKey] = validTargets;
         }
@@ -203,18 +133,12 @@ function parseSurfaceKey(raw: string, errors: string[], parentKey: string): stri
   return trimmed;
 }
 
-// Resolve the fallback chain for a given client route, in iteration order.
-// Returns an array of { protocol, surface } objects (empty when no fallback
-// is configured for the route). The route must be one of the natively
-// supported routes (openai_chat / openai_responses / anthropic_messages).
 export function getFallbackChain(route: string, env: Record<string, unknown>): Array<{ protocol: Protocol; surface: Surface }> {
   const key = ROUTE_PROTOCOL_SURFACE[route];
   if (!key) return [];
   const config = loadProtocolFallbacks(env);
   const chain = config[key];
   if (!chain || chain.length === 0) return [];
-  // Entries are validated at parse time against the closed protocol/surface
-  // sets, so the slice results honor the Protocol/Surface unions.
   return chain.map((entry) => {
     const idx = entry.indexOf(':');
     return {

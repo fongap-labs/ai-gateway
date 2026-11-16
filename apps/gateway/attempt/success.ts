@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Gateway-owned success response dispatcher. No Provider execution.
-
-// success.ts - thin success-finalization dispatcher. Streaming success owns
-// first-event commit + stream wiring; object success owns complete-object
-// assembly / conversion / synthesis. Keep protocol-specific behavior visible
-// in those modules rather than rebuilding a generic result engine here.
 
 import { commitTier1RecoveryProbe } from '../../../src/reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
@@ -21,7 +15,6 @@ export type SuccessArgs = {
   latencyMs: number;
   detach: () => void;
   upstreamWasStreaming: boolean;
-  /** Only set by authenticated Inference Center execution dispatch. */
   centerFramedStreamExpected?: boolean;
   attemptStartMs?: number;
 };
@@ -34,12 +27,6 @@ export async function handleSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   if (s.c.clientWantsStream && s.upstreamWasStreaming) {
     return handleStreamingSuccess(s);
   }
-  // Buffered reply already past upstream.ok (the caller validates status):
-  // those response headers are the earliest recovery-probe evidence, so the
-  // v2 gate commits here — before any body parsing — and other requests stop
-  // waiting on the probe. Streaming (native) commits at its first SSE event
-  // inside handleStreamingSuccess; matrix paths commit inside their own
-  // handler. All commits are no-ops under the legacy gate.
   if (s.c.node.tier === 'tier-1') {
     commitTier1RecoveryProbe(s.c.node.id, s.c.state?.requestedModel ?? s.c.requestedModel);
   }

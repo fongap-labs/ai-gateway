@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Gateway-owned native streaming success implementation.
 
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
@@ -27,10 +26,6 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   };
   const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
 
-  // Run the first-event guard BEFORE returning anything to the client. Parsed
-  // lifecycle events are also offered to the usage observer before commit, so
-  // a provider-reported usage object is not lost merely because the stream
-  // later fails before real output.
   const guardStartMs = Date.now();
   let guarded: Response;
   try {
@@ -44,8 +39,6 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       Math.min(remainingRequestBudgetMs, remainingAttemptBudgetMs),
       1,
     );
-    // Native-only surface: every cross-protocol request is matrix-owned and
-    // reaches handleMatrixSuccess instead of this module.
     const isRealOutput =
       surface === 'messages'
         ? isAnthropicNativeRealOutput
@@ -63,8 +56,6 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
         const usage = reportedUsageFromPayload(event);
         if (usage != null) observeUpstreamAttemptUsage(c, usage);
       },
-      // Pass-through mode only needs the first meaningful event, not the
-      // worst-case 2MB prefix the guarding scanner otherwise absorbs.
       limits.streamPassthrough ? { maxPreBytes: limits.streamGuardPrefixBytes } : {},
     );
   } catch (e) {
@@ -79,9 +70,6 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       return { response: gatewayError(request, env, route, 499, 'Client closed the request before the first stream event.', requestId) };
     }
     if (c.hedgeAbort?.signal.aborted) {
-      // A peer committed while this attempt was waiting for real output.
-      // Reliability stays neutral, but the physical dispatch still belongs
-      // in upstream accounting (including any usage seen in lifecycle events).
       return hedgeLoserOutcome(c, node, 'first_event');
     }
     const classification = classifyFirstEventFailure();
@@ -99,21 +87,11 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
   if (node.tier === 'tier-1') {
     recordTier1Ttft(node.id, c.reqDescriptor?.model ?? state.requestedModel, c.ttftMs);
-    // The first SSE event is the v2 recovery-probe evidence for a stream: a
-    // key past its rate-limit cooldown that answers here is healthy, and the
-    // single-flight window opens immediately (no-op under the legacy gate).
     commitTier1RecoveryProbe(node.id, c.reqDescriptor?.model ?? state.requestedModel);
   } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
 
-  // Pass-through relay (AIG_STREAM_PASSTHROUGH): preserve upstream bytes while
-  // observing bounded SSE control/usage frames. makeNodeStreamTrack supplies
-  // the same accounting callbacks the tracked path uses, so reliability and
-  // slot bookkeeping stay identical.
-  // A physical model alias must not leak when the fast byte-for-byte relay
-  // is enabled. Preserve its zero-copy path only when no model rewrite is
-  // necessary; otherwise the tracked SSE path restores the client alias.
   if (limits.streamPassthrough && !needsModelRewrite) {
     const relayed = relayStreamResponse(new Response(guarded.body, { status: 200, headers }), {
       idleTimeoutMs: limits.streamIdleTimeoutMs,

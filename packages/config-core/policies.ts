@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// AIG_POLICIES_CONFIG: policy name -> request/failover policy. Optional.
-// `max_attempts` is the hard request-wide logical-attempt ceiling. Tier order
-// is fixed (tier-1 -> tier-2); there is one allocation model and no
-// configurable cross-tier budget splitter.
 
 import type { PolicyConfig } from '../contracts/policy.ts';
 import { readEnv } from './env.ts';
@@ -27,8 +22,6 @@ const ALLOWED_FIELDS = new Set([
 type HedgePolicy = { enabled?: boolean; delayMs?: number; tiers?: Array<'tier1' | 'tier2'> } | null;
 type TierAttempts = { tier1?: number; tier2?: number } | null;
 
-// Three canonical strategies; legacy names remain compatibility aliases for
-// existing operators, not additional scheduling algorithms.
 const fast: PolicyConfig = {
   maxAttempts: 8,
   tierAttempts: null,
@@ -60,15 +53,12 @@ const BUILTIN_POLICIES: Readonly<Record<string, PolicyConfig>> = Object.freeze({
   fast,
   normal,
   deep,
-  // Legacy spellings accept older deployed models without widening the
-  // canonical strategy surface.
   default: normal,
   chat: normal,
   coding: normal,
   'long-reasoning': deep,
 });
 
-/** Single shared policy-name source for runtime and private-center deployment gates. */
 export function isBuiltinPolicyName(name: string): boolean {
   return Object.hasOwn(BUILTIN_POLICIES, name);
 }
@@ -267,8 +257,6 @@ function parseFirstEventTimeoutMs(value: unknown, policyName: string, errors: st
   return value;
 }
 
-// `max_in_flight` is an explicit Tier 1 local safety ceiling. Current config
-// accepts JSON numbers only; there is no string coercion compatibility path.
 function parseMaxInFlight(value: unknown, policyName: string, errors: string[]): number | null {
   if (value === undefined || value === null || value === 0) return null;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
@@ -279,7 +267,6 @@ function parseMaxInFlight(value: unknown, policyName: string, errors: string[]):
 }
 
 export function getPolicy(modelName: string, modelsConfig: Record<string, ModelEntry>, policiesConfig: Record<string, PolicyConfig>): PolicyConfig {
-  // Model spelling is an opaque identifier: no tier/prefix inference.
   const explicit = modelsConfig[modelName]?.policy?.policy;
   const policyName = explicit || 'normal';
   return policiesConfig[policyName] ?? policiesConfig.normal ?? normal;

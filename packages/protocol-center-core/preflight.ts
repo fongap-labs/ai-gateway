@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Stateless admission shared by Inference and Protocol Center.
-// No credentials, Provider dispatch, model selection or scheduler state.
 import type { InferencePreflightInvocation } from '../contracts/conversion-preflight.ts';
 import { convertMatrixRequest, isMatrixPair } from '../conversion-core/matrix/request.ts';
 import { ConversionError, isRecord } from '../conversion-core/validation.ts';
@@ -44,7 +41,6 @@ export async function handleInferencePreflight(request: Request, invocation: Inf
     const result = convertMatrixRequest(from as (typeof MATRIX_PROTOCOLS)[number], to as (typeof MATRIX_PROTOCOLS)[number], body, {
       isNonstreamPreferred: isNonstreamPreferred === true,
     });
-    // Never return translated prompts, messages, tool schemas or raw Provider metadata.
     return new Response(
       JSON.stringify({
         ok: true,

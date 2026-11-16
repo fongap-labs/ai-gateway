@@ -1,19 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Gateway access-key authentication.
-//
-// User credentials are matched (constant-time SHA-256) against configured
-// AIG_ACCESS_KEY_<GROUP> secrets.
-//
-// OAuth onboarding routes (/oauth/start) accept the access key through a
-// POST form body (the paste page), which is converted into an x-api-key
-// credential before verification. Keys never appear in URLs, so they stay
-// out of access logs, browser history, and Referer headers.
-//
-// If no AIG_ACCESS_KEY_<GROUP> is configured, no credential is accepted.
-// Raw secrets never leave this module. Only the low-cardinality group label
-// is used in logs/stats.
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadAccessKeysConfig } from '../../../src/config/access-keys.ts';
@@ -25,8 +11,6 @@ function sha256Digest(text: unknown): Promise<ArrayBuffer> {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text ?? '')));
 }
 
-// The configured secrets do not change while an isolate lives, so their digests
-// are computed once instead of once per request per key group.
 const MAX_CACHED_SECRET_DIGESTS = 32;
 const secretDigests = new Map<string, Promise<Uint8Array>>();
 
@@ -63,7 +47,6 @@ export function presentedCredentials(request: Request): string[] {
   return presented;
 }
 
-// Resolve the request to an auth result (see AuthResult).
 export async function authorize(request: Request, env: GatewayEnv): Promise<AuthResult> {
   return authorizeCredentials(presentedCredentials(request), env);
 }

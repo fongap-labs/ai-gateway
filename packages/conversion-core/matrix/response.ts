@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared private-center native-object decode and IR reply rendering. This module
-// does not perform upstream fetch, tier selection or stream settlement.
 
 import { MatrixDiag } from '../diag.ts';
 import { type IrProtocol, type IrReply, isRecord } from '../ir.ts';
@@ -12,8 +9,6 @@ import { anthropicObjectToIr, anthropicStopFromIr } from './anthropic.ts';
 import { chatObjectToIr, chatStopFromIr, chatToolId } from './chat.ts';
 import { chatUsageFromRaw } from './chat-stream.ts';
 import { responsesObjectToIr } from './responses.ts';
-
-// ---- Native object -> IR (>providers that ignore stream:true) ----------------
 
 export function replyFromNativeObject(
   from: IrProtocol,
@@ -27,8 +22,6 @@ export function replyFromNativeObject(
     from === 'anthropic' ? anthropicObjectToIr(data).reply : from === 'openai_chat' ? chatObjectToIr(data).reply : responsesObjectToIr(data).reply;
   return { reply, diagnostics: diag.diagnostics };
 }
-
-// ---- Reply rendering (object path) ------------------------------------------
 
 export function replyToObject(reply: IrReply, to: IrProtocol): Record<string, unknown> {
   switch (to) {
@@ -51,7 +44,6 @@ export function replyToChatObject(reply: IrReply): Record<string, unknown> {
     if (part.type === 'text') content += part.text;
     else if (part.type === 'thinking') {
       if (part.text) reasoning.push(part.text);
-      // Sealed (redacted) blocks have no Chat representation: dropped.
     } else if (part.type === 'tool_call') {
       toolCalls.push({ id: part.id || chatToolId(part.id), type: 'function', function: { name: part.name, arguments: part.args } });
     }
@@ -75,13 +67,10 @@ export function replyToAnthropicObject(reply: IrReply): Record<string, unknown> 
     if (part.type === 'text') {
       if (part.text) content.push({ type: 'text', text: part.text });
     } else if (part.type === 'thinking') {
-      // A Responses ciphertext is not an Anthropic signed thinking block.
-      // Unsigned reasoning summaries also cannot be safely replayed by clients.
       if (!part.sealed && part.text && part.signature) {
         content.push({ type: 'thinking', thinking: part.text, signature: part.signature });
       }
     } else if (part.type === 'tool_call') {
-      // Never emit a misleading tool_use event with silently altered arguments.
       const input = parseToolArguments(part.args);
       content.push({ type: 'tool_use', id: part.id || chatToolId(part.id), name: part.name, input });
     }
@@ -131,7 +120,6 @@ export function replyToResponsesObject(reply: IrReply): Record<string, unknown> 
       open.text += part.text;
     } else if (part.type === 'thinking') {
       if (part.sealed) {
-        // Anthropic redacted_thinking cannot be reused as Responses encrypted_content.
         flushOpen();
       } else if (part.text) {
         flushOpen();

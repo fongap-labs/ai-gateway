@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Credential-free provider routing metadata. Parsing a Gateway config must
-// not instantiate Provider implementation modules.
 
 import type { ExecutionSurface } from './execution.ts';
 
 export type ProviderProfile = Readonly<{
   wire: Readonly<{ protocol: 'openai' | 'anthropic'; surfaces: ReadonlyArray<ExecutionSurface> }>;
   streamUsage: boolean;
-  /** Explicit contract for image inputs on the provider's supported chat surfaces. */
   imageInput: boolean;
 }>;
 
@@ -33,7 +29,6 @@ const builtinProfiles: Readonly<Record<string, ProviderProfile>> = Object.freeze
   google: {
     wire: { protocol: 'openai', surfaces: ['chat_completions'] },
     streamUsage: true,
-    // Gemini's OpenAI-compatible Chat Completions surface accepts image inputs.
     imageInput: true,
   },
   'openai-image': { wire: { protocol: 'openai', surfaces: ['images_generations'] }, streamUsage: false, imageInput: false },

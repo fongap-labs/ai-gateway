@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Model Registry — single source of truth for logical-model catalog facts
-// and runtime policy. Catalog facts (capabilities, reasoning efforts,
-// modalities) and runtime policy (failover policy binding, visibility, UI
-// grouping) are distinct concepts: the registry resolves defaults per side
-// and never mixes them into one flat record. Runtime Nodes own only
-// logical -> upstream mappings.
 
 import type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
 import { loadModelsConfig } from './models.ts';
@@ -21,14 +14,12 @@ const DEFAULT_DISPLAY_ORDER = 100;
 const DEFAULT_GROUP = 'general';
 const DEFAULT_UI_VISIBLE = true;
 
-/** Resolved catalog facts: declared values with registry defaults applied. */
 export type ResolvedModelCatalog = {
   capabilities: Record<string, boolean>;
   reasoning_efforts: string[];
   modalities?: { input: string[]; output: string[] };
 };
 
-/** Resolved runtime policy: declared values with registry defaults applied. */
 export type ResolvedModelPolicy = {
   policy: string;
   visibility: string;
@@ -106,10 +97,6 @@ export function isWildcardNode(node: { models: Record<string, string> }): boolea
   return Object.keys(node.models).length === 0;
 }
 
-/** Resolve a logical model only through its configured physical model ID.
- * Explicit identity mappings are valid: a provider may use the same name as
- * the public alias. Only absent or invalid mappings fail closed.
- */
 export function resolvePhysicalModel(
   node: { models: Record<string, string> },
   logicalModel: string,
@@ -118,21 +105,14 @@ export function resolvePhysicalModel(
   if (!Object.hasOwn(node.models, logicalModel)) return null;
   const physical = node.models[logicalModel];
   if (typeof physical !== 'string' || !physical.trim()) return null;
-  // The operator owns the mapping; an explicit identical target is not an
-  // implicit alias leak. No model-name heuristics or capability assumptions.
   return physical.trim();
 }
 
-/** Logical catalog membership only; dispatch must use resolvePhysicalModel. */
 export function servesModel(node: { models: Record<string, string> }, model: string, knownModels?: ReadonlySet<string> | null): boolean {
   if (isWildcardNode(node)) return !!knownModels?.has(model);
   return Object.hasOwn(node.models, model);
 }
 
-// One spelling per logical model, matched case-insensitively. The MODELS_CONFIG
-// spelling wins when declared there; otherwise the first spelling seen wins.
-// Node model keys are rekeyed onto these names, so casing differences between
-// operators never split one logical model into two catalog entries.
 export function canonicalLogicalNames(names: Iterable<string>, configured: Iterable<string> = []): Map<string, string> {
   const canonical = new Map<string, string>();
   for (const name of [...configured, ...names]) {
@@ -142,7 +122,6 @@ export function canonicalLogicalNames(names: Iterable<string>, configured: Itera
   return canonical;
 }
 
-// One canonical Known Model Catalog: explicit node mappings + MODELS_CONFIG.
 export function collectKnownModels(
   nodes?: ReadonlyArray<{ models?: Record<string, string> } | null | undefined>,
   env?: Record<string, unknown>,
@@ -155,9 +134,7 @@ export function collectKnownModels(
   if (env) {
     try {
       configured = Object.keys(loadModelsConfig(env));
-    } catch {
-      /* config diagnostics own malformed MODELS_CONFIG */
-    }
+    } catch {}
   }
   const canonical = canonicalLogicalNames(names, configured);
   return new Set([...names, ...configured].map((name) => canonical.get(name.trim().toLowerCase()) ?? name.trim()));

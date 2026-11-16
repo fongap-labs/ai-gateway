@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Internal-only frame decoder. Caller must run Gateway's first-event guard
-// over the decoded client SSE and construct fresh public response headers.
 import {
   INFERENCE_FRAMED_STREAM_CONTENT_TYPE,
   INFERENCE_FRAMED_STREAM_FORMAT,

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Exactly one generation attempt. Unknown outcomes remain terminal, including
-// network errors after the Provider may have accepted a billable operation.
-
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
@@ -130,8 +127,6 @@ export async function execute(request: Request, env: GatewayEnv, invocation: Inv
       redirect: 'manual',
     });
   } catch {
-    // A generation may have started and billed even when its headers are lost.
-    // Never let the gateway replay this request on another provider.
     return problem(502, 'generation_outcome_unknown', 'attempted');
   } finally {
     clearTimeout(timeoutId);
@@ -151,7 +146,6 @@ export async function execute(request: Request, env: GatewayEnv, invocation: Inv
     if (Number.isFinite(contentLength) && contentLength > MAX_NATIVE_REPLY_BYTES) {
       return problem(502, 'generation_reply_too_large', 'dispatched');
     }
-    // OpenAI already returns the required public JSON schema.
     return new Response(upstream.body, { status: 200, headers: replyHeaders });
   }
 

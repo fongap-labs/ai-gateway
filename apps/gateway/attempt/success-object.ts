@@ -24,11 +24,6 @@ import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
-/**
- * Status for an Anthropic error body delivered inside HTTP 200. Anthropic
- * states the class of the failure in `error.type`; without a mapping every
- * such body would look like a server failure and would be rotated.
- */
 function anthropicEmbeddedErrorStatus(data: Record<string, unknown>): number {
   const error = data.error && typeof data.error === 'object' ? (data.error as Record<string, unknown>) : {};
   const numeric = Number(error.status);
@@ -55,7 +50,6 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
 
   detach();
 
-  // ---- OpenAI Responses (non-stream, NATIVE) ----
   if (route === 'openai_responses') {
     try {
       let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
@@ -109,9 +103,6 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
         return { response: gatewayError(request, env, route, 499, 'Client closed the request during assembly.', requestId) };
       }
       if (c.hedgeAbort?.signal.aborted) {
-        // A peer committed while this attempt was assembling its body. The
-        // abort must stay a neutral reliability end — never a classified
-        // failure that pollutes node health or the retry flow.
         return hedgeLoserOutcome(c, node, 'object', latencyMs);
       }
       if (isOversizedReplyError(error)) return stopOnOversizedReply(c, node, latencyMs, upstream.status);
@@ -121,12 +112,7 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     }
   }
 
-  // ---- OpenAI chat (non-stream, NATIVE) ----
   if (route === 'openai_chat') {
-    // fakeStream asks the Provider to stream so the Gateway can observe TTFT,
-    // but some Providers ignore stream:true and return a normal JSON object.
-    // Only assemble SSE when the response actually has a streaming content type;
-    // otherwise the bounded JSON path below is the safe fallback.
     if (upstreamWasStreaming && (!clientWantsStream || fakeStream)) {
       try {
         const data = await collectOpenAIStreamObject(upstream, request.signal, c.attemptDeadlineMs);
@@ -217,17 +203,12 @@ export async function handleObjectSuccess(s: SuccessArgs): Promise<AttemptOutcom
     return { response: synthesizeSseFromCompletion(data, env, request, extraHeaders) };
   }
 
-  // ---- Anthropic messages (non-stream, NATIVE) ----
   try {
     let data: (Record<string, unknown> & { error?: { status?: unknown; message?: string } }) | null;
     if (upstreamWasStreaming) data = await collectAnthropicMessageObject(upstream, request.signal, c.attemptDeadlineMs);
     else data = JSON.parse(await readBufferedReplyText(upstream, c.attemptDeadlineMs));
     if (data && typeof data === 'object' && (data.type === 'error' || data.error)) {
       const message = data.error?.message || 'Upstream returned an embedded error.';
-      // An Anthropic error body carries its class in `error.type`, not in a
-      // status field. Mapping it keeps a client-side rejection out of the
-      // server-failure class, so the request is not rotated and the node is
-      // not penalized for the client's mistake.
       const status = anthropicEmbeddedErrorStatus(data);
       const classification = classifyUpstreamStatus(status, upstream.headers, env, undefined, message);
       recordUndeliveredUpstreamAttempt(c, node, reportedUsageFromPayload(data));

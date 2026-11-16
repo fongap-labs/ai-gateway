@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// One private inference attempt using the same gateway-owned scheduler,
-// accounting, retry budget, and response finalizers as direct dispatch.
-// Once the binding exists there is NO automatic direct-provider fallback.
 
 import { readEnv } from '../../../packages/config-core/env.ts';
 import {
@@ -98,12 +94,8 @@ export async function dispatchInferenceAttempt(
   const invokeNode = center === 'perception' ? invokePerceptionNode : invokeInferenceNode;
   const { request, env, node, state, reqDescriptor, policy, limits, requestedModel, route } = c;
   const effectiveModel = reqDescriptor.model;
-  // The center executes conversion from the ORIGINAL protocol shape.
-  // Gateway's converted body remains an admission dry-run, not the wire body.
   const inputSurface = c.conversionContext ? inputSurfaceForClientRoute(c.conversionContext.clientRoute) : undefined;
   if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid', center);
-  // The native fast path already has validated raw JSON. Do not allocate and
-  // shallow-copy the parsed request on every retry when the wire body is reused.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
   const patchedRaw =
     !c.conversionContext && !c.fakeStream && c.rawBody?.text && typeof c.bodyJson.model === 'string'
@@ -119,17 +111,8 @@ export async function dispatchInferenceAttempt(
     if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
     outboundBody = JSON.stringify(body);
   }
-  // Keep the validated raw prompt available for sibling-model fallback.
-  // makeNodeStreamTrack releases it after the first committed SSE event;
-  // clearing it here forced another full stringify on every later attempt.
 
-  // v4 handles ordinary streams; authenticated v5 carries bounded budgets
-  // so Inference executes the same IR budget before producing public SSE.
   const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && c.bodyJson.stream === true);
-  // Default non-streaming Matrix calls use v6: the private center collects
-  // upstream SSE into the client object; Gateway no longer decodes it locally.
-  // Existing prefer-nonstream calls retain v3, but must also receive a
-  // center-tagged object rather than triggering Gateway's old Matrix fallback.
   const returnTranslatedObject = Boolean(c.conversionContext && !c.clientWantsStream);
   const returnCollectedObject = Boolean(returnTranslatedObject && !c.conversionContext?.isNonstreamPreferred);
   const streamBudget =
@@ -146,11 +129,6 @@ export async function dispatchInferenceAttempt(
   const hasBufferedResponse = (!c.conversionContext && !c.clientWantsStream && !c.fakeStream) || returnTranslatedObject;
   const sizeAllowanceMs = requestSizeAllowanceMs(reqDescriptor.bodyChars);
   const configuredHeadersMs = (policy.headersTimeoutMs ?? limits.headersTimeoutMs) + sizeAllowanceMs;
-  // A streaming Provider may withhold HTTP headers until its first token.
-  // Before that point, the header wait and first-output wait are the same
-  // prefill phase; treating the generic 15s header default as a separate hard
-  // stop repeatedly kills otherwise viable slow free-model attempts.
-  // Explicit policy/operator header timeouts remain authoritative.
   const explicitHeaderTimeout = policy.headersTimeoutMs != null || readEnv(env, 'AIG_UPSTREAM_HEADER_TIMEOUT_MS') !== undefined;
   const streamingHeadersMs =
     c.clientWantsStream && !c.fakeStream && !explicitHeaderTimeout
@@ -164,29 +142,19 @@ export async function dispatchInferenceAttempt(
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
     return stopForCenter(c, 504, 'gateway_inference_deadline_expired', center);
   }
-  // A sibling-hop cap protects an untried compatible model regardless of
-  // streaming mode. Buffered responses still use the full assigned attempt
-  // window for headers, but cannot consume the next model's escape window.
-  // No sibling means attemptCapMs is null and retains the full legacy window.
   const windowMs = c.attemptCapMs ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
-  // Preserve slow free-provider prefill within the already allocated
-  // attempt window. Further slicing this window can terminate valid streams.
   const headersTimeout = attemptHeadersTimeoutMs(
     hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
-  // Restore legacy/v0.1.5: a buffered Provider call may take the whole
-  // attempt window before response headers arrive, even via private Inference.
   const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
     hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
-  // Only a collected object has a buffering deadline. A real-time v4 stream
-  // must not inherit the object-assembly deadline after its headers arrive.
   const bufferedResponseDeadlineMs = returnTranslatedObject ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
   const controller = new AbortController();
@@ -231,28 +199,16 @@ export async function dispatchInferenceAttempt(
   } catch (error) {
     clearTimeout(timer);
     detach();
-    // Preserve the elapsed private-hop wait even when Service Binding never
-    // returns headers. Previously these expensive attempts appeared with
-    // headers_ms=-1 and no HTTP status in cross-isolate attempt telemetry.
     c.headersMs = Math.max(0, Date.now() - dispatchStartMs);
     if (c.hedgeAbort?.signal.aborted) return hedgeLoserOutcome(c, node, 'center_headers');
     if (request.signal.aborted) {
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - dispatchStartMs });
       return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
     }
-    // Missing Service Bindings are verifiably pre-dispatch. In contrast, a
-    // Service Binding rejection/timeout AFTER invocation has an unknown outcome:
-    // the private center may already have contacted the Provider. Do not blame
-    // the Key, or multiply a failing free Worker into eight more dispatches.
     if (error instanceof InferenceCenterUnavailable || error instanceof PerceptionCenterUnavailable) {
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
     c.upstreamStatus = hasTimedOut ? 504 : 502;
-    // A local timeout does not prove that the private center cancelled its
-    // Provider dispatch. Retrying could duplicate work and exhaust free keys.
-    // Do not log the raw exception or request body: a transport rejection can
-    // contain private URLs or headers. The stage and duration are enough to
-    // distinguish a Gateway deadline from an early Service Binding failure.
     c.logger?.error?.(
       `center-transport request=${c.requestId} center=${center} stage=${hasTimedOut ? 'gateway_headers_deadline' : 'binding_rejection'}` +
         ` elapsed_ms=${c.headersMs} status=${c.upstreamStatus} outcome=unknown`,
@@ -277,10 +233,6 @@ export async function dispatchInferenceAttempt(
   c.upstreamStatus = upstream.status;
 
   const execution = parseExecutionResponse(upstream);
-  // A private center can resolve with a 499 after the caller aborts, rather
-  // than rejecting its Service Binding promise. Client cancellation must
-  // retain the same neutral 499 behavior in both completion paths; treating
-  // an unmarked center response as an outage would incorrectly return 503.
   if (c.hedgeAbort?.signal.aborted) {
     detach();
     return hedgeLoserOutcome(c, node, 'center_headers');
@@ -292,9 +244,6 @@ export async function dispatchInferenceAttempt(
     return { response: gatewayError(request, env, route, 499, 'Client closed the request.', c.requestId) };
   }
   if (execution.result === EXECUTION_WIRE_RESULT.ATTEMPTED) {
-    // Legacy/v0.1.5 rotates another eligible node after a lost upstream
-    // response or headers timeout. The shared request budget, attempted-node
-    // filter, circuit cooldowns, and retry admission still bound each attempt.
     detach();
     const classified = classifyNetworkError(execution.phase === 'upstream-headers');
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs });
@@ -310,19 +259,12 @@ export async function dispatchInferenceAttempt(
     execution.code === EXECUTION_ERROR_CODE.CENTER_EXECUTION_DEADLINE
   ) {
     detach();
-    // Restore legacy's retry-on-timeout behavior after the execution window
-    // expires. The next candidate is still subject to the remaining budget.
     const classified = classifyNetworkError(true);
     recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: upstream.status });
     return { rotate: true, kind: classified.kind };
   }
-  // Public Gateway sees metadata-only nodes. The private center may exclude
-  // an invalid credential binding: this authenticated, exact pre-dispatch
-  // signal lets the scheduler try another candidate without charging usage.
   if (execution.result !== EXECUTION_WIRE_RESULT.DISPATCHED) {
     detach();
-    // A private Protocol Center can reject conversion before any Provider fetch.
-    // Preserve its precise 400/422 rather than reporting a generic 503 outage.
     const preDispatchCode = upstream.headers.get('x-aig-error-kind');
     if (
       execution.result === EXECUTION_WIRE_RESULT.NOT_DISPATCHED &&
@@ -348,9 +290,6 @@ export async function dispatchInferenceAttempt(
         ),
       };
     }
-    // A center-isolate memory refusal is request-local, not evidence of a bad
-    // Provider or an unavailable center. Preserve the Gateway's retryable
-    // body-budget 503 and never charge an upstream execution.
     if (upstream.status === 503 && execution.code === EXECUTION_ERROR_CODE.CENTER_BODY_BUDGET_EXHAUSTED) {
       rotateWithNeutralEnd(state, node, KIND.AUTH, c, true);
       return {
@@ -377,8 +316,6 @@ export async function dispatchInferenceAttempt(
     (upstream.headers.get('x-aig-response-format') !== INFERENCE_FRAMED_STREAM_FORMAT ||
       !upstream.headers.get('content-type')?.toLowerCase().includes(INFERENCE_FRAMED_STREAM_CONTENT_TYPE))
   ) {
-    // A v4 center MUST NOT return unframed SSE. Reject before any client
-    // response byte; no fallback to the direct Provider path.
     detach();
     return stopForDispatchedCenterContract(c, 'gateway_inference_stream_format_invalid', center);
   }
@@ -424,8 +361,6 @@ export async function dispatchInferenceAttempt(
     (upstream.headers.get('x-aig-response-format') !== INFERENCE_TRANSLATED_OBJECT_FORMAT ||
       !upstream.headers.get('content-type')?.toLowerCase().includes('application/json'))
   ) {
-    // Neither v3 nor v6 may fall back to decoding Provider SSE/JSON in Gateway.
-    // Every successful non-stream Matrix reply must be tagged by Inference.
     detach();
     return stopForDispatchedCenterContract(c, 'gateway_inference_object_format_invalid', center);
   }

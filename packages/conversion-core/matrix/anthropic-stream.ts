@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Anthropic Messages streaming side of the translation matrix.
-//
-// AnthropicStreamDecoder: upstream Anthropic SSE payloads -> IR events.
-// AnthropicStreamEncoder: IR events -> SSE chunks for an Anthropic client.
-//
-// The decoder closes itself on `message_stop` / `error`; keep-alive ping
-// payloads are ignored. The encoder buffers the reply tail (stop reason and
-// usage rollup) until finish(reply) is called.
 
 import type { IrEvent, IrReply } from '../ir.ts';
 import { isRecord } from '../ir.ts';
@@ -28,7 +19,6 @@ export class AnthropicStreamDecoder {
     return this.terminal;
   }
 
-  /** Feed one upstream SSE data payload; returns IR events and terminal state. */
   push(payload: unknown): { events: IrEvent[]; terminal: boolean } {
     if (this.terminal || !isRecord(payload)) return { events: [], terminal: false };
     switch (payload.type) {
@@ -45,9 +35,6 @@ export class AnthropicStreamDecoder {
             ...(Number.isFinite(usage.input_tokens) ? { inputTokens: Number(usage.input_tokens) } : {}),
           },
         ];
-        // Report the raw message_start usage too: it is the only place the
-        // cache_creation / cache_read counters arrive, and per-attempt token
-        // accounting needs them even though the client-side usage is rebuilt.
         if (isRecord(message.usage)) events.push({ type: 'usage', raw: message.usage });
         return { events, terminal: false };
       }
@@ -71,7 +58,6 @@ export class AnthropicStreamDecoder {
             this.openBlocks.set(index, null);
             return { events: [{ type: 'sealed', text: typeof block.data === 'string' ? block.data : '' }], terminal: false };
           default:
-            // server_tool_use / advisor blocks are provider-native history.
             this.openBlocks.set(index, null);
             return { events: [], terminal: false };
         }
@@ -128,7 +114,6 @@ export class AnthropicStreamEncoder {
   private blockIndex = -1;
   private toolArgsSeen = false;
 
-  /** Translate one IR event into zero or more client SSE chunks. */
   write(event: IrEvent): string[] {
     switch (event.type) {
       case 'start':
@@ -149,8 +134,6 @@ export class AnthropicStreamEncoder {
         ];
       case 'think':
       case 'sig':
-        // Cross-protocol streaming cannot prove the origin of a thinking
-        // signature. Never emit a replayable-looking Anthropic reasoning block.
         return [];
       case 'text': {
         const out = this.beginBlockChunks('text');
@@ -186,18 +169,15 @@ export class AnthropicStreamEncoder {
           }),
         ];
       case 'sealed':
-        // Opaque Responses reasoning is not Anthropic redacted_thinking.
         return [];
       case 'stop':
       case 'usage':
-        // Buffered: finish(reply) owns the reply tail.
         return [];
       default:
         return [];
     }
   }
 
-  /** Flush the buffered reply tail after the upstream went terminal. */
   finish(reply: IrReply): string[] {
     const chunks = this.closeChunks();
     chunks.push(
@@ -229,7 +209,6 @@ export class AnthropicStreamEncoder {
   private closeChunks(): string[] {
     if (this.open === null) return [];
     const out: string[] = [];
-    // A call without arguments still streams one (empty) input delta on the real wire.
     if (this.open === 'tool' && !this.toolArgsSeen) {
       out.push(
         sse('content_block_delta', { type: 'content_block_delta', index: this.blockIndex, delta: { type: 'input_json_delta', partial_json: '' } }),

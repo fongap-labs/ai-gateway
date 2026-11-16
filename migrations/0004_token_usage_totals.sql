@@ -1,10 +1,5 @@
 -- SPDX-License-Identifier: MIT
 -- Copyright (c) 2026 Fongap Labs
---
--- Lifetime cumulative totals (single-row, fixed low cardinality).
--- Provides an ever-growing cumulative KPI that survives hourly/daily/weekly
--- retention cleanup. Updated atomically per request via UPSERT on 'global' scope.
--- Backfilled once from existing token_usage_hourly at migration time.
 
 CREATE TABLE IF NOT EXISTS token_usage_totals (
     scope TEXT PRIMARY KEY CHECK (scope = 'global'),
@@ -17,9 +12,6 @@ CREATE TABLE IF NOT EXISTS token_usage_totals (
     updated_at TEXT NOT NULL DEFAULT ''
 );
 
--- Backfill the single global totals row from the full historical hourly table.
--- Migration runs exactly once; if the row already exists (re-run safety), the
--- ON CONFLICT clause leaves it unchanged — the initial baseline is correct.
 INSERT OR IGNORE INTO token_usage_totals (
     scope,
     input_tokens,

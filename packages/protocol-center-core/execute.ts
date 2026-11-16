@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// One stateless request conversion before private Inference execution.
-// Provider secrets, Key rotation, retries and upstream networking stay in Inference/Gateway.
 import { getLimits } from '../config-core/timeouts.ts';
 import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation, serializeExecutionError } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
@@ -64,18 +61,11 @@ export async function executeProtocolRequest(request: Request, env: GatewayEnv, 
     body,
     signal: request.signal,
   });
-  // Inference owns the one physical Provider dispatch. Protocol alone handles
-  // native-object conversion, framed SSE, output budgets and raw usage relay.
-  // Never buffer raw streamed bytes before passing them to the shared codec.
   try {
     const raw = await center.fetch(forwarding);
     if (!raw.ok || raw.headers.get('x-aig-result') !== EXECUTION_WIRE_RESULT.DISPATCHED) return raw;
-    // Token seeding (when upstream usage is absent) must inspect the physical
-    // protocol body, not the original client's different message schema.
     return convertPrivateMatrixResponse(raw, invocation, prepared.body, env, request.signal, new Headers(raw.headers));
   } catch {
-    // The Provider may already have executed. This is an ambiguous outcome;
-    // do not claim NOT_DISPATCHED or retry the original request.
     return serializeExecutionError(503, 'protocol_inference_outcome_unknown', { retryable: false });
   }
 }

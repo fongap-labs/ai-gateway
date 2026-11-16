@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Internal execution contract v1-v8 with optional phase deadlines. This module is intentionally runtime-neutral:
-// no Provider, Gateway, Cloudflare, Node.js or database imports.
 
 import { type InferenceStreamBudget, parseInferenceStreamBudget, serializeInferenceStreamBudget } from './inference-stream-budget.ts';
 import { validatedInternalTraceparent } from './trace-context.ts';
@@ -13,9 +10,7 @@ export const EXECUTION_OBJECT_CONTRACT_VERSION = '3' as const;
 export const EXECUTION_STREAM_CONTRACT_VERSION = '4' as const;
 export const EXECUTION_BUDGET_STREAM_CONTRACT_VERSION = '5' as const;
 export const EXECUTION_COLLECTED_OBJECT_CONTRACT_VERSION = '6' as const;
-/** A Protocol Center has prepared the outbound request; Inference still owns response adaptation. */
 export const EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION = '7' as const;
-/** v8: only Protocol Center may translate the raw physical Inference response. */
 export const EXECUTION_RAW_RESPONSE_CONTRACT_VERSION = '8' as const;
 export const INFERENCE_TRANSLATED_OBJECT_FORMAT = 'translated-object-v1' as const;
 export const EXECUTION_PATH = '/internal/execute' as const;
@@ -26,7 +21,6 @@ export type ExecutionSurface = 'chat_completions' | 'responses' | 'messages' | '
 export type ExecutionInputSurface = Exclude<ExecutionSurface, 'images_generations'>;
 export type ExecutionDisposition = 'not-dispatched' | 'attempted' | 'dispatched';
 
-/** Stable internal wire markers. "attempted" does not prove an upstream request was rejected. */
 export const EXECUTION_WIRE_RESULT = {
   NOT_DISPATCHED: 'not-dispatched',
   SKIPPED: 'skipped',
@@ -35,7 +29,6 @@ export const EXECUTION_WIRE_RESULT = {
 } as const;
 export type ExecutionWireResult = (typeof EXECUTION_WIRE_RESULT)[keyof typeof EXECUTION_WIRE_RESULT];
 
-/** Known cross-boundary errors that affect stage classification and retry decisions. */
 export const EXECUTION_ERROR_CODE = {
   CENTER_ROUTE_UNAVAILABLE: 'center_route_unavailable',
   CENTER_UPSTREAM_NETWORK: 'center_upstream_network',
@@ -62,7 +55,6 @@ export type ExecutionPhase =
 
 const KNOWN_EXECUTION_CODES: ReadonlySet<string> = new Set(Object.values(EXECUTION_ERROR_CODE));
 
-/** Preserve the existing private error envelope (Inference includes retryable, Generation does not). */
 export function serializeExecutionError(status: number, code: string, options: { retryable?: boolean; result?: ExecutionWireResult } = {}): Response {
   const { retryable, result } = options;
   const headers = new Headers({
@@ -75,11 +67,6 @@ export function serializeExecutionError(status: number, code: string, options: {
   return new Response(JSON.stringify({ error: { code, ...(retryable !== undefined ? { retryable } : {}) } }), { status, headers });
 }
 
-/**
- * Distinguish center transport from attempted Provider fetch and post-header
- * execution. Only an authenticated, exact "skipped" signal can prove that
- * a request was never dispatched; a missing or forged marker never can.
- */
 export function parseExecutionResponse(response: Response): {
   result: ExecutionWireResult | null;
   code: ExecutionErrorCode | null;
@@ -117,31 +104,20 @@ export function parseExecutionResponse(response: Response): {
 
 export type ExecutionInvocation = {
   requestId: string;
-  /** Server-generated parent span; untrusted client trace headers are excluded. */
   traceparent?: string;
   nodeId: string;
   logicalModel: string;
   surface: ExecutionSurface;
   deadlineMs: number;
-  /** Optional Provider response-header deadline, earlier than the overall request deadline. */
   upstreamHeadersDeadlineMs?: number;
-  /** Optional buffered conversion deadline, leaving time to return a result through Service Binding. */
   bufferedResponseDeadlineMs?: number;
-  /** The original client shape when Inference performs cross-protocol conversion. */
   inputSurface?: ExecutionInputSurface;
-  /** v7 only: authenticated Protocol Center performed request conversion; do not prepare it again. */
   preparedRequest?: true;
-  /** v8 only: Inference returns untouched Provider bytes and normalized private dispatch metadata. */
   rawResponse?: true;
-  /** Absent unless the Gateway explicitly prefers a non-streaming upstream. */
   preferNonstream?: true;
-  /** v3: translate a buffered object; v6: collect an upstream stream into a translated object in the private center. */
   returnObject?: true;
-  /** v4 only: private framed SSE for client-streaming requests. */
   returnStream?: true;
-  /** v5 streaming or v6 collected-object conversion budget; v3/v4 forbid this field. */
   streamBudget?: InferenceStreamBudget;
-  /** The authorized public model name, not the physical Provider model. */
   displayModel?: string;
 };
 
@@ -152,11 +128,9 @@ export type ExecutionError = {
 export type TranslatedObjectEnvelope = {
   kind: typeof INFERENCE_TRANSLATED_OBJECT_FORMAT;
   response: Record<string, unknown>;
-  /** Physical upstream usage, never the client-facing normalized usage. */
   upstreamUsage: unknown;
 };
 
-/** Validate private center response before Gateway treats it as pretranslated. */
 export function isTranslatedObjectEnvelope(value: unknown): value is TranslatedObjectEnvelope {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const envelope = value as Record<string, unknown>;
@@ -180,10 +154,8 @@ export type UsageEvent = {
   elapsedMs?: number;
 };
 
-/** A Request/Response transport: a Service Binding or standard private HTTP. */
 export type ExecutionTransport = { fetch(request: Request): Promise<Response> };
 
-/** Only gateway-generated metadata is included; no client credentials are forwarded. */
 export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeader: string, authKey: string): Headers {
   const headers = new Headers({
     'content-type': 'application/json',
@@ -226,7 +198,6 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   return headers;
 }
 
-/** This checks syntax and lifetime only. Centers MUST also verify node/model authorization. */
 export function parseExecutionInvocation(
   request: Request,
   allowedSurfaces: ReadonlySet<ExecutionSurface>,
@@ -278,8 +249,6 @@ export function parseExecutionInvocation(
   const preparedRequest = version === EXECUTION_PREPARED_REQUEST_CONTRACT_VERSION || rawResponse;
   if (preparedRequest ? rawPreparedRequest !== 'true' : rawPreparedRequest !== null) return null;
   if (rawResponse ? rawResponseHeader !== 'true' : rawResponseHeader !== null) return null;
-  // v7 is a transport ownership flag, not a new response mode. Validate every
-  // existing v2-v6 response-mode rule exactly as if the request were not prepared.
   const modeVersion = preparedRequest
     ? returnStream === 'true'
       ? rawStreamBudget !== null
@@ -370,7 +339,6 @@ function constantTimeMatch(received: string, expected: string): boolean {
   return diff === 0;
 }
 
-/** Center-specific high-entropy credential; does not authenticate end-user access keys. */
 export function authorizeExecutionRequest(request: Request, expectedKey: unknown, headerName: string): boolean {
   if (typeof expectedKey !== 'string' || expectedKey.length < 32) return false;
   const supplied = request.headers.get(headerName) ?? '';

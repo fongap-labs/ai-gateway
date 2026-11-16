@@ -64,12 +64,6 @@ export type PreflightOk = {
   clientWantsStream: boolean;
   fakeStream: boolean;
   bodyJson: Record<string, unknown>;
-  /**
-   * Original JSON text reused when dispatch needs no model/stream mutation,
-   * avoiding a second full JSON.stringify. dispatch.ts releases it once the
-   * first outbound body is built or sent, so a large body does not stay alive
-   * during streaming or fallback.
-   */
   rawBody?: RawBody;
   limits: Limits;
   exposeUpstreamInfo: boolean;
@@ -84,9 +78,6 @@ export type PreflightOk = {
 };
 export type PreflightResult = PreflightTerminal | PreflightOk;
 
-// Fingerprint for the failed-authorization window: 'ANON' when no credential is
-// presented, otherwise the first 16 hex digits of the SHA-256 of the presented
-// credentials. The plaintext credential is never stored or logged.
 async function authAttemptFingerprint(request: Request): Promise<string> {
   const credentials = presentedCredentials(request);
   if (credentials.length === 0) return 'ANON';
@@ -148,8 +139,6 @@ export async function preflight(
     return { ok: false, response: await readmeStatusSvgResponse(env) };
   }
 
-  // Subscription OAuth routes are retired. Do not accept legacy callbacks or
-  // form submissions; all such paths remain unavailable without token exchange.
   if (pathname.startsWith('/oauth/')) {
     return { ok: false, response: gatewayError(request, env, route, 404, 'Not found.', requestId) };
   }
@@ -161,15 +150,6 @@ export async function preflight(
       response: gatewayError(request, env, route, 500, 'Gateway misconfigured: no AIG_ACCESS_KEY_<GROUP> is set.', requestId),
     };
   }
-  // Failed-authorization throttle. It is checked before any credential is
-  // verified, and only failed attempts are charged, so valid traffic never
-  // consumes the budget.
-  // AIG_HOT_PATH_GUARDS: the fingerprint is the SHA-256 of the presented
-  // credential, and the throttle state is keyed BY it. While no failed attempt
-  // is tracked (the healthy steady state for most isolates), both the admit
-  // check and the success clear are no-ops, so the hash is computed lazily: on
-  // this isolate's first failure, or when there is tracked state to consult.
-  // Legacy mode hashes on every request byte-for-byte.
   const hotPathGuards = getLimits(env).hotPathGuards;
   let authFingerprint: string | null = !hotPathGuards || hasTrackedAuthFailures() ? await authAttemptFingerprint(request) : null;
   const authAttemptVerdict = admitAuthAttempt(authFingerprint ?? '', getLimits(env).authAttemptRpm);
@@ -198,13 +178,9 @@ export async function preflight(
   if (authFingerprint !== null) {
     clearAuthFailures(authFingerprint);
   } else if (hasTrackedAuthFailures()) {
-    // A concurrent failure was charged while this request was authorizing;
-    // keep the legacy "success clears my fingerprint" semantics in that window.
     clearAuthFailures(await authAttemptFingerprint(request));
   }
 
-  // Local diagnostics/model-list routes carry no upstream cost and do not
-  // consume the client-key RPM budget.
   if (route !== 'health' && route !== 'metrics' && route !== 'models' && route !== 'anthropic_count_tokens') {
     const limits = getLimits(env);
     const fingerprint = ('group' in authResult ? authResult.group : null) || 'ANON';
@@ -223,9 +199,6 @@ export async function preflight(
     }
   }
 
-  // AIG_HOT_PATH_GUARDS: the diagnostics bundle (dashboard / metrics views) is
-  // loaded only by the routes that render it; legacy mode keeps the historical
-  // unconditional import, which evaluates the module on every request path.
   if (!hotPathGuards) await import('../../src/observability/diagnostic-endpoints.ts');
   if (route === 'health' || route === 'metrics' || route === 'models') {
     const diag = await import('../../src/observability/diagnostic-endpoints.ts');
@@ -233,8 +206,6 @@ export async function preflight(
       return { ok: false, response: gatewayError(request, env, route, 403, 'This key group may not read diagnostics.', requestId) };
     }
     if (route === 'health') {
-      // Only an existing MAX/ULTRA diagnostics key may request an explicit
-      // private binding probe. Ordinary /health remains unchanged and local.
       if (requestUrl.searchParams.get('probe') === 'private-centers') {
         if (authResult.mode !== 'grouped' || (authResult.group !== 'MAX' && authResult.group !== 'ULTRA')) {
           return {
@@ -261,8 +232,6 @@ export async function preflight(
       return { ok: false, response: gatewayError(request, env, route, 404, 'Route not found.', requestId) };
   }
 
-  // Private image tooling must run with the dedicated AGENT gateway key.
-  // visibility:"internal" only hides discovery; it is not authentication.
   if (route === 'openai_images' && (authResult.mode !== 'grouped' || authResult.group !== 'AGENT')) {
     return { ok: false, response: gatewayError(request, env, route, 403, 'Image generation requires an authorized backend tool.', requestId) };
   }
@@ -307,9 +276,6 @@ export async function preflight(
     if (Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes) {
       return { ok: false, response: gatewayError(request, env, route, 413, 'Request body exceeds limit.', requestId) };
     }
-    // The Gateway handler supplies an incrementally metered body reservation.
-    // Legacy standalone preflight retains the historical chunked cap until
-    // all callers adopt measured admission.
     const chunked = !Number.isFinite(declaredLength) || declaredLength <= 0;
     const maxReadBytes = !observeBodyBytes && limits.requestAdmission && chunked ? limits.chunkedBodyMaxBytes : limits.maxBodyBytes;
     const text = await readBodyTextWithLimit(request, maxReadBytes, observeBodyBytes);
@@ -384,21 +350,14 @@ export async function preflight(
 
   const gatewayConfigForAuth = loadGatewayConfig(env);
   const knownModels = collectKnownModels(gatewayConfigForAuth.nodes, env);
-  // Client spelling is normalized onto the configured catalog entry before
-  // authorization and routing: context-length tags (`...[1m]`) are dropped and
-  // casing differences collapse onto the configured spelling. Unknown models
-  // keep their raw spelling so the fail-closed 404/403 paths are unchanged.
   const requestedModel = resolveClientModel(String(bodyJson.model || ''), knownModels);
   const modelConfig = loadModelsConfig(env)[requestedModel];
   const modalities = modelConfig?.catalog.modalities;
   if (route === 'openai_images') {
-    // Explicitly opt in to the internal image contract. A chat-only alias or
-    // an unclassified legacy Image-Creator mapping cannot enter image dispatch.
     if (modelConfig?.policy.visibility !== 'internal' || !modalities?.input.includes('text') || !modalities.output.includes('image')) {
       return { ok: false, response: gatewayError(request, env, route, 404, 'No authorized image generation model is configured.', requestId) };
     }
   } else if (modalities?.output.includes('image') && !modalities.output.includes('text')) {
-    // Do not waste eleven chat dispatches on a model declared as image-only.
     return { ok: false, response: gatewayError(request, env, route, 400, 'This model requires the image generation tool.', requestId) };
   }
   const modelAuthz = authorizeModel(requestedModel, knownModels, authResult);
@@ -495,16 +454,8 @@ export async function preflight(
   }
 
   const policy = getPolicy(requestedModel, loadModelsConfig(env), loadPoliciesConfig(env));
-  // AIG_REQUEST_ADMISSION: cap the request-wide logical attempts per streaming
-  // mode. A wide failover plan fans out into the whole node pool — every attempt
-  // bills at least one upstream dispatch — and a streaming attempt can never
-  // retry after the client stream is committed, so the leverage of attempt 4+
-  // is paid for by every caller. Operators re-widen with
-  // AIG_STREAM_MAX_ATTEMPTS / AIG_NONSTREAM_MAX_ATTEMPTS.
   const attemptCap = clientWantsStream ? limits.streamMaxAttempts : limits.nonStreamMaxAttempts;
   const requestPolicy = limits.requestAdmission ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, attemptCap) } : policy;
-  // A large prompt needs proportionally more wall-clock time for prefill, so the
-  // request budget grows with its size instead of timing out healthy upstreams.
   const serverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);
   const failoverBudgetMs = clientDeadlineMs === null ? serverBudgetMs : Math.min(serverBudgetMs, clientDeadlineMs - requestStartMs);
   return {
@@ -533,9 +484,6 @@ export async function preflight(
   };
 }
 
-// Eligibility for the image surface is narrower than a provider's general
-// wire capability. It requires explicit model mapping and a real API-key node;
-// a wildcard cannot claim image support.
 function imageNodeCanGenerate(node: RuntimeNode, logical: string, body: Record<string, unknown>): boolean {
   return canRouteImageGeneration(node, logical, body.size ?? '1024x1024');
 }

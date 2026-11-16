@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Runtime-neutral, fail-closed budget ticket for inference-stream v5.
-// The caller's own configuration is already clamped; these ceilings are an
-// additional trust boundary, never a source of default budget values.
 import type { MatrixConversionBudget } from '../conversion-core/budget.ts';
 
 export type InferenceStreamBudget = {

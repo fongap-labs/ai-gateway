@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Gateway finalizes private Inference Center Matrix results only. It never
-// parses native Provider replies or executes cross-protocol IR conversions.
 
 import { INFERENCE_TRANSLATED_OBJECT_FORMAT, isTranslatedObjectEnvelope } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
@@ -31,7 +28,6 @@ import { hedgeLoserOutcome, recordOutcome, stopAfterDispatchedCenterFault } from
 import { isOversizedReplyError, stopOnOversizedReply } from './oversize.ts';
 import type { SuccessArgs } from './success.ts';
 
-/** True when this conversion context is owned by the IR matrix (any pair). */
 export function isMatrixConversion(conversionContext: ConversionContext | null | undefined): boolean {
   if (!conversionContext) return false;
   const from = protocolToIr(conversionContext.clientRoute);
@@ -74,9 +70,6 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     ...(exposeUpstreamInfo ? { 'x-gateway-node': node.id, 'x-gateway-tier': node.tier } : {}),
   };
 
-  // The center owns every physical conversion. An object response must be
-  // explicitly tagged, and a streaming response must be privately framed.
-  // Reject anything else BEFORE parsing the body or exposing response bytes.
   const responseFormat = upstream.headers.get('x-aig-response-format');
   const contentType = upstream.headers.get('content-type')?.toLowerCase() || '';
   if (!c.clientWantsStream) {
@@ -120,15 +113,10 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Private inference stream format mismatch.', requestId));
   }
 
-  // ---- SSE upstream ----------------------------------------------------------
-  // First-event guard BEFORE any committed byte, with the upstream protocol's
-  // real-output predicate (same contract as the native and legacy paths).
   let upstreamUsage: unknown = null;
   let centerBudgetStop: BudgetStopReason | null = null;
   let guardSource: Response;
   try {
-    // Only authenticated private control frames are decoded here. They contain
-    // already-translated client SSE and separate physical usage metadata.
     const decoded = decodeFramedInferenceResponse(upstream, {
       onUsage: (usage) => {
         upstreamUsage = usage;
@@ -198,22 +186,14 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
   if (node.tier === 'tier-1') {
     recordTier1Ttft(node.id, state.requestedModel, c.ttftMs);
-    // First SSE event: same v2 probe-evidence contract as the native stream path.
     commitTier1RecoveryProbe(node.id, state.requestedModel);
   } else recordTtft(node.id, c.ttftMs, state.requestedModel);
   const hiddenStreamFailure = () => guardedStreamFailureReason(guarded);
   const headers = finalHeaders(env, request, guarded.headers, extraHeaders);
 
-  // Conversion output budgets are enforced by Inference, not Gateway.
   const budget = limits.conversionBudget ? { mode: limits.conversionBudgetMode } : null;
   if (c.clientWantsStream) {
     const handle = { clientStream: guarded.body as ReadableStream<Uint8Array>, budgetExceeded: () => centerBudgetStop };
-    // A budget stop in "error" mode is a NEUTRAL end with its own record: the
-    // relay/track outcome callbacks must NOT run their success/interrupted
-    // story on top of it (that would count the request as delivered or cool
-    // the node for a stream interrupted by the gateway itself). "truncate"
-    // mode renders a well-formed short reply instead, so the regular success
-    // accounting stays in charge and no intercept is needed.
     const budgetCut = (): boolean => budget !== null && handle.budgetExceeded() !== null && budget.mode === 'error';
     let isBudgetSettled = false;
     const settleBudgetOnce = (): void => {
@@ -257,7 +237,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
         outcome: string,
         d: { reason: string | null; durationMs: number; chunkCount: number; receivedBytes: number; completionMarkerSeen: boolean },
       ) => {
-        if (budgetCut()) return; // the [conversion-budget] log line stands in
+        if (budgetCut()) return;
         base.onStreamEnd(outcome, d);
       },
     };
@@ -265,10 +245,6 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
       if (!budgetCut()) recordTokens(c, node, upstreamUsage);
     };
 
-    // AIG_STREAM_PASSTHROUGH: the matrix has ALREADY translated the bytes once,
-    // so running the per-chunk decode + completion/usage/error/rewrite scans a
-    // SECOND time on the client stream only burns isolate CPU. Relay instead;
-    // delivered usage flows through the collector callback below.
     if (limits.streamPassthrough) {
       const relayed = relayStreamResponse(new Response(handle.clientStream, { status: 200, headers }), {
         idleTimeoutMs: limits.streamIdleTimeoutMs,
@@ -289,6 +265,5 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
     });
     return { response: tracked };
   }
-  // No client-side object assembly is permitted in the Gateway.
   return stopAfterDispatchedCenterFault(c, gatewayError(request, env, route, 502, 'Unexpected private inference response type.', requestId));
 }

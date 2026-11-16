@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Image tool returns must be rendered with their real media type. Checking
-// the byte signature avoids trusting a Provider's unvalidated file extension
-// or labeling a non-PNG image as PNG in a Chat data URI.
 export type GeneratedImageMime = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 
 export function generatedImageMime(base64: string): GeneratedImageMime | null {

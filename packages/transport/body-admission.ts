@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Neutral byte-admission primitive. Each runtime owns its own pool: Gateway
-// input admission and Inference Center execution MUST NOT share a counter
-// when exercised in the same test process.
 export const BODY_BYTES_IN_FLIGHT_BUDGET = 32 * 1024 * 1024;
 
 export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET): {
@@ -26,9 +22,6 @@ export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET
         inFlightBytes = Math.max(0, inFlightBytes - bytes);
       };
     },
-    // Unknown-length requests reserve only a small initial allowance, then
-    // account for each actual chunk BEFORE buffering it. Concurrent bodies can
-    // grow only while their combined measured size stays inside the budget.
     admitGrowing(declaredBytes, hasBody) {
       const declared = Number.isSafeInteger(declaredBytes) && declaredBytes > 0 ? declaredBytes : 0;
       const minimum = hasBody ? 128 * 1024 : 0;

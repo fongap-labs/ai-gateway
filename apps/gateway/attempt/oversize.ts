@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// oversize.ts - terminal outcome for an upstream reply larger than the gateway
-// buffers. Rotating would only regenerate the same oversized answer elsewhere.
-
 import { classifyOversizedReply } from '../../../src/reliability/classify.ts';
 import { recordOutcome } from '../../../src/request/attempt/outcome.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';

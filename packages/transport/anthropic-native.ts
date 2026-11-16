@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Anthropic transport: upstream path, native headers and protocol-specific
-// response semantics for every node with protocol "anthropic".
-//
-// Scope: request shape (path/headers/model substitution/stream detection) and
-// protocol-specific response handling ONLY. Reliability belongs to
-// src/scheduler and src/reliability.
-//
-// Surface:
-//   messages -> {base_url}/v1/messages  (NATIVE - never converted to/from
-//                                         OpenAI chat completions)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -28,16 +17,6 @@ export function resolveAnthropicPath(surface: Surface): string {
   return path;
 }
 
-// Anthropic-native upstream headers. The credential is sent as `x-api-key`
-// (the Anthropic auth header) - NOT "Authorization: Bearer", which is an
-// OpenAI-ism. The client's own gateway key (x-api-key / Authorization) is
-// never forwarded: only the node credential reaches the upstream.
-//
-// anthropic-version: forwarded from the client when present, otherwise the
-// current stable version. anthropic-beta: forwarded verbatim when the client
-// opted into a beta feature - dropping it would silently change behavior.
-//
-// Static API Token nodes authenticate with x-api-key.
 export function buildAnthropicHeaders(request: Request, credential: string, requestId: string): Headers {
   const headers = new Headers();
   headers.set('x-api-key', credential);
@@ -53,16 +32,6 @@ export function buildAnthropicHeaders(request: Request, credential: string, requ
   return headers;
 }
 
-// Anthropic-native first-real-output predicate for the first-event guard:
-// only content_block_delta events carrying text / thinking / tool-input
-// deltas are real model output. Lifecycle events (message_start,
-// content_block_start, content_block_stop, ping, message_delta) are NOT
-// commit points - a node that streams them before dying can still fail over.
-// Anthropic-native first-real-output predicate for the first-event guard:
-// only content_block_delta events carrying text / thinking / tool-input
-// deltas are real model output. Lifecycle events (message_start,
-// content_block_start, content_block_stop, ping, message_delta) are NOT
-// commit points - a node that streams them before dying can still fail over.
 export function isAnthropicNativeRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   if (json?.type !== 'content_block_delta') return false;
@@ -86,12 +55,6 @@ export function isAnthropicMessageMeaningful(json: unknown): boolean {
   return false;
 }
 
-// Conversion-aware predicate for cross-protocol A->O streaming (Anthropic upstream,
-// OpenAI client). Reasoning alignment converts thinking_delta to the
-// OpenAI-standard reasoning_content field, so it is real client-visible
-// output and commits the failover boundary — a long thinking phase is not a
-// first-event timeout. Real output = non-empty text_delta, thinking_delta, OR
-// input_json_delta.
 export function isAnthropicNativeRealOutputForConversion(json: unknown): boolean {
   if (!isRecord(json)) return false;
   if (json?.type !== 'content_block_delta') return false;

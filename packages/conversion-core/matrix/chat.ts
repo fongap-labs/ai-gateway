@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// OpenAI Chat Completions side of the translation matrix: request parse/build
-// and whole-object round trips. Streaming decode/encode lives in
-// chat-stream.ts; this module only handles bodies.
 
 import { MatrixDiag } from '../diag.ts';
 import {
@@ -122,16 +118,11 @@ function chatContentParts(content: unknown, images: IrPart[], diag: MatrixDiag):
   return parts;
 }
 
-/** Parse an OpenAI Chat Completions request body into the canonical IR. */
 export function parseChatRequest(body: Record<string, unknown>): { request: IrRequest; diag: MatrixDiag } {
   if (!isRecord(body)) throw new ConversionError('conversion_not_supported: request body is not an object');
   assertFields(body, CHAT_ALLOWED_FIELDS, 'request');
   const diag = new MatrixDiag();
 
-  // Streaming usage is a transport/reporting hint, not part of the model
-  // prompt. Accept the standard OpenAI shape before protocol translation;
-  // the target protocol owns its own usage reporting and must not receive
-  // OpenAI-only stream_options.
   if (body.stream_options !== undefined) {
     if (!isRecord(body.stream_options)) {
       throw new ConversionError('conversion_not_supported: stream_options must be an object');
@@ -230,7 +221,6 @@ export function parseChatRequest(body: Record<string, unknown>): { request: IrRe
         }
         if (typeof tc.function.arguments !== 'string')
           throw new ConversionError('conversion_not_supported: tool_call arguments must be a JSON string');
-        // Arguments must decode to a JSON object; anything else cannot be replayed on the target.
         parseToolArguments(tc.function.arguments);
         parts.push({ type: 'tool_call', id, name: tc.function.name, args: tc.function.arguments });
       }
@@ -317,8 +307,6 @@ function chatStructuredSchema(body: Record<string, unknown>, diag: MatrixDiag): 
   return { schema: js.schema };
 }
 
-// ---- Build: IR -> OpenAI Chat request body ---------------------------------
-
 export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
   const out: Record<string, unknown> = { model: ir.model };
   const messages: Record<string, unknown>[] = [];
@@ -359,7 +347,6 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
 
   for (const message of ir.messages) {
     if (message.role === 'system') {
-      // Legacy contract: a mid-conversation system run becomes its own plain user message.
       flushToolResults();
       flushUserParts();
       messages.push({ role: 'user', content: message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('\n') });
@@ -367,7 +354,6 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
       continue;
     }
     if (message.role === 'user') {
-      // A plain-text string user message stays a string on the wire (the legacy shape).
       const [only] = message.parts;
       if (message.stringContent && message.parts.length === 1 && only?.type === 'text' && only.text) {
         flushToolResults();
@@ -392,7 +378,6 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
       }
       continue;
     }
-    // assistant
     flushToolResults();
     flushUserParts();
     const msg: Record<string, unknown> = { role: 'assistant', content: '' };
@@ -401,13 +386,11 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
     for (const part of message.parts) {
       if (part.type === 'text') content += part.text;
       else if (part.type === 'thinking') {
-        // Prior-turn reasoning is not replayed to Chat upstreams (legacy contract).
         diag.add({ feature: 'thinking_history', action: 'dropped' });
       } else if (part.type === 'tool_call') {
         diag.add({ feature: 'tool_calls', action: 'mapped' });
         toolCalls.push({ id: toolCallIdForChat(part.id), type: 'function', function: { name: part.name, arguments: ensureJsonArgs(part.args) } });
       } else if (part.type === 'image') {
-        // Assistant images mimic genie outputs; Chat has no portable form.
         diag.add({ feature: 'assistant_image', action: 'dropped' });
       }
     }
@@ -422,7 +405,6 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
   if (ir.maxTokens != null) out.max_tokens = ir.maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
-  // top_k is an Anthropic-native control; this target cannot carry it.
   if (ir.topK != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
   if (ir.stop.length) out.stop = ir.stop.length === 1 ? ir.stop[0] : ir.stop;
   if (ir.tools.length) {
@@ -490,8 +472,6 @@ export function structuredOutputInstruction(schema: Record<string, unknown>): st
   ].join('\n');
 }
 
-// ---- Whole-object round trips ---------------------------------------------
-
 export function chatStopToIr(reason: unknown): IrStop {
   switch (reason) {
     case 'length':
@@ -521,7 +501,6 @@ export function chatStopFromIr(stop: IrStop): string {
   }
 }
 
-/** Assemble a full Chat completion object from IR parts (upstream replies). */
 export function chatObjectToIr(data: Record<string, unknown>): { reply: IrReply; diag: MatrixDiag } {
   const diag = new MatrixDiag();
   const choices = Array.isArray(data.choices) ? data.choices : [];
@@ -539,7 +518,6 @@ export function chatObjectToIr(data: Record<string, unknown>): { reply: IrReply;
   if (typeof message.refusal === 'string' && message.refusal) parts.push({ type: 'text', text: message.refusal });
   for (const tc of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
     if (!isRecord(tc)) continue;
-    // Chat clients may omit `type` on a response tool call; only an explicit non-function type is dropped.
     if ((tc.type !== undefined && tc.type !== 'function') || !isRecord(tc.function)) {
       diag.add({ feature: 'tool_calls', action: 'dropped' });
       continue;

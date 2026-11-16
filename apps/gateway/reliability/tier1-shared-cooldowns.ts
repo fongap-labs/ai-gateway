@@ -1,25 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Long Tier 1 cooldowns shared across isolates. Tier 1 state lives in isolate
-// memory, so every new isolate used to spend a real request rediscovering that a
-// key's credential is rejected or its daily quota is gone. Cooldowns that are
-// long-lived evidence (see Tier1SharedCooldown) and still have at least
-// SHARED_COOLDOWN_MIN_MS to run are written to one KV key; an isolate reads it
-// on its first Tier 1 request and then at most once per REFRESH_MS, and adopts
-// the entries.
-//
-// KV budget (Workers Free: 100,000 reads and 1,000 writes a day per account,
-// shared with session affinity): reads are bounded by active isolates, not by
-// traffic, and a write happens only when an isolate learns something the key
-// does not hold yet, so a burst of failures on one key costs one write.
-//
-// Best effort by design: KV is eventually consistent, two isolates writing at
-// once can drop an entry, and a read that is slow does not hold the request.
-// Losing an entry only costs one more failed request, as before. Entries are
-// never cleared early: none of the shared kinds ends before its deadline.
-//
-// Stored value: JSON array of { node, model?, until (epoch ms), reason, quota? }.
 
 import type { ExecutionContextLike, GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { adoptTier1Cooldown, type Tier1SharedCooldown, tier1LongCooldowns } from '../../../src/reliability/tier1-state.ts';
@@ -30,8 +10,6 @@ export const SHARED_COOLDOWN_MIN_MS = 5 * 60_000;
 const REFRESH_MS = 5 * 60_000;
 const READ_TIMEOUT_MS = 50;
 const MIN_KV_TTL_SECONDS = 60;
-// Failed writes are retried only after a bounded backoff on the next real
-// cooldown outcome. Never schedule background probes or unbounded retries.
 export const SHARED_COOLDOWN_WRITE_RETRY_MS = 60_000;
 
 type CooldownKV = {
@@ -45,7 +23,6 @@ let isWriting = false;
 let isDirty = false;
 let isWriteRetryPending = false;
 let writeRetryAfter = 0;
-// Per-isolate counters only. Observing them never performs KV or D1 I/O.
 const kvStats = { reads: 0, readFailures: 0, writes: 0, writeFailures: 0 };
 
 export function snapshotSharedTier1Cooldowns() {
@@ -83,17 +60,11 @@ function parseEntries(value: unknown): Tier1SharedCooldown[] {
 
 const entryKey = (entry: Tier1SharedCooldown): string => `${entry.node}\u0000${entry.model ?? ''}`;
 
-// A cooldown is news when it is not shared yet, or extends the shared deadline by
-// at least SHARED_COOLDOWN_MIN_MS; a smaller extension only lets another isolate
-// probe the key once more when the old deadline passes.
 function isNews(entry: Tier1SharedCooldown): boolean {
   const current = known.find((candidate) => entryKey(candidate) === entryKey(entry));
-  // A failed flush did not publish this cache even if the in-memory entry
-  // already exists. Allow the same long cooldown to be resent after backoff.
   return isWriteRetryPending || !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
 }
 
-// Union by (node, model), keeping the later deadline, without expired entries.
 function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number): Tier1SharedCooldown[] {
   const byKey = new Map<string, Tier1SharedCooldown>();
   for (const entry of [...a, ...b]) {
@@ -104,7 +75,6 @@ function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number):
   return [...byKey.values()];
 }
 
-/** Adopt the cooldowns other isolates shared. Waits at most READ_TIMEOUT_MS. */
 export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number = Date.now()): Promise<void> {
   const kv = kvOf(env);
   if (!kv || now - readAt < REFRESH_MS) return;
@@ -117,7 +87,6 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
       for (const entry of entries) adoptTier1Cooldown(entry);
     } catch {
       kvStats.readFailures++;
-      /* sharing is advisory; a failed read leaves local state unchanged */
     }
   })();
   let timerId: ReturnType<typeof setTimeout> | undefined;
@@ -131,7 +100,6 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
   }
 }
 
-/** Publish any long cooldown this account now carries. Writes are coalesced. */
 export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLike | undefined, accountId: string, now: number = Date.now()): void {
   const kv = kvOf(env);
   if (!kv || now < writeRetryAfter) return;
@@ -145,9 +113,7 @@ export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLi
   const task = flush(kv);
   try {
     ctx?.waitUntil?.(task);
-  } catch {
-    /* the write still runs; it is only not extended past the response */
-  }
+  } catch {}
 }
 
 async function flush(kv: CooldownKV): Promise<void> {
@@ -155,7 +121,6 @@ async function flush(kv: CooldownKV): Promise<void> {
   try {
     do {
       isDirty = false;
-      // Merge with what other isolates wrote since this one last read.
       kvStats.reads++;
       let prior: string | null | undefined;
       try {
@@ -179,8 +144,6 @@ async function flush(kv: CooldownKV): Promise<void> {
       }
     } while (isDirty);
   } catch {
-    // Keep local protection; it is not proof that the KV write succeeded.
-    // Back off rather than spending the Workers Free KV budget on every 429.
     isWriteRetryPending = true;
     writeRetryAfter = Date.now() + SHARED_COOLDOWN_WRITE_RETRY_MS;
   } finally {

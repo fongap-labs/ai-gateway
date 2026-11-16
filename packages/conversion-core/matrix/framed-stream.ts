@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Private v4 stream adapter. Not connected to dispatch until the Gateway
-// can own first-output admission and settle every raw usage/budget event.
 import {
   frameInferenceStream,
   INFERENCE_FRAMED_STREAM_CONTENT_TYPE,
@@ -37,9 +34,6 @@ export function buildFramedMatrixResponse(
   });
 }
 
-/** Provider ignored stream:true and returned one native JSON object.
- *  Only Inference decodes it, then frames client-facing synthetic SSE with
- *  physical usage in the private control channel (never public output). */
 export function buildFramedMatrixObjectFallback(native: Record<string, unknown>, from: IrProtocol, to: IrProtocol, displayModel: string): Response {
   const { reply } = replyFromNativeObject(from, native);
   if (!reply.parts.some((part) => part.type === 'text' && part.text) && !reply.parts.some((part) => part.type === 'tool_call')) {

@@ -3,16 +3,10 @@
 
 import { createSseScanner } from './sse.ts';
 
-// Conversion must preserve the upstream terminal boundary and propagate
-// cancellation all the way to the upstream reader. Read only when the
-// downstream can accept data, rather than eagerly buffering a slow client's
-// converted output in a start() task.
 export function convertSseStream(
   body: ReadableStream<Uint8Array> | null | undefined,
   onData: (data: string, controller: ReadableStreamDefaultController<Uint8Array>) => void,
   isTerminal: () => boolean,
-  // Called when the upstream closes before a terminal event; returning true accepts
-  // the close as a complete reply (it may enqueue the closing frames first).
   onEnd?: (controller: ReadableStreamDefaultController<Uint8Array>) => boolean,
 ): ReadableStream<Uint8Array> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -30,7 +24,6 @@ export function convertSseStream(
         try {
           await upstream.cancel(reason);
         } catch {
-          // The upstream may already be closed or cancelled.
         } finally {
           upstream.releaseLock();
         }
@@ -55,8 +48,6 @@ export function convertSseStream(
       if (cancelled || isFinished || !reader || !scanner) return;
       try {
         let hasReachedEnd = false;
-        // A single upstream chunk can contain several SSE events. Finish that
-        // chunk, but never fetch another while the output queue is full.
         while (!cancelled && !isTerminal() && (controller.desiredSize ?? 0) > 0) {
           const { done, value } = await reader.read();
           if (cancelled) return;

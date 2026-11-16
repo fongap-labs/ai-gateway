@@ -1,19 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tier 1 selection — Eligibility -> Affinity -> P2C -> Score.
-//
-// No full ordering. From the eligible pool we sample two distinct accounts
-// and keep the lower score; a single eligible account is chosen directly.
-// UNKNOWN accounts (ttftEwma == null) still get sampled — a small
-// exploration factor gives them a chance without distorting known data.
-//
-// Live in-flight work is a soft ranking/hedge-admission signal by default.
-// There is no guessed node concurrency or RPM ceiling; an explicit policy
-// `max_in_flight` may opt into a local per-account admission ceiling.
-//
-// This module touches Tier 1 ONLY. Tier 2 / Tier 3 keep using
-// src/scheduler/scheduler.ts.
 
 import { tier1CanAcceptHedge, tier1SelectionHeatFactor } from '../../../src/reliability/tier1-heat.ts';
 import { claimTier1Slot, isTier1Eligible, makeTier1ReleaseToken, maybeTransitionToHalfOpen } from '../../../src/reliability/tier1-state.ts';
@@ -23,28 +9,12 @@ import type { PickedCandidate, RoutableRequest } from '../../../src/types/schedu
 import { cryptoRng } from '../../../src/utils/crypto-rng.ts';
 import { affinityShouldEscape, tier1AffinityFactor } from './tier1-affinity.ts';
 
-// Conservative fixed estimate of one upstream attempt cost when no P99 TTFT is
-// available. Used only to decide whether the remaining request deadline can
-// fit one more Tier 1 attempt — the shared failover budget stays the real
-// wall-clock cap.
 const CONSERVATIVE_ATTEMPT_COST_MS = 500;
-// Remaining deadline too small to fit one more attempt? Tier 1 then yields to
-// the Tier Router immediately instead of burning the budget on a doomed attempt.
 export function tier1DeadlineTooSmall(remainingBudgetMs: number, p99TtftMs?: number | null): boolean {
   const cost = p99TtftMs && p99TtftMs > 0 ? p99TtftMs * 3 : CONSERVATIVE_ATTEMPT_COST_MS;
   return remainingBudgetMs < cost;
 }
 
-// Pick and claim one Tier 1 candidate, or null when the pool is exhausted.
-// Returns { node, releaseToken, escapedFromAffinity } on success, or
-// { raceLost: true, raceLostNodeId } when runtime admission moved under us, or
-// null when no eligible candidate remains.
-//
-//   affinityAccountId  — the session's preferred account (null = cold session)
-//   evaluateAffinity  — whether a successful non-affinity winner may migrate
-//     the stored binding (escape window reached).
-//   excludeId          — skip the hedge primary when picking a twin. A non-null
-//     value also marks hedge selection, where soft spare-capacity gating applies.
 export function pickTier1Candidate(
   tier1Nodes: ReadonlyArray<RuntimeNode>,
   req: RoutableRequest,
@@ -74,12 +44,8 @@ export function pickTier1Candidate(
     if (node.id === excludeId) continue;
     if (raceLostIds?.has(node.id)) continue;
     if (attempted.has(node.id)) continue;
-    // Lazily move expired cooldowns to HALF_OPEN so a real request can probe
-    // recovery — no background probe is ever sent.
     maybeTransitionToHalfOpen(node.id, req.model, now);
     if (!isTier1Eligible(node, req, now, knownModels, maxInFlight)) continue;
-    // Hedge is optional latency work. Keep twins away from already-busy
-    // accounts using soft live-load pressure; primary selection is unaffected.
     if (excludeId && !tier1CanAcceptHedge(node)) continue;
     eligible.push(node);
   }
@@ -99,10 +65,6 @@ export function pickTier1Candidate(
     if (!only) return null;
     chosen = only;
   } else {
-    // P2C remains a real two-account comparison even with affinity. When the
-    // preferred account is eligible it occupies one sample slot and competes
-    // with one random peer. Live in-flight heat weakens affinity and softly
-    // demotes busy accounts without ever removing them from the primary pool.
     const { a, b } = sampleTwo(eligible, rng, affinityNode);
     const scoreA = scoreFor(a);
     const scoreB = scoreFor(b);
@@ -110,8 +72,6 @@ export function pickTier1Candidate(
     const p2cWinnerScore = Math.min(scoreA, scoreB);
 
     if (affinityNode && affinityNode.id !== p2cWinner.id) {
-      // Affinity vs this round's P2C winner only — never a full-pool scan.
-      // sampleTwo pins affinityNode as sample a; do not score it twice.
       const affScore = scoreA;
       if (evaluateAffinity && affinityShouldEscape(affScore, p2cWinnerScore)) {
         chosen = p2cWinner;
@@ -120,8 +80,6 @@ export function pickTier1Candidate(
       } else if (evaluateAffinity) {
         chosen = affinityNode;
       } else {
-        // A peer can serve this individual request when its biased score wins,
-        // but the durable binding is not migrated before the escape window.
         chosen = p2cWinner;
       }
     } else {
@@ -129,15 +87,9 @@ export function pickTier1Candidate(
     }
   }
 
-  // A stored account that is no longer eligible is replaced only after the
-  // selected real request succeeds.
   if (affinityAccountId && !affinityNode) updateAffinity = true;
 
   if (!claimTier1Slot(chosen, now, req.model, maxInFlight)) {
-    // Lost the race for runtime admission (for example a recovery probe or an
-    // explicit max_in_flight ceiling moved under us). This is not a node
-    // failure. Return the chosen identity so the caller can exclude it for this
-    // tier pass and make guaranteed progress.
     return { raceLost: true, raceLostNodeId: chosen.id };
   }
   return {
@@ -149,14 +101,8 @@ export function pickTier1Candidate(
   };
 }
 
-// Sample two distinct indices uniformly. P2C needs randomness, not sorting.
-// `rng` is an injectable uniform [0,1) source for deterministic tests; in
-// production cryptoRng is used so behaviour stays best-effort random and
-// no new env knob is required.
 function sampleTwo(arr: RuntimeNode[], rng: () => number = cryptoRng, affinityNode: RuntimeNode | null = null): { a: RuntimeNode; b: RuntimeNode } {
   if (affinityNode) {
-    // Skip the pinned index directly instead of allocating a second candidate
-    // array on every sticky-session request. The peer distribution is unchanged.
     const pinnedIndex = arr.indexOf(affinityNode);
     if (pinnedIndex < 0) throw new Error('tier1 P2C invariant: affinity candidate is not eligible');
     let peerIndex = Math.floor(rng() * (arr.length - 1));
@@ -174,12 +120,6 @@ function sampleTwo(arr: RuntimeNode[], rng: () => number = cryptoRng, affinityNo
   return { a, b };
 }
 
-/**
- * Live availability of one logical model for family fallback: the lowest Tier 1
- * score among nodes that can take it right now. Infinity means no node can
- * (cooling, circuit open, quota spent, or at an explicit max_in_flight ceiling).
- * Lower is freer.
- */
 export function tier1ModelAvailability(
   tier1Nodes: ReadonlyArray<RuntimeNode>,
   req: RoutableRequest,

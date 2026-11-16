@@ -1,17 +1,5 @@
 -- SPDX-License-Identifier: MIT
 -- Copyright (c) 2026 Fongap Labs
---
--- Tier 2 subscription OAuth credential storage. These tables live in the same
--- D1 instance as the token-usage observability tables but are owned by the
--- src/oauth module; the observability store never reads or writes them.
---
--- Access/refresh tokens are stored AES-GCM encrypted with the
--- AIG_TOKEN_ENCRYPTION_KEY Worker secret. D1 at-rest encryption is defense in
--- depth, not the only layer: an account-level D1 read without the Worker
--- secret must not reveal usable upstream tokens.
---
--- Forward-compatibility: additive only. The previous Worker ignores both
--- tables, so a Worker rollback over an applied migration stays safe.
 
 CREATE TABLE IF NOT EXISTS subscription_tokens (
   node_id TEXT PRIMARY KEY,

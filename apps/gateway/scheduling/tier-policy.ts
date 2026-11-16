@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tier Execution Loop helpers. Tier order is a product invariant:
-// Tier 1 (free API capacity) -> Tier 2 (API Token reserve). Attempt allocation therefore has one explicit
-// precedence model; lower-tier node counts never pull surplus budget away from
-// a higher tier.
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { tier1CountDispatchableNodes, tier1HasDispatchableNode } from '../../../src/reliability/tier1-state.ts';
@@ -66,10 +61,6 @@ export function pickForTier(
   attempted: Set<string>,
   opts: PickForTierOpts = {},
 ): TierPickResult {
-  // The tier loop resolves the ranking algorithm through one routing-strategy
-  // dispatcher; it never branches on the algorithm by tier. Each strategy
-  // delegates to its underlying picker unchanged (Tier 1 P2C+TTFT+affinity,
-  // Tier 2 API Token health/latency selection).
   const r = routingStrategyFor(tierNumber).pick(tierNodes, req, attempted, opts);
   if (!r) return null;
   if (r.raceLost) return { raceLost: true, raceLostNodeId: r.raceLostNodeId };
@@ -82,8 +73,6 @@ export function pickForTier(
   };
 }
 
-// Mulberry32 is used only when TIER1_SCHEDULER_SEED is set for deterministic
-// tests. Production leaves it unset and uses cryptoRng.
 export function makeTier1Rng(env: GatewayEnv): () => number {
   const seedRaw = String(env?.TIER1_SCHEDULER_SEED ?? '').trim();
   if (!seedRaw) return cryptoRng;
@@ -102,18 +91,6 @@ export function makeTier1Rng(env: GatewayEnv): () => number {
   };
 }
 
-// One allocation model only:
-//
-// - a tier with no dispatchable candidate gets 0;
-// - explicit tier_attempts values are hard caps and are reserved first;
-// - an explicit 0 disables that tier;
-// - each remaining dispatchable tier gets a one-attempt baseline while budget
-//   permits, in strict Tier 1 -> Tier 2 order;
-// - every remaining surplus attempt goes to the FIRST adjustable dispatchable
-//   tier, preserving the product's free -> API Token precedence.
-//
-// There is deliberately no weighted/live-node cross-tier splitter. Candidate
-// count influences selection INSIDE a tier, never the tier hierarchy itself.
 export function computeTierCaps(
   tiers: TierMap<RuntimeNode[]>,
   reqDescriptor: RoutableRequest,
@@ -126,9 +103,6 @@ export function computeTierCaps(
   const now = Date.now();
   const caps: TierMap<number> = { 1: 0, 2: 0 };
 
-  // Explicit tier attempts are a REQUEST-WIDE hard cap: a protocol fallback or
-  // a later model round may only use what the earlier passes left. Without this
-  // subtraction every pass would be granted the full tier budget again.
   const applyConsumed = (): TierMap<number> => {
     if (!consumed) return caps;
     for (const tier of TIER_ORDER) caps[tier] = Math.max(0, (caps[tier] ?? 0) - (consumed[tier] ?? 0));
@@ -162,12 +136,6 @@ export function computeTierCaps(
   return applyConsumed();
 }
 
-/**
- * Reclaim attempts a higher-priority tier could not use (no further eligible
- * node) for the next lower-priority tier without increasing the request's total
- * attempt budget. Explicit tier_attempts remain hard caps, including zero.
- * The caller invokes this only after the current tier has exhausted selection.
- */
 export function redistributeUnusedTierAttempts(
   caps: TierMap<number>,
   afterTier: Tier,
@@ -181,9 +149,6 @@ export function redistributeUnusedTierAttempts(
   return caps;
 }
 
-// Number of dispatches that can still happen in the current model/protocol pass.
-// This is recomputed before every attempt because availability can change while
-// a request is in flight. It observes tier caps; it does not redistribute them.
 export function countRemainingDispatchableAttempts(
   tiers: TierMap<RuntimeNode[]>,
   reqDescriptor: RoutableRequest,

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Config-driven logical-model fallback. Model names are opaque identifiers.
-// AIG_MODELS_CONFIG.fallback owns eligible aliases and their declared order.
-// A model without explicit fallback does not acquire neighbors by its spelling.
-// At most two rounds run, bounded by the original request-wide attempt budget.
 
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
@@ -34,11 +29,6 @@ function configuredTargets(requested: string, modelsConfig: Record<string, Model
   return Object.entries(modelsConfig).find(([name]) => keyOf(name) === key)?.[1].policy.fallback ?? [];
 }
 
-/**
- * Recheck is explicit, or follows an explicit reverse fallback edge.
- * Without either, a one-way path cannot implicitly move back to its source.
- * Neither model spelling nor number of siblings is used to choose the mode.
- */
 function fallbackMode(requested: string, modelsConfig: Record<string, ModelEntry>): 'one_way' | 'recheck' {
   const requestedKey = keyOf(requested);
   const entry = modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1];
@@ -87,9 +77,6 @@ function firstRoundPlan(
   mode: 'one_way' | 'recheck',
   configuredCaps?: readonly number[],
 ): ModelFallbackPass[] {
-  // Give every eligible model one try before deepening preferred candidates.
-  // Caps are aligned with the full configured order, not the currently
-  // available subset; unavailable siblings never donate an inflated cap.
   const visible = round.slice(0, Math.min(round.length, maxAttempts));
   const caps = visible.map(() => 1);
   let remaining = Math.max(0, maxAttempts - visible.length);
@@ -98,8 +85,6 @@ function firstRoundPlan(
     if (!remaining) break;
     const rank = template.findIndex((name) => keyOf(name) === keyOf(model));
     if (rank < 0) continue;
-    // Derive the original v0.1.5 preference from the declared order rather
-    // than hard-coding arrays or assuming 3/4 named model families.
     const desired = configuredCaps?.[rank] ?? (mode === 'recheck' ? Math.max(1, template.length - rank) : rank === 0 ? sourcePreference : 1);
     const extra = Math.min(remaining, Math.max(0, desired - (caps[i] ?? 1)));
     caps[i] = (caps[i] ?? 1) + extra;
@@ -126,8 +111,6 @@ export function buildModelFallbackPlan(
   );
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
-  // A single logical attempt has no retry capacity: never expose a recheck
-  // round containing only the requested model when maxAttempts is one.
   if (attemptBudget <= 1) return result;
   const second = (rounds[1] ?? []).filter((model) => allowed.has(keyOf(model))).map((model) => ({ model, attemptCap: 1 }));
   if (second.length) result.push(second);
@@ -153,7 +136,6 @@ export function pickNextModelPass(
   return best;
 }
 
-/** An explicit fallback list defines family membership for its source and targets. */
 export function hasModelFamilyFallback(requestedModel: string, modelsConfig: Record<string, ModelEntry> = {}): boolean {
   if (configuredTargets(requestedModel, modelsConfig).length > 0) return true;
   const requestedKey = keyOf(requestedModel);
@@ -168,42 +150,18 @@ export function modelFallbackCandidates(
   return [...new Set(buildModelFallbackRounds(requestedModel, knownModels, modelsConfig).flat())];
 }
 
-/**
- * Request-local failure-domain identity for logical-model fallback.
- *
- * One RuntimeNode is one configured upstream account/key-slot identity. If two
- * logical aliases on that same node resolve to the same upstream model, they
- * are the same real failure domain and must not consume separate retry budget
- * after one of them has already failed in this request. Protocol/base URL are
- * node properties, and surface changes do not create fresh account/model
- * capacity, so neither belongs in the key.
- *
- * Raw credentials are deliberately excluded. The gateway never hashes,
- * compares, logs or persists secret material merely to deduplicate retries.
- */
 export function modelFailureDomainKey(node: RuntimeNode, logicalModel: string): string {
-  // An unmapped logical alias is not a physical model failure domain.
   return JSON.stringify([credentialSlotId(node), resolvePhysicalModel(node, logicalModel)]);
 }
 
-/**
- * A Provider/model/surface incompatibility is a physical route failure,
- * irrespective of how many distinct Keys advertise that exact same route.
- * This is request-local and is never persisted as a model capability fact.
- */
 export function physicalRouteFailureDomainKey(node: RuntimeNode, logicalModel: string, surface: string): string {
   return JSON.stringify(['physical-route', node.tier, node.provider, node.baseUrl, node.protocol, surface, resolvePhysicalModel(node, logicalModel)]);
 }
 
-/** A real failed Key cannot be tried again under another logical alias. */
 function keyFailureDomainKey(node: RuntimeNode): string {
   return JSON.stringify([credentialSlotId(node), '*failed-key*']);
 }
 
-/**
- * Seed a new model pass with both spent Key+model routes and physically failed
- * Keys. A distinct Key remains eligible even if it targets the same model.
- */
 export function failedDomainNodeIds(
   nodes: ReadonlyArray<RuntimeNode>,
   logicalModel: string,
@@ -224,7 +182,6 @@ export function failedDomainNodeIds(
   return attempted;
 }
 
-/** Record the actual node/model domains touched by one failed logical pass. */
 export function rememberFailedDomains(
   failedDomains: Set<string>,
   nodesById: ReadonlyMap<string, RuntimeNode>,
@@ -236,20 +193,14 @@ export function rememberFailedDomains(
     const node = nodesById.get(nodeId);
     if (node) failedDomains.add(modelFailureDomainKey(node, logicalModel));
   }
-  // An account-wide or transient execution failure exhausts the physical
-  // Key for this request, regardless of which logical model is tried next.
-  // Model-missing and endpoint-specific refusals remain scoped to the failing
-  // physical model: another model on that Key may still be valid.
   const keyFailures = new Set(['auth', 'server', 'network', 'headers_timeout', 'first_event_timeout', 'stream_interrupted']);
   for (const attempt of attempts) {
     if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
     if (!node) continue;
-    // A model-window 429 does not remove unrelated models of the same Key.
     if (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account')) {
       failedDomains.add(keyFailureDomainKey(node));
     }
-    // The exact physical route may have failed independently of Key identity.
     const rejectedRoute =
       (attempt.kind === 'model_missing' && attempt.status === 404) ||
       attempt.kind === 'endpoint_not_found' ||

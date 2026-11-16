@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Private Protocol Center admission. No public routes, Provider credentials,
-// model selection, Tier dispatch or retries in this Worker.
 import { PROTOCOL_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import { authorizeExecutionRequest, EXECUTION_PATH, type ExecutionSurface, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';

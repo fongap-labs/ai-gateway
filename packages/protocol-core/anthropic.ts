@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Anthropic Messages surface: request validation, error responses, and the
-// local /v1/messages/count_tokens approximation.
 
 import { corsHeaders, shouldNotRetryHeaders } from '../transport/http.ts';
 
@@ -65,22 +62,12 @@ export function validateAnthropicCountTokensRequest(body: unknown): string | nul
   return null;
 }
 
-// Script-aware conservative token estimation for /v1/messages/count_tokens.
-// A plain "chars / 4" rule badly under-counts CJK text (~1 token per Han
-// character) and dense JSON tool schemas. This estimator is deliberately
-// biased HIGH (over-estimating a context is safer than truncating it):
-//   ASCII/Latin      ~ 4 chars per token
-//   CJK / Kana       ~ 1 token per character
-//   tools JSON       ~ 3 chars per token + fixed per-tool overhead
-//   image blocks     fixed conservative allowance (~1600 tokens)
-// The result is an APPROXIMATION, not a tokenizer.
 function estimateTextTokens(text: unknown): number {
   const value = String(text || '');
   let cjk = 0;
   let other = 0;
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
-    // Keep astral characters counted once, as the previous for-of loop did.
     if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
       const next = value.charCodeAt(i + 1);
       if (next >= 0xdc00 && next <= 0xdfff) {
@@ -107,9 +94,6 @@ function estimateTextTokens(text: unknown): number {
   return cjk + other / 4;
 }
 
-// Exact JSON.stringify() length for JSON-safe values, without allocating the
-// serialized copy. Tool schemas can be large (MCP), and only their length is
-// needed for the dense-JSON token charge.
 function jsonStringLength(value: string): number {
   let length = 2;
   for (let i = 0; i < value.length; i++) {
@@ -160,8 +144,6 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   const countText = (value: unknown) => {
     tokens += estimateTextTokens(value);
   };
-  // Count block text directly instead of joining it into one string: tool
-  // results can be large and the join would allocate a second full copy.
   const countToolResult = (content: unknown, isError: unknown) => {
     if (isError) countText('[Tool execution error]\n');
     if (content === undefined || content === null) return;
@@ -190,7 +172,7 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   if (typeof body.system === 'string') countText(body.system);
   else if (Array.isArray(body.system)) for (const x of body.system) countText(x?.text || x);
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
-    tokens += 2; // per-message structural overhead
+    tokens += 2;
     if (typeof message.content === 'string') countText(message.content);
     else
       for (const block of message.content || []) {
@@ -201,8 +183,6 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
         else countText(JSON.stringify(block));
       }
   }
-  // Tool schemas are dense JSON: charge them at a denser ratio plus a fixed
-  // per-tool overhead instead of the plain-text ratio.
   const tools = Array.isArray(body.tools) ? body.tools : [];
   tokens += jsonSerializedLength(tools) / 3 + tools.length * 64;
   return Math.max(1, Math.ceil(tokens));

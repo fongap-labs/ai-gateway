@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Gateway error-response builders. Every terminal client-facing error goes
-// through here so protocol shape, topology hiding, Retry-After and
-// x-should-retry semantics stay consistent across routes.
-//
-// Topology policy: by default terminal errors expose only gateway-owned
-// aggregate diagnostics (requested model / attempt counts where that protocol
-// shape supports them). Raw upstream error messages and per-attempt internal
-// details stay hidden. Both are exposed only when the caller passes
-// `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../../src/config/models.ts';
@@ -73,7 +63,6 @@ function formatFailureKinds(value: unknown): string | null {
   return entries.length ? entries.map(([kind, count]) => `${kind}:${count}`).join(',') : null;
 }
 
-/** The client receives one readable reason; detailed failure telemetry belongs in headers/logs. */
 function clientErrorMessage(
   status: number,
   message: string,
@@ -94,8 +83,6 @@ function clientErrorMessage(
     const retryText = retryAfterMs > 0 ? `; retry after ${Math.ceil(retryAfterMs / 1000)}s` : '';
     return `${status} | ${subject} ${reason}${attemptsText}${retryText}.`;
   }
-  // Preserve a useful diagnostic for request errors while preventing multi-line
-  // Provider/internal messages from taking over the client's failure display.
   const singleLine = trimDiagnostic(message.replace(/\s+/g, ' ').trim(), 150);
   return `${status} | ${singleLine || 'Request failed.'}`;
 }
@@ -115,22 +102,12 @@ export function gatewayError(
   const diagnosticHeaders = responsesDiagnosticHeaders(details, extraHeaders) ?? {};
   const retryable = isRetryable || status === 429 || status === 503;
   diagnosticHeaders['x-gateway-retryable'] = String(retryable);
-  // SDKs must not immediately replay an already exhausted model-family
-  // request against a pool whose earliest recovery is still many seconds
-  // away. Retry-After remains the eventual recovery hint; this separate
-  // header only disables blind automatic retries of the entire request.
-  // Limit this override to mixed timeout/rate-limit failures. Pure 429 exhaustion
-  // retains its established SDK Retry-After contract and remains retryable.
-  // It does NOT change Key eligibility, circuit state or Provider quota.
   const kinds = details?.failure_kinds;
   const hadHeadersTimeout =
     kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
   const hasFamilyTimeoutEvidence = gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED && hadHeadersTimeout;
   const deferredFamilyRetry = hasFamilyTimeoutEvidence && parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
-  // Some protocol adapters retain a JSON error but drop response headers.
-  // Carry only the single bounded classification needed to honor this
-  // no-immediate-replay decision; never restore the full failure graph.
   const compactRetryEvidence = deferredFamilyRetry
     ? { failure_kinds: { headers_timeout: Math.trunc(Number((kinds as Record<string, unknown>).headers_timeout)) } }
     : {};
@@ -140,12 +117,6 @@ export function gatewayError(
   }
   const retryAfterMs = parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER);
   const briefMessage = clientErrorMessage(status, message, details, gatewayCode, retryAfterMs);
-  // Never serialize the full retry/failover graph into a standard error body.
-  // Explicit upstream diagnostics remain opt-in, preserving forensic access.
-  // The stable gateway code, counters, classifications, request ID and retry
-  // timing are available in response headers for clients and observability.
-  // Client-side validation failures must remain actionable: callers need to
-  // know which unsupported field to remove without receiving retry internals.
   const unsupportedFields =
     details?.failure_kind === 'unsupported_request_field' && Array.isArray(details.unsupported_fields)
       ? details.unsupported_fields
@@ -174,8 +145,6 @@ export function gatewayError(
           ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
           ...compactRetryEvidence,
           ...validationDetails,
-          // A rejected client field is actionable, unlike internal failover
-          // graphs. Preserve this bounded machine-readable API contract.
           ...(typeof details?.unsupported_request_field === 'string'
             ? { unsupported_request_field: trimDiagnostic(details.unsupported_request_field, 64) }
             : {}),
@@ -290,8 +259,6 @@ export function buildExhaustedResponse(
     status = terminalStatus(state.failureKinds) ?? (last?.status === 429 ? 429 : 502);
     message = `All attempted nodes failed for model "${requestedModel}".`;
 
-    // Credential admission can fail before dispatch. Keep the error
-    // non-retryable without exposing node identities.
     const failureKinds = Object.entries(state.failureKinds)
       .filter(([, count]) => (count ?? 0) > 0)
       .map(([kind]) => kind);
@@ -308,15 +275,10 @@ export function buildExhaustedResponse(
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
       message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry shortly.`;
-      // Cooldowns survive between requests. A new request can time out with
-      // zero 429 observations even while its siblings are still cooling down.
       const familyWaitSec = earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_);
       const hadTimeout =
         (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
       retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
-      // Preserve the established 503 response for transient family exhaustion:
-      // provider-side 429s are absorbed internally while Retry-After reports
-      // the available fallback-family cooldown without changing SDK behavior.
       if (retryAfterSec >= 5) {
         message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry after the advertised delay.`;
       }
@@ -330,9 +292,6 @@ export function buildExhaustedResponse(
       });
     }
 
-    // Model-family exhaustion already computed the earliest cooldown across
-    // fallback aliases. Do not replace it with a lookup for just the original
-    // logical alias, which may have no direct nodes and would drop Retry-After.
     if (status === 429 && gatewayCode !== GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
       retryAfterSec = earliestBlockingRetryAfterSec(tiers, reqDescriptor, now, knownModels_);
     }
@@ -393,8 +352,6 @@ function earliestFamilyBlockingRetryAfterSec(
   env: GatewayEnv,
   knownModels?: ReadonlySet<string>,
 ): number | undefined {
-  // Fallback membership is explicitly configured, never inferred from a
-  // logical model's name. The cooldown hint must inspect those aliases too.
   const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels, loadModelsConfig(env)) : [requestedModel];
   let minSec = Infinity;
   for (const model of models) {
@@ -426,9 +383,6 @@ export function buildClientErrorResponse(
 ): Response {
   const genericDetail = `Upstream rejected the request with HTTP ${status}.`;
   const detail = shouldExposeUpstreamInfo ? extractErrorMessage(errorText) || genericDetail : genericDetail;
-  // The terminal client-error path must use the same short, status-first
-  // envelope as exhaustion and admission errors. Attempt graphs are only
-  // available when the caller deliberately enables upstream diagnostics.
   return gatewayError(request, env, route, status, detail, requestId, {
     requested_model: requestedModel,
     attempts: state.logicalAttempts,
@@ -450,8 +404,6 @@ function extractErrorMessage(text: string | Uint8Array | null | undefined): stri
   }
 }
 
-// Fallback targets skipped by conversion never dispatch, so they leave no failure kind. Only the
-// count is reported; the reason can quote client-controlled names and stays in the server log.
 function conversionRejectedDetails(state: LoopState): { conversion_rejected?: number } {
   return state.conversionRejections ? { conversion_rejected: state.conversionRejections } : {};
 }
@@ -472,11 +424,6 @@ function familyFailureSetIsRetryable(
     FAILURE_KIND.FIRST_EVENT_TIMEOUT,
     FAILURE_KIND.STREAM_INTERRUPTED,
   ]);
-  // An upstream's route-local 422 can be recorded under the generic client
-  // kind even though the Gateway already rotated away from that bad route.
-  // Do not let one such failure turn seven transient failures into a terminal
-  // non-retryable request. A genuine client error (400, invalid JSON, etc.)
-  // must still prevent this classification; pure 422 exhaustion is not transient.
   const transient = observed.some(([kind]) => retryableKinds.has(kind));
   if (!transient) return false;
   const routeLocal422Count = attempts.filter(
@@ -491,16 +438,6 @@ function terminalStatusForKind(kind: string): 429 | 502 | 504 {
   return 502;
 }
 
-// Aggregate by CLIENT-VISIBLE terminal status before selecting the winner.
-// Failure kinds that mean the same thing to the client belong to one bucket;
-// otherwise rate_limit + rate_limit_global, for example, can lose to one
-// unrelated kind merely because they were stored under separate keys.
-//
-// Tie rule is deliberate and order-independent:
-//   504 > 502 > 429
-// A timeout tie means the request already spent its waiting window, so do not
-// mislabel it as capacity-only 429. A generic upstream failure likewise wins a
-// tie over 429 because the request was not purely rate-limited.
 export function terminalStatus(failureKinds?: Partial<Record<FailureKind, number>>): number | null {
   const counts: Record<429 | 502 | 504, number> = { 429: 0, 502: 0, 504: 0 };
   for (const [kind, rawCount] of Object.entries(failureKinds || {})) {
@@ -523,12 +460,6 @@ export function terminalStatus(failureKinds?: Partial<Record<FailureKind, number
   return bestStatus;
 }
 
-/**
- * Compact failover evidence safe for default client errors. Only count logical
- * model changes and physical dispatches by tier: never reveal a provider,
- * account, Key ID, raw error, upstream model or configured topology.
- * The newest 64 events bound CPU work and response size in Workers Free.
- */
 export function summarizeFailoverAttempts(attempts: ReadonlyArray<Record<string, unknown>>): {
   failover_summary?: {
     model_switches: number;
@@ -547,7 +478,6 @@ export function summarizeFailoverAttempts(attempts: ReadonlyArray<Record<string,
   let other = 0;
   const models = new Set<string>();
   for (const attempt of tail) {
-    // A denied admission is not a Provider dispatch, even if it was logged.
     if (attempt.dispatched === false) continue;
     const model = typeof attempt.effective_model === 'string' && attempt.effective_model ? attempt.effective_model : null;
     if (model) {

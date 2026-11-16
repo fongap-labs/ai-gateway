@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// A private generation invocation is one potentially billable operation.
-// Unknown outcomes and center faults are terminal; never retry behind the
-// user's back or silently use the legacy direct-provider path.
 
 import { EXECUTION_WIRE_RESULT, parseExecutionResponse } from '../../../packages/contracts/execution.ts';
 import { attemptBudgetWindowMs } from '../../../src/config/timeouts.ts';
@@ -41,9 +37,6 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
   }
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
   const effectiveModel = reqDescriptor.model;
-  // Reuse the admitted JSON when the logical model is unchanged. A renamed
-  // model still requires serialization so the private center receives the
-  // effective model, not the client's alias.
   const reuseRaw = Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
   const outboundBody = reuseRaw && c.rawBody ? c.rawBody.text : JSON.stringify({ ...c.bodyJson, model: effectiveModel });
   if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
@@ -80,8 +73,6 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
       recordOutcome(state, node, classifyClientAbort(), c, { latencyMs: Date.now() - startedAt });
       return { response: gatewayError(request, env, route, 499, 'Client closed image generation request.', requestId) };
     }
-    // A Service Binding call can fail after executing upstream. Unknown means
-    // terminal even if the timeout fired and no response headers arrived.
     return terminate(c, 502, 'gateway_generation_outcome_unknown', 'Image-generation outcome is unknown; not retried.', true);
   }
   clearTimeout(timeoutId);
@@ -107,8 +98,6 @@ export async function dispatchGenerationAttempt(c: AttemptContext): Promise<Atte
     const errorText = await safeReadErrorBody(upstream, 4096, c.attemptDeadlineMs);
     const classification = classifyUpstreamStatus(upstream.status, upstream.headers, env, undefined, errorText);
     recordOutcome(state, node, classification, c, { latencyMs: c.headersMs, status: upstream.status });
-    // These statuses are explicit pre-generation rejections; other errors
-    // might represent a paid generation and MUST NOT be replayed.
     if (upstream.status === 429 || upstream.status === 404) return { rotate: true, kind: classification.kind };
     return {
       response: gatewayError(

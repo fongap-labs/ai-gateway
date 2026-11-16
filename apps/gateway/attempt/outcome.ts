@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Gateway-owned physical-attempt result, retry and failure settlement.
-
-// outcome.ts - AttemptOutcome construction and accounting: failure /
-// rotate / stop outcomes, the logical-attempt vs dispatch charge rules,
-// pre-dispatch neutral ends, and the single per-dispatch completion log.
 
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
@@ -85,13 +80,6 @@ export function rotateWithNeutralEnd(
   return isPreDispatch ? { rotate: true, budgetCharged: false, kind: reason } : { rotate: true, kind: reason };
 }
 
-/**
- * A private center may return HTTP 200 with an invalid internal response
- * envelope AFTER dispatching the physical Provider request. This is a center
- * contract fault, not a bad key or a reason to retry the upstream. Settle the
- * undelivered usage and charge one neutral physical dispatch (including the
- * logical attempt) without cooling down the Provider.
- */
 export function stopAfterDispatchedCenterFault(c: AttemptContext, response: Response): AttemptOutcome {
   recordUndeliveredUpstreamAttempt(c, c.node);
   rotateWithNeutralEnd(c.state, c.node, KIND.UNKNOWN, c);
@@ -102,13 +90,6 @@ export function noteFailure(state: LoopState, kind: FailureKind): void {
   state.failureKinds[kind] = (state.failureKinds[kind] || 0) + 1;
 }
 
-// A hedge loser cancelled because its peer committed first. Neutral by the
-// reliability model (the node was slow, not broken): finalize its upstream
-// accounting, release the concurrency slot, and never record a counted failure
-// — the loss must not poison TTFT, health scoring, or the retry flow. Used by
-// every phase where an aborted loser surfaces: the headers fetch
-// (phase="headers"), the first-event guard (phase="first_event"), and
-// post-headers object assembly (phase="object").
 export function hedgeLoserOutcome(c: AttemptContext, node: RuntimeNode, phase: string, latencyMs?: number): AttemptOutcome {
   recordUndeliveredUpstreamAttempt(c, node);
   c.state.attempted.add(node.id);
@@ -128,10 +109,6 @@ export function hedgeLoserOutcome(c: AttemptContext, node: RuntimeNode, phase: s
   return { rotate: true, hedgedAway: true, kind: classifyHedgeRaceLoss().kind };
 }
 
-// Every call here represents a REAL upstream dispatch that did not become the
-// delivered response. Finalize its upstream-attempt usage before reliability
-// bookkeeping. The helper is exactly-once per AttemptContext and records
-// missing coverage instead of estimating tokens when no report was observed.
 export function recordOutcome(
   state: LoopState,
   node: RuntimeNode,
@@ -146,8 +123,6 @@ export function recordOutcome(
   if (!c?.hedgedAttempt) state.logicalAttempts++;
   const hedged = !!(c?.hedgedAttempt || c?.hedgedWithTwin);
   const headersMs = c?.headersMs ?? (latencyMs >= 0 ? latencyMs : undefined);
-  // A model-family pass may dispatch a different logical model than the
-  // client requested. Diagnostics must name the model actually sent upstream.
   const effectiveModel = c.reqDescriptor?.model ?? state.requestedModel;
   const physicalModel = upstreamModelOf(node, effectiveModel);
   if (classification.action !== 'neutral') {
@@ -159,15 +134,8 @@ export function recordOutcome(
       kind: classification.kind,
     });
   }
-  // Endpoint/physical-route rejections are not credential failures.
-  // Once two equivalent 422 dispatches fail, exclude remaining sibling Keys
-  // for this request. Explicit endpoint 404s are excluded immediately.
-  // Other physical routes and subsequent requests remain eligible.
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
   if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
-    // An opaque 422 is not proof that every Key on this physical route is
-    // unusable. Permit one alternate Key before excluding equivalent routes.
-    // Do not persist this as a model capability fact between requests.
     const previousSameRoute422 =
       status === 422 &&
       state.attempts.some((attempt) => {
@@ -218,22 +186,10 @@ export function recordOutcome(
       if (classification.requestTooLarge) recordTier1Oversize(node.id, effectiveModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
-        // A 429 is blamed on the model that got it; the whole key is blamed only
-        // when a second model on it is limited too. Each scope has its own ladder.
         const observedScope = node.keyGroup ? noteKeyGroup429(node, upstreamModel) : decideTier1RateLimitScope(node.id, effectiveModel);
-        // A long-lived allowance (quota wording, or a multi-minute wait hint) is
-        // account-wide by nature: cool the whole key on the FIRST such 429 instead
-        // of letting every model climb its own ladder against one shared pool.
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const now = Date.now();
 
-        // Determine the adaptive-429 ladder to use. Only the response itself decides
-        // the class: a window-classified 429 climbs the gentle window ladder and
-        // stays on it however often its probe fails, because a per-minute limit
-        // shared with other isolates and clients keeps refusing probes without
-        // being a long-lived allowance. A quota-classified one (explicit horizon
-        // wording or a long stated wait) climbs the long-allowance ladder and
-        // already cools the whole key.
         const ladderModel = tier1RateLimitScope === 'model' ? effectiveModel : '';
         const isWindowLadder = classification.rateLimitWindow === 'window';
         const isQuotaLadder = classification.rateLimitWindow === 'quota';
@@ -242,9 +198,6 @@ export function recordOutcome(
           : isQuotaLadder
             ? adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_QUOTA_STEPS_MS, ADAPTIVE_429_QUOTA_STEPS_MS)
             : adaptive429StepsFromEnv(c.env?.AIG_RATE_LIMIT_STEPS_MS);
-        // An unclassified account-wide 429 keeps the historical quota start stage
-        // on the default ladder; a window 429 climbs from stage 1 even when the
-        // observed scope is account-wide.
         const startStage = !isWindowLadder && !isQuotaLadder && tier1RateLimitScope === 'account' ? ADAPTIVE_429_QUOTA_START_STAGE : 1;
 
         tier1RetryAfterMs = nextAdaptive429CooldownMs(
@@ -265,11 +218,8 @@ export function recordOutcome(
         { retryAfterMs: tier1RetryAfterMs },
       );
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : effectiveModel;
-      // One timestamp for both, so a cooldown exactly at the sharing threshold is shared.
       const outcomeAt = Date.now();
       applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
-      // Share the relevant cooldown across node IDs only when the operator
-      // explicitly declares they use the SAME upstream credential.
       if (node.keyGroup) {
         const peers = credentialPeers(state.nodes ?? [], node);
         if (
@@ -310,8 +260,6 @@ export function recordOutcome(
     recordNeutralEnd(node.id);
   } else {
     applyHealthPenalty(node.id, classification.kind);
-    // Paid API Token nodes (new Tier 2) retain the ordinary Retry-After
-    // ceiling; only Tier 1 learns long-lived free allowance limits.
     const nodeCooldownMs = classification.cooldownMs || 0;
     recordFailure(node.id, {
       counted: classification.counted,
