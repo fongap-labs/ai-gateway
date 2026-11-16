@@ -16,7 +16,13 @@ function stripControls(body: Record<string, unknown>): Record<string, unknown> {
   const result = { ...body };
   delete result.reasoning_effort;
   delete result.thinking;
-  delete result.reasoning;
+  const reasoning = object(result.reasoning);
+  if (reasoning && Object.hasOwn(reasoning, 'effort')) {
+    const next = { ...reasoning };
+    delete next.effort;
+    if (Object.keys(next).length) result.reasoning = next;
+    else delete result.reasoning;
+  }
   const output = object(result.output_config);
   if (output && Object.hasOwn(output, 'effort')) {
     const next = { ...output };
@@ -56,7 +62,8 @@ export function adaptNodeReasoning(
     const level = bestLevel(preference, config.efforts);
     if (!level) return { body, changed: false, applied: 'native' };
     if (surface === 'chat_completions') return { body: { ...without, reasoning_effort: level }, changed: true, applied: 'effort' };
-    if (surface === 'responses') return { body: { ...without, reasoning: { effort: level } }, changed: true, applied: 'effort' };
+    if (surface === 'responses')
+      return { body: { ...without, reasoning: { ...(object(without.reasoning) ?? {}), effort: level } }, changed: true, applied: 'effort' };
     if (surface === 'messages')
       return { body: { ...without, output_config: { ...(object(without.output_config) ?? {}), effort: level } }, changed: true, applied: 'effort' };
   }
@@ -73,6 +80,7 @@ export function adaptNodeReasoning(
     };
   }
   if (config.mode === 'budget' && surface === 'messages') {
+    if (object(body.thinking)?.type === 'enabled') return { body, changed: false, applied: 'native' };
     const maxTokens = body.max_tokens;
     if (typeof maxTokens !== 'number' || !Number.isFinite(maxTokens)) return { body, changed: false, applied: 'native' };
     const headroom = 1024;
