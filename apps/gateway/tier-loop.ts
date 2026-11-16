@@ -124,7 +124,9 @@ export async function runTierLoop(
           escaped: pick.tier1EscapedFromAffinity,
         });
       }
-      const outcome = await dispatchWithHedge(
+      let outcome: Awaited<ReturnType<typeof dispatchWithHedge>>;
+      try {
+        outcome = await dispatchWithHedge(
         {
           request,
           env,
@@ -160,7 +162,10 @@ export async function runTierLoop(
           conversionContext,
         },
         tiers[tierNumber],
-      );
+        );
+      } finally {
+        state.retrySlot?.release();
+      }
       if (outcome.budgetCharged) {
         usedInTier++;
         state.tierAttemptsUsed = state.tierAttemptsUsed ?? {};
