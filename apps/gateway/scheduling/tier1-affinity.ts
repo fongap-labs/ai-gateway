@@ -1,3 +1,4 @@
+import { DEFAULT_SESSION_HEADER_ALIASES } from '../../../packages/config-core/runtime-vars.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { getLimits } from '../../../src/config/timeouts.ts';
 
@@ -126,11 +127,24 @@ function sessionHash(sessionId: string): string {
   return `h${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-const SESSION_HEADERS = ['x-session-id', 'x-claude-code-session-id'] as const;
+const PRIMARY_SESSION_HEADER = 'x-session-id';
+const SESSION_ALIAS_PATTERN = /^x-(?:[a-z0-9][a-z0-9-]*-)?(?:session|conversation)-id$/;
 
-export function resolveTier1SessionId(request: Request): string | null {
-  for (const name of SESSION_HEADERS) {
-    const raw = request?.headers?.get?.(name);
+export function resolveTier1SessionId(request: Request, env: GatewayEnv = {}): string | null {
+  const configuredAliases = env.AIG_SESSION_HEADER_ALIASES;
+  const aliases = typeof configuredAliases === 'string' ? configuredAliases : DEFAULT_SESSION_HEADER_ALIASES;
+  const enabledAliases = aliases.trim().toLowerCase() === 'disable' ? '' : aliases;
+  const headers = [PRIMARY_SESSION_HEADER];
+  if (enabledAliases.length <= 512) {
+    for (const entry of enabledAliases.split(',')) {
+      const name = entry.trim().toLowerCase();
+      if (!SESSION_ALIAS_PATTERN.test(name) || headers.includes(name)) continue;
+      headers.push(name);
+      if (headers.length >= 9) break;
+    }
+  }
+  for (const name of headers) {
+    const raw = request.headers.get(name);
     if (typeof raw !== 'string') continue;
     const id = raw.trim();
     if (id.length >= 8 && id.length <= 128) return id;

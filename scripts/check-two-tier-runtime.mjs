@@ -8,6 +8,7 @@ import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { hasConfirmedUpstreamFailure } from '../apps/gateway/response/failover-evidence.ts';
 import { redistributeUnusedTierAttempts } from '../apps/gateway/scheduling/tier-policy.ts';
+import { resolveTier1SessionId } from '../apps/gateway/scheduling/tier1-affinity.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../src/config/models.ts';
 import { loadExecutionConfig, loadGatewayConfig } from '../src/config/nodes.ts';
 import { getPoliciesConfigDiagnostics } from '../src/config/policies.ts';
@@ -26,6 +27,29 @@ import {
 import { __resetTier1StateForTests, adoptTier1Cooldown } from '../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
+
+const sessionRequest = (headers = {}) => new Request('https://gateway.invalid/v1/chat/completions', { headers });
+assert.equal(resolveTier1SessionId(sessionRequest()), null);
+assert.equal(
+  resolveTier1SessionId(sessionRequest({ 'x-session-id': 'standard-session-001', 'x-claude-code-session-id': 'legacy-session-002' })),
+  'standard-session-001',
+);
+assert.equal(resolveTier1SessionId(sessionRequest({ 'x-claude-code-session-id': 'legacy-session-002' })), 'legacy-session-002');
+assert.equal(resolveTier1SessionId(sessionRequest({ 'x-claude-code-session-id': 'legacy-session-002' }), { AIG_SESSION_HEADER_ALIASES: '' }), null);
+assert.equal(
+  resolveTier1SessionId(sessionRequest({ 'x-app-conversation-id': 'custom-session-003' }), { AIG_SESSION_HEADER_ALIASES: 'X-App-Conversation-ID' }),
+  'custom-session-003',
+);
+assert.equal(
+  resolveTier1SessionId(sessionRequest({ 'x-app-session-id': 'custom-session-004' }), { AIG_SESSION_HEADER_ALIASES: 'x-api-key,x-app-session-id' }),
+  'custom-session-004',
+);
+assert.equal(resolveTier1SessionId(sessionRequest({ 'x-api-key': 'private-access-key' }), { AIG_SESSION_HEADER_ALIASES: 'x-api-key' }), null);
+assert.equal(
+  resolveTier1SessionId(sessionRequest({ 'x-claude-code-session-id': 'legacy-session-002' }), { AIG_SESSION_HEADER_ALIASES: 'disable' }),
+  null,
+);
+assert.equal(resolveTier1SessionId(sessionRequest({ 'x-session-id': 'short' })), null);
 
 assert.equal(getLimits({}).tokenD1SamplePct, 100);
 assert.equal(getLimits({ AIG_COST_GUARDS: 'false' }).tokenD1SamplePct, 100);
