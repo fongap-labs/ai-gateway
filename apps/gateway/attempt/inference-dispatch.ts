@@ -161,21 +161,27 @@ export async function dispatchInferenceAttempt(
   // No sibling means attemptCapMs is null and retains the full legacy window.
   const windowMs = c.attemptCapMs ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
-  const centerMayBufferResponse = hasBufferedResponse || returnStream;
+  // Framed real-time streams are not buffered objects. Keep a fair escape
+  // window for other candidates; a slow Service Binding must not monopolize it.
+  const centerMayBufferResponse = hasBufferedResponse;
+  const remainingHeaderCandidates =
+    centerMayBufferResponse || c.takeRemainingWindow ? 1 : Math.min(3, Math.max(1, c.remainingDispatchableAttempts));
   const headersTimeout = attemptHeadersTimeoutMs(
     centerMayBufferResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
-    1,
+    remainingHeaderCandidates,
   );
   // Restore legacy/v0.1.5: a buffered Provider call may take the whole
   // attempt window before response headers arrive, even via private Inference.
   const upstreamHeadersTimeoutMs = attemptHeadersTimeoutMs(
     hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
-    1,
+    remainingHeaderCandidates,
   );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
-  const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
+  // Only a collected object has a buffering deadline. A real-time v4 stream
+  // must not inherit the object-assembly deadline after its headers arrive.
+  const bufferedResponseDeadlineMs = returnTranslatedObject ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
   const controller = new AbortController();
   let hasTimedOut = false;
@@ -236,6 +242,14 @@ export async function dispatchInferenceAttempt(
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
     c.upstreamStatus = hasTimedOut ? 504 : 502;
+    // The Gateway's own header timer expired. Charge this timed-out node as
+    // one failed physical attempt and offer the bounded scheduler another
+    // candidate; generic binding failures still have an unknown outcome.
+    if (hasTimedOut) {
+      const classified = classifyNetworkError(true);
+      recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: 504 });
+      return { rotate: true, kind: classified.kind };
+    }
     // Do not log the raw exception or request body: a transport rejection can
     // contain private URLs or headers. The stage and duration are enough to
     // distinguish a Gateway deadline from an early Service Binding failure.
