@@ -181,6 +181,9 @@ export function classifyUpstreamStatus(
   if (CLIENT_STOP_STATUSES.has(status)) {
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
+  if (status === 410) {
+    return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+  }
   if (status === 404) {
     const error = structuredUpstreamError(body);
     if (

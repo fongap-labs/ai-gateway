@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 上游 HTTP 410 不再直接终止客户端显式思考等级请求；在既有尝试与时间预算内将已失效路由切换到其他节点，并保留非法请求的终止语义。
+
 - 修复: 跨协议回退复用已校验请求正文，按请求缓存必要的 JSON 序列化并合并并发转换预检，避免重复计算且不扩大重试预算。
 
 - 修复: 跨 OpenAI Chat、Responses、Anthropic Messages 转换时保留明确关闭思考的意图，避免 Anthropic `thinking.disabled` 被 `output_config.effort` 覆盖或在跨协议发送时丢失；补齐六向回归。
