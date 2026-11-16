@@ -105,6 +105,8 @@ async function exercise(hasSibling, promptChars = 0) {
 await exercise(true);
 await exercise(false);
 await exercise(true, 120_000);
+assert.equal(viableFailoverWindowMs(1_000), 0, 'small requests retain the existing failover policy');
+assert.equal(attemptBudgetWindowMs(60_000, 8, viableFailoverWindowMs(1_000)), 25_000);
 const largeBodyChars = 1_900_000;
 const viableMs = viableFailoverWindowMs(largeBodyChars);
 assert.ok(viableMs >= 25_000, 'large requests need a viable second chance');
