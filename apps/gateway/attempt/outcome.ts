@@ -132,7 +132,10 @@ export function recordOutcome(
     });
   }
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
-  if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure || classification.providerModelConstraint) && failedSurface) {
+  if (
+    (classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure || classification.providerModelConstraint) &&
+    failedSurface
+  ) {
     const previousSameRoute422 =
       status === 422 &&
       state.attempts.some((attempt) => {
