@@ -1,5 +1,5 @@
-import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { resolveVisionDelegate } from '../../packages/config-core/vision-delegation.ts';
+import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
@@ -187,11 +187,7 @@ async function runAdmittedRequest(
     }
     if (delegation.kind === 'ready') {
       const preprocess =
-        route === 'openai_responses'
-          ? preprocessResponsesImages
-          : route === 'anthropic_messages'
-            ? preprocessAnthropicImages
-            : preprocessChatImages;
+        route === 'openai_responses' ? preprocessResponsesImages : route === 'anthropic_messages' ? preprocessAnthropicImages : preprocessChatImages;
       const visualResult = await preprocess({
         request,
         body: bodyJson,
