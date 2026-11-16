@@ -332,7 +332,15 @@ export function trackStreamResponse(
       }
       const { done, value } = result.value;
       if (done) {
-        lifecycle?.finishBytes();
+        // When model rewriting already decoded the bytes, flush that decoder
+        // and the lifecycle parser instead of feeding a second byte decoder.
+        const trailingText = tailDecoder?.decode() ?? '';
+        if (tailDecoder) {
+          if (trailingText) lifecycle?.push(trailingText);
+          lifecycle?.flush();
+        } else {
+          lifecycle?.finishBytes();
+        }
         if (lifecycle) {
           completionSeen = hasCleanCompletion(lifecycle);
           hasSeenTerminalFailure = Boolean(
@@ -366,8 +374,12 @@ export function trackStreamResponse(
       // The protocol observer decodes in bounded pieces. Decode a full upstream
       // chunk only for legacy marker scanning or when model rewriting needs it.
       let decoded = '';
-      if (tailDecoder) decoded = tailDecoder.decode(value, { stream: true });
-      lifecycle?.pushBytes(value);
+      if (tailDecoder) {
+        decoded = tailDecoder.decode(value, { stream: true });
+        lifecycle?.push(decoded);
+      } else {
+        lifecycle?.pushBytes(value);
+      }
       scanSequenceNumbers(value);
       if (!hasSeenErrorEvent || !completionSeen) {
         if (lifecycle) {
