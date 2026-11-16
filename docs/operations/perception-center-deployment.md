@@ -6,14 +6,14 @@
 
 | 范围 | 当前源码合同与实现 | Perception 处理 |
 | --- | --- | --- |
-| Chat Completions | `messages[].content[]` 中的 `image_url`；OpenAI Provider Profile 声明 `imageInput: true` | 当模型目录 `capabilities.vision` 明确为 `true` 且请求含图时，经 Perception 私有绑定执行；纯文本仍走 Inference |
+| Chat Completions | `messages[].content[]` 中的 `image_url`；OpenAI Provider Profile 声明 `imageInput: true` | 原生视觉模型走 Perception；文本模型可委托给当前访问 Key 已授权的视觉模型，经 Perception 获取观察文本后继续原文本推理 |
 | Responses | `input_image`，包括 `input` 中 message 的 `content[]` 形式；OpenAI Provider Profile 声明 `imageInput: true` | 与现有执行票据、预算和响应合同一同交给 Perception；入口只检查结构，不读取或改写 Base64/URL 内容 |
-| Anthropic Messages | `messages[].content[]` 中 `type: "image"`；Anthropic Provider Profile 声明 `imageInput: true` | 与现有 Messages 执行和转换链一同交给 Perception |
+| Anthropic Messages | `messages[].content[]` 中的 `type: "image"`；Anthropic Provider Profile 声明 `imageInput: true` | 原生视觉请求经 Perception；文本模型的用户 base64/HTTPS 图片可以先执行授权视觉委托再返回原消息协议 |
 | 未明确声明图像输入的 Provider | Generic OpenAI 兼容、Google 和图片生成 Provider 的 `imageInput` 为 `false` | 不发送图像；调度跳过该 Provider。模型未明确声明 vision 时返回 400 |
 | OCR | 现有目录包含保留的 `capabilities.ocr` 字段 | 没有专用 OCR endpoint 或 OCR 处理承诺；`ocr` 字段不触发独立路由 |
 | Audio / Video | 现有节点和协议执行合同没有被本功能扩展 | 不支持独立 audio/video 路由、转码、任务 ID、异步状态、取消或恢复 |
 
-Provider Profile 与现有 wire surface 定义是执行资格的依据；Unknown Provider 采用保守的 Generic Profile。`capabilities.vision` 是目录显式 opt-in，`modalities` 仍不是路由权威。未知、非图像或无声明请求不得因为名字相似而自动转发到 Perception。
+Provider Profile 与现有 wire surface 定义是执行资格的依据；Unknown Provider 采用保守的 Generic Profile。`capabilities.vision` 是视觉执行节点显式 opt-in，`modalities` 仍不是路由权威。网关收到图片后，优先使用模型配置中的 `vision_delegate`；未声明时才从该 Key 已授权的可执行视觉模型中选择，不混入 Code/General 的推理回退。未授权、缺少中心绑定或图片格式不受支持时失败关闭。
 
 ## 私有与密钥边界
 
