@@ -11,9 +11,9 @@ export function patchNativeJsonTopLevel(
   raw: string,
   logicalModel: string,
   physicalModel: string,
-  injectStreamUsage: boolean,
+  shouldInjectStreamUsage: boolean,
 ): string | null {
-  if (logicalModel === physicalModel && !injectStreamUsage) return raw;
+  if (logicalModel === physicalModel && !shouldInjectStreamUsage) return raw;
   const first = /^\s*\{\s*"model"\s*:/.test(raw);
   const last = /,\s*"model"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}\s*$/.test(raw);
   if (!first && !last) return null;
@@ -29,14 +29,14 @@ export function patchNativeJsonTopLevel(
   }
   // Existing stream_options (including custom fields, false, null, or a
   // duplicated key) must pass through the original merge semantics.
-  if (injectStreamUsage && raw.includes('"stream_options"')) return null;
+  if (shouldInjectStreamUsage && raw.includes('"stream_options"')) return null;
 
   let out = raw;
   if (logicalModel !== physicalModel) {
     const valueAt = keyAt + match[0].length - match[1].length;
     out = raw.slice(0, valueAt) + JSON.stringify(physicalModel) + raw.slice(valueAt + match[1].length);
   }
-  if (injectStreamUsage) {
+  if (shouldInjectStreamUsage) {
     // The input has already passed JSON.parse with a root-object check.
     // Inserting before its last brace preserves the large nested values.
     const closingBrace = out.lastIndexOf('}');
