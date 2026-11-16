@@ -182,7 +182,7 @@ export function recordOutcome(
       const tier1RateLimitClass: string | undefined = classification.rateLimitWindow;
       if (classification.requestTooLarge) recordTier1Oversize(node.id, effectiveModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
-        recordTier1ProviderModelRateLimit(node.provider, upstreamModel, node.id);
+        recordTier1ProviderModelRateLimit(node.provider, upstreamModel, credentialSlotId(node));
         const observedScope = node.keyGroup ? noteKeyGroup429(node, upstreamModel) : decideTier1RateLimitScope(node.id, effectiveModel);
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const now = Date.now();
