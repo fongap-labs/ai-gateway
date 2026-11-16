@@ -4,6 +4,12 @@ export type NodeTier = 'tier-1' | 'tier-2';
 
 export type NodeModelMap = { [logicalModel: string]: string };
 
+export type NodeReasoning = {
+  mode: 'none' | 'effort' | 'adaptive' | 'budget';
+  efforts?: ReadonlyArray<'low' | 'medium' | 'high' | 'max'>;
+  highBudgetTokens?: number;
+};
+
 export type RuntimeNode = {
   id: string;
   keyGroup?: string;
@@ -15,4 +21,5 @@ export type RuntimeNode = {
   credential: string;
   priority: number;
   models: NodeModelMap;
+  reasoning?: NodeReasoning;
 };
