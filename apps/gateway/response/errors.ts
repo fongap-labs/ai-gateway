@@ -131,7 +131,7 @@ export function gatewayError(
   // Some protocol adapters retain a JSON error but drop response headers.
   // Carry only the single bounded classification needed to honor this
   // no-immediate-replay decision; never restore the full failure graph.
-  const compactRetryEvidence = hasFamilyTimeoutEvidence
+  const compactRetryEvidence = deferredFamilyRetry
     ? { failure_kinds: { headers_timeout: Math.trunc(Number((kinds as Record<string, unknown>).headers_timeout)) } }
     : {};
   if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
