@@ -114,7 +114,9 @@ async function executeAdmittedNative(
   const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const strippedUndeclaredVisionEffort =
-    options.center === 'perception' && !node.reasoning && Object.hasOwn(outboundBody, 'reasoning_effort');
+    options.center === 'perception' &&
+    Object.hasOwn(outboundBody, 'reasoning_effort') &&
+    !(node.reasoning?.mode === 'effort' && node.reasoning.efforts?.includes('low'));
   if (strippedUndeclaredVisionEffort) {
     outboundBody = { ...outboundBody };
     delete outboundBody.reasoning_effort;
