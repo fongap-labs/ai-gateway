@@ -44,21 +44,35 @@ export function requestReasoningPreference(body: Record<string, unknown>): Reaso
 
 export function stripReasoningDefaultMarkers(body: Record<string, unknown>): Record<string, unknown> {
   let result = body;
-  if (typeof body.reasoning_effort === 'string' && DEFAULT_MARKERS.has(body.reasoning_effort.trim().toLowerCase())) {
+  const chatEffort = typeof body.reasoning_effort === 'string' ? body.reasoning_effort.trim().toLowerCase() : '';
+  if (DEFAULT_MARKERS.has(chatEffort)) {
     result = { ...result };
     delete result.reasoning_effort;
-  }
+  } else if (chatEffort === 'off') result = { ...result, reasoning_effort: 'none' };
+
   for (const field of ['reasoning', 'output_config'] as const) {
     const entry = record(result[field]);
-    if (!entry || typeof entry.effort !== 'string' || !DEFAULT_MARKERS.has(entry.effort.trim().toLowerCase())) continue;
+    if (!entry || typeof entry.effort !== 'string') continue;
+    const effort = entry.effort.trim().toLowerCase();
+    if (!DEFAULT_MARKERS.has(effort) && effort !== 'off') continue;
     const remaining = { ...entry };
     delete remaining.effort;
     if (Object.keys(remaining).length === 0) {
       result = { ...result };
       delete result[field];
-    } else {
-      result = { ...result, [field]: remaining };
+    } else result = { ...result, [field]: remaining };
+    if (effort === 'off') {
+      if (field === 'reasoning') result = { ...result, reasoning: { ...remaining, effort: 'none' } };
+      else result = { ...result, thinking: { type: 'disabled' } };
     }
+  }
+  const thinking = record(result.thinking);
+  if (thinking && typeof thinking.type === 'string') {
+    const kind = thinking.type.trim().toLowerCase();
+    if (DEFAULT_MARKERS.has(kind)) {
+      result = { ...result };
+      delete result.thinking;
+    } else if (kind === 'off') result = { ...result, thinking: { type: 'disabled' } };
   }
   return result;
 }
