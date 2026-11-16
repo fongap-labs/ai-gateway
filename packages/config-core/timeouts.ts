@@ -97,7 +97,8 @@ export function attemptBudgetSliceMs(remainingBudgetMs: number, remainingAttempt
 }
 
 export function viableFailoverWindowMs(bodyChars: number | undefined | null): number {
-  return Math.min(35_000, 10_000 + Math.floor(requestSizeAllowanceMs(bodyChars) / 2));
+  const allowance = requestSizeAllowanceMs(bodyChars);
+  return allowance > 0 ? Math.min(35_000, 10_000 + Math.floor(allowance / 2)) : 0;
 }
 
 export function attemptBudgetWindowMs(remainingBudgetMs: number, remainingAttempts: number, viableReserveMs: number = 0): number {
