@@ -18,6 +18,7 @@ export type InferenceInvocation = {
   returnStream?: true;
   streamBudget?: InferenceStreamBudget;
   displayModel?: string;
+  reasoningPreference?: 'off' | 'low' | 'medium' | 'high' | 'max';
   deadlineMs: number;
   upstreamHeadersDeadlineMs?: number;
   bufferedResponseDeadlineMs?: number;
@@ -62,6 +63,7 @@ function buildPrivateCenterRequest(invocation: InferenceInvocation, authHeader: 
       returnStream: invocation.returnStream,
       streamBudget: invocation.streamBudget,
       displayModel: invocation.displayModel,
+      reasoningPreference: invocation.reasoningPreference,
     },
     authHeader,
     key,

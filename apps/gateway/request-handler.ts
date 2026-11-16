@@ -246,13 +246,6 @@ async function runAdmittedRequest(
     ? evaluateRouteFeasibility({ route, requestedModel, requestDescriptor: reqDescriptor, tiers, knownModels, env })
     : initialFeasibility;
   const requiresTools = Array.isArray(bodyJson.tools) && bodyJson.tools.length > 0;
-  const reasoning = bodyJson.reasoning;
-  const thinking = bodyJson.thinking;
-  const reasoningEffort = bodyJson.reasoning_effort;
-  const requiresReasoning =
-    (typeof reasoningEffort === 'string' && reasoningEffort.toLowerCase() !== 'none') ||
-    (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning) && (reasoning as Record<string, unknown>).effort !== 'none') ||
-    (thinking !== null && typeof thinking === 'object' && !Array.isArray(thinking) && (thinking as Record<string, unknown>).type === 'enabled');
   const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
@@ -264,7 +257,6 @@ async function runAdmittedRequest(
         const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
         if (imageInputRequired && capabilities.vision !== true) return false;
         if (requiresTools && declared?.tools === false) return false;
-        if (requiresReasoning && declared?.reasoning === false) return false;
         if (clientWantsStream && declared?.stream === false) return false;
         return true;
       }),

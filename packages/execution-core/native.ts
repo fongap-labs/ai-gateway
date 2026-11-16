@@ -18,6 +18,7 @@ import { patchNativeJsonTopLevel } from '../transport/native-json-patch.ts';
 import { dispatchProviderAttempt } from '../transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../transport/provider-forward-request.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/provider-routing.ts';
+import { adaptNodeReasoning } from './reasoning-adapter.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
 const centerBodyPool = createBodyAdmissionPool();
@@ -112,6 +113,11 @@ async function executeAdmittedNative(
   }
   const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
+  const adaptedReasoning = adaptNodeReasoning(outboundBody, invocation.surface, invocation.reasoningPreference, node.reasoning);
+  if (adaptedReasoning.changed) {
+    outboundBody = adaptedReasoning.body;
+    isMutated = true;
+  }
   const clientRequest = buildProviderForwardRequest(request);
   if (outboundBody.model !== physicalModel) {
     outboundBody = { ...outboundBody, model: physicalModel };
@@ -139,7 +145,9 @@ async function executeAdmittedNative(
   const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
   if (providerTraceparent) headers.set('traceparent', providerTraceparent);
   const patchedNativeBody =
-    !invocation.inputSurface && isMutated ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage) : null;
+    !invocation.inputSurface && isMutated && !adaptedReasoning.changed
+      ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage)
+      : null;
   const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   const attempt = await dispatchProviderAttempt({ url, headers, body, signal: request.signal, upstreamHeadersDeadlineMs });
