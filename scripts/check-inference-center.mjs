@@ -362,20 +362,21 @@ try {
   assert.equal(timedOutCenter.state.logicalAttempts, 1);
   assert.equal(timedOutCenter.state.dispatches, 1);
 
-  // A Gateway-owned header deadline may rotate only when another candidate
-  // still fits into the remaining bounded dispatch window.
-  const retryableCenterTimeout = await runCenterGatewayAttempt(
+  // Even with more candidate slots, a local Service Binding abort gives
+  // no proof that the private center cancelled its Provider call. Do not
+  // multiply the same slow request across free Provider accounts.
+  const ambiguousCenterTimeout = await runCenterGatewayAttempt(
     async (incoming) =>
       new Promise((_resolve, reject) => {
-        incoming.signal.addEventListener('abort', () => reject(new Error('test-only retriable binding timeout')), { once: true });
+        incoming.signal.addEventListener('abort', () => reject(new Error('test-only ambiguous binding timeout')), { once: true });
       }),
     { remainingDispatchableAttempts: 3, failoverBudgetMs: 300 },
   );
-  assert.equal(retryableCenterTimeout.result.rotate, true);
-  assert.equal(retryableCenterTimeout.result.kind, 'headers_timeout');
-  assert.equal(retryableCenterTimeout.state.logicalAttempts, 1);
-  assert.equal(retryableCenterTimeout.state.dispatches, 1);
-  assert.equal(retryableCenterTimeout.context.upstreamStatus, 504);
+  assert.equal(ambiguousCenterTimeout.result.response?.status, 504);
+  assert.notEqual(ambiguousCenterTimeout.result.rotate, true);
+  assert.equal(ambiguousCenterTimeout.state.logicalAttempts, 1);
+  assert.equal(ambiguousCenterTimeout.state.dispatches, 1);
+  assert.equal(ambiguousCenterTimeout.state.attempts[0]?.kind, 'unknown');
 
   // Contract faults occur AFTER the private center dispatched a Provider.
   // They must fail closed, charge exactly one physical attempt and never
