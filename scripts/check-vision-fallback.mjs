@@ -181,6 +181,9 @@ bridgeEnv.AIG_PERCEPTION_SERVICE = {
 };
 bridgeEnv.AIG_INFERENCE_SERVICE = {
   async fetch(req) {
+    if (new URL(req.url).pathname === '/internal/conversion/preflight') {
+      return handleInferenceCenterRequest(req, bridgeCenterEnv);
+    }
     bridgeCenterCalls.push('inference');
     assert.equal(req.headers.get('x-aig-node-id'), 'bridge-code');
     const body = await req.clone().json();
