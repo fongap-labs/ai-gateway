@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { isResponsesRealOutput } from '../packages/transport/openai-native.ts';
 import { relayStreamResponse, trackStreamResponse } from '../src/stream/track.ts';
+import { SseLifecycleObserver } from '../src/stream/sse-lifecycle.ts';
 
 // A compatible Provider may emit a completed function item without argument
 // delta events. That is real output; role/lifecycle/usage-only events are not.
@@ -182,4 +183,30 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.failure, 1);
   assert.equal(callbacks.record.attempts[0].outcome, 'failure');
 }
+// Thousands of ordinary Chat delta frames must not pay for JSON.parse or
+// recursive usage/tool scans. Only an actual terminal/usage signal is parsed.
+{
+  const observer = new SseLifecycleObserver('openai_chat');
+  const originalParse = JSON.parse;
+  let parses = 0;
+  try {
+    JSON.parse = (...args) => {
+      parses++;
+      return originalParse(...args);
+    };
+    for (let i = 0; i < 4000; i++) {
+      observer.push('data: {"object":"chat.completion.chunk","choices":[{"delta":{"content":"x"},"finish_reason":null}],"usage":null}\n\n');
+    }
+    assert.equal(parses, 0, 'ordinary delta frames must not trigger JSON.parse');
+    observer.push('data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n');
+    assert.equal(parses, 1, 'terminal and usage frame still parsed exactly once');
+    observer.push('data: [DONE]\n\n');
+    assert.equal(observer.terminal, 'success');
+    assert.equal(observer.usage?.prompt_tokens, 5);
+    assert.equal(observer.unsafeToolUse, false);
+  } finally {
+    JSON.parse = originalParse;
+  }
+}
+
 console.log('Native SSE relay regression checks passed.');
