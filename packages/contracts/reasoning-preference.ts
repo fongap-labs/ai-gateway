@@ -45,16 +45,17 @@ export function requestReasoningPreference(body: Record<string, unknown>): Reaso
 export function stripReasoningDefaultMarkers(body: Record<string, unknown>): Record<string, unknown> {
   let result = body;
   if (typeof body.reasoning_effort === 'string' && DEFAULT_MARKERS.has(body.reasoning_effort.trim().toLowerCase())) {
-    const { reasoning_effort: _ignored, ...rest } = result;
-    result = rest;
+    result = { ...result };
+    delete result.reasoning_effort;
   }
   for (const field of ['reasoning', 'output_config'] as const) {
     const entry = record(result[field]);
     if (!entry || typeof entry.effort !== 'string' || !DEFAULT_MARKERS.has(entry.effort.trim().toLowerCase())) continue;
-    const { effort: _ignored, ...remaining } = entry;
+    const remaining = { ...entry };
+    delete remaining.effort;
     if (Object.keys(remaining).length === 0) {
-      const { [field]: _ignoredField, ...rest } = result;
-      result = rest;
+      result = { ...result };
+      delete result[field];
     } else {
       result = { ...result, [field]: remaining };
     }
