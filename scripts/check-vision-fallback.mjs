@@ -393,6 +393,7 @@ const preprocessProbe = async (status, expected) => {
     execute: async (subrequest) => {
       const body = await subrequest.json();
       assert.equal(body.reasoning_effort, 'low', 'vision prepass should request low effort');
+      assert.match(await subrequest.clone().text(), /,"reasoning_effort":"low"\}$/, 'vision prepass JSON should be patchable');
       assert.equal(body.model, bridgeModel);
       const deadline = Number(subrequest.headers.get('x-gateway-deadline-ms'));
       assert.ok(deadline > Date.now() + 20_000, 'vision deadline should leave sufficient room for an image request');
