@@ -111,6 +111,21 @@ async function runAdmittedRequest(
   const bodyJson = initialBodyJson;
   const rawBody = initialRawBody;
 
+  const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
+  if (imageInputRequired && modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true) {
+    return gatewayError(
+      request,
+      env,
+      route,
+      400,
+      'The requested model does not support image input.',
+      requestId,
+      undefined,
+      undefined,
+      'gateway_image_input_unsupported',
+    );
+  }
+
   if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
     return runExplicitImageTool({
       request,
@@ -156,20 +171,6 @@ async function runAdmittedRequest(
   }
 
   const requestPolicy = policy;
-  const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
-  if (imageInputRequired && modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true) {
-    return gatewayError(
-      request,
-      env,
-      route,
-      400,
-      'The requested model does not support image input.',
-      requestId,
-      undefined,
-      undefined,
-      'gateway_image_input_unsupported',
-    );
-  }
   const tiers: TierMap<RuntimeNode[]> = imageInputRequired
     ? {
         1: configuredTiers[1].filter((node) => getProviderProfile(node.provider).imageInput),
