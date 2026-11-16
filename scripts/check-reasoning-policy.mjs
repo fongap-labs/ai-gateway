@@ -19,6 +19,9 @@ assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, output_config: { effort
   output_config: { format: { type: 'json_schema' } },
 });
 assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, reasoning_effort: 'none' }).reasoning_effort, 'none');
+assert.equal(stripReasoningDefaultMarkers({ ...chat, reasoning_effort: 'off' }).reasoning_effort, 'none');
+assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, thinking: { type: 'off' } }).thinking, { type: 'disabled' });
+assert.deepEqual(stripReasoningDefaultMarkers({ ...chat, output_config: { effort: 'off' } }).thinking, { type: 'disabled' });
 
 const unchanged = adaptNodeReasoning(chat, 'chat_completions', 'high', undefined);
 assert.equal(unchanged.body, chat, 'unknown nodes preserve native requests');
