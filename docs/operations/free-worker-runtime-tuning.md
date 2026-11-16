@@ -5,7 +5,7 @@
 | 变量 | 建议值 | 作用与限制 |
 | --- | --- | --- |
 | `AIG_HOT_PATH_GUARDS` | `true` | 减少热路径额外计算 |
-| `AIG_REQUEST_ADMISSION` | `true` | 启用已有的请求限额和非必要 hedge 收敛 |
+| `AIG_REQUEST_ADMISSION` | `true` | 启用请求保护与非必要 hedge 收敛；仅在该模式下，对明确限流且全兼容模型池冷却的请求返回 429；默认旧模式仍返回 503 |
 | `AIG_STREAM_PASSTHROUGH` | `true` | 仅在无需改写物理模型名、或已有 Matrix 转换的条件下直通；不是强制所有流直通 |
 | `AIG_COST_GUARDS` | `true` | 降低可选 D1 模型明细采样与 KV 亲和度写入；全局 usage 不抽样 |
 | `AIG_STREAM_MAX_ATTEMPTS` | `4` | 每轮流式请求最多四次逻辑尝试；并非四次都一定执行 |
