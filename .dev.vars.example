@@ -1,141 +1,47 @@
-# Local development only (wrangler dev). Copy to .dev.vars and fill in real values.
-# .dev.vars is gitignored; never commit real credentials.
+# Local development only. Copy to .dev.vars (gitignored); never commit real credentials.
+# Required per node: id, provider, base_url, models.
+# Config and Secret shard suffixes are independent; credentials resolve by Tier + node id.
 
-# ============ Gateway access groups ============
-# Configure one or more groups. Each configured key has its own model allowlist.
-# Missing/empty models is fail-closed and grants that key zero models.
 AIG_ACCESS_KEY_AIR="replace-with-a-long-random-air-key"
 AIG_ACCESS_MODELS_AIR="general-air"
-# AIG_ACCESS_KEY_PRO="replace-with-a-long-random-pro-key"
-# AIG_ACCESS_MODELS_PRO="code-pro"
-# AIG_ACCESS_KEY_MAX="replace-with-a-long-random-max-key"
-# AIG_ACCESS_MODELS_MAX="code-max"
-# AIG_ACCESS_KEY_ULTRA="replace-with-a-long-random-ultra-key"
-# AIG_ACCESS_MODELS_ULTRA="general-ultra"
-# AIG_ACCESS_KEY_AGENT="replace-with-a-long-random-agent-key"
-# AIG_ACCESS_MODELS_AGENT="agent"
 
-# ============ Tier roles ============
-# Tier 1: free/effectively-free capacity; primary daily traffic and reliability focus.
-# Tier 2: membership/subscription entitlement capacity (Claude/Codex/Gemini subscriptions).
-# Tier 3: paid API capacity; protected final fallback.
-#
-# Do not use Tier 2 as another generic API-key pool. It is reserved for
-# operator-owned subscription-entitlement nodes onboarded through PKCE OAuth.
-
-# ============ Node config: current schema ============
-# Required per node: id, provider, base_url, models.
-# Optional: priority (non-negative integer number, default 100; ignored by Tier 1 P2C).
-# For Tier 2 auth:"oauth" subscription nodes, base_url is optional when the
-# provider adapter owns the endpoint (anthropic/openai/google): onboarding needs
-# only {id, provider, auth:"oauth", models}.
-# Protocol and routable surfaces come from the provider adapter registry and are
-# not node fields. Credentials, limits, protocol/surfaces overrides, model arrays,
-# unknown fields, and old aliases are rejected.
 AIG_TIER1_NODES_01='[
   {"id":"nvidia-01","provider":"nvidia","base_url":"https://integrate.api.nvidia.com/v1","priority":10,"models":{"general-air":"deepseek-ai/deepseek-v3.1","code-pro":"qwen/qwen3-coder-480b"}},
   {"id":"nvidia-02","provider":"nvidia","base_url":"https://integrate.api.nvidia.com/v1","priority":10,"models":{"general-air":"deepseek-ai/deepseek-v3.1"}},
   {"id":"glm-01","provider":"zhipu","base_url":"https://open.bigmodel.cn/api/paas/v4","priority":20,"models":{"code-max":"glm-4.7"}}
 ]'
 
-# Tier 3 uses the same current Node schema only when you intentionally enable
-# paid-API fallback capacity. Example intentionally omitted to avoid encouraging
-# accidental paid fallback in a default household/small-team setup.
+# Optional example for local credentials; replace placeholders outside the repository.
+# AIG_TIER1_CREDENTIALS_01='{"nvidia-01":"replace-key","nvidia-02":"replace-key","glm-01":"replace-key"}'
 
-# ============ Tier 2 subscription nodes (optional) ============
-# auth:"oauth" nodes resolve their credential from the OAuth token store, not
-# from AIG_TIER2_CREDENTIALS. base_url is optional (the provider adapter owns
-# the endpoint). Onboard at /oauth/start?provider=...&node=... and enter the
-# gateway access key on the paste page (POST body — never a URL).
-# AIG_TIER2_NODES_01='[
-#   {"id":"gemini","provider":"google","auth":"oauth","models":{"Code-Max":"gemini-2.5-pro"}},
-#   {"id":"claude","provider":"anthropic","auth":"oauth","models":{"Code-Max":"claude-sonnet-4-5"}},
-#   {"id":"codex","provider":"openai","auth":"oauth","models":{"Code-Max":"gpt-5.1-codex"}}
-# ]'
-# Available Gemini upstream models: gemini-2.5-pro, gemini-2.5-flash
+# Defaults live in src/config/runtime-vars.ts; uncomment only explicit local overrides.
+# AIG_UPSTREAM_HEADER_TIMEOUT_MS="15000"
+# AIG_FIRST_EVENT_TIMEOUT_MS="30000"
+# AIG_STREAM_IDLE_TIMEOUT_MS="120000"
+# AIG_RATE_LIMIT_COOLDOWN_MS="30000"
+# AIG_AUTH_FAILURE_COOLDOWN_MS="3600000"
+# AIG_REQUEST_BODY_MAX_BYTES="20971520"
+# AIG_FAILOVER_BUDGET_MS="60000"
+# AIG_HEDGE_DELAY_MS="3000"
+# AIG_REQUEST_HEDGE_MAX="1"
+# AIG_ISOLATE_MAX_IN_FLIGHT="0"
+# AIG_CHUNKED_BODY_MAX_BYTES="524288"
+# AIG_STREAM_MAX_ATTEMPTS="2"
+# AIG_NONSTREAM_MAX_ATTEMPTS="3"
+# AIG_ACCESS_KEY_RPM="600"
+# AIG_AUTH_ATTEMPT_RPM="60"
+# AIG_EDGE_CACHE_TTL_SEC="14400"
+# AIG_TOKEN_D1_SAMPLE_PCT="100"
+# AIG_AFFINITY_WRITE="1"
+# AIG_AFFINITY_READ_TIMEOUT_MS="50"
+# AIG_TIER1_PROBE_TIMEOUT_MS="10000"
+# AIG_STREAM_GUARD_PREFIX_BYTES="65536"
+# AIG_CONVERSION_MAX_EVENTS="400"
+# AIG_CONVERSION_MAX_BYTES="131072"
+# AIG_CONVERSION_MAX_TOOL_EVENTS="200"
+# AIG_CONVERSION_MAX_TOOL_ARG_BYTES="65536"
+# AIG_CONVERSION_NONSTREAM_MAX_BYTES="131072"
+# AIG_CONVERSION_MAX_OUTPUT_TOKENS="0"
 
-# ============ Credentials live ONLY in tier-scoped secrets ============
-# Runtime binds by Tier + node id. Config/Secret shard numbers are independent.
-# AIG_TIER1_CREDENTIALS_01='{"nvidia-01":"nvapi-xxx","nvidia-02":"nvapi-yyy","glm-01":"zzz.id"}'
-# More shards: AIG_TIER1_CREDENTIALS_02 ... AIG_TIER1_CREDENTIALS_10
-# Tier 2 auth:"oauth" nodes use the OAuth token store (no static credential here).
-# AIG_TIER2_CREDENTIALS_01='{}'
-# Tier 3 credentials are configured only together with intentional paid-API nodes.
-
-# ============ Optional model / request policy ============
-# AIG_MODELS_CONFIG='{"general-air":{"policy":"fast"}}'
-# AIG_POLICIES_CONFIG='{"default":{"max_attempts":5}}'
-# Explicit Tier 1 local ceiling only when the upstream contract is known:
-# AIG_POLICIES_CONFIG='{"default":{"max_attempts":5,"max_in_flight":4}}'
-# max_in_flight=0 or null disables the ceiling; numeric strings are invalid.
-# There is no budget_split setting: Tier order is always Tier 1 -> Tier 2 -> Tier 3.
-
-# ============ Runtime knobs (all optional) ============
-# Defaults live in src/config/runtime-vars.ts. Uncomment only intentional overrides.
-# AIG_REQUEST_BODY_MAX_BYTES="20971520"              # default: 20 MB
-# AIG_UPSTREAM_HEADER_TIMEOUT_MS="15000"     # default: 15 s
-# AIG_FIRST_EVENT_TIMEOUT_MS="30000"         # default: 30 s
-# AIG_STREAM_IDLE_TIMEOUT_MS="120000"        # default: 120 s
-# AIG_RATE_LIMIT_COOLDOWN_MS="30000"         # default: 30 s (Tier 2/3 fallback wait; Tier 1 uses the ladder below)
-# AIG_RATE_LIMIT_STEPS_MS="15000,30000,60000,120000,300000,600000,1200000,1800000"   # default Tier 1 429 ladder
-# AIG_RATE_LIMIT_WINDOW_STEPS_MS="15000,30000,45000,60000,90000,120000,180000,300000"   # default Tier 1 short-window 429 ladder (capped at 5 min)
-# AIG_RATE_LIMIT_QUOTA_STEPS_MS="300000,600000,1200000,1800000"   # default Tier 1 long-allowance 429 ladder (5 min ... 30 min)
-# AIG_AUTH_FAILURE_COOLDOWN_MS="3600000"        # default: 1 h
-# AIG_FAILOVER_BUDGET_MS="60000"             # default: 60 s
-# AIG_HEDGE_DELAY_MS="3000"                  # default: 3 s
-# AIG_REQUEST_HEDGE_MAX="1"             # default: 1
-# AIG_ACCESS_KEY_RPM="600"                  # default: 0 (disabled); set a positive value to cap each group per minute
-# AIG_AUTH_ATTEMPT_RPM="60"                 # default: 60 failed auth attempts per fingerprint; 0 disables
-# AIG_IS_SUBSCRIPTION_ENABLED="true"          # default: true; false disables Tier 2 subscription nodes and /oauth/*
-# AIG_PUBLIC_DASHBOARD="true"              # default: true; false answers / and /readme-status.svg with 404
-# AIG_DIAGNOSTICS_GROUPS="AGENT"           # default: unset (every key); limits /health and /metrics to these key groups
-# AIG_EDGE_CACHE_TTL_SEC="14400"            # default: 4 h (0 = disabled)
-# AIG_EDGE_CACHE_AUTO="false"               # default: false; true also caches temperature=0 requests without x-gateway-cache: true
-# AIG_LOG_LEVEL="info"
-# AIG_SHOULD_EXPOSE_UPSTREAM="false"
-# AIG_HAS_STREAM_GUARD="false"
-# AIG_CAN_USE_HTTP="false"
-# AIG_ANTHROPIC_COUNT_MODE="approximate"
-# AIG_DASHBOARD_MODELS="Code-Ultra,Code-Max,Code-Pro,Ultra,Max,Pro,Air"
-
-# ---- Free-tier capacity/cost guards (defaults live in src/config/runtime-vars.ts) ----
-# AIG_TIER1_PROBE_V2="false"                    # default: false; single-flight 429 recovery probe
-# AIG_TIER1_PROBE_TIMEOUT_MS="10000"            # default: 10 s
-# AIG_STREAM_PASSTHROUGH="false"                # default: false; byte-for-byte native stream relay
-# AIG_STREAM_GUARD_PREFIX_BYTES="65536"         # default: 64 KB
-# AIG_CONVERSION_BUDGET="false"                 # default: false; per-reply matrix translation budget
-# AIG_CONVERSION_BUDGET_MODE="error"            # default: error (truncate renders a shortened reply)
-# AIG_CONVERSION_PREFER_NONSTREAM="false"       # default: false
-# AIG_CONVERSION_MAX_EVENTS="400"               # default: 400
-# AIG_CONVERSION_MAX_BYTES="131072"             # default: 128 KB (translated output)
-# AIG_CONVERSION_MAX_TOOL_EVENTS="200"          # default: 200
-# AIG_CONVERSION_MAX_TOOL_ARG_BYTES="65536"     # default: 64 KB per open tool call
-# AIG_CONVERSION_NONSTREAM_MAX_BYTES="131072"   # default: 128 KB (collected-object path)
-# AIG_CONVERSION_MAX_OUTPUT_TOKENS="0"          # default: 0 (reported output-token ceiling disabled)
-# AIG_REQUEST_ADMISSION="false"                 # default: false; admission/concurrency guard stack
-# AIG_ISOLATE_MAX_IN_FLIGHT="0"                 # default: 0 (disabled); set positive cap only when needed
-# AIG_CHUNKED_BODY_MAX_BYTES="524288"           # default: 512 KB; charge/read cap for bodies without Content-Length
-# AIG_STREAM_MAX_ATTEMPTS="2"                   # default: 2; streaming logical-attempt cap (admission stack)
-# AIG_NONSTREAM_MAX_ATTEMPTS="3"                # default: 3; buffered logical-attempt cap (admission stack)
-# AIG_COST_GUARDS="false"                       # default: false; flips the four cost defaults below
-# AIG_AFFINITY_WRITE="1"                        # default: 1; cost guards switch the default to 0
-# AIG_TOKEN_D1_SAMPLE_PCT="100"                 # default: 100; cost guards use 1 (0 = no per-model token detail)
-# AIG_AFFINITY_READ_TIMEOUT_MS="50"             # default: 50 ms; hot-path guards switch the default to 15
-# AIG_HOT_PATH_GUARDS="false"                   # default: false; lazy auth fingerprint, route-scoped diagnostics, affinity breaker
-
-# ============ Protocol fallback (optional) ============
-# All three protocol surfaces translate pairwise through the IR matrix:
-# Anthropic Messages <-> OpenAI Chat <-> OpenAI Responses (six directed pairs).
-# Unset/empty uses the built-in matrix chain; "disable" turns conversion off;
-# explicit JSON replaces the built-in mapping.
+# Optional IR protocol fallback mapping.
 # AIG_PROTOCOL_FALLBACKS='{"anthropic:messages":["openai:chat_completions","openai:responses"],"openai:chat_completions":["anthropic:messages","openai:responses"],"openai:responses":["anthropic:messages","openai:chat_completions"]}'
-
-# ============ Token-usage stream hint (optional, fail-open) ============
-# Ask OpenAI-compatible streaming upstreams to report usage in the final chunk.
-# "auto" (default) follows provider quirks; "on" forces it; "off" disables it.
-# Missing provider usage is recorded as missing and is never estimated.
-# AIG_USAGE_INCLUDE_MODE="auto"
-# AIG_USAGE_EXCLUDE_PROVIDERS="my-llm-provider"
-
-# CORS is disabled by default. Set an explicit origin to enable browser access:
-# AIG_CORS_ORIGIN="https://your-app.example.com"
