@@ -6,6 +6,7 @@
 // Once the binding exists there is NO automatic direct-provider fallback.
 
 import { readEnv } from '../../../packages/config-core/env.ts';
+import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -104,15 +105,23 @@ export async function dispatchInferenceAttempt(
   // The native fast path already has validated raw JSON. Do not allocate and
   // shallow-copy the parsed request on every retry when the wire body is reused.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
+  const patchedRaw =
+    !c.conversionContext && !c.fakeStream && c.rawBody?.text && typeof c.bodyJson.model === 'string'
+      ? patchNativeJsonTopLevel(c.rawBody.text, c.bodyJson.model, effectiveModel, false)
+      : null;
   let outboundBody: string;
   if (reuseRaw && c.rawBody) {
     outboundBody = c.rawBody.text;
+  } else if (patchedRaw !== null) {
+    outboundBody = patchedRaw;
   } else {
     const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
     if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
     outboundBody = JSON.stringify(body);
   }
-  if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
+  // Keep the validated raw prompt available for sibling-model fallback.
+  // makeNodeStreamTrack releases it after the first committed SSE event;
+  // clearing it here forced another full stringify on every later attempt.
 
   // v4 handles ordinary streams; authenticated v5 carries bounded budgets
   // so Inference executes the same IR budget before producing public SSE.
