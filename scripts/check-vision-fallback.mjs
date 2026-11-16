@@ -264,7 +264,15 @@ try {
       body: JSON.stringify({
         model: original,
         max_tokens: 64,
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'What is this?' }, { type: 'image', source }] }],
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What is this?' },
+              { type: 'image', source },
+            ],
+          },
+        ],
       }),
     });
   const anthropicImageSource = {
@@ -281,8 +289,7 @@ try {
   assert.deepEqual(bridgeCenterCalls.slice(-2), ['perception', 'inference']);
   assert.deepEqual(bridgeProviderCalls.slice(-2), ['upstream-vision-model', 'upstream-text-model']);
 
-  const listRequest = () =>
-    new Request('https://gateway.example.invalid/v1/models', { headers: { 'x-api-key': accessKey } });
+  const listRequest = () => new Request('https://gateway.example.invalid/v1/models', { headers: { 'x-api-key': accessKey } });
   const list = await (await handleRequest(listRequest(), bridgeEnv, {})).json();
   assert.equal(list.data.find((entry) => entry.id === original)?.supports_vision, true);
   assert.equal(list.data.find((entry) => entry.id === bridgeModel)?.supports_vision, true);
@@ -310,11 +317,10 @@ try {
   assert.equal(blockedAuto.status, 400);
   assert.equal(blockedAuto.headers.get('x-gateway-error-code'), 'gateway_image_input_unsupported');
 
-  const unsupportedAnthropic = await handleRequest(
-    anthropicImageRequest({ type: 'file', file_id: 'file-123' }),
-    bridgeEnv,
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+  const unsupportedAnthropic = await handleRequest(anthropicImageRequest({ type: 'file', file_id: 'file-123' }), bridgeEnv, {
+    waitUntil() {},
+    passThroughOnException() {},
+  });
   assert.equal(unsupportedAnthropic.status, 400);
   assert.equal(unsupportedAnthropic.headers.get('x-gateway-error-code'), 'gateway_vision_preprocess_shape_unsupported');
 
