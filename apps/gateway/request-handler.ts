@@ -67,10 +67,11 @@ async function handleAdmittedRequest(
   env: GatewayEnv,
   ctx: ExecutionContextLike,
   observeBodyBytes: (actualBytes: number) => boolean,
+  visionPrepass: boolean = false,
 ): Promise<Response> {
   const retrySlot = new RetrySlot();
   try {
-    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes);
+    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes, visionPrepass);
   } finally {
     retrySlot.end();
   }
@@ -82,6 +83,7 @@ async function runAdmittedRequest(
   ctx: ExecutionContextLike,
   retrySlot: RetrySlot,
   observeBodyBytes: (actualBytes: number) => boolean,
+  visionPrepass: boolean,
 ): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx, observeBodyBytes);
@@ -157,7 +159,7 @@ async function runAdmittedRequest(
     if (hit) return hit;
   }
 
-  const requestPolicy = policy;
+  const requestPolicy = visionPrepass ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, 3), hedge: { enabled: false } } : policy;
   const modelConfig = loadModelsConfig(env);
   const visionFallbackAvailable = (modelConfig[requestedModel]?.policy.fallback ?? []).some((configuredModel) => {
     const model = [...knownModels].find((candidate) => candidate.toLowerCase() === configuredModel.toLowerCase());
@@ -203,7 +205,7 @@ async function runAdmittedRequest(
         body: bodyJson,
         visionModel: delegation.model,
         remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-        execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
+        execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes, true),
       });
       if (!visualResult.ok) {
         return gatewayError(
