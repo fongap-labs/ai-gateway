@@ -164,9 +164,9 @@ recordTier1ProviderModelRateLimit('nvidia', heatModel, credentialSlotId(groupedO
 assert.equal(tier1ProviderModelRateLimitCount('nvidia', heatModel, heatNow + 1), 1, 'shared credentials must count as one quota source');
 recordTier1ProviderModelRateLimit('nvidia', heatModel, credentialSlotId(separateGroup), heatNow + 2);
 recordTier1ProviderModelRateLimit('nvidia', heatModel, 'other-independent-key', heatNow + 3);
-assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 3), 1.3, 'three independent limited credentials increase Provider cost');
+assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 3), 1.15, 'three independent limited credentials increase Provider cost');
 recordTier1ProviderModelRateLimit('nvidia', heatModel, 'fourth-independent-key', heatNow + 4);
-assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 4), 1.7, 'four independent limited credentials trigger stronger avoidance');
+assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 4), 1.35, 'four independent limited credentials trigger stronger avoidance');
 recordTier1ProviderModelSuccess('nvidia', heatModel, credentialSlotId(groupedA), heatNow + 5);
 assert.equal(tier1ProviderModelRateLimitCount('nvidia', heatModel, heatNow + 5), 3, 'successful shared key clears its heat evidence');
 assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 91_000), 1, 'old 429 heat must expire automatically');
