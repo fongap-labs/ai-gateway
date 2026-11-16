@@ -354,10 +354,11 @@ export async function preflight(
       .toLowerCase() === 'true' &&
     !clientWantsStream;
 
-  const gatewayConfigForAuth = loadGatewayConfig(env);
-  const knownModels = collectKnownModels(gatewayConfigForAuth.nodes, env);
+  const config = loadGatewayConfig(env);
+  const knownModels = collectKnownModels(config.nodes, env);
   const requestedModel = resolveClientModel(String(bodyJson.model || ''), knownModels);
-  const modelConfig = loadModelsConfig(env)[requestedModel];
+  const modelsConfig = loadModelsConfig(env);
+  const modelConfig = modelsConfig[requestedModel];
   const modalities = modelConfig?.catalog.modalities;
   if (route === 'openai_images') {
     if (modelConfig?.policy.visibility !== 'internal' || !modalities?.input.includes('text') || !modalities.output.includes('image')) {
@@ -379,16 +380,15 @@ export async function preflight(
         denyStatus === 403 ? 'Forbidden: the provided key is not permitted to use this model.' : 'Model not found for this key.',
         requestId,
         {
-          configuration_status: gatewayConfigForAuth.status,
+          configuration_status: config.status,
           known_model_count: knownModels.size,
-          ...(exposeUpstreamInfo ? { diagnostics: gatewayConfigForAuth.diagnostics.slice(0, 5) } : {}),
+          ...(exposeUpstreamInfo ? { diagnostics: config.diagnostics.slice(0, 5) } : {}),
         },
       ),
     };
   }
 
   const callableModels = new Set(filterVisibleModels(knownModels, authResult));
-  const config = loadGatewayConfig(env);
   if (!config.ready) {
     return {
       ok: false,
@@ -428,7 +428,7 @@ export async function preflight(
   });
   let familyReachable = feasibility.reachable;
   if (!familyReachable && route !== 'openai_images') {
-    for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels, loadModelsConfig(env))) {
+    for (const effectiveModel of modelFallbackCandidates(requestedModel, callableModels, modelsConfig)) {
       if (effectiveModel === requestedModel) continue;
       const effectiveDescriptor = { ...requestDescriptor, model: effectiveModel };
       const candidateFeasibility = evaluateRouteFeasibility({
@@ -459,7 +459,7 @@ export async function preflight(
     };
   }
 
-  const policy = getPolicy(requestedModel, loadModelsConfig(env), loadPoliciesConfig(env));
+  const policy = getPolicy(requestedModel, modelsConfig, loadPoliciesConfig(env));
   const attemptCap = clientWantsStream ? limits.streamMaxAttempts : limits.nonStreamMaxAttempts;
   const requestPolicy = limits.requestAdmission ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, attemptCap) } : policy;
   const serverBudgetMs = (policy.failoverBudgetMs ?? limits.failoverBudgetMs) + requestSizeAllowanceMs(bodyChars);

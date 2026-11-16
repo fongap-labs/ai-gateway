@@ -8,7 +8,6 @@ import {
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
-import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
@@ -26,6 +25,7 @@ import { quotaFromCenter } from '../reliability/center-quota.ts';
 import { buildClientErrorResponse, gatewayError } from '../response/errors.ts';
 import { type InferenceCenter, InferenceCenterUnavailable, invokeInferenceNode } from '../transport/inference-client-request.ts';
 import { invokePerceptionNode, PerceptionCenterUnavailable } from '../transport/perception-client-request.ts';
+import { requestBodyForAttempt } from '../transport/request-body-cache.ts';
 import { recordUndeliveredUpstreamAttempt } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome, rotateWithNeutralEnd, stopAfterDispatchedCenterFault } from './outcome.ts';
 import { handleSuccess } from './success.ts';
@@ -94,21 +94,13 @@ export async function dispatchInferenceAttempt(
   const effectiveModel = reqDescriptor.model;
   const inputSurface = c.conversionContext ? inputSurfaceForClientRoute(c.conversionContext.clientRoute) : undefined;
   if (c.conversionContext && !inputSurface) return stopForCenter(c, 502, 'gateway_inference_conversion_route_invalid', center);
-  const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
-  const patchedRaw =
-    !c.conversionContext && !c.fakeStream && c.rawBody?.text && typeof c.bodyJson.model === 'string'
-      ? patchNativeJsonTopLevel(c.rawBody.text, c.bodyJson.model, effectiveModel, false)
-      : null;
-  let outboundBody: string;
-  if (reuseRaw && c.rawBody) {
-    outboundBody = c.rawBody.text;
-  } else if (patchedRaw !== null) {
-    outboundBody = patchedRaw;
-  } else {
-    const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
-    if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
-    outboundBody = JSON.stringify(body);
-  }
+  const outboundBody = requestBodyForAttempt(
+    c.state,
+    c.conversionContext ? c.bodyJson : sourceBody,
+    c.rawBody?.text,
+    effectiveModel,
+    !c.conversionContext && c.fakeStream && c.surface === 'chat_completions',
+  );
 
   const returnStream = Boolean(c.conversionContext && c.clientWantsStream && !c.fakeStream && c.bodyJson.stream === true);
   const returnTranslatedObject = Boolean(c.conversionContext && !c.clientWantsStream);

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 跨协议回退复用已校验请求正文，按请求缓存必要的 JSON 序列化并合并并发转换预检，避免重复计算且不扩大重试预算。
+
 - 修复: 跨 OpenAI Chat、Responses、Anthropic Messages 转换时保留明确关闭思考的意图，避免 Anthropic `thinking.disabled` 被 `output_config.effort` 覆盖或在跨协议发送时丢失；补齐六向回归。
 
 - 新增: 默认 High 思考意图与跨协议弹性适配；显式 Off 和客户端等级优先，节点能力未知时保留原生请求，不强制固定 24k 思考预算，不按 High 缩减免费节点回退池，并提供模型能力元数据。
