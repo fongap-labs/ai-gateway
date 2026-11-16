@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
+import { preprocessChatImages, visionPreprocessDeadlineMs } from '../apps/gateway/vision-preprocess.ts';
 import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
 
@@ -160,7 +161,13 @@ const bridgeEnv = {
   AIG_REQUEST_ADMISSION: 'false',
   AIG_TIER1_NODES_01: JSON.stringify([
     { id: 'bridge-code', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [original]: 'upstream-text-model' } },
-    { id: 'bridge-vision', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [bridgeModel]: 'upstream-vision-model' } },
+    {
+      id: 'bridge-vision',
+      provider: 'openai',
+      base_url: 'https://provider.example.invalid/v1',
+      models: { [bridgeModel]: 'upstream-vision-model' },
+      reasoning: { mode: 'effort', efforts: ['high'] },
+    },
   ]),
   AIG_MODELS_CONFIG: JSON.stringify({
     [original]: { policy: 'default', capabilities: { vision: false }, vision_delegate: bridgeModel },
@@ -205,6 +212,7 @@ globalThis.fetch = async (_input, init) => {
   bridgeProviderCalls.push(body.model);
   if (body.model === 'upstream-vision-model') {
     assert.equal(JSON.stringify(body).includes('image_url'), true);
+    assert.equal(body.reasoning_effort, undefined, 'unconfigured vision nodes must not receive unsupported effort parameters');
   } else {
     assert.equal(body.model, 'upstream-text-model');
     assert.equal(JSON.stringify(body).includes('image_url'), false);
@@ -368,4 +376,50 @@ for (const [field, payload] of [
   assert.equal(reply.headers.get('x-gateway-error-code'), 'gateway_model_capability_unsupported', field);
 }
 
-console.log('Gateway -> real Perception -> fake Provider and zero-dispatch failure contracts passed offline.');
+assert.equal(visionPreprocessDeadlineMs(60_000, 1_000), 40_000);
+assert.equal(visionPreprocessDeadlineMs(120_000, 1_000), 61_000);
+assert.equal(visionPreprocessDeadlineMs(8_000, 1_000), 5_000);
+
+const preprocessProbe = async (status, expected) => {
+  const request = new Request('https://gateway.example.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${accessKey}`, 'content-type': 'application/json' },
+  });
+  const result = await preprocessChatImages({
+    request,
+    body: { model: original, messages: [{ role: 'user', content: [{ type: 'text', text: 'Read the image.' }, image] }] },
+    visionModel: bridgeModel,
+    remainingMs: 60_000,
+    execute: async (subrequest) => {
+      const requestText = await subrequest.text();
+      const body = JSON.parse(requestText);
+      assert.equal(body.reasoning_effort, 'low', 'vision prepass should request low effort');
+      assert.match(requestText, /,"reasoning_effort":"low"\}$/, 'vision prepass JSON should be patchable');
+      assert.equal(body.model, bridgeModel);
+      const deadline = Number(subrequest.headers.get('x-gateway-deadline-ms'));
+      assert.ok(deadline > Date.now() + 20_000, 'vision deadline should leave sufficient room for an image request');
+      return new Response(
+        status === 200
+          ? JSON.stringify({ choices: [{ message: { content: 'The image shows Yes.' } }] })
+          : JSON.stringify({ error: { message: 'upstream unavailable' } }),
+        { status, headers: { 'content-type': 'application/json' } },
+      );
+    },
+  });
+  if (status === 200) {
+    assert.equal(result.ok, true);
+    assert.match(JSON.stringify(result.body), /The image shows Yes/);
+  } else {
+    assert.equal(result.ok, false);
+    assert.equal(result.status, expected.status);
+    assert.equal(result.code, expected.code);
+    assert.equal(result.cause, `upstream_http_${status}`);
+  }
+};
+await preprocessProbe(200);
+await preprocessProbe(504, { status: 504, code: 'gateway_vision_preprocess_timeout' });
+await preprocessProbe(503, { status: 503, code: 'gateway_vision_preprocess_unavailable' });
+await preprocessProbe(429, { status: 429, code: 'gateway_vision_preprocess_rate_limited' });
+await preprocessProbe(413, { status: 413, code: 'gateway_vision_preprocess_image_too_large' });
+
+console.log('Gateway -> real Perception -> fake Provider, vision budget, and error contracts passed offline.');
