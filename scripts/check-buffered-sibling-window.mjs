@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
-import { requestSizeAllowanceMs } from '../src/config/timeouts.ts';
+import { attemptBudgetWindowMs, requestSizeAllowanceMs, viableFailoverWindowMs } from '../src/config/timeouts.ts';
+import { preferUntriedFailureProviders } from '../apps/gateway/reliability/retry-budget.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
@@ -104,4 +105,23 @@ async function exercise(hasSibling, promptChars = 0) {
 await exercise(true);
 await exercise(false);
 await exercise(true, 120_000);
+const largeBodyChars = 1_900_000;
+const viableMs = viableFailoverWindowMs(largeBodyChars);
+assert.ok(viableMs >= 25_000, 'large requests need a viable second chance');
+assert.equal(attemptBudgetWindowMs(120_000, 8, viableMs), 120_000 - viableMs, 'reserve one feasible retry rather than seven 5s windows');
+assert.equal(attemptBudgetWindowMs(27_000, 8, viableMs), 27_000, 'when only one viable window remains, do not split it into doomed short hops');
+assert.equal(attemptBudgetWindowMs(27_000, 1, viableMs), 27_000);
+
+const providerNodes = [
+  { id: 'slow-a', tier: 'tier-1', provider: 'nvidia' },
+  { id: 'slow-b', tier: 'tier-1', provider: 'nvidia' },
+  { id: 'independent', tier: 'tier-1', provider: 'openrouter' },
+];
+const providerFailure = [{ dispatched: true, node_id: 'slow-a', kind: 'headers_timeout', status: 504 }];
+const preferred = preferUntriedFailureProviders(providerNodes, providerNodes, providerFailure, new Set(['slow-a']));
+assert.equal(preferred?.has('slow-b'), true, 'prefer an independent Provider after NVIDIA timeout');
+assert.equal(preferred?.has('independent'), false, 'the healthy alternate remains dispatchable');
+assert.equal(preferUntriedFailureProviders(providerNodes.slice(0, 2), providerNodes, providerFailure, new Set(['slow-a'])), null);
+assert.equal(preferUntriedFailureProviders(providerNodes, providerNodes, [{ ...providerFailure[0], kind: 'client', status: 400 }], new Set()), null);
+
 console.log('Buffered sibling hop caps and single-model full-window contracts passed offline.');
