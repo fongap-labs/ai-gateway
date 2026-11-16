@@ -321,7 +321,12 @@ export function buildExhaustedResponse(
       // remain HTTP 503 in both modes.
       const hasRateLimitEvidence =
         (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      if (getBool(env, 'AIG_REQUEST_ADMISSION', false) && hasRateLimitEvidence && retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
+      if (
+        getBool(env, 'AIG_REQUEST_ADMISSION', false) &&
+        hasRateLimitEvidence &&
+        retryAfterSec >= 15 &&
+        familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)
+      ) {
         status = 429;
       }
       if (retryAfterSec >= 5) {
