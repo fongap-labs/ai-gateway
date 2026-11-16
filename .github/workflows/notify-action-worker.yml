@@ -1,5 +1,13 @@
 name: Notify Action Worker
 
+# Approved thin trigger. It only tells Action Worker that something changed; every fact is re-read
+# centrally. It runs no pull request code, checks out nothing and must stay byte-identical to the
+# approved template (see policies/security.json approved_workflows).
+#
+#   pull request opened, updated or reopened -> run-pr-governance
+#   pull request closed                      -> cancel-pr-work
+#   push to main                             -> run-intake (central CI, main write attestation,
+#                                               changed task projects and automatic deploys)
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, closed]
@@ -15,7 +23,9 @@ concurrency:
 jobs:
   pull-request:
     name: Notify pull request change
+    # Events Dependabot starts get no Actions secrets; central Intake covers those pull requests.
     if: github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]'
+    # Resolved centrally (docs/RUNNER_POLICY.md); defaults to GitHub-hosted Linux.
     runs-on: ${{ fromJSON(vars.AW_DISPATCH_RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 3
     permissions:
