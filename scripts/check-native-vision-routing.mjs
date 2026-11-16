@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
+import { handleInferenceCenterRequest } from '../apps/inference/index.ts';
 import { handlePerceptionCenterRequest } from '../apps/perception/index.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from '../packages/config-core/models.ts';
 
@@ -194,6 +195,81 @@ async function assertNativeVisionMetadataIndependentOfProtocolFallbacks() {
   assert.equal(models.find((model) => model.id === visionModel)?.supports_vision, true);
 }
 
+async function assertTextRoutingUnaffected(withPerception) {
+  const calls = { inference: 0, perception: 0, provider: 0 };
+  const env = {
+    AIG_ACCESS_KEY_AIR: key,
+    AIG_ACCESS_MODELS_AIR: textModel,
+    AIG_TIER1_NODES_01: JSON.stringify([
+      { id: 'native-text', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [textModel]: 'provider-text' } },
+    ]),
+    AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
+    AIG_PERCEPTION_AUTH_KEY: 'v'.repeat(32),
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [textModel]: { policy: 'default', capabilities: { vision: false }, vision_delegate: visionModel },
+    }),
+    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, tier_attempts: { tier1: 1 }, hedge: { enabled: false } } }),
+  };
+  const centerEnv = {
+    ...env,
+    AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'native-text': 'local-text-token' }),
+  };
+  env.AIG_INFERENCE_SERVICE = {
+    async fetch(internal) {
+      if (new URL(internal.url).pathname === '/internal/execute') {
+        calls.inference++;
+        assert.equal(internal.headers.get('x-aig-node-id'), 'native-text');
+        assert.equal(internal.headers.get('x-aig-inference-auth'), env.AIG_INFERENCE_AUTH_KEY);
+      }
+      return handleInferenceCenterRequest(internal, centerEnv);
+    },
+  };
+  if (withPerception) {
+    env.AIG_PERCEPTION_SERVICE = {
+      async fetch() {
+        calls.perception++;
+        throw new Error('Text-only requests must not call Perception');
+      },
+    };
+  }
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    calls.provider++;
+    const body = JSON.parse(init.body);
+    assert.equal(body.model, 'provider-text');
+    assert.equal(JSON.stringify(body).includes('image_url'), false);
+    return new Response(
+      JSON.stringify({
+        id: 'chatcmpl-text',
+        object: 'chat.completion',
+        model: body.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: 'text route intact' }, finish_reason: 'stop' }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  };
+  try {
+    const response = await handleRequest(
+      new Request('https://gateway.example.invalid/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: textModel,
+          messages: [{ role: 'user', content: 'Hello' }],
+          stream: false,
+        }),
+      }),
+      env,
+      ctx,
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).choices?.[0]?.message?.content, 'text route intact');
+    assert.deepEqual(calls, { inference: 1, perception: 0, provider: 1 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 for (const route of ['chat', 'responses', 'anthropic']) {
   await exercise({ route, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
   await exercise({ route, fallback: true, legacyDelegate: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
@@ -210,4 +286,6 @@ await exercise({ model: visionModel, expectedStatus: 200 });
 await exercise({ model: visionModel, provider: 'unverified-provider', expectedStatus: 400, expectedCode: 'gateway_image_provider_unsupported' });
 await exercise({ model: visionModel, bindPerception: false, expectedStatus: 503, expectedCode: 'gateway_perception_center_unavailable' });
 await assertNativeVisionMetadataIndependentOfProtocolFallbacks();
+await assertTextRoutingUnaffected(false);
+await assertTextRoutingUnaffected(true);
 console.log('Only native vision models expose image capability; disabling protocol fallback does not hide a native Responses vision route.');
