@@ -113,6 +113,13 @@ async function executeAdmittedNative(
   }
   const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
+  const strippedUndeclaredVisionEffort =
+    options.center === 'perception' && !node.reasoning && Object.hasOwn(outboundBody, 'reasoning_effort');
+  if (strippedUndeclaredVisionEffort) {
+    outboundBody = { ...outboundBody };
+    delete outboundBody.reasoning_effort;
+    isMutated = true;
+  }
   const adaptedReasoning = adaptNodeReasoning(outboundBody, invocation.surface, invocation.reasoningPreference, node.reasoning);
   if (adaptedReasoning.changed) {
     outboundBody = adaptedReasoning.body;
@@ -145,7 +152,7 @@ async function executeAdmittedNative(
   const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
   if (providerTraceparent) headers.set('traceparent', providerTraceparent);
   const patchedNativeBody =
-    !invocation.inputSurface && isMutated && !adaptedReasoning.changed
+    !invocation.inputSurface && isMutated && !adaptedReasoning.changed && !strippedUndeclaredVisionEffort
       ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage)
       : null;
   const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
