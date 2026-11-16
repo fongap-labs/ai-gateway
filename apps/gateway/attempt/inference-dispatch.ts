@@ -253,7 +253,7 @@ export async function dispatchInferenceAttempt(
     // Only rotate a Gateway-owned header timeout when the logical request
     // still has another eligible dispatch. With no candidate left, the
     // private center's outcome remains unknown and must fail closed.
-    if (hasTimedOut && c.remainingDispatchableAttempts > 1 && !c.takeRemainingWindow && Date.now() < c.attemptDeadlineMs) {
+    if (hasTimedOut && c.remainingDispatchableAttempts > 1 && !c.takeRemainingWindow && Date.now() < c.requestStartMs + c.failoverBudgetMs) {
       const classified = classifyNetworkError(true);
       recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: 504 });
       return { rotate: true, kind: classified.kind };
