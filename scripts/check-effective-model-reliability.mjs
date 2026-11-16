@@ -7,7 +7,13 @@ import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailov
 import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetKeyGroupForTests, credentialPeers, credentialSlotId, noteKeyGroup429 } from '../src/reliability/shared-credential-group.ts';
-import { __resetTier1HeatForTests, recordTier1ProviderModelRateLimit, recordTier1ProviderModelSuccess, tier1ProviderModelHeatFactor, tier1ProviderModelRateLimitCount } from '../src/reliability/tier1-heat.ts';
+import {
+  __resetTier1HeatForTests,
+  recordTier1ProviderModelRateLimit,
+  recordTier1ProviderModelSuccess,
+  tier1ProviderModelHeatFactor,
+  tier1ProviderModelRateLimitCount,
+} from '../src/reliability/tier1-heat.ts';
 import { __resetTier1StateForTests, getTier1Account, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
 const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'No endpoints found for model physical-max');
