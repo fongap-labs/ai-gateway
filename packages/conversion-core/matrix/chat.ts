@@ -422,6 +422,7 @@ export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string
         : { type: 'function', function: { name: ir.toolChoice.slice('name:'.length) } };
   }
   if (ir.parallelToolCalls != null) out.parallel_tool_calls = ir.parallelToolCalls;
+  if (ir.effort === null) out.reasoning_effort = 'none';
   if (ir.effort) {
     out.reasoning_effort = ir.effort === 'max' ? 'high' : ir.effort;
     if (ir.effort === 'max') diag.add({ feature: 'effort_control', action: 'emulated' });
