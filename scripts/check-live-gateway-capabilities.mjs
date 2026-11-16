@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 import { randomInt } from 'node:crypto';
-import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
+import { hasChatVisionColor, hasGeneratedImageDataUri } from './live-gateway-assertions.mjs';
 import { visionColors } from './live-gateway-vision-fixtures.mjs';
 
 const options = {};
+const valueOptions = new Set(['url', 'chat-model', 'vision-model', 'text-key-group', 'vision-key-group', 'failover-model', 'expect-dispatches', 'image-model']);
 for (let index = 2; index < process.argv.length; index++) {
   const arg = process.argv[index];
   if (arg === '--run-image' || arg === '--run-direct-image' || arg === '--run-auto-image') {
     options[arg.slice(2)] = true;
     continue;
   }
-  if (!arg?.startsWith('--') || !process.argv[index + 1] || process.argv[index + 1].startsWith('--')) {
-    throw new Error(`Missing value for ${arg || '<argument>'}`);
+  if (!arg?.startsWith('--') || !valueOptions.has(arg.slice(2))) {
+    throw new Error(`Unsupported live check option: ${arg || '<argument>'}`);
+  }
+  if (!process.argv[index + 1] || process.argv[index + 1].startsWith('--')) {
+    throw new Error(`Missing value for ${arg}`);
   }
   options[arg.slice(2)] = process.argv[++index];
 }
@@ -19,9 +23,6 @@ if (!options.url || !options['chat-model']) {
   throw new Error(
     'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
   );
-}
-if (options['delegate-model'] || options['responses-delegate-model']) {
-  throw new Error('Vision delegation has been removed. Use --vision-model for native vision checks.');
 }
 const base = new URL(options.url);
 if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash) {

@@ -20,7 +20,7 @@ function requestFor(route, model) {
   const path = route === 'chat' ? '/v1/chat/completions' : route === 'responses' ? '/v1/responses' : '/v1/messages';
   return new Request('https://gateway.example.invalid' + path, {
     method: 'POST',
-    headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json', ...(route === 'anthropic' ? { 'anthropic-version': '2023-06-01' } : {}) },
+    headers: route === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } : { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
