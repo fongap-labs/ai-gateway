@@ -124,43 +124,48 @@ export async function runTierLoop(
           escaped: pick.tier1EscapedFromAffinity,
         });
       }
-      const outcome = await dispatchWithHedge(
-        {
-          request,
-          env,
-          ctx,
-          logger,
-          requestId,
-          route,
-          node,
-          requestedModel,
-          clientWantsStream,
-          fakeStream,
-          bodyJson,
-          rawBody,
-          imageInputRequired,
-          limits,
-          exposeUpstreamInfo,
-          state,
-          failoverBudgetMs,
-          requestStartMs,
-          reqDescriptor,
-          remainingDispatchableAttempts,
-          attemptCapMs: loopCtx.attemptCapMs ?? null,
-          takeRemainingWindow: loopCtx.takeRemainingWindow ?? false,
-          policy,
-          tierNumber,
-          tier1ReleaseToken: pick.tier1ReleaseToken || null,
-          tier1EscapedFromAffinity: !!pick.tier1EscapedFromAffinity,
-          tier1UpdateAffinity: !!pick.tier1UpdateAffinity,
-          tier1AffinityAccountId: tier1Affinity,
-          tier1EvaluateAffinity,
-          tier1Session,
-          rng: tier1Rng,
-          conversionContext,
-        },
-        tiers[tierNumber],
-      );
+      let outcome: Awaited<ReturnType<typeof dispatchWithHedge>>;
+      try {
+        outcome = await dispatchWithHedge(
+          {
+            request,
+            env,
+            ctx,
+            logger,
+            requestId,
+            route,
+            node,
+            requestedModel,
+            clientWantsStream,
+            fakeStream,
+            bodyJson,
+            rawBody,
+            imageInputRequired,
+            limits,
+            exposeUpstreamInfo,
+            state,
+            failoverBudgetMs,
+            requestStartMs,
+            reqDescriptor,
+            remainingDispatchableAttempts,
+            attemptCapMs: loopCtx.attemptCapMs ?? null,
+            takeRemainingWindow: loopCtx.takeRemainingWindow ?? false,
+            policy,
+            tierNumber,
+            tier1ReleaseToken: pick.tier1ReleaseToken || null,
+            tier1EscapedFromAffinity: !!pick.tier1EscapedFromAffinity,
+            tier1UpdateAffinity: !!pick.tier1UpdateAffinity,
+            tier1AffinityAccountId: tier1Affinity,
+            tier1EvaluateAffinity,
+            tier1Session,
+            rng: tier1Rng,
+            conversionContext,
+          },
+          tiers[tierNumber],
+        );
+      } finally {
+        state.retrySlot?.release();
+      }
       if (outcome.budgetCharged) {
         usedInTier++;
         state.tierAttemptsUsed = state.tierAttemptsUsed ?? {};
