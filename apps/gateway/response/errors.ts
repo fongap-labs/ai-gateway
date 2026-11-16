@@ -11,7 +11,6 @@
 // details stay hidden. Both are exposed only when the caller passes
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
-import { getBool } from '../../../packages/config-core/env.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../../src/config/models.ts';
 import { parseRetryAfterMs } from '../../../src/config/timeouts.ts';
@@ -315,20 +314,9 @@ export function buildExhaustedResponse(
       const hadTimeout =
         (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
       retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
-      // The Free Workers admission policy enables 429 only with observed
-      // rate limiting and family-wide cooldown. Legacy clients without the
-      // admission flag retain the established HTTP 503 contract; pure timeouts
-      // remain HTTP 503 in both modes.
-      const hasRateLimitEvidence =
-        (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      if (
-        getBool(env, 'AIG_REQUEST_ADMISSION', false) &&
-        hasRateLimitEvidence &&
-        retryAfterSec >= 15 &&
-        familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)
-      ) {
-        status = 429;
-      }
+      // Preserve the established 503 response for transient family exhaustion:
+      // provider-side 429s are absorbed internally while Retry-After reports
+      // the available fallback-family cooldown without changing SDK behavior.
       if (retryAfterSec >= 5) {
         message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry after the advertised delay.`;
       }
@@ -414,28 +402,6 @@ function earliestFamilyBlockingRetryAfterSec(
     if (wait !== undefined && wait < minSec) minSec = wait;
   }
   return Number.isFinite(minSec) ? minSec : undefined;
-}
-
-function familyHasOnlyCoolingNodes(
-  tiers: TierMap<RuntimeNode[]>,
-  reqDescriptor: RequestDescriptor,
-  requestedModel: string,
-  now: number,
-  env: GatewayEnv,
-  knownModels?: ReadonlySet<string>,
-): boolean {
-  const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels, loadModelsConfig(env)) : [requestedModel];
-  let hasCandidate = false;
-  for (const model of models) {
-    for (const tier of TIER_ORDER) {
-      for (const node of tiers[tier] ?? []) {
-        if (!supportsRequest(node, { ...reqDescriptor, model }, knownModels)) continue;
-        hasCandidate = true;
-        if (!Number.isFinite(blockingWaitMs(node, model, now))) return false;
-      }
-    }
-  }
-  return hasCandidate;
 }
 
 function blockingWaitMs(node: RuntimeNode, requestedModel: string, now: number): number {
