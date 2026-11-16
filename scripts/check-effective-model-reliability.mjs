@@ -7,6 +7,13 @@ import { buildBudgetExhaustedResponse, buildClientErrorResponse, summarizeFailov
 import { loadExecutionConfig } from '../src/config/nodes.ts';
 import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetKeyGroupForTests, credentialPeers, credentialSlotId, noteKeyGroup429 } from '../src/reliability/shared-credential-group.ts';
+import {
+  __resetTier1HeatForTests,
+  recordTier1ProviderModelRateLimit,
+  recordTier1ProviderModelSuccess,
+  tier1ProviderModelHeatFactor,
+  tier1ProviderModelRateLimitCount,
+} from '../src/reliability/tier1-heat.ts';
 import { __resetTier1StateForTests, getTier1Account, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
 const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'No endpoints found for model physical-max');
@@ -149,6 +156,21 @@ assert.equal(noteKeyGroup429(groupedA, 'physical-max', 100_000), 'model');
 assert.equal(noteKeyGroup429(groupedOmni, 'physical-omni', 101_000), 'account');
 assert.equal(noteKeyGroup429(separateGroup, 'physical-omni', 101_000), 'model');
 __resetKeyGroupForTests();
+__resetTier1HeatForTests();
+const heatNow = 200_000;
+const heatModel = 'physical-max';
+recordTier1ProviderModelRateLimit('nvidia', heatModel, credentialSlotId(groupedA), heatNow);
+recordTier1ProviderModelRateLimit('nvidia', heatModel, credentialSlotId(groupedOmni), heatNow + 1);
+assert.equal(tier1ProviderModelRateLimitCount('nvidia', heatModel, heatNow + 1), 1, 'shared credentials must count as one quota source');
+recordTier1ProviderModelRateLimit('nvidia', heatModel, credentialSlotId(separateGroup), heatNow + 2);
+recordTier1ProviderModelRateLimit('nvidia', heatModel, 'other-independent-key', heatNow + 3);
+assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 3), 1.15, 'three independent limited credentials increase Provider cost');
+recordTier1ProviderModelRateLimit('nvidia', heatModel, 'fourth-independent-key', heatNow + 4);
+assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 4), 1.35, 'four independent limited credentials trigger stronger avoidance');
+recordTier1ProviderModelSuccess('nvidia', heatModel, credentialSlotId(groupedA), heatNow + 5);
+assert.equal(tier1ProviderModelRateLimitCount('nvidia', heatModel, heatNow + 5), 3, 'successful shared key clears its heat evidence');
+assert.equal(tier1ProviderModelHeatFactor('nvidia', heatModel, heatNow + 91_000), 1, 'old 429 heat must expire automatically');
+__resetTier1HeatForTests();
 const nodeInput = {
   id: 'test-node',
   provider: 'openai',
