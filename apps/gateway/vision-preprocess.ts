@@ -234,7 +234,7 @@ export async function preprocessAnthropicImages(args: {
   const images: ImagePart[] = [];
   const text: string[] = [];
   let lastUserIndex = -1;
-  let unsupported = false;
+  let hasUnsupportedImage = false;
   const rewritten = messages.map((message, index) => {
     if (message.role === 'user') lastUserIndex = index;
     if (!Array.isArray(message.content)) return { ...message };
@@ -244,12 +244,12 @@ export async function preprocessAnthropicImages(args: {
       if (block.type === 'text' && message.role === 'user' && typeof block.text === 'string') text.push(block.text);
       if (block.type !== 'image') return part;
       if (message.role !== 'user') {
-        unsupported = true;
+        hasUnsupportedImage = true;
         return part;
       }
       const source = block.source;
       if (!source || typeof source !== 'object' || Array.isArray(source)) {
-        unsupported = true;
+        hasUnsupportedImage = true;
         return part;
       }
       const imageSource = source as Record<string, unknown>;
@@ -270,7 +270,7 @@ export async function preprocessAnthropicImages(args: {
         } catch {}
       }
       if (!url) {
-        unsupported = true;
+        hasUnsupportedImage = true;
         return part;
       }
       images.push({ type: 'image_url', image_url: { url } });
@@ -278,7 +278,7 @@ export async function preprocessAnthropicImages(args: {
     });
     return { ...message, content };
   });
-  if (unsupported || lastUserIndex < 0 || images.length === 0 || images.length > 8) return fail();
+  if (hasUnsupportedImage || lastUserIndex < 0 || images.length === 0 || images.length > 8) return fail();
 
   const visualResult = await preprocessChatImages({
     ...args,
