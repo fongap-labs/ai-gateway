@@ -7,8 +7,8 @@
 
 import assert from 'node:assert/strict';
 import { isResponsesRealOutput } from '../packages/transport/openai-native.ts';
-import { relayStreamResponse, trackStreamResponse } from '../src/stream/track.ts';
 import { SseLifecycleObserver } from '../src/stream/sse-lifecycle.ts';
+import { relayStreamResponse, trackStreamResponse } from '../src/stream/track.ts';
 
 // A compatible Provider may emit a completed function item without argument
 // delta events. That is real output; role/lifecycle/usage-only events are not.
