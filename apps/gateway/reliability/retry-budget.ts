@@ -39,6 +39,35 @@ export function preferUntriedCredentials(
   return hasExcluded ? preferredAttempted : null;
 }
 
+export function preferUntriedFailureProviders(
+  candidates: ReadonlyArray<RuntimeNode>,
+  allNodes: ReadonlyArray<RuntimeNode>,
+  priorAttempts: ReadonlyArray<Readonly<Record<string, unknown>>>,
+  attempted: ReadonlySet<string>,
+): Set<string> | null {
+  const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+  const failedProviders = new Set<string>();
+  for (const attempt of priorAttempts) {
+    if (attempt.dispatched !== true) continue;
+    const kind = attempt.kind;
+    const upstreamFailure =
+      kind === KIND.HEADERS_TIMEOUT ||
+      kind === KIND.FIRST_EVENT_TIMEOUT ||
+      kind === KIND.NETWORK ||
+      (kind === KIND.SERVER && (attempt.status === 502 || attempt.status === 504));
+    if (!upstreamFailure || typeof attempt.node_id !== 'string') continue;
+    const node = nodeById.get(attempt.node_id);
+    if (node) failedProviders.add(`${node.tier}:${node.provider}`);
+  }
+  if (!failedProviders.size) return null;
+  if (!candidates.some((node) => !attempted.has(node.id) && !failedProviders.has(`${node.tier}:${node.provider}`))) return null;
+  const preferredAttempted = new Set(attempted);
+  for (const node of candidates) {
+    if (failedProviders.has(`${node.tier}:${node.provider}`)) preferredAttempted.add(node.id);
+  }
+  return preferredAttempted;
+}
+
 let activeRequests = 0;
 let retryingRequests = 0;
 let deniedTotal = 0;

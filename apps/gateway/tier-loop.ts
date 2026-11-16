@@ -4,7 +4,13 @@ import type { ConversionContext, LoopContext, LoopState } from '../../src/types/
 import type { RoutableRequest, TierMap } from '../../src/types/scheduler.ts';
 import { dispatchWithHedge } from './attempt/hedge.ts';
 import { TIER_ORDER } from './policy/router.ts';
-import { isCredentialWideFailure, isIndependentKeyRecovery, isSpeculativeRetryAfter, preferUntriedCredentials } from './reliability/retry-budget.ts';
+import {
+  isCredentialWideFailure,
+  isIndependentKeyRecovery,
+  isSpeculativeRetryAfter,
+  preferUntriedCredentials,
+  preferUntriedFailureProviders,
+} from './reliability/retry-budget.ts';
 import { buildBudgetExhaustedResponse } from './response/errors.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from './scheduling/tier-policy.ts';
 import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
@@ -98,14 +104,16 @@ export async function runTierLoop(
           dispatchedAttempts.filter(isCredentialWideFailure).map((attempt) => String(attempt.node_id ?? '')),
           state.attempted,
         ) ?? state.attempted;
+      const providerPreferredAttempted = preferUntriedFailureProviders(tiers[tierNumber], knownNodes, dispatchedAttempts, strictlyAttempted);
       const preferredAttempted = preferUntriedCredentials(
         tiers[tierNumber],
         knownNodes,
         dispatchedAttempts.map((attempt) => String(attempt.node_id ?? '')),
-        strictlyAttempted,
+        providerPreferredAttempted ?? strictlyAttempted,
       );
       const pick =
         (preferredAttempted ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, preferredAttempted, pickOpts) : null) ??
+        (providerPreferredAttempted ? pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, providerPreferredAttempted, pickOpts) : null) ??
         pickForTier(tierNumber, tiers[tierNumber], reqDescriptor, strictlyAttempted, pickOpts);
       if (!pick) break;
       if (pick.raceLost) {
