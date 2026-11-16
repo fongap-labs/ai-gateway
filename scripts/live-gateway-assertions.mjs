@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 const imageMimeTypes = new Set(['png', 'jpeg', 'webp', 'gif']);
 
 export function hasGeneratedImageDataUri(reply) {

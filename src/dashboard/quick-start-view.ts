@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { escapeHtml } from './format.ts';
 
 function snippetPane({ id, active, code }: { id: string; active: boolean; code: string }): string {

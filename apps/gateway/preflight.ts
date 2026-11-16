@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { canRouteImageGeneration } from '../../packages/contracts/image-capabilities.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';

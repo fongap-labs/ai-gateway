@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
 import { corsHeaders, MAX_BUFFERED_REPLY_BYTES, readBodyTextBounded, readBufferedReplyText, trimDiagnostic } from '../../../src/protocol/http.ts';
 import { synthesizeSseFromCompletion } from '../../../src/protocol/openai.ts';

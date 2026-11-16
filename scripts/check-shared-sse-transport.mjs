@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { markSyntheticClientStreamHeaders as ownedMarker } from '../packages/transport/client-lifecycle.ts';
 import { convertSseStream as ownedRelay } from '../packages/transport/convert-sse.ts';

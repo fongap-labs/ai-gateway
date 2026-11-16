@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 const guardedStreamState = new WeakMap<object, { failureReason: string | null }>();
 
 import { createSseScanner, GUARD_ERROR, type GuardErrorCode, guardError, type SseEventHandler } from '../../packages/transport/sse.ts';

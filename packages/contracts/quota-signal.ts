@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Protocol } from './protocol.ts';
 
 export type QuotaSignal = {

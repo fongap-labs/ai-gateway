@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ExecutionContextLike, GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { getLimits } from '../../../src/config/timeouts.ts';
 

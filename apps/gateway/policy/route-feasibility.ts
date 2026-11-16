@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { getFallbackChain } from '../../../src/config/protocol-fallbacks.ts';
 import { supportsRequest } from '../../../src/scheduler/scheduler.ts';

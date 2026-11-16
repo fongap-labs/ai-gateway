@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export function hasImageInput(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const record = body as Record<string, unknown>;

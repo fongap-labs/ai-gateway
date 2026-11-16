@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 export type GeneratedImageMime = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 
 export function generatedImageMime(base64: string): GeneratedImageMime | null {

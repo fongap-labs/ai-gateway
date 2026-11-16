@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export {
   PROTOCOLS,
   SURFACES_BY_PROTOCOL,

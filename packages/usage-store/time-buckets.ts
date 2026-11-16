@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 const DAY_MS = 86_400_000;
 
 export function getUtcHourBucket(date: number | Date = Date.now()): string {

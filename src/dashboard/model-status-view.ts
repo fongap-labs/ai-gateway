@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import type { PublicModelStatusEntry, PublicModelStatusState } from '../runtime/model-status.ts';
 import { getPublicModelStatus } from '../runtime/model-status.ts';

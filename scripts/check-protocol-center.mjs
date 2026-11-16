@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { checkInferenceConversion } from '../apps/gateway/transport/inference-preflight-client.ts';
 import { handleProtocolCenterRequest } from '../apps/protocol/index.ts';

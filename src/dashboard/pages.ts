@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { loadGatewayConfig } from '../config/nodes.ts';
 import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import { htmlResponse } from '../protocol/http.ts';

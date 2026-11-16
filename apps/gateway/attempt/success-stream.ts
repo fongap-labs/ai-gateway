@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { attemptFirstEventTimeoutMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromPayload } from '../../../src/observability/reported-usage.ts';
 import { classifyClientAbort, classifyFirstEventFailure } from '../../../src/reliability/classify.ts';

@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { __resetTier1AffinityForTests, readTier1Affinity } from '../apps/gateway/scheduling/tier1-affinity.ts';

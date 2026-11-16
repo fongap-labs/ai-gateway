@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { corsHeaders } from '../../../src/protocol/http.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';

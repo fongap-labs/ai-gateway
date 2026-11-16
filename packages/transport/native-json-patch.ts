@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 export function patchNativeJsonTopLevel(raw: string, logicalModel: string, physicalModel: string, shouldInjectStreamUsage: boolean): string | null {
   if (logicalModel === physicalModel && !shouldInjectStreamUsage) return raw;
   const first = /^\s*\{\s*"model"\s*:/.test(raw);

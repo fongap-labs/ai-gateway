@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { resolvePhysicalModel } from '../../../src/config/registry.ts';
 import { acquireSlot, getModelPerf, getNodeState, isModelCooling, peekAvailability } from '../../../src/reliability/node-state.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';

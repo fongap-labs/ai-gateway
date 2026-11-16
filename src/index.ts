@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 import gateway from '../apps/gateway/index.ts';
 import operations from '../operations/index.ts';
 

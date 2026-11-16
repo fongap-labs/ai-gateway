@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { AttemptContext } from '../../../src/types/request.ts';
 
 export const LARGE_BODY_CHARS = 1024 * 1024;

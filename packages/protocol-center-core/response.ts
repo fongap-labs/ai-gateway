@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { getLimits } from '../config-core/timeouts.ts';
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';

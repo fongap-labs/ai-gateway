@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 CREATE TABLE IF NOT EXISTS token_usage_weekly (
     week_start TEXT PRIMARY KEY,
     input_tokens INTEGER NOT NULL DEFAULT 0,

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { createReadOnlyCloudflareClient, InventoryDiagnosticError, inspectProductionWorkers } from './cloudflare-live-inventory.mjs';
 

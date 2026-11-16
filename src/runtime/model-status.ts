@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { RegistryEntry } from '../config/registry.ts';
 import { collectKnownModels, loadModelRegistry, servesModel } from '../config/registry.ts';
 import { normalizeModelKey } from '../observability/token-usage-store.ts';

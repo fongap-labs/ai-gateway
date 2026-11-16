@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';

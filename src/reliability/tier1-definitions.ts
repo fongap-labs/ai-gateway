@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const TIER1_EWMA_ALPHA = 0.25;
 export const TIER1_OUTLIER_MULTIPLIER = 4;
 export const TIER1_OUTLIER_CONSECUTIVE_THRESHOLD = 2;

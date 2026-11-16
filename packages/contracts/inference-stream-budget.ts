@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { MatrixConversionBudget } from '../conversion-core/budget.ts';
 
 export type InferenceStreamBudget = {

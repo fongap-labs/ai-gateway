@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const GUARD_ERROR = {
   TIMEOUT: 'first_event_timeout',
   EMPTY: 'empty_stream',

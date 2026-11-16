@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { TABLE, TABLE_MODEL, TABLE_TOTALS, type tokenStatsD1 } from './keys.ts';
 
 export type UsagePayload = {

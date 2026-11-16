@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ModelCatalogFacts, ModelRuntimePolicy } from './models.ts';
 import { loadModelsConfig } from './models.ts';
 

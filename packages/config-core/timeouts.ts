@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { clampInt, getBool, readEnv } from './env.ts';
 import type { RuntimeTunableName } from './runtime-vars.ts';
 import { RUNTIME_TUNABLES } from './runtime-vars.ts';

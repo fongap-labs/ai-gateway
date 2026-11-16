@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { flushUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import {

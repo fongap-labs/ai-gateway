@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';

@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-// SPDX-License-Identifier: MIT
-
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

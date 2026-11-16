@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { RUNTIME_TUNABLES } from '../config/runtime-vars.ts';
 import { TIER1_COOLDOWN_MAX_MS, type Tier1FailureInput, type Tier1Outcome } from './tier1-definitions.ts';
 

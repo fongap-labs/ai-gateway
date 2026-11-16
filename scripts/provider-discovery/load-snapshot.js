@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import fs from 'node:fs';
 import { normalizeCatalog } from './normalize.js';
 import { validateCatalog } from './catalog-schema.js';

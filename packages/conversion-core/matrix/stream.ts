@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { markSyntheticClientStreamHeaders } from '../../transport/client-lifecycle.ts';
 import { convertSseStream } from '../../transport/convert-sse.ts';
 import { createSseScanner, readWithDeadline } from '../../transport/sse.ts';

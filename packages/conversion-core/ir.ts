@@ -1,7 +1,4 @@
-﻿// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
-export type IrProtocol = 'openai_chat' | 'openai_responses' | 'anthropic';
+﻿export type IrProtocol = 'openai_chat' | 'openai_responses' | 'anthropic';
 
 export type IrStop = '' | 'stop' | 'length' | 'tool' | 'filter';
 

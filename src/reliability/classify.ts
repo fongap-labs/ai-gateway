@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { clampRetryAfterMs, getLimits, parseRetryAfterMs, QUOTA_RETRY_AFTER_MAX_MS } from '../config/timeouts.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingErrorCode } from '../types/upstream-processing.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 type UsageContainer = { usage?: unknown };
 
 export function reportedUsageFromPayload(payload: unknown): unknown {

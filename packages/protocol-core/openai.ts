@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { markSyntheticClientStreamHeaders } from '../transport/client-lifecycle.ts';
 import { corsHeaders } from '../transport/http.ts';
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
 import fs from 'node:fs';
 
 export const SHARD_MAX_BYTES = 4500;

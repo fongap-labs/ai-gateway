@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
 import assert from 'node:assert/strict';
 import { planTwoTierCutover } from './tier-cutover-plan.mjs';
 

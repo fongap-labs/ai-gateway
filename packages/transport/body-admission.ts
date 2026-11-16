@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 export const BODY_BYTES_IN_FLIGHT_BUDGET = 32 * 1024 * 1024;
 
 export function createBodyAdmissionPool(limitBytes = BODY_BYTES_IN_FLIGHT_BUDGET): {

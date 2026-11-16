@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { tier1CountDispatchableNodes, tier1HasDispatchableNode } from '../../../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../../../src/scheduler/routing-strategy.ts';

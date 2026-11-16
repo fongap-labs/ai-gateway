@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { D1Database } from '../contracts/cloudflare.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
 

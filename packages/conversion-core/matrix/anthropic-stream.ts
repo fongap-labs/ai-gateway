@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { IrEvent, IrReply } from '../ir.ts';
 import { isRecord } from '../ir.ts';
 import { anthropicStopFromIr, anthropicStopToIr } from './anthropic.ts';

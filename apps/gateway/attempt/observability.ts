@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { gatewayStats, recordStreamCompleted, recordStreamInterrupted, recordStreamStart } from '../../../src/observability/gateway-stats.ts';
 import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
 import { mergeReportedUsage, normalizeTokenUsage, recordTokenUsage } from '../../../src/observability/token-usage.ts';

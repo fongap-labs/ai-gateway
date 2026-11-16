@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export { aggregateDailyToWeekly, aggregateHourlyToDaily } from './aggregation.ts';
 export { __resetUsageBufferForTests, flushBeforeRead, flushUsageBuffer } from './buffer.ts';
 export {

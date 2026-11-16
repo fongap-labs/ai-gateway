@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { buildInferenceRequest } from '../src/inference/inference-client-request.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { readEnv } from './env.ts';
 
 const CAPABILITY_KEYS = ['tools', 'reasoning', 'vision', 'stream', 'ocr'];

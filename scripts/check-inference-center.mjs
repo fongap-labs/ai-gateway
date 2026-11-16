@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { resolvePhysicalModel, servesModel } from '../packages/config-core/registry.ts';
 import { executeNative } from '../packages/execution-core/native.ts';

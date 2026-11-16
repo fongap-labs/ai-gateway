@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { readEnv } from '../config-core/env.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingError } from '../contracts/upstream-processing.ts';
 

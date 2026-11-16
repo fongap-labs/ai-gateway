@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { readEnv } from '../../../packages/config-core/env.ts';
 import {
   EXECUTION_ERROR_CODE,

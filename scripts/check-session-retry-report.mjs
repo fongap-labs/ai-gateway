@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { summarizeSessionFiles, summarizeSessionJsonl } from './session-retry-report.mjs';
 

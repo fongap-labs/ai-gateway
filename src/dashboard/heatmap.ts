@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export type HeatmapMode = 'rolling-52-weeks' | 'calendar-year';
 
 export type HeatmapDay = {

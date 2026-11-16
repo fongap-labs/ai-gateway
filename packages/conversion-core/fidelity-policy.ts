@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { ConversionResult } from './result.ts';
 
 const HIGH_RISK_DROPPED_FEATURES = new Set([

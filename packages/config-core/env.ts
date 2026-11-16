@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export function readEnv(env: Record<string, unknown>, name: string): string | undefined {
   const value = env?.[name];
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;

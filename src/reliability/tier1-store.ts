@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { FAILURE_STATE, type Tier1AccountRuntime, type Tier1ModelRuntime } from './tier1-definitions.ts';
 
 const accounts = new Map<string, Tier1AccountRuntime>();

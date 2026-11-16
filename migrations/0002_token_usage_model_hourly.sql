@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 CREATE TABLE IF NOT EXISTS token_usage_model_hourly (
     hour TEXT NOT NULL,
     model TEXT NOT NULL,

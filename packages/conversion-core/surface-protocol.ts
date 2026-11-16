@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { ExecutionSurface } from '../contracts/execution.ts';
 import type { IrProtocol } from './ir.ts';
 

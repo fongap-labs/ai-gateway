@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { readBodyTextBounded } from '../../src/protocol/http.ts';
 
 type ImagePart = { type: 'image_url'; image_url: string | { url: string } };

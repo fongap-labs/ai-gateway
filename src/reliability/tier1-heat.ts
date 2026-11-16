@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { RuntimeNode } from '../types/node.ts';
 import { tier1AccountInFlight } from './tier1-state.ts';
 

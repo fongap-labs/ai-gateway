@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ImageSize } from './image-capabilities.ts';
 
 const IMAGE_SIZES: readonly ImageSize[] = ['1024x1024', '1024x1536', '1536x1024'];

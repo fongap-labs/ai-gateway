@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const ADAPTIVE_429_COOLDOWN_STEPS_MS = Object.freeze([15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_200_000, 1_800_000] as const);
 
 export const ADAPTIVE_429_WINDOW_STEPS_MS = Object.freeze([15_000, 30_000, 45_000, 60_000, 90_000, 120_000, 180_000, 300_000] as const);

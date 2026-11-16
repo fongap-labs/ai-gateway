@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Protocol, Surface } from '../contracts/protocol.ts';
 import {
   ANTHROPIC_SURFACE_PATH,

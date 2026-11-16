@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { QuotaSignal } from '../../../packages/contracts/quota-signal.ts';
 
 export function quotaFromCenter(headers: Headers): QuotaSignal | null {

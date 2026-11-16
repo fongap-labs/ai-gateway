@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { parseChatRequest as ownedParse } from '../apps/inference/conversion/chat.ts';
 import { ChatStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/chat-stream.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const SYNTHETIC_CLIENT_STREAM_HEADER = 'x-gateway-internal-synthetic-stream';
 
 export function markSyntheticClientStreamHeaders(headers?: Record<string, string>): Record<string, string> {

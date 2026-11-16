@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ExecutionContextLike, GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { adoptTier1Cooldown, type Tier1SharedCooldown, tier1LongCooldowns } from '../../../src/reliability/tier1-state.ts';
 

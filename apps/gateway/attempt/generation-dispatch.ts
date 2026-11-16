@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { EXECUTION_WIRE_RESULT, parseExecutionResponse } from '../../../packages/contracts/execution.ts';
 import { attemptBudgetWindowMs } from '../../../src/config/timeouts.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';

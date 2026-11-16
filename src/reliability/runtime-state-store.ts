@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { RuntimeNode } from '../types/node.ts';
 import type { EndpointState, QuotaRuntimeState, RuntimeStateStore } from '../types/runtime-state.ts';
 import { getCooldownRemainingMs, getModelCooldownRemainingMs, getModelPerf, getNodeState, peekAvailability } from './node-state.ts';

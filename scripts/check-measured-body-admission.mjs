@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { createBodyAdmissionPool } from '../packages/transport/body-admission.ts';
 import { BodyAdmissionBudgetError, BodyTooLargeError, readBodyTextWithLimit } from '../packages/transport/http.ts';

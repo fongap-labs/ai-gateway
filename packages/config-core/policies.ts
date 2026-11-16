@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { PolicyConfig } from '../contracts/policy.ts';
 import { readEnv } from './env.ts';
 import type { ModelEntry } from './models.ts';

@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 CREATE TABLE IF NOT EXISTS token_usage_totals (
     scope TEXT PRIMARY KEY CHECK (scope = 'global'),
     input_tokens INTEGER NOT NULL DEFAULT 0,

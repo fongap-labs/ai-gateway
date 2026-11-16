@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, serializeExecutionError } from '../contracts/execution.ts';
 
 export type ProviderAttemptRequest = {

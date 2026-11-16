@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { canRouteImageGeneration, IMAGE_PROVIDER_IDS, isImageGenerationProvider } from '../packages/contracts/image-capabilities.ts';
 import { getProviderAdapter } from '../src/providers/registry.ts';

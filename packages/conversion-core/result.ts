@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export type ConversionFidelity = 'exact' | 'portable' | 'degraded';
 export type ConversionDiagnosticAction = 'mapped' | 'dropped' | 'emulated' | 'defaulted';
 export type StructuredOutputStrategy = 'native' | 'tool' | 'prompt';

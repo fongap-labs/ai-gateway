@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { __resetUsageBufferForTests, bufferPersist, flushUsageBuffer, snapshotUsageBuffer } from '../packages/usage-store/buffer.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';

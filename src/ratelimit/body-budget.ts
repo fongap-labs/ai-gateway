@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { createBodyAdmissionPool } from '../../packages/transport/body-admission.ts';
 
 export { BODY_BYTES_IN_FLIGHT_BUDGET } from '../../packages/transport/body-admission.ts';

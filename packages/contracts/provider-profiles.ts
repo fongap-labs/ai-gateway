@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ExecutionSurface } from './execution.ts';
 
 export type ProviderProfile = Readonly<{
