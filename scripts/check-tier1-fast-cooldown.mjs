@@ -59,7 +59,13 @@ applyTier1Outcome('free-key-1', 'Code-Ultra', classifyTier1Failure({ kind: 'rate
 assert.equal(recovering.cooldownUntil, t + 15_000);
 assert.equal(recovering.failureState, 'cooldown');
 
-const contextTooLong = classifyUpstreamStatus(400, new Headers(), {}, t, '{"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}');
+const contextTooLong = classifyUpstreamStatus(
+  400,
+  new Headers(),
+  {},
+  t,
+  '{"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}',
+);
 assert.equal(contextTooLong.action, 'rotate', 'context overflow can recover on a different Provider or model');
 assert.equal(contextTooLong.requestTooLarge, true);
 assert.equal(contextTooLong.providerModelConstraint, true, 'same Provider and physical model should not be repeated in a single request');
