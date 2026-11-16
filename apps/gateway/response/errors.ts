@@ -415,17 +415,17 @@ function familyHasOnlyCoolingNodes(
   knownModels?: ReadonlySet<string>,
 ): boolean {
   const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels, loadModelsConfig(env)) : [requestedModel];
-  let found = false;
+  let hasCandidate = false;
   for (const model of models) {
     for (const tier of TIER_ORDER) {
       for (const node of tiers[tier] ?? []) {
         if (!supportsRequest(node, { ...reqDescriptor, model }, knownModels)) continue;
-        found = true;
+        hasCandidate = true;
         if (!Number.isFinite(blockingWaitMs(node, model, now))) return false;
       }
     }
   }
-  return found;
+  return hasCandidate;
 }
 
 function blockingWaitMs(node: RuntimeNode, requestedModel: string, now: number): number {
