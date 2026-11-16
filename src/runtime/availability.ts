@@ -4,13 +4,6 @@ import type { RuntimeNode } from '../types/node.ts';
 
 export type RuntimeAvailability = 'available' | 'unobserved' | 'unavailable';
 
-/**
- * Returns one of: 'available' | 'unobserved' | 'unavailable'
- *
- * @param node  The runtime node object (has .id, .tier, .limits, .protocol, .surfaces, .models).
- * @param model  Logical model name; required for Tier 1 to look up the (account, model) pair.
- * @param now  Optional clock for deterministic tests.
- */
 export function getRuntimeAvailability(node: RuntimeNode, model?: string, now: number | Date = Date.now()): RuntimeAvailability {
   if (!node || typeof node !== 'object') return 'unavailable';
   const nowMs = now instanceof Date ? now.getTime() : now;
