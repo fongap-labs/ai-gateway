@@ -1,4 +1,3 @@
-import { resolveVisionDelegate } from '../../packages/config-core/vision-delegation.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
@@ -28,7 +27,6 @@ import { makeTier1Rng } from './scheduling/tier-policy.ts';
 import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from './scheduling/tier1-affinity.ts';
 import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
-import { preprocessAnthropicImages, preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
 
 const SIBLING_HOP_CAP_MS = 45_000;
 
@@ -67,11 +65,10 @@ async function handleAdmittedRequest(
   env: GatewayEnv,
   ctx: ExecutionContextLike,
   observeBodyBytes: (actualBytes: number) => boolean,
-  isVisionPrepass: boolean = false,
 ): Promise<Response> {
   const retrySlot = new RetrySlot();
   try {
-    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes, isVisionPrepass);
+    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes);
   } finally {
     retrySlot.end();
   }
@@ -83,7 +80,6 @@ async function runAdmittedRequest(
   ctx: ExecutionContextLike,
   retrySlot: RetrySlot,
   observeBodyBytes: (actualBytes: number) => boolean,
-  isVisionPrepass: boolean,
 ): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx, observeBodyBytes);
@@ -112,8 +108,8 @@ async function runAdmittedRequest(
     feasibility: initialFeasibility,
   } = pre;
 
-  let bodyJson = initialBodyJson;
-  let rawBody = initialRawBody;
+  const bodyJson = initialBodyJson;
+  const rawBody = initialRawBody;
 
   if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
     return runExplicitImageTool({
@@ -159,85 +155,21 @@ async function runAdmittedRequest(
     if (hit) return hit;
   }
 
-  const requestPolicy = isVisionPrepass ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, 3), hedge: { enabled: false } } : policy;
-  const modelConfig = loadModelsConfig(env);
-  const visionFallbackAvailable = (modelConfig[requestedModel]?.policy.fallback ?? []).some((configuredModel) => {
-    const model = [...knownModels].find((candidate) => candidate.toLowerCase() === configuredModel.toLowerCase());
-    return (
-      !!model &&
-      modelRegistryEntry(env, model).catalog.capabilities.vision === true &&
-      config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, model, knownModels))
-    );
-  });
-  const needsVisionBridge =
-    (route === 'openai_chat' || route === 'openai_responses' || route === 'anthropic_messages') &&
-    hasImageInput(bodyJson) &&
-    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true &&
-    (!!modelConfig[requestedModel]?.policy.vision_delegate || !visionFallbackAvailable);
-  if (needsVisionBridge) {
-    const delegation = resolveVisionDelegate({
-      env,
-      requestedModel,
-      nodes: config.nodes,
-      knownModels,
-      allowedModels: knownModels,
-    });
-    if (delegation.kind === 'unauthorized' || delegation.kind === 'unavailable') {
-      return gatewayError(
-        request,
-        env,
-        route,
-        delegation.kind === 'unauthorized' ? 403 : 503,
-        delegation.kind === 'unauthorized'
-          ? 'The configured vision preprocessor is not authorized for this key.'
-          : 'No image-capable node is available for the configured vision preprocessor.',
-        requestId,
-        undefined,
-        undefined,
-        delegation.kind === 'unauthorized' ? 'gateway_vision_preprocess_unauthorized' : 'gateway_vision_preprocess_unavailable',
-      );
-    }
-    if (delegation.kind === 'ready') {
-      const preprocess =
-        route === 'openai_responses' ? preprocessResponsesImages : route === 'anthropic_messages' ? preprocessAnthropicImages : preprocessChatImages;
-      const visualResult = await preprocess({
-        request,
-        body: bodyJson,
-        visionModel: delegation.model,
-        remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-        execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes, true),
-      });
-      if (!visualResult.ok) {
-        return gatewayError(
-          request,
-          env,
-          route,
-          visualResult.status,
-          visualResult.message,
-          requestId,
-          visualResult.cause ? { preprocess_failure_code: visualResult.cause } : undefined,
-          undefined,
-          visualResult.code,
-        );
-      }
-      bodyJson = visualResult.body;
-      rawBody = undefined;
-      if (hasImageInput(bodyJson)) {
-        return gatewayError(
-          request,
-          env,
-          route,
-          400,
-          'Image content could not be safely converted to visual observations.',
-          requestId,
-          undefined,
-          undefined,
-          'gateway_vision_preprocess_shape_unsupported',
-        );
-      }
-    }
-  }
+  const requestPolicy = policy;
   const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
+  if (imageInputRequired && modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true) {
+    return gatewayError(
+      request,
+      env,
+      route,
+      400,
+      'The requested model does not support image input.',
+      requestId,
+      undefined,
+      undefined,
+      'gateway_image_input_unsupported',
+    );
+  }
   const tiers: TierMap<RuntimeNode[]> = imageInputRequired
     ? {
         1: configuredTiers[1].filter((node) => getProviderProfile(node.provider).imageInput),

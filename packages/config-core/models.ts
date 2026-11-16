@@ -6,7 +6,6 @@ const ALLOWED_ENTRY_FIELDS = new Set([
   'fallback',
   'fallback_mode',
   'fallback_attempt_caps',
-  'vision_delegate',
   'capabilities',
   'reasoning_efforts',
   'modalities',
@@ -33,7 +32,6 @@ export type ModelRuntimePolicy = {
   fallback?: string[];
   fallback_mode?: 'one_way' | 'recheck';
   fallback_attempt_caps?: number[];
-  vision_delegate?: string;
   visibility: string;
   ui_visible: boolean;
   display_order: number;
@@ -86,6 +84,7 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         }
         const cfg = config as Record<string, unknown>;
         for (const field of Object.keys(cfg)) {
+          if (field === 'vision_delegate') continue;
           if (!ALLOWED_ENTRY_FIELDS.has(field)) {
             errors.push(`AIG_MODELS_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_ENTRY_FIELDS].join(', ')})`);
           }
@@ -144,14 +143,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
         }
         if ((fallbackMode !== undefined || fallbackCaps !== undefined) && !Array.isArray(declaredFallback)) {
           errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback must be declared when configuring fallback behavior`);
-        }
-        const visionDelegate = cfg.vision_delegate;
-        if (visionDelegate !== undefined) {
-          if (typeof visionDelegate !== 'string' || !visionDelegate.trim() || visionDelegate.trim().toLowerCase() === name.trim().toLowerCase()) {
-            errors.push(`AIG_MODELS_CONFIG: model "${name}": vision_delegate must name a different non-empty logical model`);
-          } else {
-            policy.vision_delegate = visionDelegate.trim();
-          }
         }
         const vis = cfg.visibility;
         if (vis !== undefined) {
@@ -258,13 +249,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
   }
   const known = new Set(Object.keys(models).map((name) => name.toLowerCase()));
   for (const [name, entry] of Object.entries(models)) {
-    const delegate = entry.policy.vision_delegate;
-    if (delegate) {
-      const matching = Object.entries(models).find(([candidate]) => candidate.toLowerCase() === delegate.toLowerCase());
-      if (!matching || matching[1].catalog.capabilities?.vision !== true) {
-        errors.push(`AIG_MODELS_CONFIG: model "${name}": vision_delegate "${delegate}" must name a declared vision-capable model`);
-      }
-    }
     for (const target of entry.policy.fallback ?? []) {
       if (!known.has(target.toLowerCase())) {
         errors.push(`AIG_MODELS_CONFIG: model "${name}": fallback target "${target}" is not declared`);

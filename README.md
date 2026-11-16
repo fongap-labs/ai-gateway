@@ -58,6 +58,7 @@ flowchart LR
 ```
 
 - Gateway 只处理鉴权、额度、调度、限流和故障恢复，不直接请求 Provider。
+- 图片请求只允许明确声明视觉能力的模型，经 Perception 原生透传；纯文本模型收到图片直接返回 400，不自动识图或注入识别文本。
 - Inference、Perception 和 Generation 三个私有中心按能力执行，分别持有对应 Provider 凭据；Gateway 通过 Service Binding 调用它们。
 - Operations 只运行定时维护，通过共享 D1 汇总和保留用量数据；它没有公开请求路由，也不持有 Provider 凭据。
 - 调度固定为 Tier 1 免费 API Key → Tier 2 API Token；会员 OAuth 与第三层 Tier 不属于当前运行时。

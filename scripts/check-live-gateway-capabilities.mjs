@@ -17,8 +17,11 @@ for (let index = 2; index < process.argv.length; index++) {
 }
 if (!options.url || !options['chat-model']) {
   throw new Error(
-    'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--delegate-model Code-Max] [--responses-delegate-model Code-Max] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
+    'Usage: node scripts/check-live-gateway-capabilities.mjs --url https://gateway.example --chat-model Max [--vision-model Omni] [--run-image --image-model Image-Creator] [--run-direct-image] [--failover-model Code-Max --expect-dispatches 2]',
   );
+}
+if (options['delegate-model'] || options['responses-delegate-model']) {
+  throw new Error('Vision delegation has been removed. Use --vision-model for native vision checks.');
 }
 const base = new URL(options.url);
 if (base.protocol !== 'https:' || base.username || base.password || base.pathname !== '/' || base.search || base.hash) {
@@ -93,44 +96,6 @@ try {
       { model: options['vision-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
       (reply) => {
         if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Direct vision did not identify the image color.');
-      },
-    );
-  }
-  if (options['delegate-model']) {
-    const visionKey = keyFor(visionGroup);
-    const challenge = nextVisionChallenge();
-    await checkedRequest(
-      'perception-delegate',
-      visionKey,
-      '/v1/chat/completions',
-      { model: options['delegate-model'], messages: [{ role: 'user', content: [{ type: 'text', text: visionQuestion }, challenge.image] }] },
-      (reply) => {
-        if (!hasChatVisionColor(reply, challenge.color)) throw new Error('Vision delegate did not identify the image color.');
-      },
-    );
-  }
-  if (options['responses-delegate-model']) {
-    const visionKey = keyFor(visionGroup);
-    const challenge = nextVisionChallenge();
-    await checkedRequest(
-      'perception-responses-delegate',
-      visionKey,
-      '/v1/responses',
-      {
-        model: options['responses-delegate-model'],
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: visionQuestion },
-              { type: 'input_image', image_url: challenge.image.image_url.url },
-            ],
-          },
-        ],
-        stream: false,
-      },
-      (reply) => {
-        if (!hasResponsesVisionColor(reply, challenge.color)) throw new Error('Responses delegate did not identify the image color.');
       },
     );
   }
