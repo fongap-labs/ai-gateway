@@ -837,10 +837,10 @@ const retryState = (failureKinds) => ({
   nodes: [retryTargetNode],
   knownModels: new Set([retrySource, retryTarget]),
 });
-const exhausted = (kinds) =>
+const exhausted = (kinds, requestEnv = retryEnv) =>
   buildExhaustedResponse(
     new Request('https://gateway.invalid/v1/chat/completions'),
-    retryEnv,
+    requestEnv,
     'openai_chat',
     'retry-test-request',
     retrySource,
@@ -852,7 +852,7 @@ const exhausted = (kinds) =>
     true,
   );
 const mixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 });
-assert.equal(mixedRetry.status, 429, 'a rate-limited model family in cooldown returns 429');
+assert.equal(mixedRetry.status, 503, 'legacy requests preserve the documented 503 exhaustion contract');
 assert.equal(mixedRetry.headers.get('x-gateway-error-code'), 'gateway_attempt_budget_exhausted');
 assert.ok(Number(mixedRetry.headers.get('retry-after')) >= 15, 'mixed 429/timeout exhaustion retains the configured fallback model cooldown');
 const mixedRetryBody = await mixedRetry.json();
@@ -860,10 +860,19 @@ assert.equal(mixedRetryBody.error.details?.retry_after_ms, Number(mixedRetry.hea
 assert.equal(mixedRetry.headers.get('x-should-retry'), 'false', 'long family cooldown must stop immediate SDK replay');
 assert.equal(mixedRetry.headers.get('x-gateway-retryable'), 'true', 'a later retry remains possible after the declared cooldown');
 assert.equal(mixedRetry.headers.get('x-gateway-retryable'), 'true', 'recovery after the declared cooldown remains possible');
-assert.match(mixedRetryBody.error.message, /^429 \| .*retry after [0-9]+s\.$/, 'long cooldown must be a concise status-first hint');
+assert.match(mixedRetryBody.error.message, /^503 \| .*retry after [0-9]+s\.$/, 'long cooldown must be a concise status-first hint');
 const pureRateLimit = exhausted({ rate_limit: 8 });
-assert.equal(pureRateLimit.status, 429);
+assert.equal(pureRateLimit.status, 503);
 assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
+// The Free Workers admission guard opts into a true rate-limit status when
+// every compatible fallback candidate is cooling down, without breaking the
+// default external SDK/central test-pack 503 contract.
+const gatedMixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(gatedMixedRetry.status, 429);
+assert.ok(Number(gatedMixedRetry.headers.get('retry-after')) >= 15, 'new 429 mode must retain model-family Retry-After');
+assert.equal(gatedMixedRetry.headers.get('x-should-retry'), 'false');
+const gatedPureRateLimit = exhausted({ rate_limit: 8 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(gatedPureRateLimit.status, 429);
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
 assert.ok(Number(timeoutRetry.headers.get('retry-after')) >= 15, 'timeout-only cooldown must preserve its real wait');
