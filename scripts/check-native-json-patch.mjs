@@ -10,7 +10,7 @@ const original = {
   model: 'Code-Max',
   stream: true,
   messages: [{ role: 'user', content: '给出结果：' + 'A'.repeat(1_200_000) }],
-  tools: [{ type: 'function', function: { name: 'do_work', parameters: { type: 'object', properties: { model: { type: 'string' } } } } }],
+  tools: [{ type: 'function', function: { name: 'do_work', parameters: { type: 'object', properties: { code: { type: 'string' } } } } }],
 };
 const source = JSON.stringify(original);
 const rewritten = patchNativeJsonTopLevel(source, 'Code-Max', 'physical-provider-model', true);
