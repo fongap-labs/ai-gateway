@@ -35,6 +35,7 @@ export type FailureClassification = {
   uncertain422?: boolean;
   explicitRetryAfter?: boolean;
   requestTooLarge?: boolean;
+  providerModelConstraint?: boolean;
   forbidden?: boolean;
   rateLimitWindow?: 'window' | 'quota';
 };
@@ -148,7 +149,11 @@ export function classifyUpstreamStatus(
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false, forbidden: true };
   }
   if (status === 400) {
-    return { kind: KIND.CLIENT, action: looksLikeInvalidRequestPayload(body) ? 'stop' : 'rotate', cooldownMs: 0, counted: false };
+    if (looksLikeInvalidRequestPayload(body)) return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
+    if (looksLikeContextLimit(body)) {
+      return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, requestTooLarge: true, providerModelConstraint: true };
+    }
+    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false };
   }
   if (status === 422) {
     if (looksLikeInvalidRequestPayload(body) || hasNonOptionalValidationErrors(body)) {
@@ -182,7 +187,11 @@ export function classifyUpstreamStatus(
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
   if (status === 410) {
-    return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false };
+    const error = structuredUpstreamError(body);
+    if ((error && MODEL_ROUTE_ERROR_CODES.has(error.code)) || looksLikeModelMissing(body)) {
+      return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 1_800_000, counted: false, modelScoped: true };
+    }
+    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true };
   }
   if (status === 404) {
     const error = structuredUpstreamError(body);
@@ -323,6 +332,13 @@ function hasNonOptionalValidationErrors(body: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+function looksLikeContextLimit(body: unknown): boolean {
+  const code = structuredUpstreamError(body)?.code;
+  if (code === 'context_length_exceeded' || code === 'max_context_length_exceeded' || code === 'request_too_large') return true;
+  const text = String(body || '');
+  return /\b(?:context (?:length|window|size)|maximum context length|prompt (?:is )?too long|too many (?:input )?tokens|input tokens? (?:exceed|over)|payload too large|request body too large|request size exceeds)\b.{0,100}\b(?:exceed(?:ed|s)?|limit|maximum|too large|too long|overflow|window)\b|\b(?:exceed(?:ed|s)?|over)\b.{0,60}\b(?:context (?:length|window|size)|maximum (?:input )?tokens?)\b|\b(?:payload too large|request body too large|request size exceeds|context_length_exceeded)\b/i.test(text);
 }
 
 function looksLikeInvalidRequestPayload(body: unknown): boolean {
