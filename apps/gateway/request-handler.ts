@@ -67,11 +67,11 @@ async function handleAdmittedRequest(
   env: GatewayEnv,
   ctx: ExecutionContextLike,
   observeBodyBytes: (actualBytes: number) => boolean,
-  visionPrepass: boolean = false,
+  isVisionPrepass: boolean = false,
 ): Promise<Response> {
   const retrySlot = new RetrySlot();
   try {
-    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes, visionPrepass);
+    return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes, isVisionPrepass);
   } finally {
     retrySlot.end();
   }
@@ -83,7 +83,7 @@ async function runAdmittedRequest(
   ctx: ExecutionContextLike,
   retrySlot: RetrySlot,
   observeBodyBytes: (actualBytes: number) => boolean,
-  visionPrepass: boolean,
+  isVisionPrepass: boolean,
 ): Promise<Response> {
   const logger = getLogger(env);
   const pre = await runPreflight(request, env, ctx, observeBodyBytes);
@@ -159,7 +159,7 @@ async function runAdmittedRequest(
     if (hit) return hit;
   }
 
-  const requestPolicy = visionPrepass ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, 3), hedge: { enabled: false } } : policy;
+  const requestPolicy = isVisionPrepass ? { ...policy, maxAttempts: Math.min(policy.maxAttempts, 3), hedge: { enabled: false } } : policy;
   const modelConfig = loadModelsConfig(env);
   const visionFallbackAvailable = (modelConfig[requestedModel]?.policy.fallback ?? []).some((configuredModel) => {
     const model = [...knownModels].find((candidate) => candidate.toLowerCase() === configuredModel.toLowerCase());
