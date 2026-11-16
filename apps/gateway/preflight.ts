@@ -1,5 +1,6 @@
 import { canRouteImageGeneration } from '../../packages/contracts/image-capabilities.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
+import { stripReasoningDefaultMarkers } from '../../packages/contracts/reasoning-preference.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadAccessKeysConfig } from '../../src/config/access-keys.ts';
 import { getBool } from '../../src/config/env.ts';
@@ -305,6 +306,14 @@ export async function preflight(
       ok: false,
       response: gatewayError(request, env, route, 400, `Invalid JSON request body: ${errorMessage}`, requestId),
     };
+  }
+
+  if (route === 'openai_chat' || route === 'openai_responses' || route === 'anthropic_messages') {
+    const normalizedBody = stripReasoningDefaultMarkers(bodyJson);
+    if (normalizedBody !== bodyJson) {
+      bodyJson = normalizedBody;
+      rawBody = undefined;
+    }
   }
 
   if (route === 'anthropic_count_tokens') {

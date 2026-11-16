@@ -7,6 +7,7 @@ import {
   parseExecutionResponse,
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
 import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
@@ -187,6 +188,7 @@ export async function dispatchInferenceAttempt(
       returnStream: returnStream ? true : undefined,
       streamBudget,
       displayModel: returnStream ? requestedModel : undefined,
+      reasoningPreference: requestReasoningPreference(c.bodyJson),
       deadlineMs: c.attemptDeadlineMs,
       upstreamHeadersDeadlineMs,
       bufferedResponseDeadlineMs,

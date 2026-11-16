@@ -116,6 +116,7 @@ export type ExecutionInvocation = {
   returnStream?: true;
   streamBudget?: InferenceStreamBudget;
   displayModel?: string;
+  reasoningPreference?: 'off' | 'low' | 'medium' | 'high' | 'max';
 };
 
 export type ExecutionError = {
@@ -190,6 +191,7 @@ export function buildExecutionHeaders(invocation: ExecutionInvocation, authHeade
   if (invocation.returnStream) headers.set('x-aig-return-stream', 'true');
   if (invocation.streamBudget) headers.set('x-aig-stream-budget', serializeInferenceStreamBudget(invocation.streamBudget));
   if (invocation.displayModel) headers.set('x-aig-display-model', invocation.displayModel);
+  if (invocation.reasoningPreference) headers.set('x-aig-reasoning-preference', invocation.reasoningPreference);
   const traceparent = validatedInternalTraceparent(invocation.requestId, invocation.traceparent);
   if (traceparent) headers.set('traceparent', traceparent);
   return headers;
@@ -239,6 +241,8 @@ export function parseExecutionInvocation(
   const returnObject = request.headers.get('x-aig-return-object');
   const returnStream = request.headers.get('x-aig-return-stream');
   const displayModel = request.headers.get('x-aig-display-model');
+  const reasoningPreference = request.headers.get('x-aig-reasoning-preference');
+  if (reasoningPreference !== null && !['off', 'low', 'medium', 'high', 'max'].includes(reasoningPreference)) return null;
   const rawStreamBudget = request.headers.get('x-aig-stream-budget');
   const rawPreparedRequest = request.headers.get('x-aig-prepared-request');
   const rawResponseHeader = request.headers.get('x-aig-raw-response');
@@ -282,6 +286,7 @@ export function parseExecutionInvocation(
       surface: rawSurface as ExecutionSurface,
       deadlineMs,
       ...(upstreamHeadersDeadlineMs !== undefined ? { upstreamHeadersDeadlineMs } : {}),
+      ...(reasoningPreference !== null ? { reasoningPreference: reasoningPreference as 'off' | 'low' | 'medium' | 'high' | 'max' } : {}),
     };
   }
   if (
@@ -318,6 +323,7 @@ export function parseExecutionInvocation(
     deadlineMs,
     ...(upstreamHeadersDeadlineMs !== undefined ? { upstreamHeadersDeadlineMs } : {}),
     ...(bufferedResponseDeadlineMs !== undefined ? { bufferedResponseDeadlineMs } : {}),
+    ...(reasoningPreference !== null ? { reasoningPreference: reasoningPreference as 'off' | 'low' | 'medium' | 'high' | 'max' } : {}),
     inputSurface: rawInputSurface as ExecutionInputSurface,
     ...(preparedRequest ? { preparedRequest: true as const } : {}),
     ...(rawResponse ? { rawResponse: true as const } : {}),

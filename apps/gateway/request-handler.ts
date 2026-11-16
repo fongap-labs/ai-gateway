@@ -1,4 +1,3 @@
-import { normalizeReasoningDefaults } from '../../packages/config-core/reasoning-defaults.ts';
 import { resolveVisionDelegate } from '../../packages/config-core/vision-delegation.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
@@ -111,8 +110,8 @@ async function runAdmittedRequest(
     feasibility: initialFeasibility,
   } = pre;
 
-  let bodyJson = normalizeReasoningDefaults(route, initialBodyJson);
-  let rawBody = bodyJson === initialBodyJson ? initialRawBody : undefined;
+  let bodyJson = initialBodyJson;
+  let rawBody = initialRawBody;
 
   if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
     return runExplicitImageTool({

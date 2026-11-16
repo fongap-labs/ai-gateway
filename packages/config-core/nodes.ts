@@ -1,6 +1,6 @@
 import type { Surface } from '../contracts/protocol.ts';
 import { getProviderProfile } from '../contracts/provider-profiles.ts';
-import type { NodeTier, RuntimeNode } from '../contracts/runtime-node.ts';
+import type { NodeReasoning, NodeTier, RuntimeNode } from '../contracts/runtime-node.ts';
 import type { Tier, TierMap } from '../contracts/scheduler.ts';
 import { getBool, readEnv } from './env.ts';
 import { getModelsConfigDiagnostics, loadModelsConfig } from './models.ts';
@@ -15,7 +15,7 @@ export const SECRET_SHARD_PATTERN = /^AIG_TIER([12])_CREDENTIALS_(\d{2})$/;
 export const MAX_SHARD_INDEX = 10;
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const FORBIDDEN_NODE_FIELDS = ['token', 'credential', 'api_key', 'apikey', 'authorization', 'password', 'secret'];
-const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces', 'key_group']);
+const ALLOWED_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'surfaces', 'key_group', 'reasoning']);
 
 export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 
@@ -347,7 +347,7 @@ function buildRuntimeNode(
   }
   for (const key of Object.keys(rec)) {
     if (!ALLOWED_NODE_FIELDS.has(key)) {
-      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces, key_group)`);
+      diagnostics.push(`node "${id}": unknown field "${key}" (allowed: id, provider, base_url, priority, models, surfaces, key_group, reasoning)`);
       return null;
     }
   }
@@ -400,6 +400,9 @@ function buildRuntimeNode(
   const surfaces = resolveConfiguredSurfaces(rec.surfaces, defaultSurfaces, protocol, isImageOnly, id, diagnostics);
   if (!surfaces) return null;
 
+  const reasoning = parseNodeReasoning(rec.reasoning, id, protocol, diagnostics);
+  if (reasoning === null) return null;
+
   return {
     id,
     ...(keyGroup ? { keyGroup } : {}),
@@ -411,6 +414,60 @@ function buildRuntimeNode(
     credential: credentialBelongsToCenter ? '' : credential,
     priority,
     models,
+    ...(reasoning ? { reasoning } : {}),
+  };
+}
+
+function parseNodeReasoning(
+  value: unknown,
+  nodeId: string,
+  protocol: 'openai' | 'anthropic',
+  diagnostics: string[],
+): NodeReasoning | undefined | null {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    diagnostics.push(`node "${nodeId}": reasoning must be an object`);
+    return null;
+  }
+  const config = value as Record<string, unknown>;
+  const mode = config.mode;
+  if (!['none', 'effort', 'adaptive', 'budget'].includes(String(mode))) {
+    diagnostics.push(`node "${nodeId}": reasoning.mode must be none, effort, adaptive or budget`);
+    return null;
+  }
+  if ((mode === 'adaptive' || mode === 'budget') && protocol !== 'anthropic') {
+    diagnostics.push(`node "${nodeId}": adaptive/budget reasoning requires Anthropic protocol`);
+    return null;
+  }
+  if (Object.keys(config).some((key) => !['mode', 'efforts', 'high_budget_tokens'].includes(key))) {
+    diagnostics.push(`node "${nodeId}": unknown reasoning configuration field`);
+    return null;
+  }
+  const efforts = config.efforts;
+  if (
+    efforts !== undefined &&
+    (!Array.isArray(efforts) || efforts.length === 0 || efforts.some((e) => !['low', 'medium', 'high', 'max'].includes(String(e))))
+  ) {
+    diagnostics.push(`node "${nodeId}": reasoning.efforts must contain recognized effort levels`);
+    return null;
+  }
+  if (mode === 'effort' && (!Array.isArray(efforts) || efforts.length === 0)) {
+    diagnostics.push(`node "${nodeId}": effort reasoning requires declared efforts`);
+    return null;
+  }
+  const highBudgetTokens = config.high_budget_tokens;
+  if (mode === 'budget' && (!Number.isSafeInteger(highBudgetTokens) || Number(highBudgetTokens) < 1024 || Number(highBudgetTokens) > 32768)) {
+    diagnostics.push(`node "${nodeId}": budget reasoning requires high_budget_tokens between 1024 and 32768`);
+    return null;
+  }
+  if (mode !== 'budget' && highBudgetTokens !== undefined) {
+    diagnostics.push(`node "${nodeId}": high_budget_tokens is only supported for budget reasoning`);
+    return null;
+  }
+  return {
+    mode: mode as NodeReasoning['mode'],
+    ...(Array.isArray(efforts) ? { efforts: [...new Set(efforts)] as NonNullable<NodeReasoning['efforts']> } : {}),
+    ...(mode === 'budget' ? { highBudgetTokens: highBudgetTokens as number } : {}),
   };
 }
 
