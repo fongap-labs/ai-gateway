@@ -126,8 +126,7 @@ export function gatewayError(
   const hadHeadersTimeout =
     kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
   const hasFamilyTimeoutEvidence = gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED && hadHeadersTimeout;
-  const deferredFamilyRetry =
-    hasFamilyTimeoutEvidence && parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
+  const deferredFamilyRetry = hasFamilyTimeoutEvidence && parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
   // Some protocol adapters retain a JSON error but drop response headers.
   // Carry only the single bounded classification needed to honor this
@@ -313,8 +312,7 @@ export function buildExhaustedResponse(
       // zero 429 observations even while its siblings are still cooling down.
       const familyWaitSec = earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_);
       const hadTimeout =
-        (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 ||
-        (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
+        (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
       retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
       // 429 is appropriate only if EVERY eligible model-family node is
       // blocked by a known cooldown, not when even one timed-out node remains
