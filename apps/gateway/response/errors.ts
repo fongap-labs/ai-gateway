@@ -314,10 +314,11 @@ export function buildExhaustedResponse(
       const hadTimeout =
         (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
       retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
-      // 429 is appropriate only if EVERY eligible model-family node is
-      // blocked by a known cooldown, not when even one timed-out node remains
-      // eligible. Otherwise callers receive a misleading rate-limit signal.
-      if (retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
+      // HTTP 429 requires observed rate limiting as well as family-wide
+      // cooldown; timeout-only cooldowns must remain HTTP 503.
+      const hasRateLimitEvidence =
+        (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
+      if (hasRateLimitEvidence && retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
         status = 429;
       }
       if (retryAfterSec >= 5) {
