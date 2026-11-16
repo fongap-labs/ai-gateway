@@ -1,3 +1,4 @@
+import { normalizeReasoningDefaults } from '../../packages/config-core/reasoning-defaults.ts';
 import { resolveVisionDelegate } from '../../packages/config-core/vision-delegation.ts';
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
@@ -110,8 +111,8 @@ async function runAdmittedRequest(
     feasibility: initialFeasibility,
   } = pre;
 
-  let bodyJson = initialBodyJson;
-  let rawBody = initialRawBody;
+  let bodyJson = normalizeReasoningDefaults(route, initialBodyJson);
+  let rawBody = bodyJson === initialBodyJson ? initialRawBody : undefined;
 
   if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
     return runExplicitImageTool({
@@ -246,13 +247,6 @@ async function runAdmittedRequest(
     ? evaluateRouteFeasibility({ route, requestedModel, requestDescriptor: reqDescriptor, tiers, knownModels, env })
     : initialFeasibility;
   const requiresTools = Array.isArray(bodyJson.tools) && bodyJson.tools.length > 0;
-  const reasoning = bodyJson.reasoning;
-  const thinking = bodyJson.thinking;
-  const reasoningEffort = bodyJson.reasoning_effort;
-  const requiresReasoning =
-    (typeof reasoningEffort === 'string' && reasoningEffort.toLowerCase() !== 'none') ||
-    (reasoning !== null && typeof reasoning === 'object' && !Array.isArray(reasoning) && (reasoning as Record<string, unknown>).effort !== 'none') ||
-    (thinking !== null && typeof thinking === 'object' && !Array.isArray(thinking) && (thinking as Record<string, unknown>).type === 'enabled');
   const configuredPlan =
     route === 'openai_images'
       ? [[{ model: requestedModel, attemptCap: null }]]
@@ -264,7 +258,6 @@ async function runAdmittedRequest(
         const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
         if (imageInputRequired && capabilities.vision !== true) return false;
         if (requiresTools && declared?.tools === false) return false;
-        if (requiresReasoning && declared?.reasoning === false) return false;
         if (clientWantsStream && declared?.stream === false) return false;
         return true;
       }),
