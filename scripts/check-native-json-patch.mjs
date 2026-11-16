@@ -3,8 +3,8 @@
 // Copyright (c) 2026 Fongap Labs
 // Deterministic large native-body rewrite safety and equivalence contracts.
 import assert from 'node:assert/strict';
-import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
 import { withUsageStreamOptions } from '../packages/protocol-core/openai.ts';
+import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
 
 const original = {
   model: 'Code-Max',
@@ -24,8 +24,16 @@ assert.equal(JSON.parse(atEnd).model, 'physical');
 assert.equal(JSON.parse(atEnd).messages[0].content, '你好');
 const nestedFirst = JSON.stringify({ messages: [{ model: 'nested' }], stream: true, model: 'Code-Max' });
 assert.equal(patchNativeJsonTopLevel(nestedFirst, 'Code-Max', 'physical', false), null, 'ambiguous nested model must fall back');
-assert.equal(patchNativeJsonTopLevel('{"model":"one","model":"Code-Max"}', 'Code-Max', 'physical', false), null, 'duplicate root model must fall back');
-assert.equal(patchNativeJsonTopLevel('{"messages":[],"model":"Code-Max","temperature":1}', 'Code-Max', 'physical', false), null, 'middle model falls back');
+assert.equal(
+  patchNativeJsonTopLevel('{"model":"one","model":"Code-Max"}', 'Code-Max', 'physical', false),
+  null,
+  'duplicate root model must fall back',
+);
+assert.equal(
+  patchNativeJsonTopLevel('{"messages":[],"model":"Code-Max","temperature":1}', 'Code-Max', 'physical', false),
+  null,
+  'middle model falls back',
+);
 assert.equal(patchNativeJsonTopLevel(source, 'wrong-client-model', 'physical', false), null, 'model mismatch must not be silently rewritten');
 
 for (const stream_options of [{ include_usage: false }, { include_usage: true, extra: 'keep' }, null, 'odd']) {
