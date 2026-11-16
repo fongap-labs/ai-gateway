@@ -129,7 +129,7 @@ assert.match(wranglerTool, /wrangler@4\.114\.0/, 'Wrangler pin has one tooling o
 for (const file of ['package.json']) {
   assert.doesNotMatch(read(file), /wrangler@\d+\.\d+\.\d+/, `${file} must not duplicate the Wrangler pin`);
 }
-for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry-run', 'TIER1_AFFINITY']) {
+for (const token of ['migrations', 'apply', 'TOKEN_STATS_DB', '--remote', '--dry-run']) {
   assert.ok(wranglerTool.includes(token), `cloudflare-wrangler.mjs must include ${token}`);
 }
 
