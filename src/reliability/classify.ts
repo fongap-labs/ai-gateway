@@ -199,7 +199,14 @@ export function classifyUpstreamStatus(
     return { kind: KIND.SERVER, action: 'stop', cooldownMs: 0, counted: false };
   }
   if (status >= 500) {
-    return { kind: KIND.SERVER, action: 'rotate', cooldownMs: 0, counted: true };
+    const retryAfterMs = status === 503 ? parseRetryAfterMs(headers, now) : 0;
+    return {
+      kind: KIND.SERVER,
+      action: 'rotate',
+      cooldownMs: retryAfterMs,
+      counted: true,
+      ...(retryAfterMs > 0 ? { retryAfterMs, explicitRetryAfter: true } : {}),
+    };
   }
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }
