@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { ConversionResult } from '../conversion-core/result.ts';
 import { MAX_EXECUTION_DEADLINE_AHEAD_MS } from './execution.ts';
 import { createInternalTraceparent } from './trace-context.ts';

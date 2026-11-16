@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const IMAGE_PROVIDER_IDS = ['openai-image', 'google-image', 'cloudflare-image'] as const;
 
 export type ImageSize = '1024x1024' | '1024x1536' | '1536x1024';

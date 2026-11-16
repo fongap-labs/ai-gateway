@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 const MINUTE_MS = 60_000;
 const WINDOW_MS = 15 * MINUTE_MS;
 const MAX_BUCKETS = 600;

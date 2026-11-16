@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const COOLDOWN_JITTER_FACTOR = 0.1;
 
 export function jitterCooldownMs(cooldownMs: number, randomUnit: number): number {

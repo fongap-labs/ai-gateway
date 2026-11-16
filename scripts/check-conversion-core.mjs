@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { protocolForSurface } from '../packages/conversion-core/surface-protocol.ts';
 

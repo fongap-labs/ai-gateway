@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 ALTER TABLE token_usage_hourly ADD COLUMN upstream_input_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE token_usage_hourly ADD COLUMN upstream_output_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE token_usage_hourly ADD COLUMN upstream_cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0;

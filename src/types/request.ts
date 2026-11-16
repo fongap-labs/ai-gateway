@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Limits } from '../config/timeouts.ts';
 import type { FailureKind } from '../reliability/classify.ts';
 import type { RetrySlot } from '../reliability/retry-budget.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { mergeReportedUsage, normalizeTokenUsage } from '../observability/token-usage.ts';
 import { FIRST_EVENT_MAX_SSE_LINE } from './guard.ts';
 import { SseLifecycleObserver, type SseProtocol } from './sse-lifecycle.ts';

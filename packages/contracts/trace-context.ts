@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export type TraceContext = { traceId: string; spanId: string; flags: string };
 
 export function traceIdForRequest(requestId: string): string | null {

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { isOpenAIStreamingResponse } from '../protocol/openai.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
 

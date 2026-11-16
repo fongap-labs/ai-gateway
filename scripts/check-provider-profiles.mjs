@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { getProviderProfile } from '../packages/contracts/provider-profiles.ts';
 import { streamUsageEnabled } from '../packages/contracts/provider-usage.ts';

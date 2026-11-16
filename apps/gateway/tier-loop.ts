@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { releaseTier1Slot } from '../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
 import type { ConversionContext, LoopContext, LoopState } from '../../src/types/request.ts';

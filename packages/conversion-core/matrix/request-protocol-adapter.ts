@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { ExecutionInputSurface, ExecutionSurface } from '../../contracts/execution.ts';
 import { highRiskSemanticLoss } from '../fidelity-policy.ts';
 import { protocolForSurface } from '../surface-protocol.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { MatrixDiag } from '../diag.ts';
 import { type IrProtocol, type IrReply, isRecord } from '../ir.ts';
 import type { ConversionDiagnostic } from '../result.ts';

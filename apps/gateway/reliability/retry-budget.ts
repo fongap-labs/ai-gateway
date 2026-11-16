@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { type FailureKind, KIND } from '../../../src/reliability/classify.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';

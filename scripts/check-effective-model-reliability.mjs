@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
 import { recordOutcome, rotateWithNeutralEnd } from '../apps/gateway/attempt/outcome.ts';

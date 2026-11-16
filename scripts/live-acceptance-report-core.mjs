@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 const SHA_RE = /^[0-9a-f]{40}$/;
 const BUILD_RE = /^[0-9a-f]{7,40}$/;
 const TOKEN_RE = /^[A-Za-z0-9._:-]{1,128}$/;

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { escapeHtml, fmtInt, fmtTokens, fmtTooltipDate } from './format.ts';
 import type { HeatmapResult } from './heatmap.ts';
 

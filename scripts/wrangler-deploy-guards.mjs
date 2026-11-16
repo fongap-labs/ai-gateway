@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 import path from 'node:path';
 
 const SHA = /^[0-9a-f]{40}$/;

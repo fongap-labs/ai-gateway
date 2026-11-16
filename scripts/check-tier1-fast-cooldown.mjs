@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import assert from 'node:assert/strict';
 import { buildClientErrorResponse, buildExhaustedResponse } from '../apps/gateway/response/errors.ts';
 import { classifyUpstreamStatus } from '../src/reliability/classify.ts';

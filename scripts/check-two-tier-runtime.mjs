@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
 import assert from 'node:assert/strict';
 import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
 import { buildModelFallbackPlan, buildModelFallbackRounds } from '../apps/gateway/policy/model-fallback.ts';

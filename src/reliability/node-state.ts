@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { NodeState } from '../types/reliability.ts';
 import { cryptoRng } from '../utils/crypto-rng.ts';
 import { jitterCooldownMs } from './cooldown-jitter.ts';

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export function cryptoRng(): number {
   const buf = crypto.getRandomValues(new Uint32Array(1));
   const random = buf[0] ?? 0;

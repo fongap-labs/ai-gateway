@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
 import { getLimits } from '../../src/config/timeouts.ts';

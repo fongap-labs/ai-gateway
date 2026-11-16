@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { decodeFramedInferenceResponse } from '../apps/gateway/transport/inference-stream-client.ts';
 import { buildFramedMatrixResponse } from '../apps/inference/conversion/framed-stream.ts';

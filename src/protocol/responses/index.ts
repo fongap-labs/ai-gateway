@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { corsHeaders, shouldNotRetryHeaders } from '../http.ts';
 import { buildResponsesError, responsesErrorTypeForStatus } from './events.ts';
 import { collectResponsesObject, synthesizeResponsesFromObject } from './native-stream.ts';

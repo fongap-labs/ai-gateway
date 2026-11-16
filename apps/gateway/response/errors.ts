@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../../src/config/models.ts';
 import { parseRetryAfterMs } from '../../../src/config/timeouts.ts';

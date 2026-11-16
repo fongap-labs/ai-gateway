@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { extractOpenAITextContent } from '../protocol/openai.ts';
 import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../types/upstream-processing.ts';
 import { createSseScanner, readWithDeadline } from './guard.ts';

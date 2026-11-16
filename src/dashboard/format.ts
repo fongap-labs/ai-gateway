@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export function fmtTokens(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
   if (n < 10000) return String(Math.trunc(n));

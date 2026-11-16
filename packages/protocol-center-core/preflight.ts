@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { InferencePreflightInvocation } from '../contracts/conversion-preflight.ts';
 import { convertMatrixRequest, isMatrixPair } from '../conversion-core/matrix/request.ts';
 import { ConversionError, isRecord } from '../conversion-core/validation.ts';

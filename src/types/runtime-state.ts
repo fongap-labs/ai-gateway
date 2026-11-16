@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export type RuntimeAvailability = 'available' | 'cooling' | 'probing' | 'unavailable';
 
 export type EndpointState = Readonly<{

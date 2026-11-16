@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

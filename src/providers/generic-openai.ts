@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Surface } from '../types/protocol.ts';
 import type { ProviderAdapter, ProviderWire } from './types.ts';
 

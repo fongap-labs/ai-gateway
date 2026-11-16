@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { buildInferencePreflightHeaders, INFERENCE_PREFLIGHT_PATH } from '../packages/contracts/conversion-preflight.ts';
 import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';

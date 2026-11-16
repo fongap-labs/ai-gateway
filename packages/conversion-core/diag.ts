@@ -1,7 +1,4 @@
-﻿// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
-import type { ConversionDiagnostic, ConversionFidelity, ConversionResult, StructuredOutputStrategy } from './result.ts';
+﻿import type { ConversionDiagnostic, ConversionFidelity, ConversionResult, StructuredOutputStrategy } from './result.ts';
 
 export class MatrixDiag {
   private readonly items: ConversionDiagnostic[] = [];

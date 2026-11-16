@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 export function normalizeNodeConfigJsonText(text) {
   const source = String(text ?? '');
   let out = '';

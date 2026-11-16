@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { RuntimeNode } from '../../packages/contracts/runtime-node.ts';
 import { TIER1_429_ACCOUNT_ESCALATION_MODELS, TIER1_429_ACCOUNT_ESCALATION_WINDOW_MS } from './tier1-definitions.ts';
 

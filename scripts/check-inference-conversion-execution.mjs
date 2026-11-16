@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';

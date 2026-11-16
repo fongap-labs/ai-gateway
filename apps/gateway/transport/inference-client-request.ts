@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ExecutionInputSurface, ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';
 import type { InferenceStreamBudget } from '../../../packages/contracts/inference-stream-budget.ts';

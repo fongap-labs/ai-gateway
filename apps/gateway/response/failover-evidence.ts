@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { KIND } from '../../../src/reliability/classify.ts';
 
 const NON_FAILURE_KINDS: ReadonlySet<string> = new Set([KIND.CLIENT_ABORT, KIND.CANCELLED_AFTER_PEER_COMMIT]);

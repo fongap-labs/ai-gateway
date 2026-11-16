@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import assert from 'node:assert/strict';
 import { gatewayStats, startGatewayStats } from '../src/observability/gateway-stats.ts';
 import { summarizeHealthEvidence } from '../src/observability/health-evidence.ts';

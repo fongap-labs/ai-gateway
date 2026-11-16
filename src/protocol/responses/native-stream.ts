@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { markSyntheticClientStreamHeaders } from '../../stream/client-lifecycle.ts';
 import { createSseScanner, readWithDeadline } from '../../stream/guard.ts';
 import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../../types/upstream-processing.ts';

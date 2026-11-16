@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 ALTER TABLE token_usage_model_hourly
     ADD COLUMN successful_ttft_count INTEGER NOT NULL DEFAULT 0;
 

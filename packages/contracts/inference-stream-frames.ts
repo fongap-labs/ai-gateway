@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import type { BudgetStopReason } from '../conversion-core/budget.ts';
 
 export const INFERENCE_FRAMED_STREAM_FORMAT = 'inference-framed-v1' as const;

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { normalizeHour, normalizeModelKey, TTFT_BUCKET_COUNT, tokenStatsD1, ttftBucketIndex } from './keys.ts';
 import {

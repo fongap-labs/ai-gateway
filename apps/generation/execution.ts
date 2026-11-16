@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { ExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { isImageGenerationProvider } from '../../packages/contracts/image-capabilities.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';

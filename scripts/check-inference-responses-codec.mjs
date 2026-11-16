@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { parseResponsesRequest as ownedParse } from '../apps/inference/conversion/responses.ts';
 import { ResponsesStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/responses-stream.ts';

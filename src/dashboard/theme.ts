@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const THEME_CSS = `
 :root{
   --paper:#f8f7f3;

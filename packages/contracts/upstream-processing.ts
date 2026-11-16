@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const UPSTREAM_PROCESSING_ERROR = Object.freeze({
   DEADLINE: 'deadline',
   MALFORMED: 'malformed',

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { INFERENCE_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';

@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import assert from 'node:assert/strict';
 import { isResponsesRealOutput } from '../packages/transport/openai-native.ts';
 import { SseLifecycleObserver } from '../src/stream/sse-lifecycle.ts';

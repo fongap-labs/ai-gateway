@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: MIT
 // @ts-check
-// Copyright (c) 2026 Fongap Labs
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

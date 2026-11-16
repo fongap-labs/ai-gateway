@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 type AuthzShape = { authorized?: boolean; allowAll?: boolean; allowlist?: ReadonlySet<string> };
 
 const CONTEXT_LENGTH_SUFFIX = /\[[0-9]+m\]$/;

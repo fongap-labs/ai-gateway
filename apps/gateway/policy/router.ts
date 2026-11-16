@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export const TIER_ORDER: readonly [1, 2] = [1, 2];
 
 export type DetectedRoute =

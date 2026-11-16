@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Protocol, Surface } from './protocol.ts';
 import type { RuntimeNode } from './runtime-node.ts';
 

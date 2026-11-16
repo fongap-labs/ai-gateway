@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Protocol, Surface } from '../types/protocol.ts';
 import type { ImageGenerationAdapter } from './image-generation.ts';
 

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { tier1ProviderModelHeatFactor } from '../reliability/tier1-heat.ts';
 import { getTier1ModelPerf, TIER1_FAILURE_STATES } from '../reliability/tier1-state.ts';
 import type { RuntimeNode } from '../types/node.ts';

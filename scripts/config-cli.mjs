@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertNodesArray, assertSecretsObject, buildPlan, parseJsonFile, SHARD_MAX_BYTES } from './node-config-shards.mjs';

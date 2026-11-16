@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export type PolicyConfig = {
   maxAttempts: number;
   tierAttempts?: { tier1?: number; tier2?: number } | null;

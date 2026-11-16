@@ -1,6 +1,3 @@
--- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 Fongap Labs
-
 CREATE TABLE IF NOT EXISTS subscription_tokens (
   node_id TEXT PRIMARY KEY,
   provider TEXT NOT NULL,

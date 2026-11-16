@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import type { Tier1AccountRuntime, Tier1QuotaState, Tier1ReleaseToken } from './tier1-definitions.ts';
 import { tier1Accounts as accounts, getTier1Account } from './tier1-store.ts';
 

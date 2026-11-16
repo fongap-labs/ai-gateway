@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { commitTier1RecoveryProbe } from '../../../src/reliability/tier1-state.ts';
 import type { AttemptContext, AttemptOutcome } from '../../../src/types/request.ts';
 import { handleImageSuccess } from './success-image.ts';

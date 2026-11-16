@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { reuseRequestConversionPreflight } from '../apps/gateway/transport/request-conversion-cache.ts';
 

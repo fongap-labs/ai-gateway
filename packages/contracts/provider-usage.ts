@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { getProviderProfile } from './provider-profiles.ts';
 
 export function streamUsageEnabled(

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 export class ConversionError extends Error {
   code: string;
   requestField: string | null;

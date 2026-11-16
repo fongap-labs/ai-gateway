@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { tier1CanAcceptHedge, tier1SelectionHeatFactor } from '../../../src/reliability/tier1-heat.ts';
 import { claimTier1Slot, isTier1Eligible, makeTier1ReleaseToken, maybeTransitionToHalfOpen } from '../../../src/reliability/tier1-state.ts';
 import { calculateTier1Score } from '../../../src/scheduler/tier1-scoring.ts';

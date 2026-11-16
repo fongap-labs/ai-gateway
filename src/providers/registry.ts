@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { anthropicProviderAdapter } from './anthropic.ts';
 import { cloudflareImageProviderAdapter } from './cloudflare-image.ts';
 import { genericOpenAIProviderAdapter } from './generic-openai.ts';

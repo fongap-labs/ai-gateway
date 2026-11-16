@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { mergeReportedUsage, normalizeTokenUsage } from '../observability/token-usage.ts';
 
 export type SseProtocol = 'openai_chat' | 'openai_responses' | 'anthropic';

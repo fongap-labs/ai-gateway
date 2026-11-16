@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
-
 import { FAILURE_STATE, type Tier1ModelRuntime, type Tier1SharedCooldown } from './tier1-definitions.ts';
 import { tier1Accounts as accounts } from './tier1-store.ts';
 

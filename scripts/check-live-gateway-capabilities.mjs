@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Fongap Labs
 import { randomInt } from 'node:crypto';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
 import { visionColors } from './live-gateway-vision-fixtures.mjs';
