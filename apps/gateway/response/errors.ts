@@ -97,7 +97,7 @@ export function gatewayError(
   isRetryable: boolean = false,
 ): Response {
   const diagnosticHeaders = responsesDiagnosticHeaders(details, extraHeaders) ?? {};
-  const retryable = isRetryable || status === 429 || status === 503;
+  const retryable = isRetryable || status === 429;
   diagnosticHeaders['x-gateway-retryable'] = String(retryable);
   const kinds = details?.failure_kinds;
   const hadHeadersTimeout =
