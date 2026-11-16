@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 显式关闭思考（Off）在 OpenAI Chat、Responses 与 Anthropic Messages 间转换时保持一致，禁止跨协议 IR 转换丢失关闭语义，并补充六方向回归测试。
+
 - 新增: 默认 High 思考意图与跨协议弹性适配；显式 Off 和客户端等级优先，节点能力未知时保留原生请求，不强制固定 24k 思考预算，不按 High 缩减免费节点回退池，并提供模型能力元数据。
 
 - 修复: 文本模型图片通过经授权的视觉节点委托到 Perception Center，补齐 Anthropic Messages 图片输入、模型能力声明及跨协议回归；缺少授权视觉节点或私有绑定时明确失败，不将图片发送到纯文本 Provider。
