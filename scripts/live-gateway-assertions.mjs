@@ -36,15 +36,3 @@ export function hasChatVisionColor(reply, expectedColor) {
   return matchesExpectedVisionColor(reply?.choices?.[0]?.message?.content, expectedColor);
 }
 
-export function hasResponsesVisionColor(reply, expectedColor) {
-  return (
-    Array.isArray(reply?.output) &&
-    reply.output.some(
-      (item) =>
-        item?.type === 'message' &&
-        item.role === 'assistant' &&
-        Array.isArray(item.content) &&
-        item.content.some((part) => part?.type === 'output_text' && matchesExpectedVisionColor(part.text, expectedColor)),
-    )
-  );
-}
