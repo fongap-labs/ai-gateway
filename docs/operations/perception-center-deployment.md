@@ -6,14 +6,14 @@
 
 | 范围 | 当前源码合同与实现 | Perception 处理 |
 | --- | --- | --- |
-| Chat Completions | `messages[].content[]` 中的 `image_url`；OpenAI Provider Profile 声明 `imageInput: true` | 原生视觉模型走 Perception；文本模型可委托给当前访问 Key 已授权的视觉模型，经 Perception 获取观察文本后继续原文本推理 |
+| Chat Completions | `messages[].content[]` 中的 `image_url`；OpenAI Provider Profile 声明 `imageInput: true` | 仅声明 `capabilities.vision=true` 的原生视觉模型可经 Perception 处理图片；文本模型收到图片时直接返回 400 |
 | Responses | `input_image`，包括 `input` 中 message 的 `content[]` 形式；OpenAI Provider Profile 声明 `imageInput: true` | 与现有执行票据、预算和响应合同一同交给 Perception；入口只检查结构，不读取或改写 Base64/URL 内容 |
-| Anthropic Messages | `messages[].content[]` 中的 `type: "image"`；Anthropic Provider Profile 声明 `imageInput: true` | 原生视觉请求经 Perception；文本模型的用户 base64/HTTPS 图片可以先执行授权视觉委托再返回原消息协议 |
+| Anthropic Messages | `messages[].content[]` 中的 `type: "image"`；Anthropic Provider Profile 声明 `imageInput: true` | 原生视觉请求经 Perception；纯文本模型不再自动调用视觉模型，也不将图像转为文本 |
 | 未明确声明图像输入的 Provider | Generic OpenAI 兼容、Google 和图片生成 Provider 的 `imageInput` 为 `false` | 不发送图像；调度跳过该 Provider。模型未明确声明 vision 时返回 400 |
 | OCR | 现有目录包含保留的 `capabilities.ocr` 字段 | 没有专用 OCR endpoint 或 OCR 处理承诺；`ocr` 字段不触发独立路由 |
 | Audio / Video | 现有节点和协议执行合同没有被本功能扩展 | 不支持独立 audio/video 路由、转码、任务 ID、异步状态、取消或恢复 |
 
-Provider Profile 与现有 wire surface 定义是执行资格的依据；Unknown Provider 采用保守的 Generic Profile。`capabilities.vision` 是视觉执行节点显式 opt-in，`modalities` 仍不是路由权威。网关收到图片后，优先使用模型配置中的 `vision_delegate`；未声明时才从该 Key 已授权的可执行视觉模型中选择，不混入 Code/General 的推理回退。未授权、缺少中心绑定或图片格式不受支持时失败关闭。
+Provider Profile 与现有 wire surface 定义是执行资格的依据；Unknown Provider 采用保守的 Generic Profile。`capabilities.vision` 是视觉执行节点显式 opt-in，`modalities` 仍不是路由权威。网关收到图片时只检查所选模型是否明确声明 `capabilities.vision=true`，并按现有 Provider Profile 选择可接收图片的节点；同为视觉模型的显式后备路由仍可使用。纯文本模型即使配置了视觉后备模型，也直接返回 `gateway_image_input_unsupported`，不执行视觉委托或观察文本注入。缺少私有中心绑定或图片格式不受支持时失败关闭。历史配置中的 `vision_delegate` 暂被忽略以避免部署中断，应从 `AIG_MODELS_CONFIG` 移除。
 
 ## 私有与密钥边界
 
@@ -33,6 +33,6 @@ Provider Profile 与现有 wire surface 定义是执行资格的依据；Unknown
 
 ## 验收与安全边界
 
-中央 Action Worker 测试包覆盖真实 Gateway 请求、Perception 私有绑定、认证隔离、无绑定失败关闭、文本请求仍走 Inference、无 vision 声明拒绝、Perception 配置过滤、Secret 归属及部署顺序。仓库内的 Wrangler dry-run 仅构建；GET-only 元数据盘点不调用 Secrets API，也不读取 Secret 值。
+中央 Action Worker 测试包覆盖真实 Gateway 请求、Perception 私有绑定、认证隔离、无绑定失败关闭、文本请求仍走 Inference、图片发给纯文本模型立即 400、原生视觉透传、Perception 配置过滤、Secret 归属及部署顺序。仓库内的 Wrangler dry-run 仅构建；GET-only 元数据盘点不调用 Secrets API，也不读取 Secret 值。
 
 本任务的 CI/PR 不触碰 Cloudflare。`.github/deploy.json` 保持 `automatic: false`；不更新生产 Secret、不部署 Worker、不更改 Service Binding、不迁移 Provider 凭据、不切换流量、不改 Operations Cron/D1/KV。生产启用需要另行完成 Secret bootstrap、受保护只读盘点、独立运行时验证、兼容回滚计划及部署授权。

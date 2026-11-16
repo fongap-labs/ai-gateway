@@ -58,6 +58,7 @@ flowchart LR
 ```
 
 - Gateway 只处理鉴权、额度、调度、限流和故障恢复，不直接请求 Provider。
+- 图片请求只允许明确声明视觉能力的模型，经 Perception 原生透传；纯文本模型收到图片直接返回 400，不自动识图或注入识别文本。
 - Inference、Perception 和 Generation 三个私有中心按能力执行，分别持有对应 Provider 凭据；Gateway 通过 Service Binding 调用它们。
 - Operations 只运行定时维护，通过共享 D1 汇总和保留用量数据；它没有公开请求路由，也不持有 Provider 凭据。
 - 调度固定为 Tier 1 免费 API Key → Tier 2 API Token；会员 OAuth 与第三层 Tier 不属于当前运行时。
@@ -117,7 +118,7 @@ node scripts/check-live-gateway-capabilities.mjs \
   --chat-model YOUR_LOGICAL_TEXT_MODEL
 ~~~
 
-脚本还支持 `--vision-model`、`--delegate-model` 和 `--responses-delegate-model` 验证实际图片输入；`--failover-model` 可观察故障转移，但只有在受控故障节点池中配合 `--expect-dispatches` 才能据此证明多次真实派发。**图片生成必须显式传入 `--run-image --image-model ...`，可能产生上游费用**。这些真实测试需要网关 URL、对应分组的访问密钥及可用的上游节点；脚本不会自行获取生产凭据，也不自动发布。CPU、内存、D1/KV 用量仍须结合 Cloudflare 账户侧运行指标验证，测试通过不等于免费配额充足。
+脚本可通过 `--vision-model` 验证原生视觉图片输入；`--failover-model` 可观察故障转移，但只有在受控故障节点池中配合 `--expect-dispatches` 才能据此证明多次真实派发。**图片生成必须显式传入 `--run-image --image-model ...`，可能产生上游费用**。这些真实测试需要网关 URL、对应分组的访问密钥及可用的上游节点；脚本不会自行获取生产凭据，也不自动发布。CPU、内存、D1/KV 用量仍须结合 Cloudflare 账户侧运行指标验证，测试通过不等于免费配额充足。
 
 若需要保存可审计、脱敏的真实验收证据，使用封装脚本（仍调用上述现有测试，不重新实现请求链路）：
 
@@ -129,7 +130,7 @@ node scripts/run-live-acceptance-report.mjs \
   --report-file ../ai-gateway-live-acceptance.json
 ~~~
 
-该脚本先检查公开 `/health/ready` 的实际 40 位构建 SHA、就绪和降级状态；**版本不匹配时不会调用上游模型**。验收范围可继续添加前述 `--vision-model`、`--delegate-model`、`--failover-model`，只有明确使用 `--run-image` 才会发起图片生成。报告仅记录版本、检查名称、HTTP 状态、耗时、请求 ID、派发/回退摘要和固定类别的失败原因，不保存请求体、原始响应、图片或密钥；本地以独占创建方式写出，不能覆盖历史文件，建议保存在仓库外并妥善保护。真实请求可能消耗上游额度，报告也不代表 Cloudflare 全账户 CPU、D1、KV 已完成验收。
+该脚本先检查公开 `/health/ready` 的实际 40 位构建 SHA、就绪和降级状态；**版本不匹配时不会调用上游模型**。验收范围可继续添加前述 `--vision-model`、`--failover-model`，只有明确使用 `--run-image` 才会发起图片生成。报告仅记录版本、检查名称、HTTP 状态、耗时、请求 ID、派发/回退摘要和固定类别的失败原因，不保存请求体、原始响应、图片或密钥；本地以独占创建方式写出，不能覆盖历史文件，建议保存在仓库外并妥善保护。真实请求可能消耗上游额度，报告也不代表 Cloudflare 全账户 CPU、D1、KV 已完成验收。
 
 
 ## 安全与运行边界

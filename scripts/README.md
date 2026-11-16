@@ -42,10 +42,10 @@
 
 ## 真实网关能力验收
 
-`check-live-gateway-capabilities.mjs` 向**已经部署的** HTTPS Gateway 发真实请求，不使用模拟 Provider，也不会进行部署或修改配置。用例包括文本模型、可选 Omni 直连、普通 Chat 与原生 Responses 经 Perception 识图、可选实际故障转移和显式付费生成。Responses 检查须显式指定 `--responses-delegate-model`，会调用真实上游文本及视觉模型；在未配置访问 Key、模型或受控 HTTPS 环境时不应执行。需在受控环境提供原有 `AIG_ACCESS_KEY_MAX` / `AIG_ACCESS_KEY_AGENT` 等访问 Key；脚本不会输出 Key 或图片数据。
+`check-live-gateway-capabilities.mjs` 向**已经部署的** HTTPS Gateway 发真实请求，不使用模拟 Provider，也不会进行部署或修改配置。用例包括文本模型、可选 Omni 原生视觉、可选实际故障转移和显式图片生成。纯文本模型收到图片必须返回 400，不再通过视觉委托增加能力。需在受控环境提供原有 `AIG_ACCESS_KEY_MAX` / `AIG_ACCESS_KEY_AGENT` 等访问 Key；脚本不会输出 Key 或图片数据。
 
 ```bash
-node scripts/check-live-gateway-capabilities.mjs --url https://<gateway-host> --chat-model Max --vision-model Omni --delegate-model Code-Max --responses-delegate-model Code-Max
+node scripts/check-live-gateway-capabilities.mjs --url https://<gateway-host> --chat-model Max --vision-model Omni
 ```
 
 识图验收使用随机红、蓝、绿、黄方块图片并校验模型给出的颜色；无法看图、回答错误或非颜色文本均判失败，不再仅凭非空回复判通过。测试不会回显图片或原始模型回复。

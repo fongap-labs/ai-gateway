@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
-import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
+import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText } from './live-gateway-assertions.mjs';
 import { visionColors } from './live-gateway-vision-fixtures.mjs';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGN8JiLCwMDAxMDAwMDAAAANpAESe7q5qgAAAABJRU5ErkJggg==';
@@ -39,14 +39,6 @@ assert.equal(hasChatVisionColor(chatVision('red and blue'), 'red'), false);
 assert.equal(hasChatVisionColor(chatVision('red'), 'purple'), false);
 assert.equal(hasChatVisionColor({ choices: [] }, 'red'), false);
 
-const responsesVision = (answer, role = 'assistant') => ({
-  output: [{ type: 'message', role, content: [{ type: 'output_text', text: answer }] }],
-});
-assert.equal(hasResponsesVisionColor(responsesVision('yellow'), 'yellow'), true);
-assert.equal(hasResponsesVisionColor(responsesVision('green'), 'yellow'), false);
-assert.equal(hasResponsesVisionColor(responsesVision('Sorry, no image is available'), 'yellow'), false);
-assert.equal(hasResponsesVisionColor(responsesVision('yellow', 'user'), 'yellow'), false);
-assert.equal(hasResponsesVisionColor({ output: [{ type: 'function_call', arguments: 'yellow' }] }, 'yellow'), false);
 assert.equal(visionColors.length, 4);
 for (const { name, base64 } of visionColors) {
   const imageBytes = Buffer.from(base64, 'base64');
