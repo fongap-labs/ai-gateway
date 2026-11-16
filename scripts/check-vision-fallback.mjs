@@ -418,5 +418,6 @@ await preprocessProbe(200);
 await preprocessProbe(504, { status: 504, code: 'gateway_vision_preprocess_timeout' });
 await preprocessProbe(503, { status: 503, code: 'gateway_vision_preprocess_unavailable' });
 await preprocessProbe(429, { status: 429, code: 'gateway_vision_preprocess_rate_limited' });
+await preprocessProbe(413, { status: 413, code: 'gateway_vision_preprocess_image_too_large' });
 
 console.log('Gateway -> real Perception -> fake Provider, vision budget, and error contracts passed offline.');
