@@ -147,8 +147,8 @@ async function executeAdmittedNative(
     outboundBody = { ...outboundBody, model: physicalModel };
     isMutated = true;
   }
-  const injectStreamUsage = invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env);
-  if (injectStreamUsage) {
+  const shouldInjectStreamUsage = invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env);
+  if (shouldInjectStreamUsage) {
     outboundBody = withUsageStreamOptions(outboundBody);
     isMutated = true;
   }
@@ -173,7 +173,7 @@ async function executeAdmittedNative(
   // without stringifying multi-megabyte messages for every physical attempt.
   const patchedNativeBody =
     !invocation.inputSurface && isMutated
-      ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, injectStreamUsage)
+      ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage)
       : null;
   const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
