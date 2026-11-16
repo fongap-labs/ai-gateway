@@ -125,15 +125,14 @@ export function gatewayError(
   const kinds = details?.failure_kinds;
   const hadHeadersTimeout =
     kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
+  const hasFamilyTimeoutEvidence = gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED && hadHeadersTimeout;
   const deferredFamilyRetry =
-    gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED &&
-    hadHeadersTimeout &&
-    parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
+    hasFamilyTimeoutEvidence && parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
   // Some protocol adapters retain a JSON error but drop response headers.
   // Carry only the single bounded classification needed to honor this
   // no-immediate-replay decision; never restore the full failure graph.
-  const compactRetryEvidence = deferredFamilyRetry
+  const compactRetryEvidence = hasFamilyTimeoutEvidence
     ? { failure_kinds: { headers_timeout: Math.trunc(Number((kinds as Record<string, unknown>).headers_timeout)) } }
     : {};
   if (gatewayCode) diagnosticHeaders['x-gateway-error-code'] = gatewayCode;
@@ -310,11 +309,19 @@ export function buildExhaustedResponse(
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
       message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry shortly.`;
-      // A timeout may win the terminal-status tie even when several physical
-      // candidates are cooling down after 429. Preserve the family's real
-      // blocking window instead of telling the caller to retry after 1s.
-      const sawRateLimit = (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      retryAfterSec = sawRateLimit ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1) : 1;
+      // Cooldowns survive between requests. A new request can time out with
+      // zero 429 observations even while its siblings are still cooling down.
+      const familyWaitSec = earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_);
+      const hadTimeout =
+        (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 ||
+        (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
+      retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
+      // 429 is appropriate only if EVERY eligible model-family node is
+      // blocked by a known cooldown, not when even one timed-out node remains
+      // eligible. Otherwise callers receive a misleading rate-limit signal.
+      if (retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
+        status = 429;
+      }
       if (retryAfterSec >= 5) {
         message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry after the advertised delay.`;
       }
@@ -397,6 +404,28 @@ function earliestFamilyBlockingRetryAfterSec(
     if (wait !== undefined && wait < minSec) minSec = wait;
   }
   return Number.isFinite(minSec) ? minSec : undefined;
+}
+
+function familyHasOnlyCoolingNodes(
+  tiers: TierMap<RuntimeNode[]>,
+  reqDescriptor: RequestDescriptor,
+  requestedModel: string,
+  now: number,
+  env: GatewayEnv,
+  knownModels?: ReadonlySet<string>,
+): boolean {
+  const models = knownModels ? modelFallbackCandidates(requestedModel, knownModels, loadModelsConfig(env)) : [requestedModel];
+  let found = false;
+  for (const model of models) {
+    for (const tier of TIER_ORDER) {
+      for (const node of tiers[tier] ?? []) {
+        if (!supportsRequest(node, { ...reqDescriptor, model }, knownModels)) continue;
+        found = true;
+        if (!Number.isFinite(blockingWaitMs(node, model, now))) return false;
+      }
+    }
+  }
+  return found;
 }
 
 function blockingWaitMs(node: RuntimeNode, requestedModel: string, now: number): number {
