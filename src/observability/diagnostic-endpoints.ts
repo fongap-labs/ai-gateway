@@ -1,4 +1,3 @@
-import { getFallbackChain } from '../../packages/config-core/protocol-fallbacks.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
@@ -49,7 +48,6 @@ function buildModelsList(
     typeof perceptionService?.fetch === 'function' &&
     typeof env.AIG_PERCEPTION_AUTH_KEY === 'string' &&
     env.AIG_PERCEPTION_AUTH_KEY.length >= 32;
-  const chatFallbacks = getFallbackChain('openai_chat', env);
   type ModelListEntry = {
     id: string;
     object: string;
@@ -110,8 +108,8 @@ function buildModelsList(
           (node) =>
             servesModel(node, e.id, logicalNames) &&
             getProviderProfile(node.provider).imageInput &&
-            ((node.protocol === 'openai' && node.surfaces.includes('chat_completions')) ||
-              chatFallbacks.some(({ protocol, surface }) => node.protocol === protocol && node.surfaces.includes(surface))),
+            ((node.protocol === 'openai' && (node.surfaces.includes('chat_completions') || node.surfaces.includes('responses'))) ||
+              (node.protocol === 'anthropic' && node.surfaces.includes('messages'))),
         );
       return {
         id: e.id,

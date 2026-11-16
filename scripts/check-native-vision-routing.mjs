@@ -102,6 +102,45 @@ async function exercise({ route = 'chat', model = textModel, fallback = false, l
   }
 }
 
+
+async function assertNativeVisionMetadataIndependentOfProtocolFallbacks() {
+  const env = {
+    AIG_ACCESS_KEY_AIR: key,
+    AIG_ACCESS_MODELS_AIR: visionModel,
+    AIG_TIER1_NODES_01: JSON.stringify([
+      {
+        id: 'responses-native-vision',
+        provider: 'openai',
+        base_url: 'https://provider.example.invalid/v1',
+        surfaces: ['responses'],
+        models: { [visionModel]: 'native-vision-model' },
+      },
+    ]),
+    AIG_INFERENCE_AUTH_KEY: 'i'.repeat(32),
+    AIG_PERCEPTION_AUTH_KEY: 'v'.repeat(32),
+    AIG_PERCEPTION_SERVICE: { async fetch() { throw new Error('Model metadata must not dispatch Perception'); } },
+    AIG_PROTOCOL_FALLBACKS: 'disable',
+    AIG_MODELS_CONFIG: JSON.stringify({
+      [visionModel]: {
+        policy: 'default',
+        capabilities: { vision: true },
+        modalities: { input: ['text', 'image'], output: ['text'] },
+      },
+    }),
+    AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 1, tier_attempts: { tier1: 1 } } }),
+  };
+  const response = await handleRequest(
+    new Request('https://gateway.example.invalid/v1/models', {
+      headers: { authorization: 'Bearer ' + key },
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(response.status, 200, await response.clone().text());
+  const models = (await response.json()).data;
+  assert.equal(models.find((model) => model.id === visionModel)?.supports_vision, true);
+}
+
 for (const route of ['chat', 'responses', 'anthropic']) {
   await exercise({ route, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
   await exercise({ route, fallback: true, legacyDelegate: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
@@ -110,4 +149,5 @@ for (const route of ['chat', 'responses', 'anthropic']) {
 await exercise({ model: visionModel, expectedStatus: 200 });
 await exercise({ model: visionModel, provider: 'unverified-provider', expectedStatus: 400, expectedCode: 'gateway_image_provider_unsupported' });
 await exercise({ model: visionModel, bindPerception: false, expectedStatus: 503, expectedCode: 'gateway_perception_center_unavailable' });
-console.log('Only declared native vision models reach Perception; text models cannot gain vision through fallback or retired config.');
+await assertNativeVisionMetadataIndependentOfProtocolFallbacks();
+console.log('Only native vision models expose image capability; disabling protocol fallback does not hide a native Responses vision route.');
