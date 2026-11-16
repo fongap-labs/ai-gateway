@@ -161,7 +161,13 @@ const bridgeEnv = {
   AIG_REQUEST_ADMISSION: 'false',
   AIG_TIER1_NODES_01: JSON.stringify([
     { id: 'bridge-code', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [original]: 'upstream-text-model' } },
-    { id: 'bridge-vision', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [bridgeModel]: 'upstream-vision-model' } },
+    {
+      id: 'bridge-vision',
+      provider: 'openai',
+      base_url: 'https://provider.example.invalid/v1',
+      models: { [bridgeModel]: 'upstream-vision-model' },
+      reasoning: { mode: 'effort', efforts: ['high'] },
+    },
   ]),
   AIG_MODELS_CONFIG: JSON.stringify({
     [original]: { policy: 'default', capabilities: { vision: false }, vision_delegate: bridgeModel },
