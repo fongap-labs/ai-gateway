@@ -250,10 +250,10 @@ export async function dispatchInferenceAttempt(
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
     c.upstreamStatus = hasTimedOut ? 504 : 502;
-    // The Gateway's own header timer expired. Charge this timed-out node as
-    // one failed physical attempt and offer the bounded scheduler another
-    // candidate; generic binding failures still have an unknown outcome.
-    if (hasTimedOut) {
+    // Only rotate a Gateway-owned header timeout when the logical request
+    // still has another eligible dispatch. With no candidate left, the
+    // private center's outcome remains unknown and must fail closed.
+    if (hasTimedOut && c.remainingDispatchableAttempts > 1 && !c.takeRemainingWindow && Date.now() < c.attemptDeadlineMs) {
       const classified = classifyNetworkError(true);
       recordOutcome(state, node, classified, c, { latencyMs: c.headersMs, status: 504 });
       return { rotate: true, kind: classified.kind };
