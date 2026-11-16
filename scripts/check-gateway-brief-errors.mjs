@@ -71,7 +71,7 @@ const earlyRetry = gatewayError(
   'gateway_attempt_budget_exhausted',
   true,
 );
-assert.deepEqual((await earlyRetry.json()).error.details.failure_kinds, { headers_timeout: 2 });
+assert.equal((await earlyRetry.json()).error.details.failure_kinds, undefined, 'short retries must not enlarge the client error body');
 assert.equal(earlyRetry.headers.get('x-should-retry'), null);
 
 const blocked = gatewayError(
