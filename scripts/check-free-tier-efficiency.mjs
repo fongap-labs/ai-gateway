@@ -59,6 +59,15 @@ assert.equal(rateLimitWindowOf('quota exceeded', 3_600_000), 'quota');
 assert.equal(rateLimitWindowOf('Requests per minute reached; daily quota also listed', 30_000), 'window');
 assert.equal(rateLimitWindowOf('Requests per minute reached; daily quota also listed', 3_600_000), 'quota');
 
+const retryLater = classifyUpstreamStatus(503, new Headers({ 'Retry-After': '6' }), {}, Date.now());
+assert.equal(retryLater.kind, 'server');
+assert.equal(retryLater.action, 'rotate');
+assert.equal(retryLater.cooldownMs, 6_000, 'upstream 503 backoff must protect the failed node');
+assert.equal(retryLater.explicitRetryAfter, true);
+const ordinaryServerError = classifyUpstreamStatus(503, new Headers(), {}, Date.now());
+assert.equal(ordinaryServerError.cooldownMs, 0, 'do not fabricate backoff where provider gave none');
+assert.equal(classifyUpstreamStatus(502, new Headers({ 'Retry-After': '9' }), {}, Date.now()).cooldownMs, 0);
+
 const minute = classifyUpstreamStatus(429, new Headers({ 'Retry-After': '28' }), {}, Date.now(), 'quota exceeded');
 assert.equal(minute.kind, 'rate_limit');
 assert.equal(minute.action, 'rotate');
