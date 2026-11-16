@@ -58,6 +58,17 @@ for (const [route, field] of cases) {
   if (route === 'anthropic_messages') assert.equal(json.type, 'error');
 }
 
+// A short retry hint must not erase the bounded timeout classification.
+const earlyRetry = gatewayError(
+  request, {}, 'openai_chat', 503,
+  'Temporarily unavailable.', 'early-id',
+  { requested_model: model, attempts: 2, failure_kinds: { headers_timeout: 2 } },
+  { 'retry-after': '1' },
+  'gateway_attempt_budget_exhausted', true,
+);
+assert.deepEqual((await earlyRetry.json()).error.details.failure_kinds, { headers_timeout: 2 });
+assert.equal(earlyRetry.headers.get('x-should-retry'), null);
+
 const blocked = gatewayError(
   request,
   {},
