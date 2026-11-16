@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { requestBodyForAttempt } from '../apps/gateway/transport/request-body-cache.ts';
 import { withUsageStreamOptions } from '../packages/protocol-core/openai.ts';
-import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
 import { readBodyTextWithLimit } from '../packages/transport/http.ts';
+import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
 
 const original = {
   model: 'Code-Max',
@@ -112,8 +112,11 @@ assert.equal(
 );
 assert.equal(observedBodySizes.at(-1), encodedFixture.byteLength, 'admission must count bytes, not decoded characters');
 await assert.rejects(readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength - 1), { name: 'BodyTooLargeError' });
-await assert.rejects(readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength, (size) => size < 1_000), {
-  name: 'BodyAdmissionBudgetError',
-});
+await assert.rejects(
+  readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength, (size) => size < 1_000),
+  {
+    name: 'BodyAdmissionBudgetError',
+  },
+);
 
 console.log('Native JSON patch passed: large-body equivalence, raw fallback preservation and request-local serialization reuse.');
