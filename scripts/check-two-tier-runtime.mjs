@@ -864,15 +864,15 @@ assert.match(mixedRetryBody.error.message, /^503 \| .*retry after [0-9]+s\.$/, '
 const pureRateLimit = exhausted({ rate_limit: 8 });
 assert.equal(pureRateLimit.status, 503);
 assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
-// The Free Workers admission guard opts into a true rate-limit status when
-// every compatible fallback candidate is cooling down, without breaking the
-// default external SDK/central test-pack 503 contract.
-const gatedMixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
-assert.equal(gatedMixedRetry.status, 429);
-assert.ok(Number(gatedMixedRetry.headers.get('retry-after')) >= 15, 'new 429 mode must retain model-family Retry-After');
-assert.equal(gatedMixedRetry.headers.get('x-should-retry'), 'false');
-const gatedPureRateLimit = exhausted({ rate_limit: 8 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
-assert.equal(gatedPureRateLimit.status, 429);
+// Admission optimization is an internal resource guard, not a public
+// response-code switch. Even with it enabled, family exhaustion stays 503
+// and the client receives the measured fallback-family Retry-After.
+const guardedMixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(guardedMixedRetry.status, 503);
+assert.ok(Number(guardedMixedRetry.headers.get('retry-after')) >= 15, 'admission mode must retain model-family Retry-After');
+assert.equal(guardedMixedRetry.headers.get('x-should-retry'), 'false');
+const guardedPureRateLimit = exhausted({ rate_limit: 8 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(guardedPureRateLimit.status, 503);
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
 assert.ok(Number(timeoutRetry.headers.get('retry-after')) >= 15, 'timeout-only cooldown must preserve its real wait');
