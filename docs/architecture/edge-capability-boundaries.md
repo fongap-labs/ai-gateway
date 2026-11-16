@@ -8,7 +8,7 @@
 | --- | --- |
 | Gateway | 唯一公开 API 入口；鉴权、模型授权、额度准入、两层调度、限流与故障恢复。通过私有 Service Binding 调用执行中心，不直接执行 Provider 请求。 |
 | Inference Center | 私有原生/兼容推理执行、Provider 协议适配与文本请求处理；保留现有模型池以兼容未切换 Gateway；只持有其 Worker Secret 中的 Provider 凭据。 |
-| Perception Center | 私有执行现有 Chat、Responses、Messages 图像输入；仅接受目录明确标记 vision 的模型及明确支持图像输入的 Provider Profile；复用现有转换、预算、计费与流合同。 |
+| Perception Center | 私有执行现有 Chat、Responses、Messages 图像输入；仅接受目录明确标记 vision 的模型及明确支持图像输入的 Provider Profile；文本模型经授权视觉委托获得观察文本后仍调用原有推理模型；复用现有执行合同。 |
 | Generation Center | 私有生成能力执行与结果归一化；只持有生成所需 Provider 凭据。 |
 | Operations | 独立定时维护入口；使用与 Gateway 相同的 `TOKEN_STATS_DB`，不提供公开 `fetch` 路由且不持有 Provider 凭据。Cron 所有权按受控交接计划变更。 |
 
@@ -20,7 +20,7 @@
 flowchart LR
     Client[客户端] --> Gateway[Gateway：鉴权、额度、路由与恢复]
     Gateway -->|纯文本私有绑定| Inference[Inference Center：推理与文本协议转换]
-    Gateway -->|显式 vision + 图像请求| Perception[Perception Center：已有多模态图像输入]
+    Gateway -->|授权的视觉节点 + 图像请求| Perception[Perception Center：已有多模态图像输入]
     Gateway -->|私有 Service Binding| Generation[Generation Center：生成能力]
     Gateway --> Stats[(共享 TOKEN_STATS_DB)]
     Operations[Operations：定时维护] --> Stats
