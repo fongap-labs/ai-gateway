@@ -20,6 +20,7 @@ import { convertPrivateMatrixResponse } from '../protocol-center-core/response.t
 import { withUsageStreamOptions } from '../protocol-core/openai.ts';
 import { createBodyAdmissionPool } from '../transport/body-admission.ts';
 import { BodyTooLargeError, buildTargetUrl, readBodyTextWithLimit } from '../transport/http.ts';
+import { patchNativeJsonTopLevel } from '../transport/native-json-patch.ts';
 import { dispatchProviderAttempt } from '../transport/provider-attempt.ts';
 import { buildProviderForwardRequest } from '../transport/provider-forward-request.ts';
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/provider-routing.ts';
@@ -146,7 +147,8 @@ async function executeAdmittedNative(
     outboundBody = { ...outboundBody, model: physicalModel };
     isMutated = true;
   }
-  if (invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env)) {
+  const injectStreamUsage = invocation.surface === 'chat_completions' && outboundBody.stream === true && streamUsageEnabled(node, env);
+  if (injectStreamUsage) {
     outboundBody = withUsageStreamOptions(outboundBody);
     isMutated = true;
   }
@@ -166,7 +168,14 @@ async function executeAdmittedNative(
   const headers = buildUpstreamHeadersFor(node.protocol, clientRequest, credential, invocation.requestId);
   const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
   if (providerTraceparent) headers.set('traceparent', providerTraceparent);
-  const body = isMutated ? JSON.stringify(outboundBody) : rawBody;
+  // The request has already been parsed and checked. When its root model key
+  // is unambiguous, patch only that small JSON value (and optional usage)
+  // without stringifying multi-megabyte messages for every physical attempt.
+  const patchedNativeBody =
+    !invocation.inputSurface && isMutated
+      ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, injectStreamUsage)
+      : null;
+  const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
   const upstreamHeadersDeadlineMs = Math.min(invocation.upstreamHeadersDeadlineMs ?? invocation.deadlineMs, invocation.deadlineMs);
   const attempt = await dispatchProviderAttempt({ url, headers, body, signal: request.signal, upstreamHeadersDeadlineMs });
   if (attempt.failure) return attempt.failure;
