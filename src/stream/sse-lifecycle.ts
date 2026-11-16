@@ -228,8 +228,15 @@ function shouldInspectFrame(protocol: SseProtocol, eventName: string, data: stri
   )
     return true;
   if (protocol === 'openai_responses' && /^(?:response\.(?:output_text|reasoning_text|refusal|content_part)\.)/.test(eventName)) return false;
-  return /"(?:usage|error|tool_calls|function_call|tool_use|computer_call|finish_reason|stop_reason|incomplete_details|failed|incomplete|length|max_tokens|content_filter)"/i.test(
-    data,
+  // Ordinary OpenAI delta chunks contain finish_reason:null (often usage:null).
+  // Parsing each one makes the SSE lifecycle observer CPU-bound on Free Workers.
+  // Inspect only frames containing a meaningful terminal, usage, tool or error signal.
+  return (
+    /"(?:error|tool_calls|function_call|tool_use|computer_call|incomplete_details)"\s*:/i.test(data) ||
+    /"(?:finish_reason|stop_reason)"\s*:\s*"(?:[^"\\]|\\.)+"/i.test(data) ||
+    /"usage"\s*:\s*\{/i.test(data) ||
+    /"status"\s*:\s*"(?:failed|incomplete)"/i.test(data) ||
+    /"type"\s*:\s*"(?:tool_use|function_call|computer_call)"/i.test(data)
   );
 }
 

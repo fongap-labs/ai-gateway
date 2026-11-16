@@ -837,10 +837,10 @@ const retryState = (failureKinds) => ({
   nodes: [retryTargetNode],
   knownModels: new Set([retrySource, retryTarget]),
 });
-const exhausted = (kinds) =>
+const exhausted = (kinds, requestEnv = retryEnv) =>
   buildExhaustedResponse(
     new Request('https://gateway.invalid/v1/chat/completions'),
-    retryEnv,
+    requestEnv,
     'openai_chat',
     'retry-test-request',
     retrySource,
@@ -852,7 +852,7 @@ const exhausted = (kinds) =>
     true,
   );
 const mixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 });
-assert.equal(mixedRetry.status, 503);
+assert.equal(mixedRetry.status, 503, 'legacy requests preserve the documented 503 exhaustion contract');
 assert.equal(mixedRetry.headers.get('x-gateway-error-code'), 'gateway_attempt_budget_exhausted');
 assert.ok(Number(mixedRetry.headers.get('retry-after')) >= 15, 'mixed 429/timeout exhaustion retains the configured fallback model cooldown');
 const mixedRetryBody = await mixedRetry.json();
@@ -864,10 +864,19 @@ assert.match(mixedRetryBody.error.message, /^503 \| .*retry after [0-9]+s\.$/, '
 const pureRateLimit = exhausted({ rate_limit: 8 });
 assert.equal(pureRateLimit.status, 503);
 assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
+// Admission optimization is an internal resource guard, not a public
+// response-code switch. Even with it enabled, family exhaustion stays 503
+// and the client receives the measured fallback-family Retry-After.
+const guardedMixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(guardedMixedRetry.status, 503);
+assert.ok(Number(guardedMixedRetry.headers.get('retry-after')) >= 15, 'admission mode must retain model-family Retry-After');
+assert.equal(guardedMixedRetry.headers.get('x-should-retry'), 'false');
+const guardedPureRateLimit = exhausted({ rate_limit: 8 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
+assert.equal(guardedPureRateLimit.status, 503);
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
-assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
-assert.equal(timeoutRetry.headers.get('x-should-retry'), null, 'short transient failures retain normal SDK retry behavior');
+assert.ok(Number(timeoutRetry.headers.get('retry-after')) >= 15, 'timeout-only cooldown must preserve its real wait');
+assert.equal(timeoutRetry.headers.get('x-should-retry'), 'false', 'timeout-only cooldown prevents immediate SDK replay');
 
 // An exhausted model-family pass must describe the actual dispatched model,
 // not the original model's unrelated physical mapping. No credentials or

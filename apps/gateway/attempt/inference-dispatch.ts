@@ -14,6 +14,7 @@ import {
   parseExecutionResponse,
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
@@ -104,15 +105,23 @@ export async function dispatchInferenceAttempt(
   // The native fast path already has validated raw JSON. Do not allocate and
   // shallow-copy the parsed request on every retry when the wire body is reused.
   const reuseRaw = !c.conversionContext && !c.fakeStream && Boolean(c.rawBody?.text) && c.bodyJson.model === effectiveModel;
+  const patchedRaw =
+    !c.conversionContext && !c.fakeStream && c.rawBody?.text && typeof c.bodyJson.model === 'string'
+      ? patchNativeJsonTopLevel(c.rawBody.text, c.bodyJson.model, effectiveModel, false)
+      : null;
   let outboundBody: string;
   if (reuseRaw && c.rawBody) {
     outboundBody = c.rawBody.text;
+  } else if (patchedRaw !== null) {
+    outboundBody = patchedRaw;
   } else {
     const body: Record<string, unknown> = { ...(c.conversionContext ? c.bodyJson : sourceBody), model: effectiveModel };
     if (!c.conversionContext && c.fakeStream && c.surface === 'chat_completions') body.stream = true;
     outboundBody = JSON.stringify(body);
   }
-  if (c.rawBody && c.rawBody.text.length > 50_000) c.rawBody.text = '';
+  // Keep the validated raw prompt available for sibling-model fallback.
+  // makeNodeStreamTrack releases it after the first committed SSE event;
+  // clearing it here forced another full stringify on every later attempt.
 
   // v4 handles ordinary streams; authenticated v5 carries bounded budgets
   // so Inference executes the same IR budget before producing public SSE.
@@ -161,9 +170,10 @@ export async function dispatchInferenceAttempt(
   // No sibling means attemptCapMs is null and retains the full legacy window.
   const windowMs = c.attemptCapMs ? Math.min(attemptBudgetMs, c.attemptCapMs) : attemptBudgetMs;
   c.attemptDeadlineMs = Math.min(Date.now() + windowMs, c.requestStartMs + c.failoverBudgetMs, Date.now() + 540_000);
-  const centerMayBufferResponse = hasBufferedResponse || returnStream;
+  // Preserve slow free-provider prefill within the already allocated
+  // attempt window. Further slicing this window can terminate valid streams.
   const headersTimeout = attemptHeadersTimeoutMs(
-    centerMayBufferResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
+    hasBufferedResponse || c.takeRemainingWindow ? Math.max(streamingHeadersMs, windowMs) : streamingHeadersMs,
     Math.max(1, c.attemptDeadlineMs - Date.now()),
     1,
   );
@@ -175,7 +185,9 @@ export async function dispatchInferenceAttempt(
     1,
   );
   const upstreamHeadersDeadlineMs = centerResponseDeadlineMs(Date.now() + upstreamHeadersTimeoutMs);
-  const bufferedResponseDeadlineMs = returnTranslatedObject || returnStream ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
+  // Only a collected object has a buffering deadline. A real-time v4 stream
+  // must not inherit the object-assembly deadline after its headers arrive.
+  const bufferedResponseDeadlineMs = returnTranslatedObject ? centerResponseDeadlineMs(c.attemptDeadlineMs) : undefined;
 
   const controller = new AbortController();
   let hasTimedOut = false;
@@ -236,6 +248,8 @@ export async function dispatchInferenceAttempt(
       return stopForCenter(c, 503, EXECUTION_ERROR_CODE.GATEWAY_INFERENCE_CENTER_UNAVAILABLE, center);
     }
     c.upstreamStatus = hasTimedOut ? 504 : 502;
+    // A local timeout does not prove that the private center cancelled its
+    // Provider dispatch. Retrying could duplicate work and exhaust free keys.
     // Do not log the raw exception or request body: a transport rejection can
     // contain private URLs or headers. The stage and duration are enough to
     // distinguish a Gateway deadline from an early Service Binding failure.

@@ -125,10 +125,8 @@ export function gatewayError(
   const kinds = details?.failure_kinds;
   const hadHeadersTimeout =
     kinds !== null && typeof kinds === 'object' && !Array.isArray(kinds) && Number((kinds as Record<string, unknown>).headers_timeout) > 0;
-  const deferredFamilyRetry =
-    gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED &&
-    hadHeadersTimeout &&
-    parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
+  const hasFamilyTimeoutEvidence = gatewayCode === GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED && hadHeadersTimeout;
+  const deferredFamilyRetry = hasFamilyTimeoutEvidence && parseRetryAfterMs(new Headers(extraHeaders), Date.now(), Number.MAX_SAFE_INTEGER) >= 5_000;
   if (deferredFamilyRetry) diagnosticHeaders['x-should-retry'] = 'false';
   // Some protocol adapters retain a JSON error but drop response headers.
   // Carry only the single bounded classification needed to honor this
@@ -310,11 +308,15 @@ export function buildExhaustedResponse(
       status = 503;
       gatewayCode = GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED;
       message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry shortly.`;
-      // A timeout may win the terminal-status tie even when several physical
-      // candidates are cooling down after 429. Preserve the family's real
-      // blocking window instead of telling the caller to retry after 1s.
-      const sawRateLimit = (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      retryAfterSec = sawRateLimit ? (earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_) ?? 1) : 1;
+      // Cooldowns survive between requests. A new request can time out with
+      // zero 429 observations even while its siblings are still cooling down.
+      const familyWaitSec = earliestFamilyBlockingRetryAfterSec(tiers, reqDescriptor, requestedModel, now, env, knownModels_);
+      const hadTimeout =
+        (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
+      retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
+      // Preserve the established 503 response for transient family exhaustion:
+      // provider-side 429s are absorbed internally while Retry-After reports
+      // the available fallback-family cooldown without changing SDK behavior.
       if (retryAfterSec >= 5) {
         message = `Transient failures exhausted the compatible-model failover plan for "${requestedModel}". Retry after the advertised delay.`;
       }
@@ -328,7 +330,10 @@ export function buildExhaustedResponse(
       });
     }
 
-    if (status === 429) {
+    // Model-family exhaustion already computed the earliest cooldown across
+    // fallback aliases. Do not replace it with a lookup for just the original
+    // logical alias, which may have no direct nodes and would drop Retry-After.
+    if (status === 429 && gatewayCode !== GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
       retryAfterSec = earliestBlockingRetryAfterSec(tiers, reqDescriptor, now, knownModels_);
     }
   }
