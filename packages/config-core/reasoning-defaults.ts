@@ -43,13 +43,16 @@ export function hasExplicitReasoningOff(route: ReasoningRoute, body: Record<stri
   if (route === 'openai_chat') return body.reasoning_effort === 'none' || body.reasoning_effort === 'off';
   if (route === 'openai_responses') {
     const value = body.reasoning;
-    return !!value && typeof value === 'object' && !Array.isArray(value) &&
-      ((value as Record<string, unknown>).effort === 'none' || (value as Record<string, unknown>).effort === 'off');
+    return (
+      !!value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      ((value as Record<string, unknown>).effort === 'none' || (value as Record<string, unknown>).effort === 'off')
+    );
   }
   if (route === 'anthropic_messages') {
     const value = body.thinking;
-    return !!value && typeof value === 'object' && !Array.isArray(value) &&
-      (value as Record<string, unknown>).type === 'disabled';
+    return !!value && typeof value === 'object' && !Array.isArray(value) && (value as Record<string, unknown>).type === 'disabled';
   }
   return false;
 }
