@@ -96,12 +96,20 @@ export function attemptBudgetSliceMs(remainingBudgetMs: number, remainingAttempt
   return Math.max(1, Math.floor(Math.max(0, remainingBudgetMs) / attempts));
 }
 
-export function attemptBudgetWindowMs(remainingBudgetMs: number, remainingAttempts: number): number {
+export function viableFailoverWindowMs(bodyChars: number | undefined | null): number {
+  return Math.min(35_000, 10_000 + Math.floor(requestSizeAllowanceMs(bodyChars) / 2));
+}
+
+export function attemptBudgetWindowMs(remainingBudgetMs: number, remainingAttempts: number, viableReserveMs: number = 0): number {
   const attempts = Math.max(1, Math.trunc(remainingAttempts) || 1);
   const budget = Math.max(0, Math.floor(remainingBudgetMs));
   if (budget <= 0) return 1;
-  if (attempts === 1) return Math.max(1, budget);
+  if (attempts === 1) return budget;
 
+  const reserve = Number.isFinite(viableReserveMs) ? Math.max(0, Math.floor(viableReserveMs)) : 0;
+  if (reserve > 0) {
+    return budget >= reserve * 2 ? budget - reserve : budget;
+  }
   const equalShare = Math.max(1, Math.floor(budget / attempts));
   const reservePerLater = Math.min(MIN_FAILOVER_RESERVE_MS, equalShare);
   const reservedForLater = reservePerLater * (attempts - 1);
