@@ -59,6 +59,7 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   const configPath = selectedConfigPath();
   const resolvedConfig = configPath && path.resolve(root, configPath);
   const configSource = resolvedConfig && fs.existsSync(resolvedConfig) ? fs.readFileSync(resolvedConfig, 'utf8') : '';
+  // Production deployment identities include the Gateway (TIER1_AFFINITY) and approved private centers.
   let config = null;
   try {
     config = JSON.parse(configSource);
