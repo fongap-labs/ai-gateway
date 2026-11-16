@@ -381,7 +381,7 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
     throw new ConversionError('conversion_not_supported: max_tokens must be a positive number');
   }
   const effortFromConfig = parseEffortFromOutputConfig(body);
-  const effort = thinkingEffort ?? effortFromConfig ?? undefined;
+  const effort = thinkingEffort === null ? null : (thinkingEffort ?? effortFromConfig ?? undefined);
 
   const request: IrRequest = {
     model: typeof body.model === 'string' && body.model.trim() ? body.model : '',
@@ -515,6 +515,7 @@ export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<s
     maxTokens = ANTHROPIC_DEFAULT_MAX_TOKENS;
     diag.add({ feature: 'max_tokens', action: 'defaulted' });
   }
+  if (ir.effort === null) out.thinking = { type: 'disabled' };
   if (ir.effort) {
     const budget = effortToBudget(ir.effort);
     if (budget + THINKING_HEADROOM > maxTokens) {

@@ -84,6 +84,28 @@ for (const [body, expected] of [
 const regularResponses = ownedConvert('openai_responses', 'openai_chat', responses);
 assert.deepEqual(highRiskSemanticLoss(regularResponses), [], 'ordinary portable Responses requests remain convertible');
 
+const chatOff = { ...chat, reasoning_effort: 'none' };
+const responsesOff = { ...responses, reasoning: { effort: 'none' } };
+const anthropicOff = {
+  ...anthropic,
+  thinking: { type: 'disabled' },
+  output_config: { effort: 'high' },
+};
+for (const [from, body] of [
+  ['openai_chat', chatOff],
+  ['openai_responses', responsesOff],
+  ['anthropic', anthropicOff],
+]) {
+  for (const to of protocols) {
+    if (to === from) continue;
+    const converted = ownedConvert(from, to, body);
+    if (to === 'openai_chat') assert.equal(converted.body.reasoning_effort, 'none', `${from} Off must survive Chat conversion`);
+    if (to === 'openai_responses') assert.equal(converted.body.reasoning?.effort, 'none', `${from} Off must survive Responses conversion`);
+    if (to === 'anthropic') assert.equal(converted.body.thinking?.type, 'disabled', `${from} Off must survive Anthropic conversion`);
+  }
+}
+assert.equal(parseAnthropicRequest(anthropicOff).request.effort, null, 'explicit disabled thinking overrides output effort');
+
 const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0xLjQK' } };
 const docRequest = parseAnthropicRequest({
   model: 'test-model',

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 修复: 跨 OpenAI Chat、Responses、Anthropic Messages 转换时保留明确关闭思考的意图，避免 Anthropic `thinking.disabled` 被 `output_config.effort` 覆盖或在跨协议发送时丢失；补齐六向回归。
+
 - 新增: 默认 High 思考意图与跨协议弹性适配；显式 Off 和客户端等级优先，节点能力未知时保留原生请求，不强制固定 24k 思考预算，不按 High 缩减免费节点回退池，并提供模型能力元数据。
 
 - 修复: 文本模型图片通过经授权的视觉节点委托到 Perception Center，补齐 Anthropic Messages 图片输入、模型能力声明及跨协议回归；缺少授权视觉节点或私有绑定时明确失败，不将图片发送到纯文本 Provider。
