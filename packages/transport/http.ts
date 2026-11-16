@@ -135,7 +135,8 @@ export class BodyAdmissionBudgetError extends Error {
 export async function readBodyTextWithLimit(request: Request, maxBytes: number, observeBytes?: (actualBytes: number) => boolean): Promise<string> {
   if (!request.body) return '';
   const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
@@ -149,15 +150,12 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number, 
       await reader.cancel().catch(() => {});
       throw new BodyAdmissionBudgetError();
     }
-    chunks.push(value);
+    const decoded = decoder.decode(value, { stream: true });
+    if (decoded) parts.push(decoded);
   }
-  const combined = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(combined);
+  const tail = decoder.decode();
+  if (tail) parts.push(tail);
+  return parts.join('');
 }
 
 export async function readBodyTextBounded(
