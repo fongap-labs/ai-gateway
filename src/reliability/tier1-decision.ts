@@ -56,7 +56,9 @@ export function classifyTier1Failure(classification: Tier1FailureInput, opts: { 
     return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'timeout', reason: kind };
   }
   if (kind === 'server') {
-    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs: 0, backoff: 'server', reason: kind };
+    const explicit = retryAfterMs ?? classification?.retryAfterMs ?? 0;
+    const cooldownMs = Math.min(Math.max(0, explicit), TIER1_COOLDOWN_MAX_MS);
+    return { scope: 'model', action: 'cooldown', counted: true, cooldownMs, backoff: 'server', reason: kind };
   }
   if (kind === 'upstream_200_non_json_body' || kind === 'upstream_200_no_meaningful_output') {
     const short = Math.min(Math.max(0, classification?.cooldownMs ?? 0), TIER1_COOLDOWN_MAX_MS);
