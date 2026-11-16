@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { requestBodyForAttempt } from '../apps/gateway/transport/request-body-cache.ts';
 import { withUsageStreamOptions } from '../packages/protocol-core/openai.ts';
 import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
+import { readBodyTextWithLimit } from '../packages/transport/http.ts';
 
 const original = {
   model: 'Code-Max',
@@ -79,4 +80,40 @@ try {
 } finally {
   JSON.stringify = stringifyOriginal;
 }
+const textFixture = JSON.stringify({ model: 'Code-Max', messages: [{ content: '中文'.repeat(150_000) + 'A'.repeat(1_000_000) }] });
+const encodedFixture = new TextEncoder().encode(textFixture);
+const chunkSizes = [1, 2, 3, 17, 1_024, 65_537];
+function chunkedRequest() {
+  return new Request('https://gateway.example/large-body', {
+    method: 'POST',
+    duplex: 'half',
+    body: new ReadableStream({
+      start(controller) {
+        let position = 0;
+        let segment = 0;
+        while (position < encodedFixture.byteLength) {
+          const next = Math.min(encodedFixture.byteLength, position + chunkSizes[segment++ % chunkSizes.length]);
+          controller.enqueue(encodedFixture.subarray(position, next));
+          position = next;
+        }
+        controller.close();
+      },
+    }),
+  });
+}
+const observedBodySizes = [];
+assert.equal(
+  await readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength, (size) => {
+    observedBodySizes.push(size);
+    return true;
+  }),
+  textFixture,
+  'incremental UTF-8 decoding must preserve multi-byte boundaries and large JSON payloads',
+);
+assert.equal(observedBodySizes.at(-1), encodedFixture.byteLength, 'admission must count bytes, not decoded characters');
+await assert.rejects(readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength - 1), { name: 'BodyTooLargeError' });
+await assert.rejects(readBodyTextWithLimit(chunkedRequest(), encodedFixture.byteLength, (size) => size < 1_000), {
+  name: 'BodyAdmissionBudgetError',
+});
+
 console.log('Native JSON patch passed: large-body equivalence, raw fallback preservation and request-local serialization reuse.');
