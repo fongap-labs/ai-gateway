@@ -25,11 +25,11 @@ function requestFor(route, model) {
   });
 }
 
-async function exercise({ route = 'chat', model = textModel, fallback = false, legacyDelegate = false, provider = 'openai', bindPerception = true, expectedStatus, expectedCode }) {
+async function exercise({ route = 'chat', model = textModel, fallback = false, legacyDelegate = false, restrictAccess = false, provider = 'openai', bindPerception = true, expectedStatus, expectedCode }) {
   const calls = { inference: 0, perception: 0, provider: 0 };
   const env = {
     AIG_ACCESS_KEY_AIR: key,
-    AIG_ACCESS_MODELS_AIR: '*',
+    AIG_ACCESS_MODELS_AIR: restrictAccess ? textModel : '*',
     AIG_TIER1_NODES_01: JSON.stringify([
       { id: 'native-text', provider: 'openai', base_url: 'https://provider.example.invalid/v1', models: { [textModel]: 'provider-text' } },
       { id: 'native-vision', provider, base_url: 'https://provider.example.invalid/v1', models: { [visionModel]: 'provider-vision' } },
@@ -70,7 +70,7 @@ async function exercise({ route = 'chat', model = textModel, fallback = false, l
   assert.equal(listedModels.find((item) => item.id === textModel)?.supports_vision, false);
   assert.equal(
     listedModels.find((item) => item.id === visionModel)?.supports_vision,
-    bindPerception && provider === 'openai',
+    restrictAccess ? undefined : (bindPerception && provider === 'openai'),
   );
 
   assert.equal(loadModelsConfig(env)[textModel].policy.vision_delegate, undefined);
@@ -105,6 +105,7 @@ async function exercise({ route = 'chat', model = textModel, fallback = false, l
 for (const route of ['chat', 'responses', 'anthropic']) {
   await exercise({ route, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
   await exercise({ route, fallback: true, legacyDelegate: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
+  await exercise({ route, fallback: true, legacyDelegate: true, restrictAccess: true, expectedStatus: 400, expectedCode: 'gateway_image_input_unsupported' });
 }
 await exercise({ model: visionModel, expectedStatus: 200 });
 await exercise({ model: visionModel, provider: 'unverified-provider', expectedStatus: 400, expectedCode: 'gateway_image_provider_unsupported' });
