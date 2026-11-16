@@ -151,7 +151,7 @@ export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyM
     if (getTier1Account(node.id).consecutiveRateLimits === 0) clearAdaptive429State(node.provider, credentialSlotId(node));
     if (getTier1ModelPerf(node.id, logicalModel)?.consecutiveRateLimits === 0)
       clearAdaptive429State(node.provider, credentialSlotId(node), logicalModel);
-    recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), node.id);
+    recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), credentialSlotId(node));
     recordTier1UpstreamModelServed(node.id, upstreamModelOf(node, logicalModel));
     const observed = settlementOf(c).observedUsage;
     const consumed = normalizeTokenUsage(observed)?.total ?? 0;
