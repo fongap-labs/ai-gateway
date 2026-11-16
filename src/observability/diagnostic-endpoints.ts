@@ -89,11 +89,10 @@ function buildModelsList(
     .filter((e) => e.apiBackends.size > 0 && e.reg.policy.visibility !== 'internal' && allowedSet.has(e.id))
     .map((e) => {
       const backends = [...e.apiBackends];
-      const reasoningNodes = nodes.filter((node) => servesModel(node, e.id, logicalNames) && node.reasoning?.mode !== undefined && node.reasoning.mode !== 'none');
-      const availableEfforts = new Set([
-        ...e.reg.catalog.reasoning_efforts,
-        ...reasoningNodes.flatMap((node) => node.reasoning?.efforts ?? []),
-      ]);
+      const reasoningNodes = nodes.filter(
+        (node) => servesModel(node, e.id, logicalNames) && node.reasoning?.mode !== undefined && node.reasoning.mode !== 'none',
+      );
+      const availableEfforts = new Set([...e.reg.catalog.reasoning_efforts, ...reasoningNodes.flatMap((node) => node.reasoning?.efforts ?? [])]);
       if (reasoningNodes.length > 0 && availableEfforts.size === 0) availableEfforts.add('high');
       const effortLevels = ['low', 'medium', 'high', 'max'].filter((level) => availableEfforts.has(level));
       const hasNativeReasoning = e.reg.catalog.capabilities.reasoning || reasoningNodes.length > 0;
