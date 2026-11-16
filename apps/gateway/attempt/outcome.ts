@@ -132,7 +132,10 @@ export function recordOutcome(
     });
   }
   const failedSurface = c.surface ?? c.reqDescriptor?.surface;
-  if ((classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure) && failedSurface) {
+  if (
+    (classification.kind === KIND.ENDPOINT_NOT_FOUND || classification.physicalRouteFailure || classification.providerModelConstraint) &&
+    failedSurface
+  ) {
     const previousSameRoute422 =
       status === 422 &&
       state.attempts.some((attempt) => {
@@ -152,8 +155,7 @@ export function recordOutcome(
         if (
           peer.tier === node.tier &&
           peer.provider === node.provider &&
-          peer.baseUrl === node.baseUrl &&
-          peer.protocol === node.protocol &&
+          (classification.providerModelConstraint || (peer.baseUrl === node.baseUrl && peer.protocol === node.protocol)) &&
           peer.surfaces.includes(failedSurface) &&
           upstreamModelOf(peer, effectiveModel) === physicalModel
         ) {
