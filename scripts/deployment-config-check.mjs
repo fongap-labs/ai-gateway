@@ -71,9 +71,19 @@ assert.ok(fs.existsSync(path.join(root, 'src/providers/registry.ts')), 'Provider
 const accessGroupPattern = KEY_GROUPS.join('|');
 
 const pkg = JSON.parse(read('package.json'));
+function expandedValidationCommand(name, seen = new Set()) {
+  assert.equal(seen.has(name), false, `Cyclic validation script: ${name}`);
+  const command = pkg.scripts?.[name] || '';
+  const nextSeen = new Set([...seen, name]);
+  return command.replace(/\bnpm run (validate:[\w-]+)/g, (invocation, nestedName) => {
+    assert.ok(pkg.scripts?.[nestedName], `Missing validation script: ${nestedName}`);
+    return `${invocation} && ${expandedValidationCommand(nestedName, nextSeen)}`;
+  });
+}
+const validationGateCommands = Object.fromEntries(['validate:merge', 'validate:deploy'].map((name) => [name, expandedValidationCommand(name)]));
 assert.match(pkg.scripts['check:cloudflare-inventory'] || '', /check-cloudflare-live-inventory\.mjs/);
 for (const gate of ['validate:merge', 'validate:deploy']) {
-  assert.ok((pkg.scripts[gate] || '').includes('npm run check:cloudflare-inventory'), `${gate} must include the read-only inventory contract`);
+  assert.ok(validationGateCommands[gate].includes('npm run check:cloudflare-inventory'), `${gate} must include the read-only inventory contract`);
 }
 const operationsBuild = JSON.parse(read('wrangler.operations-build.jsonc'));
 assert.equal(operationsBuild.name, 'ai-operations-build-check');
@@ -89,8 +99,8 @@ assert.ok(
 );
 assert.match(pkg.scripts['check:operations'] || '', /cloudflare-wrangler\.mjs deploy --dry-run --config wrangler\.operations-build\.jsonc/);
 assert.ok(
-  (pkg.scripts['validate:merge'] || '').includes('npm run check:operations') &&
-    (pkg.scripts['validate:deploy'] || '').includes('npm run check:operations'),
+  validationGateCommands['validate:merge'].includes('npm run check:operations') &&
+    validationGateCommands['validate:deploy'].includes('npm run check:operations'),
   'Independent Operations build must be validated on every change',
 );
 for (const [app, name] of [
@@ -116,7 +126,7 @@ for (const [app, name] of [
   );
 }
 assert.ok(
-  (pkg.scripts['validate:merge'] || '').includes('npm run check:apps') && (pkg.scripts['validate:deploy'] || '').includes('npm run check:apps'),
+  validationGateCommands['validate:merge'].includes('npm run check:apps') && validationGateCommands['validate:deploy'].includes('npm run check:apps'),
   'All independent app bundles must be validated on every change',
 );
 for (const scriptName of ['deploy', 'tail', 'cf:login', 'cf:whoami']) {

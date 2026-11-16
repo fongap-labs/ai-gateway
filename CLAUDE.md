@@ -4,12 +4,11 @@ This repository inherits Fongap Labs shared governance from [fongap-labs/action-
 
 ## Required reading
 
-1. `CLAUDE.md`
-2. Action Worker `docs/SHARED_GOVERNANCE.md`
-3. Action Worker `docs/NAMING_CONVENTIONS.md`
-4. Action Worker `docs/CHANGELOG_CONVENTIONS.md`
-5. Action Worker `docs/DEVELOPMENT_GUIDE.md`
-6. The project-specific documents below
+1. Action Worker `docs/01_SHARED_GOVERNANCE.md`
+2. Action Worker `docs/03_NAMING_CONVENTIONS.md`
+3. Action Worker `docs/04_CHANGELOG_CONVENTIONS.md`
+4. Action Worker `docs/DEVELOPMENT_GUIDE.md`
+5. The project-specific documents below
 
 ## Project authority
 
@@ -18,7 +17,7 @@ This repository inherits Fongap Labs shared governance from [fongap-labs/action-
 - `docs/architecture/routing-model.md`
 - `docs/architecture/reliability-model.md`
 - `docs/architecture/protocol-model.md`
-- `docs/architecture/subscription-model.md`
+- `docs/architecture/two-tier-cutover.md`
 - `docs/governance/quality-policy.md`
 - `docs/governance/dependency-policy.md`
 

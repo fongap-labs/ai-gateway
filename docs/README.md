@@ -32,7 +32,7 @@
 
 运行时代码、schema、测试与工作流定义实际行为；上述文档说明当前契约；Git 历史保存演变过程。不要将历史计划或配置默认值复制到多个文档中。
 
-变更记录先写入 `changelog.d/`；普通 PR 不直接改写 `CHANGELOG.md` 的 `[Unreleased]` 段落，发布时再按中央规则归并。
+变更记录统一维护在 `CHANGELOG.md` 的 `[Unreleased]` 段落，不创建 `changelog.d/`；普通 PR 不修改已发布版本小节。规则以中央 Action Worker 变更记录规范为准。
 
 项目入口：[README](../README.md) · [贡献指南](../CONTRIBUTING.md) · [安全策略](../SECURITY.md)。
 
