@@ -852,7 +852,7 @@ const exhausted = (kinds) =>
     true,
   );
 const mixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 });
-assert.equal(mixedRetry.status, 503);
+assert.equal(mixedRetry.status, 429, 'a rate-limited model family in cooldown returns 429');
 assert.equal(mixedRetry.headers.get('x-gateway-error-code'), 'gateway_attempt_budget_exhausted');
 assert.ok(Number(mixedRetry.headers.get('retry-after')) >= 15, 'mixed 429/timeout exhaustion retains the configured fallback model cooldown');
 const mixedRetryBody = await mixedRetry.json();
@@ -860,14 +860,14 @@ assert.equal(mixedRetryBody.error.details?.retry_after_ms, Number(mixedRetry.hea
 assert.equal(mixedRetry.headers.get('x-should-retry'), 'false', 'long family cooldown must stop immediate SDK replay');
 assert.equal(mixedRetry.headers.get('x-gateway-retryable'), 'true', 'a later retry remains possible after the declared cooldown');
 assert.equal(mixedRetry.headers.get('x-gateway-retryable'), 'true', 'recovery after the declared cooldown remains possible');
-assert.match(mixedRetryBody.error.message, /^503 \| .*retry after [0-9]+s\.$/, 'long cooldown must be a concise status-first hint');
+assert.match(mixedRetryBody.error.message, /^429 \| .*retry after [0-9]+s\.$/, 'long cooldown must be a concise status-first hint');
 const pureRateLimit = exhausted({ rate_limit: 8 });
-assert.equal(pureRateLimit.status, 503);
+assert.equal(pureRateLimit.status, 429);
 assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
 const timeoutRetry = exhausted({ headers_timeout: 8 });
 assert.equal(timeoutRetry.status, 503);
-assert.equal(timeoutRetry.headers.get('retry-after'), '1', 'timeouts alone retain the bounded 1s retry hint');
-assert.equal(timeoutRetry.headers.get('x-should-retry'), null, 'short transient failures retain normal SDK retry behavior');
+assert.ok(Number(timeoutRetry.headers.get('retry-after')) >= 15, 'timeout-only cooldown must preserve its real wait');
+assert.equal(timeoutRetry.headers.get('x-should-retry'), 'false', 'timeout-only cooldown prevents immediate SDK replay');
 
 // An exhausted model-family pass must describe the actual dispatched model,
 // not the original model's unrelated physical mapping. No credentials or
