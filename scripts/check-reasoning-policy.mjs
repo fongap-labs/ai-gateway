@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { buildExecutionHeaders, parseExecutionInvocation } from '../packages/contracts/execution.ts';
 import { requestReasoningPreference, stripReasoningDefaultMarkers } from '../packages/contracts/reasoning-preference.ts';
 import { adaptNodeReasoning } from '../packages/execution-core/reasoning-adapter.ts';
+import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 
 const chat = { model: 'Max', stream: false, messages: [{ role: 'user', content: 'test' }] };
 assert.equal(requestReasoningPreference(chat), 'high');
@@ -49,6 +50,14 @@ const shortBudget = adaptNodeReasoning({ ...chat, max_tokens: 800 }, 'messages',
 assert.equal(shortBudget.changed, false, 'small output budgets do not force 24k thinking tokens');
 const disabled = adaptNodeReasoning({ ...chat, thinking: { type: 'enabled', budget_tokens: 3000 } }, 'messages', 'off', { mode: 'adaptive' });
 assert.deepEqual(disabled.body.thinking, { type: 'disabled' });
+
+const gone = classifyUpstreamStatus(410, new Headers(), {}, Date.now(), '{"error":{"message":"Gone"}}');
+assert.equal(gone.kind, KIND.ENDPOINT_NOT_FOUND);
+assert.equal(gone.action, 'rotate', 'a gone upstream must not abort logical-model fallback');
+assert.equal(gone.counted, false);
+assert.equal(gone.cooldownMs, 5_000);
+const invalidPayload = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), '{"error":{"code":"invalid_request_error"}}');
+assert.equal(invalidPayload.action, 'stop', 'a client validation failure must stay terminal');
 
 const now = Date.now();
 const invocation = {
