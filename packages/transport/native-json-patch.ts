@@ -7,12 +7,7 @@
 //
 // Unsupported layouts fall back to the normal object serializer. This is a
 // CPU optimization, not a second request parser or a validation shortcut.
-export function patchNativeJsonTopLevel(
-  raw: string,
-  logicalModel: string,
-  physicalModel: string,
-  shouldInjectStreamUsage: boolean,
-): string | null {
+export function patchNativeJsonTopLevel(raw: string, logicalModel: string, physicalModel: string, shouldInjectStreamUsage: boolean): string | null {
   if (logicalModel === physicalModel && !shouldInjectStreamUsage) return raw;
   const first = /^\s*\{\s*"model"\s*:/.test(raw);
   const last = /,\s*"model"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}\s*$/.test(raw);
