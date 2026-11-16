@@ -21,7 +21,10 @@ Cloudflare Workers 已内置 OpenTelemetry 自动追踪和自定义 Span。本�
 | `AIG_MODELS_CONFIG` | 可选的逻辑模型元数据/能力声明 |
 | `AIG_POLICIES_CONFIG` | 可选策略覆盖；若 `AIG_MODELS_CONFIG` 引用了非内置策略名，必须在此定义同名策略 |
 | `AIG_DASHBOARD_MODELS` | 可选的公共仪表盘逻辑模型展示允许列表 |
+| `AIG_SESSION_HEADER_ALIASES` | 可选会话头别名，逗号分隔；默认 `x-claude-code-session-id`，设为 `disable` 时关闭别名 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号标识符；值来自主机仓库 Variable `CLOUDFLARE_ACCOUNT_ID_SECONDARY`（经中央别名注入，该名字需声明在 `.github/deploy.secrets.allowed`） |
+
+Tier 1 节点亲和性优先读取 `x-session-id`，再读取 `AIG_SESSION_HEADER_ALIASES` 配置的别名，仅支持 `x-session-id` 及 `x-` 前缀且以 `-session-id` 或 `-conversation-id` 结尾的别名。自定义别名覆盖默认值；如需保留 Claude Code 的兼容头，应将其列入配置。缺失有效会话头时按常规节点调度，不影响协议转换或错误处理。
 
 `src/config/runtime-vars.ts` 是运行时变量默认值与取值范围的唯一来源。生产发布会在修改 Cloudflare 之前，对推理、感知、生成三个中心统一执行只读预检。策略 `default`、`fast`、`long-reasoning`、`chat` 和 `coding` 由代码内置，无需配置 `AIG_POLICIES_CONFIG`；仅引用其他自定义策略时才需要在该变量中定义。每个中心仍必须有至少一个符合能力要求的真实节点；不能用空节点替代生产能力。
 

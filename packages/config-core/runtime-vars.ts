@@ -50,6 +50,8 @@ export type RuntimeTunableName = (typeof RUNTIME_TUNABLES)[number]['name'];
 
 export const DIAGNOSTICS_GROUPS_DEFAULT = 'MAX,ULTRA';
 
+export const DEFAULT_SESSION_HEADER_ALIASES = 'x-claude-code-session-id';
+
 export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_CORS_ORIGIN', def: '' },
   { name: 'AIG_USAGE_INCLUDE_MODE', def: 'auto' },
@@ -57,6 +59,7 @@ export const RUNTIME_STRING_VARS: RuntimeStringVar[] = [
   { name: 'AIG_ANTHROPIC_COUNT_MODE', def: 'approximate' },
   { name: 'AIG_LOG_LEVEL', def: 'info' },
   { name: 'AIG_PROTOCOL_FALLBACKS', def: '' },
+  { name: 'AIG_SESSION_HEADER_ALIASES', def: DEFAULT_SESSION_HEADER_ALIASES },
   { name: 'AIG_DASHBOARD_MODELS', def: '' },
   { name: 'AIG_RATE_LIMIT_STEPS_MS', def: '' },
   { name: 'AIG_RATE_LIMIT_WINDOW_STEPS_MS', def: '' },
