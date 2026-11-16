@@ -1,4 +1,5 @@
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
+import { resolveVisionDelegate } from '../../packages/config-core/vision-delegation.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../src/config/models.ts';
@@ -14,7 +15,6 @@ import type { TierMap } from '../../src/types/scheduler.ts';
 import { injectMissHeader, matchEdgeCache, resolveEdgeCachePlan, storeEdgeCacheResponse } from './cache/edge-cache.ts';
 import { isAutomaticImageToolCall, isExplicitImageToolCall, runAutomaticImageTool, runExplicitImageTool } from './chat-image-tool.ts';
 import { runFallbackChain } from './fallback.ts';
-import { authorizeModel } from './policy/model-authz.ts';
 import { buildModelFallbackPlan, failedDomainNodeIds, pickNextModelPass, rememberFailedDomains } from './policy/model-fallback.ts';
 import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './policy/router.ts';
@@ -28,7 +28,7 @@ import { makeTier1Rng } from './scheduling/tier-policy.ts';
 import { readTier1Affinity, resolveTier1SessionId, shouldEvaluateAffinity } from './scheduling/tier1-affinity.ts';
 import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
-import { preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
+import { preprocessAnthropicImages, preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
 
 const SIBLING_HOP_CAP_MS = 45_000;
 
@@ -158,79 +158,75 @@ async function runAdmittedRequest(
   }
 
   const requestPolicy = policy;
-  const visualDelegate = loadModelsConfig(env)[requestedModel]?.policy.vision_delegate;
-  if (
-    (route === 'openai_chat' || route === 'openai_responses') &&
+  const needsVisionBridge =
+    (route === 'openai_chat' || route === 'openai_responses' || route === 'anthropic_messages') &&
     hasImageInput(bodyJson) &&
-    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true &&
-    visualDelegate
-  ) {
-    const delegateModel = [...knownModels].find((model) => model.toLowerCase() === visualDelegate.toLowerCase());
-    if (!delegateModel || authorizeModel(delegateModel, knownModels, pre.authResult).allowed !== true) {
-      return gatewayError(
-        request,
-        env,
-        route,
-        403,
-        'The configured vision preprocessor is not authorized for this key.',
-        requestId,
-        undefined,
-        undefined,
-        'gateway_vision_preprocess_unauthorized',
-      );
-    }
-    const delegateConfig = modelRegistryEntry(env, delegateModel);
-    if (
-      delegateConfig.catalog.capabilities.vision !== true ||
-      !config.nodes.some((node) => getProviderProfile(node.provider).imageInput && servesModel(node, delegateModel, knownModels))
-    ) {
-      return gatewayError(
-        request,
-        env,
-        route,
-        503,
-        'No image-capable node is available for the configured vision preprocessor.',
-        requestId,
-        undefined,
-        undefined,
-        'gateway_vision_preprocess_unavailable',
-      );
-    }
-    const preprocess = route === 'openai_responses' ? preprocessResponsesImages : preprocessChatImages;
-    const visualResult = await preprocess({
-      request,
-      body: bodyJson,
-      visionModel: delegateModel,
-      remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-      execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
+    modelRegistryEntry(env, requestedModel).catalog.capabilities.vision !== true;
+  if (needsVisionBridge) {
+    const delegation = resolveVisionDelegate({
+      env,
+      requestedModel,
+      nodes: config.nodes,
+      knownModels,
+      allowedModels: knownModels,
     });
-    if (!visualResult.ok) {
+    if (delegation.kind === 'unauthorized' || delegation.kind === 'unavailable') {
       return gatewayError(
         request,
         env,
         route,
-        visualResult.status,
-        visualResult.message,
+        delegation.kind === 'unauthorized' ? 403 : 503,
+        delegation.kind === 'unauthorized'
+          ? 'The configured vision preprocessor is not authorized for this key.'
+          : 'No image-capable node is available for the configured vision preprocessor.',
         requestId,
-        visualResult.cause ? { preprocess_failure_code: visualResult.cause } : undefined,
         undefined,
-        visualResult.code,
+        undefined,
+        delegation.kind === 'unauthorized' ? 'gateway_vision_preprocess_unauthorized' : 'gateway_vision_preprocess_unavailable',
       );
     }
-    bodyJson = visualResult.body;
-    rawBody = undefined;
-    if (hasImageInput(bodyJson)) {
-      return gatewayError(
+    if (delegation.kind === 'ready') {
+      const preprocess =
+        route === 'openai_responses'
+          ? preprocessResponsesImages
+          : route === 'anthropic_messages'
+            ? preprocessAnthropicImages
+            : preprocessChatImages;
+      const visualResult = await preprocess({
         request,
-        env,
-        route,
-        400,
-        'Image content could not be safely converted to visual observations.',
-        requestId,
-        undefined,
-        undefined,
-        'gateway_vision_preprocess_shape_unsupported',
-      );
+        body: bodyJson,
+        visionModel: delegation.model,
+        remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
+        execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
+      });
+      if (!visualResult.ok) {
+        return gatewayError(
+          request,
+          env,
+          route,
+          visualResult.status,
+          visualResult.message,
+          requestId,
+          visualResult.cause ? { preprocess_failure_code: visualResult.cause } : undefined,
+          undefined,
+          visualResult.code,
+        );
+      }
+      bodyJson = visualResult.body;
+      rawBody = undefined;
+      if (hasImageInput(bodyJson)) {
+        return gatewayError(
+          request,
+          env,
+          route,
+          400,
+          'Image content could not be safely converted to visual observations.',
+          requestId,
+          undefined,
+          undefined,
+          'gateway_vision_preprocess_shape_unsupported',
+        );
+      }
     }
   }
   const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
