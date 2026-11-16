@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { requestBodyForAttempt } from '../apps/gateway/transport/request-body-cache.ts';
 import { withUsageStreamOptions } from '../packages/protocol-core/openai.ts';
 import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';
 
@@ -41,4 +42,41 @@ for (const stream_options of [{ include_usage: false }, { include_usage: true, e
 const embedded = JSON.stringify({ model: 'Code-Max', messages: [{ content: '{"model":"not-a-real-key"}' }] });
 const patchedEmbedded = patchNativeJsonTopLevel(embedded, 'Code-Max', 'physical', false);
 assert.equal(JSON.parse(patchedEmbedded).messages[0].content, '{"model":"not-a-real-key"}');
-console.log('Native JSON patch passed: large-body equivalence and conservative fallback.');
+const cacheState = {};
+const fallbackBody = { model: 'Code-Max', messages: [{ role: 'user', content: 'safe' }] };
+const fallbackRaw = JSON.stringify(fallbackBody);
+assert.equal(requestBodyForAttempt(cacheState, fallbackBody, fallbackRaw, 'Code-Max', false), fallbackRaw);
+assert.deepEqual(JSON.parse(requestBodyForAttempt(cacheState, fallbackBody, fallbackRaw, 'Code-Pro', false)), { ...fallbackBody, model: 'Code-Pro' });
+const ambiguousBody = { messages: [{ model: 'nested' }], model: 'Code-Max' };
+const ambiguousRaw = JSON.stringify(ambiguousBody);
+assert.deepEqual(JSON.parse(requestBodyForAttempt(cacheState, ambiguousBody, ambiguousRaw, 'Code-Pro', false)), {
+  ...ambiguousBody,
+  model: 'Code-Pro',
+});
+
+const rebuiltState = {};
+const rebuiltBody = { model: 'Code-Max', messages: [{ role: 'user', content: 'normalized' }], stream: false };
+const stringifyOriginal = JSON.stringify;
+let serializations = 0;
+try {
+  JSON.stringify = (...args) => {
+    serializations++;
+    return stringifyOriginal(...args);
+  };
+  const firstSerialized = requestBodyForAttempt(rebuiltState, rebuiltBody, undefined, 'Code-Max', false);
+  assert.equal(requestBodyForAttempt(rebuiltState, rebuiltBody, undefined, 'Code-Max', false), firstSerialized);
+  assert.equal(serializations, 1, 'same request and model should serialize once across retries');
+  const forcedStream = requestBodyForAttempt(rebuiltState, rebuiltBody, undefined, 'Code-Max', true);
+  assert.equal(JSON.parse(forcedStream).stream, true);
+  assert.equal(requestBodyForAttempt(rebuiltState, rebuiltBody, undefined, 'Code-Max', true), forcedStream);
+  assert.equal(serializations, 2, 'stream override should serialize only once');
+  const changedModel = requestBodyForAttempt(rebuiltState, rebuiltBody, undefined, 'Code-Pro', false);
+  assert.equal(JSON.parse(changedModel).model, 'Code-Pro');
+  assert.equal(serializations, 3, 'distinct model mappings must not share serialized bodies');
+  const changedBody = { ...rebuiltBody, messages: [{ role: 'user', content: 'new request body' }] };
+  assert.equal(JSON.parse(requestBodyForAttempt(rebuiltState, changedBody, undefined, 'Code-Max', false)).messages[0].content, 'new request body');
+  assert.equal(serializations, 4, 'changed body invalidates earlier serialized variants');
+} finally {
+  JSON.stringify = stringifyOriginal;
+}
+console.log('Native JSON patch passed: large-body equivalence, raw fallback preservation and request-local serialization reuse.');
