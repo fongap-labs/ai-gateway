@@ -334,7 +334,10 @@ export function buildExhaustedResponse(
       });
     }
 
-    if (status === 429) {
+    // Model-family exhaustion already computed the earliest cooldown across
+    // fallback aliases. Do not replace it with a lookup for just the original
+    // logical alias, which may have no direct nodes and would drop Retry-After.
+    if (status === 429 && gatewayCode !== GATEWAY_ERROR_CODE.ATTEMPT_BUDGET_EXHAUSTED) {
       retryAfterSec = earliestBlockingRetryAfterSec(tiers, reqDescriptor, now, knownModels_);
     }
   }
