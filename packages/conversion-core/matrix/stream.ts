@@ -14,7 +14,6 @@ import { ChatStreamDecoder, ChatStreamEncoder } from './chat-stream.ts';
 import { replyToObject, replyToResponsesObject } from './response.ts';
 import { ResponsesStreamDecoder, ResponsesStreamEncoder } from './responses-stream.ts';
 
-
 export type MatrixStreamHandle = {
   clientStream: ReadableStream<Uint8Array>;
   collector: IrCollector;
@@ -185,7 +184,6 @@ function streamDiagnostics(reply: IrReply | null, to: IrProtocol): readonly Conv
   return diagnostics;
 }
 
-
 export async function collectMatrixObject(
   upstreamBody: ReadableStream<Uint8Array> | null | undefined,
   from: IrProtocol,
@@ -258,7 +256,6 @@ export async function collectMatrixObject(
   const reply = collector.finish(fallbackId);
   return { reply, object: replyToObject(reply, to), diagnostics: streamDiagnostics(reply, to) };
 }
-
 
 export function synthesizeMatrixStreamFromObject(reply: IrReply, to: IrProtocol): Response {
   const encoded = new TextEncoder();

@@ -10,7 +10,6 @@ import { chatObjectToIr, chatStopFromIr, chatToolId } from './chat.ts';
 import { chatUsageFromRaw } from './chat-stream.ts';
 import { responsesObjectToIr } from './responses.ts';
 
-
 export function replyFromNativeObject(
   from: IrProtocol,
   data: Record<string, unknown>,
@@ -23,7 +22,6 @@ export function replyFromNativeObject(
     from === 'anthropic' ? anthropicObjectToIr(data).reply : from === 'openai_chat' ? chatObjectToIr(data).reply : responsesObjectToIr(data).reply;
   return { reply, diagnostics: diag.diagnostics };
 }
-
 
 export function replyToObject(reply: IrReply, to: IrProtocol): Record<string, unknown> {
   switch (to) {

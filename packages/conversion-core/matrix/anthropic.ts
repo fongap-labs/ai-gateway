@@ -486,7 +486,6 @@ export function parseAnthropicRequest(body: Record<string, unknown>): { request:
   return { request, diag };
 }
 
-
 export const ANTHROPIC_DEFAULT_MAX_TOKENS = 1024;
 
 export function buildAnthropicRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
@@ -634,7 +633,6 @@ function imageSource(part: IrImagePart): Record<string, unknown> {
 }
 
 type IrMessageLike = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
-
 
 export function anthropicStopToIr(reason: unknown): IrStop {
   switch (reason) {

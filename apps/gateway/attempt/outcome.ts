@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-
 import { clampRetryAfterMs } from '../../../src/config/timeouts.ts';
 import { logLazy } from '../../../src/observability/logger.ts';
 import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';

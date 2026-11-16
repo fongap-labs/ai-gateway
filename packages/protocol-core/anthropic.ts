@@ -172,7 +172,7 @@ export function estimateAnthropicInputTokens(body: Record<string, unknown>): num
   if (typeof body.system === 'string') countText(body.system);
   else if (Array.isArray(body.system)) for (const x of body.system) countText(x?.text || x);
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
-    tokens += 2;  
+    tokens += 2;
     if (typeof message.content === 'string') countText(message.content);
     else
       for (const block of message.content || []) {

@@ -126,8 +126,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
           );
         });
       }
-    } catch {
-    }
+    } catch {}
   }
   const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
   const legacySubscriptionKeys = Object.keys(env).filter(
@@ -457,8 +456,7 @@ function canonicalizeNodeModels(
   let configured: string[] = [];
   try {
     configured = Object.keys(loadModelsConfig(env));
-  } catch {
-  }
+  } catch {}
   const canonical = canonicalLogicalNames(
     nodes.flatMap((node) => Object.keys(node.models)),
     configured,

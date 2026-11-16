@@ -121,8 +121,7 @@ export async function runExplicitImageTool({
   try {
     const json = JSON.parse(result.text) as { data?: Array<{ b64_json?: unknown }> };
     image = json.data?.[0]?.b64_json;
-  } catch {
-  }
+  } catch {}
   if (typeof image !== 'string' || !image || image.length > MAX_IMAGE_TOOL_REPLY) {
     return fail(502, 'Image tool returned no valid image.', 'gateway_image_tool_reply_invalid');
   }

@@ -103,7 +103,6 @@ function base64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-
 export function buildTargetUrl(baseUrl: string, upstreamPath: string): string {
   const base = new URL(baseUrl);
   let path = upstreamPath || '/';

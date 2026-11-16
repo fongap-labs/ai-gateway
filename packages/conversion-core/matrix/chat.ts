@@ -307,7 +307,6 @@ function chatStructuredSchema(body: Record<string, unknown>, diag: MatrixDiag): 
   return { schema: js.schema };
 }
 
-
 export function buildChatRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
   const out: Record<string, unknown> = { model: ir.model };
   const messages: Record<string, unknown>[] = [];
@@ -472,7 +471,6 @@ export function structuredOutputInstruction(schema: Record<string, unknown>): st
     JSON.stringify(schema),
   ].join('\n');
 }
-
 
 export function chatStopToIr(reason: unknown): IrStop {
   switch (reason) {

@@ -221,7 +221,7 @@ async function runAdmittedRequest(
       );
     }
     bodyJson = visualResult.body;
-    rawBody = undefined;  
+    rawBody = undefined;
     if (hasImageInput(bodyJson)) {
       return gatewayError(
         request,

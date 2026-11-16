@@ -11,7 +11,7 @@ export type IrImagePart = {
   type: 'image';
   url: string;
   mediaType?: string;
-  data?: string;  
+  data?: string;
 };
 
 export type IrDocumentPart = {
@@ -89,7 +89,6 @@ export type IrRequest = {
   effort?: IrEffort | null;
   structuredOutputSchema?: Record<string, unknown> | null;
 };
-
 
 export type IrEvent =
   | { type: 'start'; id: string; model: string; inputTokens?: number }
@@ -202,7 +201,6 @@ export function stopWithToolCalls(stop: IrStop, parts: readonly IrPart[]): IrSto
   return stop === 'stop' && parts.some((part) => part.type === 'tool_call') ? 'tool' : stop;
 }
 
-
 export const EFFORT_BUDGET: Readonly<Record<IrEffort, number>> = Object.freeze({ low: 4096, medium: 10000, high: 24000, max: 32000 });
 
 export const THINKING_HEADROOM = 1024;
@@ -220,7 +218,7 @@ export function budgetToEffort(budget: number): IrEffort {
 
 export function normalizeEffort(value: unknown): IrEffort | null | undefined {
   if (value === undefined || value === null) return undefined;
-  if (value === 'none') return null;  
+  if (value === 'none') return null;
   if (typeof value !== 'string') return undefined;
   switch (value) {
     case 'minimal':
@@ -237,7 +235,6 @@ export function normalizeEffort(value: unknown): IrEffort | null | undefined {
       return undefined;
   }
 }
-
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

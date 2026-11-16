@@ -125,8 +125,7 @@ export async function preprocessChatImages({
     if (reply.isTruncated || !reply.text) throw new Error('vision reply exceeded bounded read');
     const json = JSON.parse(reply.text) as { choices?: Array<{ message?: { content?: unknown } }> };
     observations = json.choices?.[0]?.message?.content;
-  } catch {
-  }
+  } catch {}
   if (typeof observations !== 'string' || !observations.trim()) {
     return {
       ok: false,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';

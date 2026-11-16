@@ -237,7 +237,7 @@ export async function handleMatrixSuccess(s: SuccessArgs): Promise<AttemptOutcom
         outcome: string,
         d: { reason: string | null; durationMs: number; chunkCount: number; receivedBytes: number; completionMarkerSeen: boolean },
       ) => {
-        if (budgetCut()) return;  
+        if (budgetCut()) return;
         base.onStreamEnd(outcome, d);
       },
     };

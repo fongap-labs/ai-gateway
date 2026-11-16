@@ -134,8 +134,7 @@ export function collectKnownModels(
   if (env) {
     try {
       configured = Object.keys(loadModelsConfig(env));
-    } catch {
-    }
+    } catch {}
   }
   const canonical = canonicalLogicalNames(names, configured);
   return new Set([...names, ...configured].map((name) => canonical.get(name.trim().toLowerCase()) ?? name.trim()));

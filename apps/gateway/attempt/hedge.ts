@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-
 import { adaptiveHedgeDelayMs } from '../../../src/config/timeouts.ts';
 import { classifyHedgeUnknown } from '../../../src/reliability/classify.ts';
 import { getTier1ModelPerf } from '../../../src/reliability/tier1-state.ts';
@@ -109,8 +108,7 @@ export async function dispatchWithHedge(args: AttemptContext, tierNodes: Readonl
       if (isResolved) {
         try {
           outcome.response?.body?.cancel();
-        } catch {
-        }
+        } catch {}
         return;
       }
       isResolved = true;

@@ -129,7 +129,6 @@ export class ResponsesEventBuilder {
   }
 }
 
-
 export type ResponsesErrorType =
   | 'invalid_request_error'
   | 'authentication_error'

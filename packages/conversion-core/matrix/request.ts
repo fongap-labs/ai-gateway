@@ -11,7 +11,6 @@ import { buildResponsesRequest, parseResponsesRequest } from './responses.ts';
 
 export { isMatrixPair } from '../protocol-pairs.ts';
 
-
 export function convertMatrixRequest(
   from: IrProtocol,
   to: IrProtocol,

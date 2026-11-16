@@ -184,8 +184,7 @@ export async function readTier1Affinity(env: GatewayEnv, sessionId: string, ctx?
       const refresh = lookupBinding(kv, key).catch(() => undefined);
       try {
         ctx?.waitUntil?.(refresh);
-      } catch {
-      }
+      } catch {}
     }
     return cached.accountId;
   }

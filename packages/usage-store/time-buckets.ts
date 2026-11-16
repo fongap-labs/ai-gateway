@@ -22,7 +22,7 @@ export function getUtcDayBucket(date: number | Date = Date.now()): string {
 
 export function getUtcWeekBucket(date: number | Date = Date.now()): string {
   const d = date instanceof Date ? date : new Date(date);
-  const day = d.getUTCDay() || 7;  
+  const day = d.getUTCDay() || 7;
   const thursday = new Date(d);
   thursday.setUTCDate(d.getUTCDate() + (4 - day));
   const weekYear = thursday.getUTCFullYear();
@@ -35,7 +35,7 @@ export function getUtcWeekBucket(date: number | Date = Date.now()): string {
 export function getUtcWeekStartUtcMs(date: number | Date = Date.now()): number {
   const t = typeof date === 'number' ? date : date.getTime();
   const d = new Date(t);
-  const dow = (d.getUTCDay() + 6) % 7;  
+  const dow = (d.getUTCDay() + 6) % 7;
   const dayMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   return dayMs - dow * DAY_MS;
 }

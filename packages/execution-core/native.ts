@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-
 import { loadExecutionConfig } from '../config-core/nodes.ts';
 import { collectKnownModels, modelRegistryEntry, resolvePhysicalModel } from '../config-core/registry.ts';
 import { getLimits } from '../config-core/timeouts.ts';

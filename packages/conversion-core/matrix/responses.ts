@@ -370,7 +370,6 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
   return { request, diag };
 }
 
-
 export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
   const out: Record<string, unknown> = { model: ir.model };
   const instructions = ir.system.join('\n');
@@ -507,7 +506,6 @@ function imageUrlOf(part: IrImagePart): string {
   if (part.url) return part.url;
   return part.data ? `data:${part.mediaType || 'application/octet-stream'};base64,${part.data}` : '';
 }
-
 
 export function responsesStopToIr(status: unknown, hasToolCalls: boolean): IrStop {
   if (status === 'incomplete') return 'length';

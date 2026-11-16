@@ -113,8 +113,7 @@ export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLi
   const task = flush(kv);
   try {
     ctx?.waitUntil?.(task);
-  } catch {
-  }
+  } catch {}
 }
 
 async function flush(kv: CooldownKV): Promise<void> {
