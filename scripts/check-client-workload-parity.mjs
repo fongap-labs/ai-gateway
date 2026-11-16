@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { __resetRetryBudgetForTests, RetrySlot, snapshotRetryBudget } from '../apps/gateway/reliability/retry-budget.ts';
 import { gatewayError } from '../apps/gateway/response/errors.ts';
 import { classifyUpstreamStatus } from '../src/reliability/classify.ts';
-import { __resetRetryBudgetForTests, RetrySlot, snapshotRetryBudget } from '../apps/gateway/reliability/retry-budget.ts';
 
 const model = 'Code-Max';
 const workloads = [
