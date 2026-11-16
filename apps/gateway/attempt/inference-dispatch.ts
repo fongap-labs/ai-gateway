@@ -8,7 +8,7 @@ import {
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
 import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
-import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
+import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs, viableFailoverWindowMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
 import { safeReadErrorBody } from '../../../src/protocol/http.ts';
 import { isOpenAIStreamingResponse } from '../../../src/protocol/openai.ts';
@@ -128,7 +128,7 @@ export async function dispatchInferenceAttempt(
   const attemptBudgetMs =
     c.hedgedAttempt && c.attemptDeadlineMs
       ? c.attemptDeadlineMs - Date.now()
-      : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts);
+      : attemptBudgetWindowMs(remainingBudgetMs, c.remainingDispatchableAttempts, viableFailoverWindowMs(reqDescriptor.bodyChars));
   if (remainingBudgetMs <= 0 || attemptBudgetMs <= 0) {
     return stopForCenter(c, 504, 'gateway_inference_deadline_expired', center);
   }
