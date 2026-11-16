@@ -60,6 +60,19 @@ async function exercise({ route = 'chat', model = textModel, fallback = false, l
   }
 
   assert.deepEqual(getModelsConfigDiagnostics(env), [], 'retired config key must not break an existing deployment');
+  const listed = await handleRequest(
+    new Request('https://gateway.example.invalid/v1/models', { headers: { authorization: 'Bearer ' + key } }),
+    env,
+    ctx,
+  );
+  assert.equal(listed.status, 200, await listed.clone().text());
+  const listedModels = (await listed.json()).data;
+  assert.equal(listedModels.find((item) => item.id === textModel)?.supports_vision, false);
+  assert.equal(
+    listedModels.find((item) => item.id === visionModel)?.supports_vision,
+    bindPerception && provider === 'openai',
+  );
+
   assert.equal(loadModelsConfig(env)[textModel].policy.vision_delegate, undefined);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_input, init) => {

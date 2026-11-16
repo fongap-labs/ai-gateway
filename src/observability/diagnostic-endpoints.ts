@@ -1,4 +1,5 @@
-import { gatewayCanAcceptVision } from '../../packages/config-core/vision-delegation.ts';
+import { getFallbackChain } from '../../packages/config-core/protocol-fallbacks.ts';
+import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
 import { snapshotUsageBuffer } from '../../packages/usage-store/buffer.ts';
 import { diagnosticsGroups, filterVisibleModels as filterModelsByKey } from '../config/access-keys.ts';
 import { loadGatewayConfig } from '../config/nodes.ts';
@@ -43,6 +44,12 @@ function buildModelsList(
   authResult: AuthResult,
 ): { object: string; data: Array<Record<string, unknown>> } {
   const logicalNames = collectKnownModels(nodes, env);
+  const perceptionService = env.AIG_PERCEPTION_SERVICE as { fetch?: unknown } | undefined;
+  const perceptionReady =
+    typeof perceptionService?.fetch === 'function' &&
+    typeof env.AIG_PERCEPTION_AUTH_KEY === 'string' &&
+    env.AIG_PERCEPTION_AUTH_KEY.length >= 32;
+  const chatFallbacks = getFallbackChain('openai_chat', env);
   type ModelListEntry = {
     id: string;
     object: string;
@@ -96,13 +103,16 @@ function buildModelsList(
       if (reasoningNodes.length > 0 && availableEfforts.size === 0) availableEfforts.add('high');
       const effortLevels = ['low', 'medium', 'high', 'max'].filter((level) => availableEfforts.has(level));
       const hasNativeReasoning = e.reg.catalog.capabilities.reasoning || reasoningNodes.length > 0;
-      const supportsVision = gatewayCanAcceptVision({
-        env,
-        requestedModel: e.id,
-        knownModels: logicalNames,
-        allowedModels: allowedSet,
-        nodes,
-      });
+      const supportsVision =
+        e.reg.catalog.capabilities.vision === true &&
+        perceptionReady &&
+        nodes.some(
+          (node) =>
+            servesModel(node, e.id, logicalNames) &&
+            getProviderProfile(node.provider).imageInput &&
+            ((node.protocol === 'openai' && node.surfaces.includes('chat_completions')) ||
+              chatFallbacks.some(({ protocol, surface }) => node.protocol === protocol && node.surfaces.includes(surface))),
+        );
       return {
         id: e.id,
         object: 'model',
