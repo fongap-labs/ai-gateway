@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Deterministic tests. No external network, Cloudflare account or real keys.
 
 import assert from 'node:assert/strict';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
@@ -87,7 +85,6 @@ try {
   const invalidBody = await handleGenerationCenterRequest(request({ ...validBody, n: 2 }), env);
   assert.equal(invalidBody.status, 400);
   assert.equal(requests, 0);
-  // Generation must enforce the same explicit mapping rule as Inference.
   for (const models of [{}]) {
     const invalidMapEnv = {
       ...env,
@@ -131,7 +128,6 @@ try {
   assert.equal(requests, 1);
   assert.deepEqual((await ok.json()).data, [{ b64_json: 'aGVsbG8=' }]);
 
-  // Unknown outcomes are terminal and never internally retried.
   globalThis.fetch = async () => {
     requests += 1;
     throw new Error('simulated transport outage');
@@ -142,7 +138,6 @@ try {
   assert.equal((await failed.json()).error.code, 'generation_outcome_unknown');
   assert.equal(requests, 2);
 
-  // Gateway forwards only its own internal contract, never caller auth.
   const invocation = {
     request: new Request('https://client.example/v1/images/generations', {
       method: 'POST',
@@ -172,8 +167,6 @@ try {
 
   assert.deepEqual(quotaFromCenter(new Headers({ 'x-aig-quota-signal': '{"remainingRequests":3}' }))?.remainingRequests, 3);
   assert.equal(quotaFromCenter(new Headers({ 'x-aig-quota-signal': '{"remainingRequests":-1}' })), null);
-  // A missing center must fail before a physical Provider request. This checks
-  // the real Gateway dispatch selector, not only the private transport helper.
   const unboundState = {
     attempted: new Set(),
     attempts: [],
@@ -206,8 +199,6 @@ try {
   assert.equal(unboundState.dispatches, 0);
   assert.equal(requests, 2, 'missing Generation Center must never call physical Provider');
 
-  // The central image suite config must be accepted identically by the
-  // Gateway and private center; production never bypasses invalid config.
   const imageModel = 'Image-Creator';
   const imageEnv = {
     AIG_GENERATION_AUTH_KEY: internalKey,
@@ -234,8 +225,6 @@ try {
   assert.equal(imageConfig.hasConfigErrors, false, `central image config diagnostics: ${JSON.stringify(imageConfig.diagnostics)}`);
   assert.equal(imageConfig.ready, true, 'center image fixture must have a usable provider node');
 
-  // Image generation is center-only even without a deployment marker. Gateway
-  // can route image-only nodes using metadata without retaining Provider keys.
   const imageGatewayEnv = {
     AIG_ACCESS_KEY_AGENT: 'center-image-test-client-key',
     AIG_TIER2_NODES_01: env.AIG_TIER2_NODES_01,
@@ -251,14 +240,10 @@ try {
   assert.equal(imageGatewayWithSecret.nodes[0].credential, '', 'Gateway must not retain a center-owned image key');
   assert.equal(loadExecutionConfig(env).nodes[0].credential, secret, 'private Generation Center owns its Provider key');
 
-  // Full client -> Gateway -> private Generation Center -> mocked image
-  // Provider contract. This deliberately never calls a real paid API.
   const gatewayImageEnv = { ...imageEnv };
   delete gatewayImageEnv.AIG_TIER1_CREDENTIALS_01;
   let centerCalls = 0;
   let physicalCalls = 0;
-  // Preserve non-canonical but valid client JSON when no model rewrite is
-  // required. A round-trip through JSON.stringify would strip whitespace.
   const originalGenerationJson = '{\n  "model": "Image-Creator",\n  "prompt": "Draw a square",\n  "size": "1024x1024"\n}';
   let expectedCenterRawBody = originalGenerationJson;
   gatewayImageEnv.AIG_GENERATION_SERVICE = {
@@ -332,9 +317,6 @@ try {
   assert.equal(missingCenter.status, 503, 'missing private Generation Center must fail without a Provider request');
   assert.equal(physicalCalls, 1);
 
-  // A normal Chat endpoint can explicitly request the same Generation tool.
-  // There is no keyword guessing: selection, schema and image alias are
-  // intentional, and a non-AGENT caller must never spend image credits.
   const toolEnv = {
     ...gatewayImageEnv,
     AIG_ACCESS_MODELS_AGENT: `Max,${imageModel}`,
@@ -412,9 +394,6 @@ try {
   assert.equal(missingImageModel.status, 400);
   assert.equal(physicalCalls, 3);
 
-  // The ordinary Chat model may now choose generate_image with tool_choice
-  // auto. Only an AGENT key, a declared tool and an authorized image alias
-  // allow this two-hop Inference -> Generation sequence.
   const decisionCenterEnv = {
     ...toolEnv,
     AIG_TIER1_CREDENTIALS_01: JSON.stringify({ 'chat-model': 'mock-text-secret', 'image-1': 'upstream-mock-secret' }),
@@ -494,8 +473,6 @@ try {
   assert.equal(physicalCalls, 5);
   globalThis.fetch = imageFetch;
 
-  // The Chat image bridge must not label JPEG as PNG or turn non-image
-  // Provider data into a broken Markdown attachment. Never replay on error.
   imageToolData = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48]).toString(
     'base64',
   );

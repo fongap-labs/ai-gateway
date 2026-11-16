@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-// Node-configuration deployment planner.
-//
-//   validate --tier1 FILE [--tier2 FILE] [--secrets FILE]
-//       Validate node config files and (optionally) cross-check credentials.
-//   plan --tier1 FILE [--tier2 FILE] --secrets FILE --out PLAN
-//        [--existing-vars FILE|-] [--existing-secrets FILE|-]
-//       Generate the deployment plan:
-//         { vars, secrets, deleteVars, deleteSecrets, tierSummary }
-//       Full values are written to --out only; stdout prints a safe summary.
 import fs from 'node:fs';
 import { buildPlan, MANAGED_SECRET_PATTERN, MANAGED_VAR_PATTERN, parseJsonFile } from './node-config-shards.mjs';
 

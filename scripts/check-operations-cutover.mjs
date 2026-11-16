@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline-only release contract. A second active cron before cutover would
-// double-run D1 retention, so the candidate remains deliberately disabled.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { default as operations, scheduled } from '../operations/standalone.ts';

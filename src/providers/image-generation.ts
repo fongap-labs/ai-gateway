@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Image providers own native wire payloads; the gateway exposes one internal
-// image-generation surface. No chat-to-image conversion or credential fallback.
 
 import { buildTargetUrl } from '../protocol/http.ts';
 
@@ -74,7 +71,6 @@ export const googleImageGeneration: ImageGenerationAdapter = Object.freeze({
 
 export const cloudflareImageGeneration: ImageGenerationAdapter = Object.freeze({
   prepare: (baseUrl, upstreamModel, request) => {
-    // The model name becomes a path suffix; prevent arbitrary path/query injection.
     if (request.size !== '1024x1024' || !/^@cf\/[a-z0-9._-]+\/[a-z0-9._-]+$/.test(upstreamModel)) return null;
     return {
       url: buildTargetUrl(baseUrl, `/${upstreamModel}`),

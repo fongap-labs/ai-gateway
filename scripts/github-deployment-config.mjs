@@ -36,7 +36,6 @@ function assertTwoTierBindingNames(names) {
   }
   const legacy = [...names].filter((name) => name.startsWith('AIG_TIER3_')).sort();
   if (legacy.length > 0) {
-    // Names only, never print any credential values.
     throw new Error(`Legacy Tier 3 bindings must be explicitly migrated before deploying: ${legacy.join(', ')}`);
   }
 }
@@ -50,8 +49,6 @@ const CREDENTIAL_NAMES = new Set([
   ...KEY_GROUPS.map((group) => `AIG_ACCESS_KEY_${group}`),
 ]);
 
-// A JSON.parse error quotes the text around the failure; for secrets that would
-// copy part of a credential into the deploy log, so only the label is reported.
 export function parseConfigObject(text, label = 'configuration', { isSecret = false } = {}) {
   let parsed;
   try {
@@ -163,9 +160,7 @@ function countNodesInShards(vars, tierNumber) {
     try {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) count += parsed.length;
-    } catch {
-      // Preflight reports malformed JSON through the node-count diagnostics.
-    }
+    } catch {}
   }
   return count;
 }
@@ -217,7 +212,6 @@ export function preflight(env) {
   if (tier1Shards && countNodesInShards(v.vars, 1) === 1) {
     warnings.push('Only one Tier 1 node is configured; there is no account-level failover if that key is rate-limited or unavailable.');
   }
-  // Unset means the runtime default (0, see runtime-vars.ts): the cap is off.
   const rpm = Number(v.vars.AIG_ACCESS_KEY_RPM ?? 0);
   if (tier1Shards && (!Number.isFinite(rpm) || rpm <= 0)) {
     warnings.push('AIG_ACCESS_KEY_RPM is 0; gateway access-key rate limiting is disabled.');
@@ -249,15 +243,10 @@ export function preflight(env) {
   }
   const managedEnv = { ...v.vars, ...s.secrets };
   const config = loadGatewayConfig(managedEnv);
-  // Even though the public Gateway is metadata-only, deployment preflight
-  // MUST still validate the independent private Provider execution snapshot.
-  // Otherwise a cross-tier or ambiguous secret could silently pass the gate.
   const privateExecutionConfig = loadExecutionConfig(managedEnv);
   if (!privateExecutionConfig.ready || privateExecutionConfig.hasConfigErrors) {
     errors.push(`Private execution configuration is invalid: ${privateExecutionConfig.diagnostics.join('; ')}`);
   }
-  // A rejected setting is a mistake to fix, not capacity to accept: the runtime
-  // keeps serving around it, but it never ships, whatever AIG_ALLOW_DEGRADED says.
   if (config.hasConfigErrors) {
     errors.push(`Runtime configuration has errors: ${config.diagnostics.join('; ')}`);
   } else if (config.status === 'degraded' && String(env.AIG_ALLOW_DEGRADED || '').toLowerCase() !== 'true') {
@@ -312,8 +301,6 @@ export function buildDeploymentSummary({ config, runtime, d1Configured, affinity
 
 export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
   const out = { ...secrets };
-  // Never automatically remove old Tier 3 Secrets during a breaking cutover.
-  // The operator must explicitly authorize any destructive Secret cleanup.
   for (const entry of Array.isArray(existingSecrets) ? existingSecrets : []) {
     const name = typeof entry === 'string' ? entry : entry?.name;
     if (typeof name === 'string' && /^AIG_TIER[12]_CREDENTIALS_(0[1-9]|10)$/.test(name) && !(name in out)) out[name] = null;
@@ -324,8 +311,6 @@ export function withStaleNodeSecretsRemoved(secrets, existingSecrets) {
 export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) {
   const env = { ...runtime.vars, ...runtime.secrets };
   const config = loadGatewayConfig(env);
-  // The Gateway no longer reads secret shards. Validate them at the same
-  // strict private-center boundary before any deployment package is emitted.
   const privateExecutionConfig = loadExecutionConfig(env);
   if (!privateExecutionConfig.ready || privateExecutionConfig.hasConfigErrors) {
     const details = privateExecutionConfig.diagnostics.length ? `: ${privateExecutionConfig.diagnostics.join('; ')}` : '';
@@ -346,7 +331,6 @@ export function validateGatewayRuntime(runtime, { allowDegraded = false } = {}) 
   return config;
 }
 
-// Workers Analytics Engine dataset names: letters, digits and underscores.
 const ANALYTICS_DATASET_NAME = /^[A-Za-z0-9_]{1,64}$/;
 
 export const DEFAULT_OPTIMAL_VARS = {
@@ -355,9 +339,6 @@ export const DEFAULT_OPTIMAL_VARS = {
   AIG_COST_GUARDS: 'true',
   AIG_TIER1_PROBE_V2: 'true',
   AIG_REQUEST_ADMISSION: 'true',
-  // Do not inject an isolate concurrency cap. The runtime default is disabled;
-  // explicitly configured AIG_ISOLATE_MAX_IN_FLIGHT overrides still pass through.
-  // Keep the bounded request-wide attempt cap and avoid speculative hedges.
   AIG_STREAM_MAX_ATTEMPTS: '8',
   AIG_NONSTREAM_MAX_ATTEMPTS: '8',
   AIG_REQUEST_HEDGE_MAX: '0',
@@ -380,7 +361,6 @@ export function buildWranglerConfig(
   if (generationTarget && generationTarget !== 'ai-generation-center') throw new Error('Invalid AIG_GENERATION_TARGET.');
   const perceptionTarget = String(vars.AIG_PERCEPTION_TARGET ?? '').trim();
   if (perceptionTarget && perceptionTarget !== 'ai-perception-center') throw new Error('Invalid AIG_PERCEPTION_TARGET.');
-  // Deployment-only selector: never expose this string as a Worker variable.
   const runtimeVars = { ...vars };
   delete runtimeVars.AIG_INFERENCE_TARGET;
   delete runtimeVars.AIG_GENERATION_TARGET;
@@ -452,8 +432,6 @@ function readSecretList(file) {
 }
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Remote deployment identity is the commit SHA returned by public /health/ready.
-// The endpoint exposes only build, readiness and degradation status.
 export async function verifyRemote(baseUrl, expectedBuild, { graceMs = 30_000, intervalMs = 5_000, allowDegraded = false } = {}) {
   const origin = String(baseUrl || '').replace(/\/+$/, '');
   if (!/^https:\/\//.test(origin)) throw new Error('AIG_PUBLIC_URL must be an absolute https URL');

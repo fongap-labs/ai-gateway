@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Measure request-body memory before buffering, without an arbitrary chunked cap.
 import assert from 'node:assert/strict';
 import { createBodyAdmissionPool } from '../packages/transport/body-admission.ts';
 import { BodyAdmissionBudgetError, BodyTooLargeError, readBodyTextWithLimit } from '../packages/transport/http.ts';

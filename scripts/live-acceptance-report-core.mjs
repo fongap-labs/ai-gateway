@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Whitelist-only evidence from the existing real Gateway acceptance checks.
-// Never persist credentials, headers, prompts, raw replies or image payloads.
 
 const SHA_RE = /^[0-9a-f]{40}$/;
 const BUILD_RE = /^[0-9a-f]{7,40}$/;
@@ -52,8 +49,6 @@ export function parseCheckEvidence(line) {
 export function parseFailureEvidence(line) {
   const raw = parseLine(line);
   if (raw?.result !== 'FAIL' || typeof raw.message !== 'string') return null;
-  // Extract only a check label, HTTP status and simple gateway code. The
-  // upstream message itself must never be kept in an acceptance report.
   const match = /^([a-z][a-z0-9-]{0,64}): HTTP (\d{3}), gateway_code=([A-Za-z0-9._:-]{1,128})/.exec(raw.message);
   if (match) {
     return {
@@ -88,7 +83,6 @@ export function createAcceptanceReport({ origin, expectedSha, readiness, started
       passed: checks.filter((check) => check.result === 'PASS').length,
       failed: checks.filter((check) => check.result === 'FAIL').length,
       planned_image_calls: plannedImageCalls,
-      // A failed client request may still have consumed upstream image quota.
       actual_billed_image_calls: null,
     },
     failure: pass ? null : (failure ?? { stage: 'request', category: 'nonzero_exit', check: null }),

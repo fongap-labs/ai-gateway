@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Offline regression for configuration-vs-success health and Worker startup clock.
 
 import assert from 'node:assert/strict';
 import { gatewayStats, startGatewayStats } from '../src/observability/gateway-stats.ts';
@@ -10,11 +9,11 @@ import { startTokenStats, summarizeTokenStats, tokenStats } from '../src/observa
 
 const endpoints = [
   { status: 'configured', total_successes: 0 },
-  { status: 'observed_healthy', total_successes: 0 }, // TTFT only; no completed answer
-  { status: 'unknown', total_successes: 2 }, // buffered, completed answer
+  { status: 'observed_healthy', total_successes: 0 },
+  { status: 'unknown', total_successes: 2 },
   { status: 'cooldown', total_successes: 1 },
   { status: 'disabled', total_successes: 0 },
-  { status: 'active', total_successes: 0 }, // Tier 2 default; not evidence
+  { status: 'active', total_successes: 0 },
 ];
 const result = summarizeHealthEvidence(endpoints, 6);
 assert.equal(result.observedHealthy, 1);

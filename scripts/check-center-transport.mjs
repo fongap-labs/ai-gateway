@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Native HTTP Request/Response transport tests. No Cloudflare account,
-// external provider request, OAuth token or deployment required.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildGenerationRequest, GenerationCenterUnavailable, invokeGenerationNode } from '../apps/gateway/transport/generation-client-request.ts';
@@ -12,8 +10,6 @@ import { dispatchProviderAttempt } from '../packages/transport/provider-attempt.
 import { buildProviderForwardRequest } from '../packages/transport/provider-forward-request.ts';
 import { centerResponseDeadlineMs, PRIVATE_CENTER_RESPONSE_RESERVE_MS } from '../src/config/timeouts.ts';
 
-// A center must have time to return an explicit attempted timeout before the
-// caller aborts its Service Binding (and loses the upstream outcome).
 assert.equal(PRIVATE_CENTER_RESPONSE_RESERVE_MS, 1_500);
 assert.equal(centerResponseDeadlineMs(100_000, 0), 98_500);
 assert.equal(centerResponseDeadlineMs(15_000, 0), 14_250, 'a normal header wait reserves at most 5%');
@@ -104,9 +100,6 @@ try {
   globalThis.fetch = savedProviderFetch;
 }
 
-// Gateway owns both private Center clients. The old paths remain lightweight
-// compatibility exports only; no execution, HTTP or secret policy may drift
-// back into src/inference or src/generation.
 for (const [kind, oldPath] of [
   ['inference', 'inference'],
   ['generation', 'generation'],

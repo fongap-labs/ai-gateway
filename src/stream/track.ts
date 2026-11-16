@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tracked stream wrapper: relay, idle timeout, node outcome, optional model
-// rewrite, and passive upstream-reported usage observation.
 
 import { mergeReportedUsage, normalizeTokenUsage } from '../observability/token-usage.ts';
 import { FIRST_EVENT_MAX_SSE_LINE } from './guard.ts';
@@ -26,20 +23,13 @@ export type TrackOptions = {
   onStreamStart?: () => void;
   onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
   completionMarker?: RegExp;
-  /** Use protocol-frame parsing for terminal and usage semantics. */
   protocol?: SseProtocol;
   closeMarker?: RegExp;
   completionGraceMs?: number;
   failureMarker?: RegExp;
   rewriteModel?: string;
   rewriteModelAt?: string;
-  // Delivered-response usage callback. Preserved semantics: fires only for a
-  // cleanly completed stream so model-status / delivered-token evidence cannot
-  // be polluted by interrupted attempts.
   onUsage?: (usage: unknown) => void;
-  // Physical-upstream accounting callback. Fires once for EVERY terminal stream
-  // outcome and carries the best cumulative usage the upstream actually
-  // reported, or null when no usable report was seen.
   onAttemptUsage?: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => void;
   interruptionChunk?: (reason: string | null, details?: { nextSequenceNumber?: number }) => Uint8Array;
   upstreamFailureReason?: () => string | null;
@@ -89,25 +79,18 @@ export function trackStreamResponse(
   if (!response.body) {
     try {
       onAttemptUsage?.(null, 'success');
-    } catch {
-      /* observability only */
-    }
+    } catch {}
     onSuccess();
     return response;
   }
   const reader = response.body.getReader();
   const encoder = rewriteModel !== undefined ? new TextEncoder() : null;
-  // A protocol observer already decodes the wire. Allocate a second decoder
-  // only for model rewriting or legacy non-protocol marker matching.
   const tailDecoder = encoder || !protocol ? new TextDecoder() : null;
   let lineBuffer = '';
   let diagnosticTail = '';
   let hasSeenErrorEvent = false;
   let hasSeenTerminalFailure = false;
   const lifecycle = protocol ? new SseLifecycleObserver(protocol) : null;
-  // Only Responses error frames use nextSequenceNumber. Chat and Messages
-  // interruption frames ignore it, so they should not pay for another full
-  // UTF-8 decode and regex scan on every stream chunk.
   const sequenceDecoder = interruptionChunk && (!protocol || protocol === 'openai_responses') ? new TextDecoder() : null;
   let sequenceTail = '';
   let completionSeen = lifecycle ? false : !completionMarker;
@@ -130,14 +113,10 @@ export function trackStreamResponse(
     try {
       const chunk = interruptionChunk(failureReason, { nextSequenceNumber });
       if (chunk instanceof Uint8Array && chunk.byteLength > 0) controller.enqueue(chunk);
-    } catch {
-      /* diagnostics must never break stream shutdown */
-    }
+    } catch {}
   };
 
   const scanUsageLine = (text: string) => {
-    // Most chunks carry no usage report: when nothing is pending and this one does
-    // not mention it, only the unfinished last line has to be remembered.
     if (usageLines === '' && !text.includes('"usage"')) {
       usageLines = text.slice(text.lastIndexOf('\n') + 1);
       if (usageLines.length > 64 * 1024) usageLines = '';
@@ -151,7 +130,6 @@ export function trackStreamResponse(
       if (!line.startsWith('data:')) continue;
       const usageAt = line.indexOf('"usage"');
       if (usageAt < 0) continue;
-      // Chat chunks that carry only `"usage":null` report nothing; skip the parse.
       if (line.startsWith('"usage":null', usageAt) && line.indexOf('"usage"', usageAt + 7) < 0) continue;
       const raw = line.slice(5).trim();
       if (!raw || raw === '[DONE]') continue;
@@ -163,9 +141,7 @@ export function trackStreamResponse(
           const merged = mergeReportedUsage(usageCandidate, reported);
           if (normalizeTokenUsage(merged)) usageCandidate = merged;
         }
-      } catch {
-        /* passive scan */
-      }
+      } catch {}
     }
   };
 
@@ -187,10 +163,6 @@ export function trackStreamResponse(
     if (isFinished) return;
     isFinished = true;
 
-    // A transport-level clean EOF without the protocol completion marker is
-    // still a failed upstream attempt. Resolve that semantic outcome BEFORE
-    // firing physical-attempt accounting, otherwise truncated streams would be
-    // incorrectly labelled success and skipped by the undelivered writer.
     const failed = result === 'failure' || (result === 'success' && !completionSeen);
     const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : failed ? 'failure' : 'success';
 
@@ -198,19 +170,14 @@ export function trackStreamResponse(
       isAttemptUsageReported = true;
       try {
         onAttemptUsage?.(usageCandidate, attemptOutcome);
-      } catch {
-        /* fail-open */
-      }
+      } catch {}
     }
 
-    // Existing delivered-response semantics remain success-only.
     if (usageScan && !isUsageReported && attemptOutcome === 'success' && typeof onUsage === 'function') {
       isUsageReported = true;
       try {
         onUsage(usageCandidate);
-      } catch {
-        /* observability must never break relay */
-      }
+      } catch {}
     }
 
     if (result === 'success') {
@@ -229,10 +196,6 @@ export function trackStreamResponse(
 
   const modelPointer = rewriteModelAt || 'model';
   const modelPointerParts = modelPointer.split('.');
-  // A chat stream repeats the same `"model":"<upstream name>"` in every chunk.
-  // Once the first one has been rewritten through a full parse, later chunks that
-  // carry the exact same token (once) are rewritten by string replacement, which
-  // keeps the rest of the line byte for byte and skips parse + stringify.
   const rewriteLiteral = rewriteModel !== undefined ? `"model":${JSON.stringify(rewriteModel)}` : '';
   let learnedModelToken: string | null = null;
   const processLine = (line: string): string => {
@@ -261,9 +224,7 @@ export function trackStreamResponse(
         holder[leaf] = rewriteModel;
         return `data: ${JSON.stringify(json)}`;
       }
-    } catch {
-      /* malformed lines pass through untouched */
-    }
+    } catch {}
     return line;
   };
 
@@ -308,9 +269,7 @@ export function trackStreamResponse(
         finalize('failure');
         try {
           controller.close();
-        } catch {
-          /* closed */
-        }
+        } catch {}
         return;
       }
       if (result.timeout) {
@@ -332,8 +291,6 @@ export function trackStreamResponse(
       }
       const { done, value } = result.value;
       if (done) {
-        // When model rewriting already decoded the bytes, flush that decoder
-        // and the lifecycle parser instead of feeding a second byte decoder.
         const trailingText = tailDecoder?.decode() ?? '';
         if (tailDecoder) {
           if (trailingText) lifecycle?.push(trailingText);
@@ -355,9 +312,7 @@ export function trackStreamResponse(
         let hiddenReason: string | null = null;
         try {
           hiddenReason = upstreamFailureReason?.() || null;
-        } catch {
-          /* diagnostic only */
-        }
+        } catch {}
         failureReason =
           hiddenReason || lifecycleFailureReason(lifecycle) || (hasSeenTerminalFailure ? 'upstream_terminal_failure' : 'missing_completion_marker');
         if (encoder && lineBuffer) {
@@ -371,8 +326,6 @@ export function trackStreamResponse(
       }
       chunkCount++;
       receivedBytes += value.byteLength;
-      // The protocol observer decodes in bounded pieces. Decode a full upstream
-      // chunk only for legacy marker scanning or when model rewriting needs it.
       let decoded = '';
       if (tailDecoder) {
         decoded = tailDecoder.decode(value, { stream: true });
@@ -393,8 +346,6 @@ export function trackStreamResponse(
           );
           if (lifecycle.usage !== null) usageCandidate = lifecycle.usage;
         } else if (usageScan && !closeSeen) scanUsageLine(decoded);
-        // When protocol parsing owns termination, this legacy diagnostic
-        // window is never consulted. Avoid copying and slicing every chunk.
         const scanWindow = lifecycle ? '' : diagnosticTail + decoded;
         if (!lifecycle && !hasSeenErrorEvent) {
           hasSeenErrorEvent = /(?:^|\r?\n)event:\s*error\s*(?:\r?\n|$)/.test(scanWindow);
@@ -421,9 +372,7 @@ export function trackStreamResponse(
         finalize('failure');
         try {
           controller.close();
-        } catch {
-          /* closed */
-        }
+        } catch {}
         return;
       }
       controller.enqueue(forwarded);
@@ -441,9 +390,7 @@ export function trackStreamResponse(
             controller.enqueue(encoder.encode(lineBuffer));
             lineBuffer = '';
           }
-        } catch {
-          /* already closed */
-        }
+        } catch {}
         finalize('success');
         controller.close();
         return;
@@ -489,16 +436,9 @@ export type RelayOptions = {
   onStreamStart?: () => void;
   onStreamEnd?: (outcome: string, info: TrackStreamEndInfo) => void;
   onAttemptUsage?: (usage: unknown, outcome: 'success' | 'failure' | 'neutral') => void;
-  /** Delivered-response usage callback, mirroring TrackOptions.onUsage
-   *  semantics: fires once on a cleanly completed stream, before onSuccess. */
   onUsage?: (usage: unknown) => void;
 };
 
-/**
- * Byte-preserving stream relay. It performs bounded SSE frame observation for
- * terminal and usage semantics, but forwards every upstream byte unchanged.
- * Transport EOF alone is never success when a protocol is supplied.
- */
 export function relayStreamResponse(
   response: Response,
   { idleTimeoutMs, protocol, onSuccess, onFailure, onNeutral, onStreamStart, onStreamEnd, onAttemptUsage, onUsage }: RelayOptions,
@@ -507,16 +447,12 @@ export function relayStreamResponse(
   if (!response.body) {
     try {
       onAttemptUsage?.(null, lifecycle ? 'failure' : 'success');
-    } catch {
-      /* observability only */
-    }
+    } catch {}
     if (lifecycle) onFailure();
     else {
       try {
         onUsage?.(null);
-      } catch {
-        /* observability only */
-      }
+      } catch {}
       onSuccess();
     }
     return response;
@@ -535,19 +471,14 @@ export function relayStreamResponse(
     const attemptOutcome: 'success' | 'failure' | 'neutral' = result === 'neutral' ? 'neutral' : failed ? 'failure' : 'success';
     try {
       onAttemptUsage?.(lifecycle?.usage ?? null, attemptOutcome);
-    } catch {
-      /* fail-open */
-    }
+    } catch {}
     if (result === 'success' && !failed) onSuccess();
     else if (result === 'success' || result === 'failure') onFailure();
     else onNeutral();
-    // Success-only delivered usage, mirroring TrackOptions.onUsage semantics.
     if (attemptOutcome === 'success') {
       try {
         onUsage?.(lifecycle?.usage ?? null);
-      } catch {
-        /* observability must never break relay */
-      }
+      } catch {}
     }
     onStreamEnd?.(attemptOutcome === 'neutral' ? 'neutral' : attemptOutcome === 'failure' ? 'interrupted' : 'completed', {
       reason: attemptOutcome === 'failure' ? failureReason || lifecycleFailureReason(lifecycle) || 'missing_completion_marker' : null,
@@ -572,9 +503,7 @@ export function relayStreamResponse(
         finalize('failure');
         try {
           controller.close();
-        } catch {
-          /* closed */
-        }
+        } catch {}
         return;
       }
       if (result.timeout) {

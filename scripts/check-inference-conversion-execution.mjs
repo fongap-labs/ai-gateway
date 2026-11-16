@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Cross-protocol physical requests run inside the private Inference Center.
 import assert from 'node:assert/strict';
 import { parseTraceparent, traceIdForRequest } from '../packages/contracts/trace-context.ts';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
@@ -131,9 +130,6 @@ try {
   assert.equal((await handleInferenceCenterRequest(fakePreference, env)).status, 400);
   assert.equal(executed.length, 2, 'invalid preference must fail at ticket validation');
 
-  // The private Center never trusts a Gateway preflight approval: it must
-  // revalidate the original request, reject native-only tool loss, and make
-  // zero additional physical Provider attempts.
   const nativeToolName = 'private-provider-tool-must-not-leak';
   const nativeOnly = {
     ...message,
@@ -144,8 +140,6 @@ try {
   assert.equal((await rejectedNative.json()).error.code, 'center_conversion_semantic_loss');
   assert.equal(executed.length, 2, 'semantic-loss refusal happens before Provider dispatch');
 
-  // A portable function tool remains callable when an optional native
-  // server-side tool is dropped. The client may still use its local tool.
   const mixedTools = {
     ...nativeOnly,
     tools: [

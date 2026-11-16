@@ -1,16 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Shared node-configuration sharding and planning module.
-//
-// Plain variables:
-//   AIG_TIER{1,2}_NODES_01..10   JSON arrays of current node configs
-// Secrets:
-//   AIG_TIER{1,2}_CREDENTIALS_01..10  JSON objects { nodeId: credential }
-//
-// Node config keeps Provider protocol ownership. A node may optionally choose
-// physical API surfaces; runtime validates their compatibility against the
-// Provider wire profile. All nodes use static credentials; legacy OAuth
-// subscriber markers are rejected.
 
 import fs from 'node:fs';
 
@@ -55,8 +44,6 @@ export function parseJsonFile(filePath) {
   }
 }
 
-// assertNodesArray validates a tier's node config and rejects legacy Tier 3.
-// Nodes never declare OAuth subscriber authentication in the new two-tier form.
 export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
   if (tierNumber !== undefined && tierNumber !== 1 && tierNumber !== 2) {
     throw new Error(`${label}: unsupported Tier ${tierNumber}; run the two-tier cutover preflight`);
@@ -95,8 +82,6 @@ export function assertNodesArray(nodes, label = 'nodes config', tierNumber) {
       throw new Error(`${label}: node "${id}" provider is required and must be a non-empty string`);
     }
 
-    // Shape validation here; the canonical runtime validator checks these
-    // surfaces against the Provider profile before any deployment can pass.
     if (Object.hasOwn(node, 'surfaces')) {
       const surfaces = node.surfaces;
       if (

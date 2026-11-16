@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Native Node contract test: conversion codec ownership and legacy identity.
 import assert from 'node:assert/strict';
 import { parseChatRequest as ownedParse } from '../apps/inference/conversion/chat.ts';
 import { ChatStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/chat-stream.ts';

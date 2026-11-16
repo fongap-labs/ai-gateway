@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Protected, offline config builder for the private image Generation Center.
-// This module does not call Cloudflare or deploy/upload any Secret.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,7 +101,6 @@ export function buildGenerationCenterDeployment(env) {
   return { config, secrets, nodes: validation.nodesUsable };
 }
 
-// Explicit prepare is file-only; never add deploy, d1, or secret-upload commands here.
 function arg(flag) {
   const index = process.argv.indexOf(flag);
   return index >= 0 ? process.argv[index + 1] : undefined;

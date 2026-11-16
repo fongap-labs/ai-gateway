@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Isolate-local observation of active request handlers. This is NOT an
-// admission gate. A configured request-count limit must never turn the ninth
-// healthy request into HTTP 503; request-body byte admission remains separate.
-//
-// Observe the execution phase only; after Gateway returns response headers,
-// existing stream metrics own the downstream streaming lifecycle. Do not wrap
-// an SSE Response merely to count an active connection.
 
 let activeHandlers = 0;
 let peakHandlers = 0;

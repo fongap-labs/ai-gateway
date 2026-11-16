@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Read-only Cloudflare inventory for the five-Worker production topology.
-// Use a Workers Metadata Read-Only token. Never call the Secrets API: its list
-// response includes Secret values. Only binding names/types are projected.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,8 +26,6 @@ const INVENTORY_STAGES = new Set([
   'worker-deployments',
 ]);
 
-// Only fixed diagnostic codes, stages, and HTTP status are surfaced. Never
-// include the request URL, Cloudflare response body, account ID, or token.
 export class InventoryDiagnosticError extends Error {
   constructor(stage, code, status = null) {
     super('Read-only inventory rejected (' + code + ') at ' + stage + '.');
@@ -126,9 +121,6 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
 
   return {
     async scripts() {
-      // The official Scripts list endpoint accepts a tags filter, not page or
-      // per_page. Treat it as one complete result and reject pagination hints
-      // that would make completeness ambiguous.
       const response = await get('/workers/scripts', 'worker-list');
       assertRecords(response.result, 'Worker list');
       const { totalCount, totalPages } = validatePageInfo(response.info, null, null, 'Worker list', response.result.length);
@@ -227,9 +219,6 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
       const domains = [];
       const seen = new Set();
       for (const worker of WORKERS) {
-        // The official SDK models this endpoint as SinglePage and its documented
-        // query parameters are filters, not page/per_page. Scope each request to
-        // one target Worker and fail closed if the API reports multiple pages.
         const params = new URLSearchParams({ service: worker });
         const response = await get('/workers/domains?' + params.toString(), 'worker-domains');
         assertRecords(response.result, 'Worker domains');
@@ -244,8 +233,6 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
           }
           if (seen.has(domain.id)) throw new Error('Duplicate Worker domain metadata.');
           seen.add(domain.id);
-          // Keep only routing metadata needed for exposure checks. Hostnames,
-          // zone IDs, certificate IDs, and domain IDs never enter the report.
           domains.push({ service: domain.service, enabled: domain.enabled, previewsEnabled: domain.previews_enabled });
         }
         const { totalCount, totalPages } = validatePageInfo(response.info, 1, null, 'Worker domains', response.result.length);
@@ -277,8 +264,6 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
             throw new Error('Secret key material is not permitted in Worker settings metadata.');
           }
           const projected = { name: binding.name, type: binding.type };
-          // Only the explicitly named, non-secret build identity may be read.
-          // Other plain_text values are never projected into a report.
           if (binding.name === 'AIG_BUILD_SHA' && binding.type === 'plain_text') {
             if (typeof binding.text !== 'string' || !SOURCE_SHA.test(binding.text)) {
               throw new Error('Invalid declared Worker source SHA metadata.');
@@ -309,8 +294,6 @@ export function createReadOnlyCloudflareClient({ accountId, token, fetchImpl = f
         if (binding.type === 'service' && typeof binding.service === 'string') item.service = binding.service;
         return item;
       });
-      // Secret values are intentionally not queried. Settings expose binding
-      // metadata; only Secret binding names/types are retained from that view.
       const secretNames = sortedUnique(
         rawBindings.filter((binding) => SECRET_TYPES.has(binding.type)).map((binding) => binding.name),
         'Worker Secret name',
@@ -465,7 +448,6 @@ export async function inspectProductionWorkers(client) {
       active_deployment_present: worker.activeDeployment.present,
       active_traffic_version_count: worker.activeDeployment.versionCount,
       active_traffic_weight_total: worker.activeDeployment.trafficWeightTotal,
-      // Declared build identity is a plain-text Git commit SHA, not proof of the deployed artifact.
       declared_build_sha: worker.declaredBuildSha,
       bindings: worker.bindings,
       secret_names: worker.secretNames,
@@ -583,7 +565,6 @@ async function main() {
   });
   const report = await inspectProductionWorkers(client);
   if (argv.length === 2) {
-    // Contains resource names and routing metadata only; never overwrite.
     fs.writeFileSync(argv[1], JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   }
   const summary = {

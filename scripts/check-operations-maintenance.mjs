@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline contract for the standalone Operations scheduled entrypoint.
 import assert from 'node:assert/strict';
 import { scheduled } from '../operations/standalone.ts';
 
@@ -118,9 +117,6 @@ try {
   assert.equal(firstWeekly[0].input_tokens, 12);
   assert.equal(firstWeekly[0].upstream_attempts, 5);
 
-  // Every hourly metric retains its SQL column position through both
-  // materializations. Distinct values catch a shifted positional bind even
-  // if daily and weekly accidentally shift together.
   const expectedMetrics = {
     input_tokens: 12,
     output_tokens: 5,

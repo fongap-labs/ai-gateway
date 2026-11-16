@@ -1,19 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// RuntimeStateStore projections — the single read surface over the two
-// runtime-state backends. The Tier 1 adaptive runtime and the Tier 2/3 node
-// state keep their own implementations and learning signals; this module only
-// projects their existing state onto the unified contracts in
-// types/runtime-state.ts. Upper layers read state through these projections
-// instead of importing backend internals.
-//
-// Read-only by contract: claims, releases, outcome recording, and quota
-// settlement stay in tier1-state.ts / node-state.ts and the dispatch funnels.
-// A field a backend does not track is null, never a fabricated value: the
-// Tier 1 runtime learns TTFT/failure/circuit state per (account, model) and
-// has no numeric health score or endpoint-level circuit; Tier 2/3 node state
-// has no per-account auth/quota concept.
 
 import type { RuntimeNode } from '../types/node.ts';
 import type { EndpointState, QuotaRuntimeState, RuntimeStateStore } from '../types/runtime-state.ts';
@@ -32,8 +18,6 @@ const UNKNOWN_QUOTA: QuotaRuntimeState = Object.freeze({
   source: null,
 });
 
-// ---- Tier 1 adaptive runtime projection --------------------------------------
-
 const TIER1_QUOTA_STATE = Object.freeze({
   normal: 'healthy',
   near_limit: 'near_limit',
@@ -42,8 +26,6 @@ const TIER1_QUOTA_STATE = Object.freeze({
 
 const tier1QuotaOf = (accountId: string, now: number): QuotaRuntimeState => {
   const account = getTier1Account(accountId);
-  // Window-expiry normalization is claim-time work; the read projection mirrors
-  // it so a rolled window surfaces as unknown without waiting for a claim.
   if (account.quotaResetAt > 0 && account.quotaResetAt <= now) {
     return UNKNOWN_QUOTA;
   }
@@ -68,8 +50,6 @@ const tier1Endpoint = (accountId: string, now: number): EndpointState => {
     inFlight: account.inFlight,
     cooldownRemainingMs,
     cooldownReason: cooldownRemainingMs > 0 ? account.accountCooldownReason : null,
-    // Tier 1 circuit state lives at (account, model) scope; the endpoint
-    // projection does not invent an account-level circuit.
     circuit: null,
     health: null,
     ttftEwmaMs: null,
@@ -103,8 +83,6 @@ export const tier1RuntimeStateStore: RuntimeStateStore = {
   },
 };
 
-// ---- Tier 2/3 node-state projection ------------------------------------------
-
 const NODE_AVAILABILITY = Object.freeze({
   yes: 'available',
   probe: 'probing',
@@ -126,8 +104,6 @@ export const nodeRuntimeStateStore: RuntimeStateStore = {
       lastUsedAt: s.lastUsedAt,
     };
   },
-  // Tier 2/3 nodes ARE the account identity: auth-disable and quota windows
-  // are not tracked per-account there, so they surface as neutral defaults.
   account: (nodeId, now = Date.now()) => ({
     disabled: false,
     cooldownRemainingMs: getCooldownRemainingMs(nodeId, now),
@@ -149,8 +125,6 @@ export const nodeRuntimeStateStore: RuntimeStateStore = {
   },
 };
 
-/** Resolve the runtime-state store for a runtime node's tier. This is the one
- *  dispatcher upper layers use to read state without knowing backends. */
 export function runtimeStateStoreFor(node: Pick<RuntimeNode, 'tier'>): RuntimeStateStore {
   return node.tier === 'tier-1' ? tier1RuntimeStateStore : nodeRuntimeStateStore;
 }

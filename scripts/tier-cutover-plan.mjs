@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 // SPDX-License-Identifier: MIT
-// Dry-run preflight for the one-time three-to-two Tier configuration cutover.
-// This tool does not fetch, decrypt, print, or write any Provider credentials.
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -19,9 +17,6 @@ const ALLOWED_OPTIONS = new Set(['tier1', 'tier2', 'tier3', 'credential-index', 
 
 const LEGACY_OAUTH_NODE_FIELDS = new Set(['id', 'provider', 'base_url', 'priority', 'models', 'auth']);
 
-// This is an isolated historical input validator, not a runtime adapter.
-// Only the old Tier 2 may contain membership OAuth nodes. It never opens an
-// OAuth connection, decodes tokens, or publishes credential material.
 function assertLegacyOauthNodes(nodes, tier) {
   if (tier !== 2 && nodes.length > 0) throw new Error('OAuth subscriptions were only supported in old Tier 2');
   for (const node of nodes) {
@@ -173,9 +168,6 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
     sourceCounts[label] = nodes.length;
     try {
       const legacyOauthNodes = nodes.filter((node) => plainObject(node) && node.auth === 'oauth');
-      // Retired OAuth node metadata is inventoried, never sent through the new
-      // static-token node validator. Old Tier 3 static nodes are validated as
-      // target Tier 2 to ensure their eventual API Token shape is accepted.
       assertNodesArray(
         nodes.filter((node) => !plainObject(node) || node.auth !== 'oauth'),
         `source-tier-${tier}`,
@@ -183,7 +175,6 @@ export function planTwoTierCutover({ tiers = {}, credentialIndex = null, policie
       );
       assertLegacyOauthNodes(legacyOauthNodes, tier);
     } catch {
-      // Never print malformed source node values or raw credential material.
       blockers.push(`${label}: invalid source node configuration; run config:check`);
       continue;
     }
@@ -377,7 +368,6 @@ function readJson(file, label) {
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
     return JSON.parse(content);
   } catch {
-    // Do not echo JSON parse errors: operators might pass confidential files.
     throw new Error(`Unable to read valid JSON from ${label} file`);
   }
 }

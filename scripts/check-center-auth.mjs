@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Offline-only: exercise Gateway-style Service Bindings and private-center auth.
-// Every request is non-dispatching. No Cloudflare access, Provider calls or real keys.
 
 import assert from 'node:assert/strict';
 import { handleGenerationCenterRequest } from '../apps/generation/index.ts';
@@ -33,7 +30,7 @@ const centers = [
     header: 'x-aig-perception-auth',
     method: 'POST',
     path: '/internal/execute',
-    status: 400, // Authenticated, malformed contract: rejected before Provider dispatch.
+    status: 400,
     handle: handlePerceptionCenterRequest,
   },
   {
@@ -111,7 +108,6 @@ try {
     assert.ok((bindingCalls.get(center.name) ?? 0) >= 6, `${center.name} binding must receive requests`);
   }
 
-  // A swapped Service Binding cannot authenticate with another center's key.
   for (let i = 0; i < centers.length; i++) {
     const center = centers[i];
     const other = centers[(i + 1) % centers.length];

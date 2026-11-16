@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Checks JavaScript ES modules; TypeScript is handled by `npm run typecheck`.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';

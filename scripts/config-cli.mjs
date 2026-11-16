@@ -1,22 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-//
-// ai-gateway configuration CLI.
-//
-// Local operator tool for the individual-shard configuration model. Reads
-// tier / secrets / models / policies JSON files and validates, summarises,
-// and diffs configurations.
-//
-// This CLI is an enhancement; it is NOT a deployment prerequisite. Operators
-// can still maintain Variables / Secrets directly in the GitHub UI.
-//
-// Subcommands:
-//   check   Validate node configs + secrets + cross-references and shard sizes
-//   show    Print a per-node summary (tier, provider, models, credential state)
-//   diff    Compare two configurations and print added/removed/changed items
-//
-// Secret values are NEVER printed. Credential state is reported as
-// "configured" or "missing" only.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -144,9 +127,6 @@ function runCheck(args) {
   const policiesConfig = loadOptionalJSONMap(a.policies);
   if (policiesConfig && typeof policiesConfig !== 'object') fail('--policies must be a JSON object');
 
-  // Cross-validation: a static-credential node without a credential is an
-  // error; a credential without a node is a warning (orphan credentials are
-  // tolerated, never block deploy).
   const nodeById = new Map();
   for (const tierNumber of [1, 2]) {
     for (const node of tiers[tierNumber] || []) nodeById.set(node.id, node);
@@ -158,8 +138,6 @@ function runCheck(args) {
     if (!(id in (secrets || {}))) fail(`node "${id}" has no credential in the secrets file`);
   }
 
-  // buildPlan rejects orphan credentials; feed it only matched credentials
-  // so an orphan warning does not turn into an error.
   const matchedSecrets = Object.fromEntries(Object.entries(secrets || {}).filter(([id]) => nodeById.has(id)));
 
   let plan;
@@ -169,7 +147,6 @@ function runCheck(args) {
     fail(e.message);
   }
 
-  // Shard size sanity (buildPlan already enforces; double-check with a clear message)
   for (const [name, size] of Object.entries(shardByteSizes(plan))) {
     if (size > SHARD_MAX_BYTES) fail(`${name} is ${size} bytes, exceeds the ${SHARD_MAX_BYTES}-byte shard limit`);
   }

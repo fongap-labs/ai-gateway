@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Central tests run from a pinned Action Worker commit.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -12,7 +11,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(root, '.github', 'test-pack.json'), 'utf8'));
 const tier = process.argv[2] ?? 'all';
 
-// Reject mutable test-pack refs.
 if (!/^[0-9a-f]{40}$/.test(config.ref)) {
   console.error(`test-pack.json: ref must be a full 40-char commit SHA, got "${config.ref}".`);
   process.exit(64);

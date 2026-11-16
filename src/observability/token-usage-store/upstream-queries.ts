@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Dashboard consumption reads keep Token totals on physical upstream usage.
-// The activity-series request count uses delivered responses so retries,
-// fallback and hedge attempts do not inflate the public "requests" metric.
 
 import type { GatewayEnv } from '../../types/runtime.ts';
 import { flushBeforeRead } from './buffer.ts';
@@ -146,8 +142,6 @@ export async function loadUpstreamSummary(
   const splitInput = (input: number, cacheRead: number): number => Math.max(0, input - cacheRead);
   const getCacheRatio = (reports: number, cacheRead: number, input: number): number | null => (reports > 0 && input > 0 ? cacheRead / input : null);
 
-  // Both D1 reads are independent after buffered writes have been flushed.
-  // Keep schema-compatibility fallbacks inside each task, then join once.
   const totalsTask = (async () => {
     let totalsRow: UpstreamTotalsRow | null = null;
     let hasTotalsObservation = true;
@@ -172,9 +166,6 @@ export async function loadUpstreamSummary(
         )
         .first<UpstreamTotalsRow>();
     } catch {
-      // Rolling-deploy compatibility with schema <= 0009. Before 0010 every
-      // recognized cache-read field was Anthropic-style and additive, so the
-      // historical effective-input value can be reconstructed exactly.
       hasTotalsObservation = false;
       try {
         totalsRow = await d1
@@ -191,9 +182,7 @@ export async function loadUpstreamSummary(
            FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
           )
           .first<UpstreamTotalsRow>();
-      } catch {
-        /* hourly fallback below */
-      }
+      } catch {}
     }
     return { totalsRow, hasTotalsObservation };
   })();

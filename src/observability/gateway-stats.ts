@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Gateway request counters and the client-facing stream accounting wrapper.
-// All state is isolate-local best-effort.
 
 import { isOpenAIStreamingResponse } from '../protocol/openai.ts';
 import { SYNTHETIC_CLIENT_STREAM_HEADER } from '../stream/client-lifecycle.ts';
@@ -16,17 +13,10 @@ export const gatewayStats = {
   cancellations: 0,
 };
 
-// Cloudflare can initialize a module with a frozen zero clock. Record the
-// first request-time timestamp rather than leaking Unix epoch in /health.
 export function startGatewayStats(now: number = Date.now()): void {
   if (gatewayStats.startedAt <= 0 && Number.isFinite(now) && now > 0) gatewayStats.startedAt = now;
 }
 
-// Node-layer stream lifecycle counters (gateway_stream_* in /metrics).
-// Emitted only by the node-layer tracking in handler.ts: the client-facing
-// trackClientResponse wrapper below never parses protocol events, so each
-// protocol stream is still counted exactly once. Invariant:
-// interrupted === missingCompletion + idleTimeout + readerError.
 export const streamStats: {
   started: number;
   completed: number;
@@ -81,10 +71,6 @@ export function isCountedRoute(method: string, pathname: string): boolean {
   return COUNTED_ROUTES.has(`${method} ${pathname}`);
 }
 
-// Wrap a response so its completion updates the CLIENT request counters.
-// Protocol-aware real upstream streams already own that lifecycle through
-// makeNodeStreamTrack; gateway-synthesized SSE streams do not. Only explicitly
-// marked synthetic streams receive the lightweight relay wrapper below.
 export function trackClientResponse(response: Response): Response {
   const ok = response.status < 400;
   const streaming = ok && isOpenAIStreamingResponse(response) && response.body;
@@ -97,9 +83,6 @@ export function trackClientResponse(response: Response): Response {
 
   const synthetic = response.headers.get(SYNTHETIC_CLIENT_STREAM_HEADER) === '1';
   if (!synthetic) {
-    // A real upstream / transformed stream is already wrapped by
-    // trackStreamResponse. Returning it as-is avoids stacked pull wrappers and
-    // preserves the established stream timing/cancellation contract.
     return response;
   }
 
@@ -136,9 +119,7 @@ export function trackClientResponse(response: Response): Response {
       finalize('cancel');
       try {
         await reader.cancel(reason);
-      } catch {
-        /* best-effort relay cleanup */
-      }
+      } catch {}
     },
   });
 

@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Client-agnostic wire contract: errors are protocol-native, compact and
-// replay-safe. This is not a substitute for live SDK/production acceptance.
 import assert from 'node:assert/strict';
 import { gatewayError } from '../apps/gateway/response/errors.ts';
 import { streamInterruptionChunk } from '../apps/gateway/response/response-helpers.ts';
@@ -93,8 +91,6 @@ for (const route of routes) {
       assert.equal(error.details.gateway_code, fixture.code);
       if (fixture.retryAfter) assert.equal(error.details.retry_after_ms, Number(fixture.retryAfter) * 1000);
       if (fixture.status === 503) {
-        // This PR can merge independently of the optional compact retry
-        // evidence fix; both forms must remain wire-compatible.
         const evidence = error.details.failure_kinds;
         assert.ok(
           evidence === undefined || (Object.keys(evidence).length === 1 && evidence.headers_timeout === 2),

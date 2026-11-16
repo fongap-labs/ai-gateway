@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Matrix stream owner, SSE transformation and compatibility identity.
 import assert from 'node:assert/strict';
 import {
   collectMatrixObject as ownedCollect,
@@ -63,7 +62,6 @@ assert.doesNotMatch(anthroSynthetic, /foreign-ciphertext|redacted_thinking|think
 const responsesSynthetic = await ownedSynthesize(opaque, 'openai_responses').text();
 assert.doesNotMatch(responsesSynthetic, /foreign-ciphertext|encrypted_content/);
 
-// Chat thinking deltas must not create unsigned Anthropic thinking blocks in live SSE.
 const reasoningFrames = [
   {
     id: 'chat-reasoning',

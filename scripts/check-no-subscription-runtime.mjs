@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Old membership-subscription execution is removed. Keep only fail-closed
-// rejection of legacy inputs, never a second credential or provider path.
 
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';

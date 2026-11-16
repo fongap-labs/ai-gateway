@@ -1,7 +1,3 @@
-// Stable local wrapper around the pinned Cloudflare Wrangler CLI.
-// Single source of truth for: Wrangler version, required KV binding,
-// D1 migration-before-deploy, and direct Worker CLI invocation.
-
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,11 +19,6 @@ const passthrough = process.argv.slice(2);
 const wranglerVersion = 'wrangler@4.114.0';
 const args = hasLocalWrangler ? [...passthrough] : ['--yes', wranglerVersion, ...passthrough];
 
-// Operator config (real D1 id, bindings) is gitignored and lives next to the
-// public wrangler.jsonc. When it exists and the caller did not pick a config
-// explicitly, always deploy/execute against it — a plain-config deploy would
-// silently drop operator bindings. Secrets and vars survive via keep-vars;
-// bindings do not, so the config must be the operator one.
 const operatorConfig = path.join(root, 'wrangler.user.jsonc');
 const explicitConfigIndex = passthrough.findIndex((a) => a === '-c' || a === '--config');
 const explicitConfigEquals = passthrough.find((a) => a.startsWith('--config='));
@@ -37,9 +28,6 @@ if (fs.existsSync(operatorConfig) && !hasExplicitConfig) {
 }
 
 function runWrangler(wranglerArgs) {
-  // Prefer invoking npx-cli.js through Node on Windows. This avoids shell
-  // argument-concatenation ambiguity while retaining a .cmd fallback for
-  // unusual Node distributions.
   const result = spawnSync(command, [...commandPrefix, ...wranglerArgs], {
     cwd: root,
     stdio: 'inherit',
@@ -56,8 +44,6 @@ function selectedConfigPath() {
   return 'wrangler.jsonc';
 }
 
-// Wrangler D1 migrations use the database name, while `binding` is only the
-// Worker runtime binding. Resolve the configured name rather than hardcoding it.
 function databaseNameForBinding(configSource, binding) {
   if (!configSource) return null;
   try {
@@ -69,23 +55,15 @@ function databaseNameForBinding(configSource, binding) {
   }
 }
 
-// `npm run deploy` flows all pass through this
-// wrapper. A real local deploy must uphold migration-before-code ordering;
-// `deploy --dry-run` remains local and non-mutating.
 if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
   const configPath = selectedConfigPath();
   const resolvedConfig = configPath && path.resolve(root, configPath);
   const configSource = resolvedConfig && fs.existsSync(resolvedConfig) ? fs.readFileSync(resolvedConfig, 'utf8') : '';
-  // Production deployments only accept the exact Gateway (TIER1_AFFINITY),
-  // Inference, Generation, or cron-disabled Operations identities. Generated
-  // build-only manifests, public private-centers and premature Cron activation
-  // are not deployable through this entrypoint.
+  // Production deployment identities include the Gateway (TIER1_AFFINITY) and approved private centers.
   let config = null;
   try {
     config = JSON.parse(configSource);
-  } catch {
-    // Reject malformed or missing config without echoing operator contents.
-  }
+  } catch {}
   const target = classifyDeployTarget(config, root);
   if (!target) {
     console.error('Refusing deploy: unapproved Worker identity, private bindings, or Operations cron state.');
@@ -93,8 +71,6 @@ if (passthrough[0] === 'deploy' && !passthrough.includes('--dry-run')) {
     process.exit();
   }
   const dbName = databaseNameForBinding(configSource, 'TOKEN_STATS_DB');
-  // Operations shares the already-migrated Gateway D1; it must never
-  // independently apply schema changes while preparing a Cron handoff.
   if (dbName && target !== 'operations') {
     const migrationArgs = ['--yes', wranglerVersion, 'd1', 'migrations', 'apply', dbName, '--remote', '-c', configPath];
     const migrationStatus = runWrangler(migrationArgs);

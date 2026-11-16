@@ -1,64 +1,28 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Calendar Heatmap — date-only grid builder.
-//
-// Two modes share the same date / weekday / month / data plumbing but
-// differ in how the time range is computed. They MUST NOT be mixed
-// ("today - 1 year" is NOT "rolling 52 weeks" and is NOT "calendar year").
-//
-//   rolling-52-weeks  — exactly 52 columns ending at the current week.
-//                       The first column is `currentWeekStart - 51 weeks`,
-//                       so the grid always has 52 full calendar weeks.
-//                       Future days in the current week are kept (visual
-//                       layout) but marked `isFuture: true` with `value: null`.
-//
-//   calendar-year     — every day of a given natural year (Jan 1 .. Dec 31).
-//                       The week columns are derived from the actual layout
-//                       (53 or 54 columns possible). Year-padding days at
-//                       the start and end of the year are kept as layout
-//                       placeholders but marked `inRange: false`.
-//
-// Convention:
-//   * Weeks are Monday-first (Mon=0 .. Sun=6). Internal weekday index
-//     is `(getDay() + 6) % 7` because `Date.prototype.getDay()` is
-//     Sun=0 .. Sat=6.
-//   * Dates are date-only ("YYYY-MM-DD") and matched against the
-//     business data key. Never use a visual position to look up data.
-//   * The whole module operates in the display timezone (UTC+8).
-//     `today` is a UTC+8 day boundary (midnight Beijing); the date
-//     strings are computed in that same timezone. Mixing UTC / local
-//     math produces date / weekday / month off-by-one errors.
 
 export type HeatmapMode = 'rolling-52-weeks' | 'calendar-year';
 
-/**
- * One cell in the heatmap grid. Position is `(weekIndex, weekdayIndex)`;
- * `date` is the YYYY-MM-DD business key. `value` is the business number
- * for that day, or `null` when not applicable. The two flag fields
- * disambiguate the cell meaning — never collapse them into a single
- * "is zero" / "is future" / "is out of range" boolean.
- */
 export type HeatmapDay = {
-  date: string; // 'YYYY-MM-DD'
-  value: number | null; // business value (e.g. total tokens), null for future / out-of-range
-  weekIndex: number; // 0..(columns-1)
-  weekdayIndex: number; // 0=Mon..6=Sun
-  inRange: boolean; // belongs to the mode's date range
-  isFuture: boolean; // inside the range but after `today`
+  date: string;
+  value: number | null;
+  weekIndex: number;
+  weekdayIndex: number;
+  inRange: boolean;
+  isFuture: boolean;
 };
 
 export type MonthLabel = {
   year: number;
-  month: number; // 0=Jan..11=Dec
-  weekIndex: number; // the column the month's 1st day lives in
+  month: number;
+  weekIndex: number;
 };
 
 export type HeatmapResult = {
   weeks: HeatmapDay[][];
   monthLabels: MonthLabel[];
-  rangeStart: string; // 'YYYY-MM-DD'
-  rangeEnd: string; // 'YYYY-MM-DD'
+  rangeStart: string;
+  rangeEnd: string;
   mode: HeatmapMode;
 };
 
@@ -66,18 +30,15 @@ export type HeatmapDataEntry = { total: number; requests: number };
 
 const DAY_MS = 86_400_000;
 
-/** UTC+8 day-boundary (Beijing midnight) UTC ms for a given UTC timestamp. */
 function utc8DayStartUtcMs(nowMs: number): number {
   const MS_8H = 8 * 60 * 60 * 1000;
   return Math.floor((nowMs + MS_8H) / DAY_MS) * DAY_MS - MS_8H;
 }
 
-/** YYYY-MM-DD string for a UTC+8 day boundary. */
 function isoDayUtc8(dayStartUtc8: number): string {
   return new Date(dayStartUtc8 + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-/** Mon=0..Sun=6 weekday index for a YYYY-MM-DD string interpreted in UTC+8. */
 function weekdayIndexOf(iso: string): number {
   return (new Date(iso).getUTCDay() + 6) % 7;
 }
@@ -86,11 +47,6 @@ function isoUtc(dayMs: number): string {
   return new Date(dayMs).toISOString().slice(0, 10);
 }
 
-/**
- * Build the empty grid (one column per week, 7 days each) for a mode.
- * The grid covers the full natural week columns required by the mode
- * so layout placeholders for `inRange: false` cells are present too.
- */
 function buildEmptyGrid(
   mode: HeatmapMode,
   todayIso: string,
@@ -159,7 +115,6 @@ function buildEmptyGrid(
   throw new Error(`buildCalendarHeatmap: unknown mode "${mode}"`);
 }
 
-/** Build a calendar heatmap grid. */
 export function buildCalendarHeatmap(opts: {
   mode: HeatmapMode;
   today: number | Date;
@@ -239,7 +194,6 @@ function weekIndexOf(weeks: HeatmapDay[][], iso: string): number {
   return -1;
 }
 
-/** YYYY-MM-01 for the month after the given YYYY-MM-01. */
 function nextMonthIso(ym1: string): string {
   const y = Number(ym1.slice(0, 4));
   const m = Number(ym1.slice(5, 7));

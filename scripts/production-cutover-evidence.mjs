@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Read-only bridge between protected Cloudflare metadata and the offline
-// three-stage release plan. This module never approves or deploys anything.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,11 +28,6 @@ function cronFor(phase, workerName) {
   return [];
 }
 
-/**
- * Correlate two independently generated, non-secret artifacts. A passing
- * result is metadata readiness for protected runtime verification, never a
- * deployment or cutover authorization.
- */
 export function assertReadOnlyCutoverEvidence(inventory, preflight, phase) {
   assert.ok(PHASES.includes(phase), 'Expected one of the three cutover phases');
   assert.ok(record(inventory) && record(preflight), 'Both independent evidence reports are required');
@@ -111,7 +104,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     main(process.argv.slice(2));
   } catch {
-    // Inputs are protected metadata; never print their contents or paths.
     process.stderr.write('Protected cutover evidence rejected; review the two private reports. No resources changed.\n');
     process.exitCode = 2;
   }

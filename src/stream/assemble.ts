@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Assemble a full OpenAI Chat Completions object from an upstream SSE stream.
-// Used when the client asked for non-streaming output but the upstream only
-// streams (AIG_HAS_STREAM_GUARD mode, or an upstream that streams while
-// a streaming upstream). Nothing has been sent to the client while assembling,
-// so a failure here still allows node rotation.
 
 import { extractOpenAITextContent } from '../protocol/openai.ts';
 import { UPSTREAM_PROCESSING_ERROR, type UpstreamProcessingErrorCode, upstreamProcessingError } from '../types/upstream-processing.ts';
@@ -33,9 +27,6 @@ export async function collectOpenAIStreamObject(
   let usage: unknown = null;
   let currentBytes = 0;
   const choices = new Map<number, ChoiceState>();
-  // Count UTF-8 bytes (not JS string.length) as each part is appended, so that
-  // multi-byte text and large tool-call arguments/names/ids cannot bypass the
-  // 2 MiB assembled-body memory guard.
   const countBytes = (value: string) => {
     if (value) currentBytes += encoder.encode(value).length;
   };

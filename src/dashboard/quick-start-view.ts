@@ -24,7 +24,6 @@ function snippetPane({ id, active, code }: { id: string; active: boolean; code: 
   );
 }
 
-// Access-key group names are operator information, so they are not rendered here.
 export function quickStartSection({ apiBase }: { apiBase: string }): string {
   const origin = new URL(apiBase).origin;
   const openai = `OPENAI_BASE_URL=${apiBase}\nOPENAI_API_KEY=<YOUR_GATEWAY_KEY>`;

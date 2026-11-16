@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Gateway terminal failures must be compact, status-first and preserve retry headers.
 import assert from 'node:assert/strict';
 import { gatewayError } from '../apps/gateway/response/errors.ts';
 
@@ -58,7 +57,6 @@ for (const [route, field] of cases) {
   if (route === 'anthropic_messages') assert.equal(json.type, 'error');
 }
 
-// A short retry hint must not erase the bounded timeout classification.
 const earlyRetry = gatewayError(
   request,
   {},
@@ -111,8 +109,6 @@ assert.equal(invalid.headers.get('x-gateway-retryable'), 'false');
 assert.equal(invalidJson.error.details.failure_kind, 'unsupported_request_field');
 assert.deepEqual(invalidJson.error.details.unsupported_fields, ['unknown_field']);
 
-// A pre-dispatch codec rejection retains a bounded machine-readable reason
-// without exposing the physical routing or retry graph.
 const conversionValidation = gatewayError(
   request,
   {},

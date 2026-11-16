@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline release gate: only generated Wrangler configs and Secret NAMES.
-// No Cloudflare calls, Secret values, deployments, or mutations are permitted.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -89,11 +87,6 @@ function checkCenter(config, label, expectedName, expectedEntry, authName, sourc
     `${label} has no declared node shards`,
   );
 }
-/**
- * Verify FINAL cutover topology or its explicit cron handoff stages.
- * Input contains only configuration metadata and Secret names. Real resource
- * IDs and node metadata must remain in the protected operator workspace.
- */
 export function assertReleaseTopology(plan) {
   requireRecord(plan, 'release plan');
   const { source_sha: sha, gateway, inference, perception, generation, operations, secret_names: inventory, stage } = plan;
@@ -172,7 +165,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const result = assertReleaseTopology(plan);
     process.stdout.write(`Offline five-worker release topology passed (${result.stage}); no deployment authorized.\n`);
   } catch {
-    // Never echo the source text or any supplied Secret material.
     process.stderr.write('Offline five-worker release topology rejected; inspect private inputs and stage contracts.\n');
     process.exitCode = 2;
   }

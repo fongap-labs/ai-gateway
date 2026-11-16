@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tier 1 soft heat protection. This module owns both live in-flight pressure
-// and short-lived provider-model 429 cohort evidence. Heat changes ranking and
-// hedge admission only; it never makes a primary candidate ineligible.
 
 import type { RuntimeNode } from '../types/node.ts';
 import { tier1AccountInFlight } from './tier1-state.ts';
@@ -58,8 +54,6 @@ export function recordTier1ProviderModelSuccess(provider: string, upstreamModel:
   const runtime = pruneProviderModelRateLimits(provider, upstreamModel, now);
   if (!runtime) return;
 
-  // A real success is recovery evidence. Remove at most one independent 429
-  // observation: preferably this same account, otherwise the oldest one.
   if (!runtime.accounts.delete(accountId)) {
     let oldestAccount: string | null = null;
     let oldestAt = Infinity;
@@ -90,7 +84,6 @@ export function tier1ProviderModelHeatFactor(provider: string, upstreamModel: st
 export function tier1ConcurrencyPressure(node: RuntimeNode): number {
   const inFlight = tier1AccountInFlight(node.id);
   if (!Number.isFinite(inFlight) || inFlight <= 0) return 0;
-  // 1 -> .50, 2 -> .67, 3 -> .75, 4 -> .80. Ranking only.
   return clamp01(inFlight / (inFlight + 1));
 }
 
@@ -98,11 +91,6 @@ export function tier1HeatPressure(node: RuntimeNode): number {
   return tier1ConcurrencyPressure(node);
 }
 
-// Score multiplier for live work on the account: a key with n requests in flight
-// costs (n + 1) times an idle one, like a latency x outstanding-requests balancer.
-// The bounded TTFT factor still favours a faster key, but no key takes every
-// request just because it is fast; it shares load with idle peers in proportion
-// to its speed. Ranking only: a busy key stays eligible.
 export function tier1InFlightFactor(node: RuntimeNode): number {
   const inFlight = tier1AccountInFlight(node.id);
   return 1 + (Number.isFinite(inFlight) && inFlight > 0 ? inFlight : 0);

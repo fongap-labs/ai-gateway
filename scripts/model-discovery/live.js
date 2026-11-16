@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Live Model Discovery.
-//
-// Reads the same node-config / credential shards used by the gateway, calls the
-// provider's native /v1/models endpoint, performs zero-generation-cost surface
-// probes with intentionally invalid request bodies, and emits sanitized model
-// snapshots. It NEVER mutates Runtime Node config, Model Registry, Variables or
-// Secrets.
 
 import { providerWire } from '../../src/providers/registry.ts';
 import { normalizeNodeConfigJsonText } from '../node-config-json-normalizer.mjs';
@@ -187,7 +179,7 @@ async function probeSurface(node, surface, fetchImpl, allowPrivate, lookupImpl) 
       headers: authHeaders(node.protocol, node.credential),
       body: '{}',
     }, fetchImpl, allowPrivate, lookupImpl);
-    try { await readBoundedResponseText(response, 64 * 1024); } catch { /* status is enough */ }
+    try { await readBoundedResponseText(response, 64 * 1024); } catch {   }
     return { status: classifyProbeStatus(response.status), http_status: response.status };
   } catch (error) {
     return { status: 'unknown', error: String(error?.message || error).slice(0, 160) };

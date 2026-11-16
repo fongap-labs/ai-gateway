@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Deterministic large native-body rewrite safety and equivalence contracts.
 import assert from 'node:assert/strict';
 import { withUsageStreamOptions } from '../packages/protocol-core/openai.ts';
 import { patchNativeJsonTopLevel } from '../packages/transport/native-json-patch.ts';

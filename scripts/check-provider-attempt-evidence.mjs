@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Offline regression for bounded passive physical-dispatch outcome evidence.
 import assert from 'node:assert/strict';
 import {
   __resetProviderAttemptEvidenceForTests,
@@ -47,7 +46,6 @@ assert.equal(responses.timeouts, 1);
 assert.equal(responses.stream_interruptions, 1);
 assert.equal(responses.successes, 1);
 assert.equal(snapshot.rows.find((row) => row.surface === 'chat_completions')?.successes, 1);
-// After the sliding window expires, stale evidence no longer claims health.
 snapshot = snapshotProviderAttemptEvidence(start + 17 * 60_000);
 assert.deepEqual(snapshot.rows, []);
 __resetProviderAttemptEvidenceForTests();

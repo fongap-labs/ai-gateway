@@ -4,7 +4,6 @@
 import { FAILURE_STATE, type Tier1AccountRuntime, type Tier1ModelRuntime } from './tier1-definitions.ts';
 
 const accounts = new Map<string, Tier1AccountRuntime>();
-// Readers share one store; only the store itself owns map insertion and clearing.
 export const tier1Accounts: ReadonlyMap<string, Tier1AccountRuntime> = accounts;
 
 function newModelRuntime(): Tier1ModelRuntime {

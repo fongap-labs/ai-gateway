@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Tiny protocol-neutral helpers for locating an upstream-reported usage object.
-// They do NOT normalize or estimate token counts. The only supported shapes are
-// the native wire locations already consumed elsewhere in the gateway.
 
 type UsageContainer = { usage?: unknown };
 

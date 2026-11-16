@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// One protected GitHub Environment (ai-gateway-ops) supplies all runtime authentication.
-// The same center key is written to its private Worker and the Gateway binding.
-// The same environment supplies Provider shards for the private Workers.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,7 +101,6 @@ export function buildRuntimeSecretPlan(env, configurations) {
   if (new Set(values.map((v) => v.value)).size !== values.length) {
     throw new Error('Three private-center authentication keys must be distinct.');
   }
-  // All four Workers use a single Cloudflare account, one audited source and no separate ops environments.
   return {
     account,
     token,
@@ -163,7 +159,6 @@ async function inventory(fetcher, account, token, worker) {
 
 export async function synchronizeRuntimeSecrets(env, fetcher = fetch, configurations) {
   const plan = buildRuntimeSecretPlan(env, configurations);
-  // Fail before ANY mutation if a Worker is missing or the token cannot inspect it.
   for (const worker of plan.workers) await inventory(fetcher, plan.account, plan.token, worker);
   for (const { worker, name, value } of plan.writes) {
     const result = await request(fetcher, endpoint(plan.account, worker), plan.token, 'PUT', {
@@ -175,7 +170,6 @@ export async function synchronizeRuntimeSecrets(env, fetcher = fetch, configurat
       throw new Error(`Cloudflare did not confirm the ${worker} / ${name} update; review the partial change before retry.`);
     }
   }
-  // Cloudflare cannot return secret values; verify each expected name after the writes.
   for (const worker of plan.workers) {
     const names = await inventory(fetcher, plan.account, plan.token, worker);
     const missing = plan.writes.filter((item) => item.worker === worker && !names.has(item.name));

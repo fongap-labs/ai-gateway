@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline-only Operations cutover planner. It never authenticates to Cloudflare
-// or performs a deployment. Output files contain production metadata and must
-// remain private; this planner does not read or copy Provider Secret values.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,11 +31,6 @@ function assertSingleOwner(gateway, operations, label) {
   assert.ok(total <= 1, `${label}: multiple active scheduled owners are forbidden`);
 }
 
-/**
- * Build a 3-step, never-double-cron migration from already prepared (non-secret)
- * Wrangler configs. The private Operations D1 binding must match the Gateway's
- * existing token-usage D1. No step is deployed by this function.
- */
 export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate) {
   if (!isRecord(gatewayConfig) || !isRecord(operationsCandidate)) {
     throw new Error('Both generated Wrangler configurations are required.');
@@ -99,10 +91,8 @@ export function buildOperationsCutoverPhases(gatewayConfig, operationsCandidate)
   ) {
     throw new Error('Existing Gateway usage D1 identity is missing or invalid.');
   }
-  // Do not export/print the actual D1 id; every phase uses the existing id.
   const operationsWithD1 = {
     ...operationsCandidate,
-    // Carry only immutable build identity; never inherit Gateway runtime vars.
     vars: { AIG_BUILD_SHA: sourceSha },
     d1_databases: [
       {

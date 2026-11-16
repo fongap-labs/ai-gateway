@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Strict shape assertions for the live HTTPS acceptance runner. These inspect
-// response contracts without decoding or logging user/provider image content.
 
 const imageMimeTypes = new Set(['png', 'jpeg', 'webp', 'gif']);
 

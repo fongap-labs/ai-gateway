@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Offline-only Perception release, binding, and privacy contract.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -88,8 +87,6 @@ const env = {
   AIG_PERCEPTION_AUTH_KEY: 'local-contract-test-perception-key-0123456789',
   AIG_GENERATION_AUTH_KEY: 'local-contract-test-generation-key-0123456789',
 };
-// Both private entrypoints must return an identical fail-closed error
-// without forwarding malformed or unauthenticated requests to a Provider.
 const { handleInferenceCenterRequest } = await import('../apps/inference/index.ts');
 const { handlePerceptionCenterRequest } = await import('../apps/perception/index.ts');
 const unsignedRequest = new Request('https://center.internal/internal/execute', { method: 'POST' });

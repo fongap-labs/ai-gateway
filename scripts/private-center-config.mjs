@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Protected private Worker bootstrap and inventory gate. Only non-sensitive
-// Variables and Cloudflare Secret NAMES are consumed; no Secret values are read.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,11 +63,9 @@ function plainInputs(env) {
       throw new Error(`Forbidden Secret or retired Variable in private release input: ${name}.`);
     }
   }
-  // Only the public variable allowlist below is copied into Cloudflare.
   return vars;
 }
 
-/** Build only a private Worker: no routes, public URLs, services or Secret values. */
 export function buildPrivateCenterConfig(worker, input) {
   const target = centerType(worker);
   const env = plainInputs(input);
@@ -77,9 +73,6 @@ export function buildPrivateCenterConfig(worker, input) {
   if (typeof sourceSha !== 'string' || !shaPattern.test(sourceSha)) {
     throw new Error('Private Worker requires an immutable 40-digit DEPLOY_SOURCE_SHA.');
   }
-  // Policy overrides are optional in the shared runtime. Built-in policies
-  // fast, normal and deep work without a Variable; old spellings remain aliases.
-  // A custom model policy is NEVER silently mapped to a built-in default.
   if (typeof env.AIG_MODELS_CONFIG !== 'string' || !env.AIG_MODELS_CONFIG.trim()) {
     throw new Error('AIG_MODELS_CONFIG is required for private center release.');
   }
@@ -157,8 +150,6 @@ export function buildPrivateCenterConfig(worker, input) {
       if (!getProviderProfile(n.provider).imageInput) return [];
       const mappings = record(n.models) ? n.models : {};
       const selectedMappings = Object.fromEntries(Object.entries(mappings).filter(([logical]) => visionNames.has(logical.toLowerCase())));
-      // A wildcard node serves the catalog, so retain it only when at least one
-      // explicitly vision-enabled logical model exists.
       if (Object.keys(mappings).length === 0) return visionNames.size ? [n] : [];
       if (!Object.keys(selectedMappings).length) return [];
       return [{ ...n, models: selectedMappings }];
@@ -216,8 +207,6 @@ export function buildPrivateCenterConfig(worker, input) {
   return { config, nodeCount: total, tiers: [...tiers].sort(), authName: target.auth };
 }
 
-/** Read-only preflight for the ENTIRE mandatory three-center topology.
- * Collects every missing model/policy/capability before mutating any Worker. */
 export function preflightPrivateCenters(input) {
   const issues = [];
   for (const worker of Object.keys(centerTypes)) {
@@ -231,7 +220,6 @@ export function preflightPrivateCenters(input) {
   return { workers: Object.keys(centerTypes).length };
 }
 
-/** Verify names only. This is not proof of credential correctness or request health. */
 export function verifyPrivateCenterSecretNames(worker, rawInventory, tiers) {
   const target = centerType(worker);
   if (!Array.isArray(rawInventory) || rawInventory.some((s) => !record(s) || typeof s.name !== 'string' || s.type !== 'secret_text')) {
@@ -296,7 +284,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     main();
   } catch (error) {
-    // Do not echo operational metadata or values from supplied configuration.
     console.error(`Private center release blocked: ${error instanceof Error ? error.message : 'invalid input'}`);
     process.exitCode = 2;
   }

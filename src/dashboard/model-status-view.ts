@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Public-safe model status rendering. The model status section on the public
-// dashboard renders the Public Model Catalog — the logical models that
-// exist in the Model Registry and have at least one serving node. No node
-// ids, providers, tiers, counts or durations ever leave this module, and no
-// model name or prefix carries any business meaning.
 
 import { normalizeModelKey } from '../observability/token-usage-store.ts';
 import type { PublicModelStatusEntry, PublicModelStatusState } from '../runtime/model-status.ts';
@@ -41,12 +35,6 @@ export type DashboardModelStatusEnvelope = {
   models: PublicModelStatusEntry[];
 };
 
-// Optional dashboard-only allowlist. AIG_DASHBOARD_MODELS is a comma-separated
-// Worker text variable. It affects only the public model-status rows:
-// routing, authorization, /v1/models, fallback and observability are untouched.
-// Matching is canonical/case-insensitive, display keeps the official logical
-// model id, unknown names are ignored, duplicates are removed, and configured
-// order is preserved. Empty/unset keeps the full public catalog.
 export function filterDashboardModelStatus(status: DashboardModelStatusEnvelope, raw: unknown): DashboardModelStatusEnvelope {
   const configured = typeof raw === 'string' ? raw.trim() : '';
   if (!configured) return status;
@@ -76,9 +64,6 @@ export function filterDashboardModelStatus(status: DashboardModelStatusEnvelope,
   return { ...status, models };
 }
 
-// PublicModelStatus wrapper used by the dashboard. `historicalEvidence` is the
-// 7-day retention-window evidence set used to distinguish no_recent from
-// no_record; it is optional and defaults to empty (fail-open, never fabricated).
 export function publicModelStatus(
   nodes: ReadonlyArray<RuntimeNode>,
   env: Record<string, unknown> | null | undefined,
@@ -90,7 +75,6 @@ export function publicModelStatus(
   return filterDashboardModelStatus(status, env?.AIG_DASHBOARD_MODELS);
 }
 
-// Flat list of { id, status } rows from the status envelope.
 export function modelStatusRows(status: { models?: PublicModelStatusEntry[] } | null | undefined): PublicModelStatusEntry[] {
   if (!status || !Array.isArray(status.models)) return [];
   return status.models;
@@ -105,11 +89,6 @@ export type TtftEntry = {
   p95Insufficient?: boolean;
 };
 
-// Guarantee one TTFT result container per public model, even when the D1
-// window has no rows for it: missing keys become { p50Insufficient, p95Insufficient }
-// so the dashboard renders '-- / -- samples' instead of dropping the model.
-// Lookup key is the canonical statistical model key (trim + lowercase),
-// matching how the observability store aggregates model rows.
 export function ensureModelTtftContainers(
   ttft: Map<string, TtftEntry> | null | undefined,
   models: PublicModelStatusEntry[] | { models?: PublicModelStatusEntry[] } | null | undefined,
@@ -128,9 +107,6 @@ export function ensureModelTtftContainers(
   return map;
 }
 
-// Format a bucket upper-bound (ms) as an interval string. Finite values use
-// ≤ (upper-bound precision — the real value is at most this); the open-ended
-// last bucket (>=10s) uses ≥. Never fabricate a precise sub-bucket value.
 function fmtTtftInterval(bucketUpperBoundMs: number): string {
   if (!Number.isFinite(bucketUpperBoundMs)) return '≥10s';
   if (bucketUpperBoundMs < 1000) return `≤${bucketUpperBoundMs}ms`;

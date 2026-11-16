@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Offline model-family attribution regression. No Provider, secrets, KV or D1.
 
 import assert from 'node:assert/strict';
 import { recordNodeSuccess, recordTier1NonStreamTtft } from '../apps/gateway/attempt/observability.ts';
@@ -14,8 +12,6 @@ import { classifyUpstreamStatus, KIND } from '../src/reliability/classify.ts';
 import { __resetKeyGroupForTests, credentialPeers, credentialSlotId, noteKeyGroup429 } from '../src/reliability/shared-credential-group.ts';
 import { __resetTier1StateForTests, getTier1Account, getTier1Model, getTier1ModelPerf } from '../src/reliability/tier1-state.ts';
 
-// A physical-model rejection is local to its route, while malformed
-// client payloads must not trigger speculative cross-Provider replay.
 const missing422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'No endpoints found for model physical-max');
 assert.equal(missing422.kind, KIND.MODEL_MISSING);
 assert.equal(missing422.action, 'rotate');
@@ -43,8 +39,6 @@ assert.equal(incompatible422.counted, false);
 const unsupportedTool422 = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), 'This model does not support tools');
 assert.equal(unsupportedTool422.kind, KIND.CLIENT, 'unsupported tools is not a missing physical model');
 assert.equal(unsupportedTool422.action, 'rotate');
-// Code-model Providers often return only an OpenAI-style error.code, not the
-// English "unsupported parameter" phrase. That must not terminate failover.
 for (const code of ['unsupported_parameter', 'unsupported_value', 'unknown_parameter', 'unsupported_tool_type']) {
   const result = classifyUpstreamStatus(422, new Headers(), {}, Date.now(), JSON.stringify({ error: { code, param: 'reasoning.effort' } }));
   assert.equal(result.kind, KIND.CLIENT, code);
@@ -122,8 +116,6 @@ const node = {
   surfaces: ['chat_completions'],
   models: { [source]: 'physical-ultra', [effective]: 'physical-max' },
 };
-// Across logical-model rounds a physically failed Key must never be reused,
-// even if its other model name resolves to a different upstream model.
 const otherKey = { ...node, id: 'another-physical-key' };
 const skippedPeer = { ...node, id: 'skipped-before-dispatch' };
 const domains = new Set();
@@ -178,8 +170,6 @@ const invalidGroup = loadExecutionConfig({
 });
 assert.equal(invalidGroup.nodes.length, 0, 'invalid shared Key group is rejected, not silently normalized');
 
-// A route-scoped 422 is not six independent failures when all free Keys
-// advertise one physical model. A different model on the same Key survives.
 const sharedPrimary = { ...node, baseUrl: 'https://provider.invalid/v1' };
 const sharedPhysical = { ...node, id: 'same-provider-other-key', baseUrl: 'https://provider.invalid/v1' };
 const differentPhysical = {
@@ -245,8 +235,6 @@ const makeContext = (state) => ({
 });
 
 __resetTier1StateForTests();
-// The request-level alias intentionally differs from the physical dispatch
-// descriptor. Only the descriptor is the evidence of which model failed.
 const state = makeState();
 const c = makeContext(state);
 const opaquePeer = { ...node, id: 'same-physical-other-key', baseUrl: 'https://provider.invalid/v1' };
@@ -271,7 +259,6 @@ assert.equal(state.attempts[0].effective_model, effective);
 assert.equal(state.attempts[0].upstream_model, 'physical-max');
 assert.equal(state.attempted.has(node.id), true, 'the failed Key is excluded from this request even with unused attempt slots');
 
-// The same failure class on another pass must not poison the original alias.
 recordOutcome(state, node, classifyUpstreamStatus(503, new Headers(), {}, Date.now(), 'temporary unavailable'), makeContext(state), {
   status: 503,
   latencyMs: 200,
@@ -280,8 +267,6 @@ assert.equal(getTier1Model(node.id, effective).consecutiveFailures, 2);
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
 __resetTier1StateForTests();
-// Later failures and pre-dispatch rejections must not resurrect an attempted Key.
-// A request with no new candidates now stops rather than replaying the Key.
 const groupedMap = new Map([groupedA, groupedOmni].map((entry) => [entry.id, entry]));
 const scoped429 = new Set();
 rememberFailedDomains(scoped429, groupedMap, new Set([groupedA.id]), effective, [
@@ -389,8 +374,6 @@ recordOutcome(
 assert.ok(getTier1Model(node.id, effective).cooldownUntil > Date.now());
 assert.equal(getTier1Model(node.id, source).cooldownUntil, 0);
 
-// Duplicate 404 endpoints are a request-local routing defect, not new
-// capacity on every different free key. Keep paid and alternate routes usable.
 __resetTier1StateForTests();
 const endpointPeers = [
   { ...node, id: 'same-endpoint-a', baseUrl: 'https://same.example/v1' },
@@ -412,9 +395,6 @@ for (const id of ['different-endpoint', 'different-model', 'paid-same-endpoint',
 }
 assert.equal(endpointState.logicalAttempts, 1, 'skipped duplicate endpoints must consume no extra attempts');
 assert.equal(endpointState.dispatches, 1, 'skipped duplicate endpoints must consume no extra physical dispatch');
-// A 404 that explicitly concerns model entitlement must not exclude an
-// independent Key on the same physical endpoint. Machine-readable missing
-// model codes follow the same Key-local rule.
 for (const body of [
   '{"error":{"code":"model_not_found"}}',
   '{"error":{"code":"model_access_denied"}}',
@@ -476,8 +456,6 @@ assert.equal(getTier1Model(node.id, source).consecutiveFailures, 0);
 assert.ok(!JSON.stringify(success.attempts).includes('physical-ultra'), 'source model must not be blamed for target failure');
 __resetTier1StateForTests();
 
-// Public diagnostic summary proves that cross-model and cross-tier fallback
-// really dispatched, while protecting Key IDs, Provider and physical models.
 const diagnosticAttempts = [
   { tier: 'tier-1', node_id: 'secret-node-1', provider: 'secret-provider', effective_model: 'Code-Max', dispatched: false },
   {

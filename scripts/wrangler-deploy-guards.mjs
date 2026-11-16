@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Fail-closed deployment allowlist. Pure metadata validation, no credentials.
 import path from 'node:path';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -154,7 +153,6 @@ function isGateway(config, root) {
   );
 }
 
-/** Returns a recognized Worker or null; callers MUST fail closed on null. */
 export function classifyDeployTarget(config, root) {
   if (isGateway(config, root)) return 'gateway';
   if (isPrivateInference(config, root)) return 'inference';

@@ -1,17 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// SSRF defense for Provider Discovery.
-//
-// Discovery's network entry point is deliberately narrow. This module
-// centralizes URL validation, DNS resolution checks, redirect re-validation,
-// and bounded response limits. AIG_CAN_DISCOVER_PRIVATE_PROVIDERS remains the explicit
-// opt-in for trusted private providers.
 
 import { lookup as defaultDnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-// ---------- host / IP blocklist ------------------------------------------
 
 const LOOPBACK_HOSTS = new Set([
   'localhost',
@@ -52,7 +44,6 @@ function mappedIpv4FromIpv6(host) {
   return match ? match[1] : null;
 }
 
-// True when the host is a dangerous SSRF target.
 export function isDangerousHost(host) {
   const h = String(host || '').trim().toLowerCase().replace(/^\[|]$/g, '');
   if (!h) return true;
@@ -67,8 +58,6 @@ export function isDangerousHost(host) {
   return false;
 }
 
-// True when a URL string is structurally safe to contact for Discovery.
-// DNS-backed validation is performed separately by isSafeDiscoveryTarget().
 export function isSafeDiscoveryUrl(raw, allowPrivate = false) {
   if (typeof raw !== 'string') return { safe: false, reason: 'not a string' };
   let u;
@@ -87,12 +76,11 @@ export function isSafeDiscoveryUrl(raw, allowPrivate = false) {
   return { safe: true, reason: null };
 }
 
-// ---------- resource limits -----------------------------------------------
 
 export const DISCOVERY_LIMITS = Object.freeze({
   connectTimeoutMs: 10_000,
   responseTimeoutMs: 30_000,
-  maxResponseBytes: 5 * 1024 * 1024, // 5 MiB
+  maxResponseBytes: 5 * 1024 * 1024,  
   maxModelCount: 1_000,
   maxRedirects: 3,
 });
@@ -111,11 +99,6 @@ async function lookupAllWithTimeout(host, lookupImpl) {
   }
 }
 
-// Validate the address that a hostname resolves to before every outbound
-// request. This closes the common "public-looking hostname -> private IP"
-// bypass that string-only URL checks miss. The validation is intentionally
-// fail-closed. It is a pre-connect defense; Node fetch does not expose a simple
-// portable way to pin the validated address against DNS rebinding.
 export async function isSafeDiscoveryTarget(raw, allowPrivate = false, lookupImpl = defaultDnsLookup) {
   const basic = isSafeDiscoveryUrl(raw, allowPrivate);
   if (!basic.safe || allowPrivate) return basic;
@@ -145,16 +128,11 @@ export async function isSafeDiscoveryTarget(raw, allowPrivate = false, lookupImp
   return basic;
 }
 
-// Re-validate a redirect target through the same structural SSRF guard. The
-// next guarded fetch iteration also performs DNS resolution before connecting.
 export function redirectTargetIsSafe(locationHeader, allowPrivate = false) {
   if (typeof locationHeader !== 'string' || !locationHeader.trim()) return false;
   return isSafeDiscoveryUrl(locationHeader, allowPrivate).safe;
 }
 
-// Enforce a maximum response size on a fetch Response body. Returns the text,
-// or throws when the body exceeds the limit. This prevents a malicious or
-// buggy provider from streaming an unbounded response.
 export async function readBoundedResponseText(response, maxBytes = DISCOVERY_LIMITS.maxResponseBytes) {
   const reader = response.body?.getReader?.();
   if (!reader) {
@@ -169,7 +147,7 @@ export async function readBoundedResponseText(response, maxBytes = DISCOVERY_LIM
     if (done) break;
     received += value.byteLength;
     if (received > maxBytes) {
-      try { reader.cancel(); } catch { /* ignore */ }
+      try { reader.cancel(); } catch {   }
       throw new Error(`response exceeds ${maxBytes} bytes (received ${received})`);
     }
     chunks.push(value);
@@ -183,7 +161,6 @@ export async function readBoundedResponseText(response, maxBytes = DISCOVERY_LIM
   return new TextDecoder().decode(total);
 }
 
-// Enforce a maximum model count on a parsed /models JSON payload.
 export function enforceMaxModelCount(models, max = DISCOVERY_LIMITS.maxModelCount) {
   if (!Array.isArray(models)) return models;
   if (models.length > max) {

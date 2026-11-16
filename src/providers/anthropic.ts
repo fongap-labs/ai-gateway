@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Anthropic provider adapter: native Messages protocol.
 import type { Surface } from '../types/protocol.ts';
 import type { ProviderAdapter, ProviderWire } from './types.ts';
 

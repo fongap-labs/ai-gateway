@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Local, deterministic regression checks for native streaming paths.
-// This does not call a provider, open a socket, or require any secrets.
 
 import assert from 'node:assert/strict';
 import { isResponsesRealOutput } from '../packages/transport/openai-native.ts';
 import { SseLifecycleObserver } from '../src/stream/sse-lifecycle.ts';
 import { relayStreamResponse, trackStreamResponse } from '../src/stream/track.ts';
 
-// A compatible Provider may emit a completed function item without argument
-// delta events. That is real output; role/lifecycle/usage-only events are not.
 assert.equal(isResponsesRealOutput({ type: 'response.created', response: { status: 'in_progress' } }), false);
 assert.equal(isResponsesRealOutput({ type: 'response.completed', response: { usage: { output_tokens: 0 } } }), false);
 assert.equal(isResponsesRealOutput({ type: 'response.output_item.done', item: { type: 'function_call', name: 'run', arguments: '{}' } }), true);
@@ -98,7 +93,6 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.deliveries[0][tokens], 3);
 }
 
-// Model rewrite remains on the tracked path and preserves usage accounting.
 {
   const wire = wires[0].wire;
   const callbacks = counters();
@@ -116,7 +110,6 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.deliveries[0].prompt_tokens, 3);
 }
 
-// EOF without a completion marker is not a successful upstream response.
 {
   const callbacks = counters();
   const wire = 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n';
@@ -132,7 +125,6 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.deliveries.length, 0);
 }
 
-// An explicit SSE error must never count as delivered usage or success.
 {
   const callbacks = counters();
   const wire = 'event: error\ndata: {"type":"error","error":{"message":"upstream failed"}}\n\n';
@@ -148,7 +140,6 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.deliveries.length, 0);
 }
 
-// Only a Responses interruption needs the sequence number of the next event.
 {
   let dispatched = false;
   const broken = new Response(
@@ -183,8 +174,6 @@ for (const { protocol, wire, tokens } of wires) {
   assert.equal(callbacks.record.failure, 1);
   assert.equal(callbacks.record.attempts[0].outcome, 'failure');
 }
-// Thousands of ordinary Chat delta frames must not pay for JSON.parse or
-// recursive usage/tool scans. Only an actual terminal/usage signal is parsed.
 {
   const observer = new SseLifecycleObserver('openai_chat');
   const originalParse = JSON.parse;

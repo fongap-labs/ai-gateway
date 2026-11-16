@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Upstream error classification. One function decides, per failed attempt,
-// whether the request should rotate to another node in the same tier, stop
-// entirely, or end neutrally — and which node-local cooldown applies.
-//
-// Rules of scope: every failure here is NODE-local. Never punish a provider,
-// tier, or the whole gateway for one node's 429/401.
 
 import { clampRetryAfterMs, getLimits, parseRetryAfterMs, QUOTA_RETRY_AFTER_MAX_MS } from '../config/timeouts.ts';
 import type { GatewayEnv } from '../types/runtime.ts';
@@ -41,46 +34,22 @@ export type FailureClassification = {
   counted: boolean;
   retryAfterMs?: number;
   modelScoped?: boolean;
-  /** Failure belongs to a physical endpoint/model/surface, not to every Key. */
   physicalRouteFailure?: boolean;
-  /** Opaque 422: permit a bounded probe on a different physical route. */
   uncertain422?: boolean;
   explicitRetryAfter?: boolean;
-  /** The upstream said this request is larger than the model accepts (413). */
   requestTooLarge?: boolean;
-  /**
-   * The upstream accepted the credential but refused this request (403): a policy,
-   * moderation, region or model-permission refusal. A 401 rejects the credential
-   * itself and does not set this.
-   */
   forbidden?: boolean;
-  /**
-   * What kind of allowance a 429 ran into, judged from the response wording and,
-   * when the wording says nothing, from the magnitude of an explicit wait hint:
-   * 'window' = a short per-minute style limit, 'quota' = a long-lived allowance
-   * (daily, hourly plan, credits). Absent when neither signal says.
-   */
   rateLimitWindow?: 'window' | 'quota';
 };
 
 const CLIENT_STOP_STATUSES = new Set([413, 415, 422]);
 
-// "Please try again in 7.66s", "try again in 12m3.5s", "resets in 2 hours": many
-// providers state the wait in the error text when they send no Retry-After header.
 const BODY_RETRY_HINT =
   /(?:try again|retry|resets?|available again)\s*(?:in|after)\s+((?:\d+(?:\.\d+)?\s*(?:ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])\s*)+)/i;
 const BODY_RETRY_UNIT = /(\d+(?:\.\d+)?)\s*(ms|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])/gi;
-// "resets at 2026-10-20T15:00:00Z": an absolute reset instant. Only a timestamp that
-// carries its own zone is read; a bare local time has no safe interpretation.
 const BODY_RESET_AT =
   /(?:resets?|available|try again|retry)\s*(?:at|on|after|until)\s*:?\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))/i;
 
-/**
- * Wait the response text asks for, in ms. A 429 that names a long-lived allowance
- * may state hours ("resets in 4 hours"), so the ceiling is the caller's: it keeps
- * the 10-minute Retry-After window by default and widens it once the 429 is known
- * to be a long-lived allowance.
- */
 export function retryHintFromBody(body: unknown, now: number = Date.now(), maxMs?: number): number {
   const text = String(body || '');
   const clamp = (ms: number) => (maxMs === undefined ? clampRetryAfterMs(ms) : Math.min(Math.max(Math.round(ms), 1_000), maxMs));
@@ -106,43 +75,17 @@ export function retryHintFromBody(body: unknown, now: number = Date.now(), maxMs
   return 0;
 }
 
-// Long-lived allowances (daily / hourly / plan window / credits) versus short
-// per-minute limits, from wording alone. Deliberately conservative: text that says
-// neither stays unclassified and keeps the default ladder. Chinese wording is
-// matched by code point escapes so the source stays English-only.
-//
-// Three tiers of evidence, strongest first:
-//   * a stated horizon ("per day", "5-hour", "credits", "plan limit") names how long
-//     the limit lasts;
-//   * a stated minute unit ("per minute", "rpm", "tpm") names a short window;
-//   * generic words ("quota", "rate limit", "too many requests") only say a limit
-//     was hit. Gemini-style "You exceeded your current quota ... PerMinute ... retry
-//     in 28s" is a per-minute limit that merely uses the word quota, so a generic
-//     quota word must not outweigh an explicit minute unit or a short wait hint.
-// Horizon words that also appear in plan/billing boilerplate ("check your plan and
-// billing details") are deliberately NOT horizon evidence.
 const HORIZON_WORDING =
   /\b(?:daily|per[ _-]?day|per[ _-]?hour|hourly|per[ _-]?week|weekly|per[ _-]?month|monthly|credits?|balance|usage limit|plan limit|usage cap|(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|twenty[ -]?four)[ -]?(?:hours?|hrs?|h))\b|PerDay|PerHour|PerWeek|PerMonth|\u6bcf\u65e5|\u6bcf\u5929|\u6bcf\u5468|\u6bcf\u6708|\u672c\u6708|\u5c0f\u65f6|\u4f7f\u7528\u4e0a\u9650|\u7528\u91cf|\u4f59\u989d|\u6b20\u8d39|\u79ef\u5206|\u5957\u9910/i;
 const MINUTE_WORDING = /per[ _-]?minute|per[ _-]?second|\b(?:rpm|tpm|itpm|otpm)\b|\u6bcf\u5206\u949f|\u6bcf\u79d2/i;
 const GENERIC_QUOTA_WORDING = /\b(?:quota|billing)\b|\u989d\u5ea6|\u914d\u989d|\u9650\u989d/i;
 const GENERIC_WINDOW_WORDING =
   /\b(?:too many requests|concurren\w*|rate[ -]limit(?:s|ed|ing)?)\b|\u901f\u7387\u9650\u5236|\u8bf7\u6c42\u9891\u7387|\u8bf7\u6c42\u8fc7\u4e8e\u9891\u7e41|\u5e76\u53d1|\u8bbf\u95ee\u91cf\u8fc7\u5927/i;
-// Explicit minute-level window wording must outrank generic quota boilerplate.
-// Existing quota/exhaustion classification and provider wait hints remain intact.
 const WEAK_QUOTA_WORDING = /\bexhausted\b|\u7528\u5b8c|\u7528\u5c3d|\u8017\u5c3d/i;
 
-// An explicit provider-stated wait is itself a classification signal when the
-// wording says nothing: a minute-and-a-half or less can only be a short window,
-// while ten minutes or more can only be a long-lived allowance. Only an EXPLICIT
-// hint counts — the default cooldown never guesses a class.
 const WINDOW_HINT_CEILING_MS = 90_000;
 const QUOTA_HINT_FLOOR_MS = 600_000;
 
-/**
- * Short window versus long-lived allowance, from the response wording. `hintMs` is
- * the provider's own explicit wait (0 when it gave none); it only arbitrates
- * ambiguous wording, never overrides a stated minute unit or horizon on its own.
- */
 export function rateLimitWindowOf(body: unknown, hintMs: number = 0): 'window' | 'quota' | undefined {
   const text = String(body || '');
   if (!text) return undefined;
@@ -151,15 +94,7 @@ export function rateLimitWindowOf(body: unknown, hintMs: number = 0): 'window' |
   const hasMinute = MINUTE_WORDING.test(text);
   if (hasHorizon && !hasMinute) return 'quota';
   if (hasMinute && !hasHorizon) return 'window';
-  // Both a horizon and a minute unit are named (a response listing every limit of
-  // the plan): a wait beyond the minute window proves the long one, otherwise lean
-  // to the window. The lean is the self-correcting side: a daily limit mistaken for
-  // a window is promoted to the long-allowance ladder after a few short probes,
-  // while a minute limit mistaken for a long allowance would idle the key for
-  // minutes on every incident.
   if (hasHorizon && hasMinute) return hintMs > WINDOW_HINT_CEILING_MS ? 'quota' : 'window';
-  // "too many requests" is direct short-window evidence even if the upstream
-  // adds generic quota/billing boilerplate. Keep all other legacy classes.
   if (GENERIC_WINDOW_WORDING.test(text)) return 'window';
   if (GENERIC_QUOTA_WORDING.test(text)) return isShortHint ? 'window' : 'quota';
   if (WEAK_QUOTA_WORDING.test(text)) return 'quota';
@@ -168,9 +103,6 @@ export function rateLimitWindowOf(body: unknown, hintMs: number = 0): 'window' |
 
 function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number, body: unknown = ''): FailureClassification {
   const limits = getLimits(env);
-  // Read the provider's wait with the long-allowance ceiling first: classification
-  // needs its real magnitude, and only a long-lived allowance keeps more than the
-  // ordinary 10-minute window of it.
   const longHintMs = parseRetryAfterMs(headers, now, QUOTA_RETRY_AFTER_MAX_MS) || retryHintFromBody(body, now, QUOTA_RETRY_AFTER_MAX_MS);
   let rateLimitWindow = rateLimitWindowOf(body, longHintMs);
   if (!rateLimitWindow && longHintMs > 0) {
@@ -189,9 +121,6 @@ function rateLimitClassification(headers: Headers, env: GatewayEnv, now: number,
   };
 }
 
-// A 413 that quotes a token-per-minute ceiling is about THIS request being larger
-// than the model accepts (Groq: "Request too large ... tokens per minute (TPM)"),
-// not about the key being throttled: smaller requests to the same key still work.
 function looksLikeTokenCeiling(body: unknown): boolean {
   const text = String(body || '').toLowerCase();
   if (!text) return false;
@@ -211,10 +140,6 @@ export function classifyUpstreamStatus(
 ): FailureClassification {
   const limits = getLimits(env);
   if (status === 429) return rateLimitClassification(headers, env, now, body);
-  // Request-local, like a 400: this node cannot take this request, so routing
-  // continues elsewhere, but the key is not put on a cooldown ladder and stays
-  // available for requests that fit. A Retry-After header says the refusal is
-  // time based (a real throttle), so that case stays a rate limit.
   if (status === 413 && looksLikeTokenCeiling(body)) {
     if (parseRetryAfterMs(headers, now) > 0) return rateLimitClassification(headers, env, now, body);
     return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, requestTooLarge: true };
@@ -225,17 +150,9 @@ export function classifyUpstreamStatus(
   if (status === 403) {
     return { kind: KIND.AUTH, action: 'rotate', cooldownMs: limits.authFailCooldownMs, counted: false, forbidden: true };
   }
-  // A malformed client payload cannot be repaired by rotating Keys.
-  // Unrecognized 400 errors may still be Provider-specific incompatibility,
-  // so keep a conservative request-local rotation for ambiguous responses.
   if (status === 400) {
     return { kind: KIND.CLIENT, action: looksLikeInvalidRequestPayload(body) ? 'stop' : 'rotate', cooldownMs: 0, counted: false };
   }
-  // A number of OpenAI-compatible Providers return machine-readable 422s
-  // with no useful prose (e.g. {"error":{"code":"unsupported_parameter"}}).
-  // Recognize only explicit route-local errors. A malformed client request or
-  // an opaque 422 may retry a *different* physical route, never the same
-  // physical model across all Keys. Malformed client payloads still stop.
   if (status === 422) {
     if (looksLikeInvalidRequestPayload(body) || hasNonOptionalValidationErrors(body)) {
       return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
@@ -268,9 +185,6 @@ export function classifyUpstreamStatus(
     return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
   }
   if (status === 404) {
-    // A 404 can mean that the credential cannot access this particular model.
-    // Do not poison the endpoint for other Keys when the upstream explicitly
-    // identifies a model-scoped denial or a missing model.
     const error = structuredUpstreamError(body);
     if (
       (error && (MODEL_ROUTE_ERROR_CODES.has(error.code) || MODEL_ACCESS_ERROR_CODES.has(error.code))) ||
@@ -293,9 +207,6 @@ export function classifyUpstreamStatus(
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }
 
-// These codes describe the physical Provider route, not the submitted JSON.
-// Do not infer compatibility from an arbitrary 422 or a generic
-// invalid_request_error code (which may be a genuine client bug).
 const MODEL_ROUTE_ERROR_CODES = new Set([
   'model_not_found',
   'model_unavailable',
@@ -306,8 +217,6 @@ const MODEL_ROUTE_ERROR_CODES = new Set([
   'deployment_not_found',
   'no_available_providers',
 ]);
-// Permission or entitlement to one physical model is Key-scoped, not
-// evidence that an entire Provider endpoint is absent for other Keys.
 const MODEL_ACCESS_ERROR_CODES = new Set([
   'model_access_denied',
   'model_forbidden',
@@ -342,7 +251,6 @@ function structuredUpstreamError(body: unknown): { code: string } | null {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const root = parsed as Record<string, unknown>;
     const source = root.error && typeof root.error === 'object' && !Array.isArray(root.error) ? (root.error as Record<string, unknown>) : root;
-    // A body with only "message" or "type" is not an explicit error code.
     const code = typeof source.code === 'string' ? source.code.trim().toLowerCase() : '';
     return code ? { code } : null;
   } catch {
@@ -350,10 +258,6 @@ function structuredUpstreamError(body: unknown): { code: string } | null {
   }
 }
 
-// FastAPI/Pydantic Providers can answer with a detail[] validation envelope
-// instead of an OpenAI error.code. Only an exact "extra_forbidden" on a known
-// top-level optional request feature is node-specific. Missing/invalid nested
-// fields still indicate a malformed client payload and must stop.
 const OPTIONAL_UPSTREAM_FIELDS = new Set([
   'reasoning',
   'reasoning_effort',
@@ -402,8 +306,6 @@ function looksLikeSchemaRejectedOptionalFields(body: unknown): boolean {
   }
 }
 
-// A mixed or nested validation failure is evidence of a bad client payload.
-// Only a list entirely consisting of optional top-level extra fields is route-local.
 function hasNonOptionalValidationErrors(body: unknown): boolean {
   if (typeof body !== 'string' || body.length > 4096) return false;
   try {
@@ -437,8 +339,6 @@ function looksLikeUnsupportedRequestFeature(body: unknown): boolean {
 
 function looksLikeModelAccessDenied(body: unknown): boolean {
   const text = String(body || '');
-  // Require an explicit model reference. Generic access-denied responses are
-  // not proof that a physical route is missing or that all Keys are broken.
   return (
     /\b(?:model|deployment)\b.{0,100}\b(?:access denied|permission denied|not authorized|not permitted|not enabled|not entitled|not allowed|not available to (?:your|this) (?:account|organization|key))\b/i.test(
       text,
@@ -451,11 +351,7 @@ function looksLikeModelAccessDenied(body: unknown): boolean {
 
 function looksLikeModelMissing(body: unknown): boolean {
   const text = String(body || '').toLowerCase();
-  // "No endpoints found for <model>" (a router with no provider for that model).
   if (/\bno endpoints? found\b/.test(text)) return true;
-  // A provider may express missing physical capacity without a 404 or an
-  // explicit model-not-found code. These are route-local 422s, not malformed
-  // client requests; let another compatible Key/model serve the request.
   if (/\bno available providers?\b/.test(text)) return true;
   if (!text.includes('model')) return false;
   return /(not found|does not exist|unknown|no such|not supported|invalid model|not available|unavailable)/.test(text);
@@ -484,20 +380,10 @@ export function classifyPostHeadersFailure(error: unknown): FailureClassificatio
   return classifyFirstEventFailure();
 }
 
-// The upstream answered, but with more than the gateway will buffer. Another
-// node would regenerate (and bill) the same oversized answer, so the request
-// ends here and the node is not blamed.
 export function classifyOversizedReply(): FailureClassification {
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }
 
-// The matrix-translated reply would exceed the gateway's per-reply conversion
-// budget (AIG_CONVERSION_*). Rotating would regenerate — and bill — the same
-// over-budget answer, so the request ends here; the node is not blamed, the
-// reply size is the client's demand, not the key's health. Reuses the closed
-// vocabulary's `client` kind (a stop, never counted); the specific cause stays
-// visible through the conversion_budget_exceeded wire code and the
-// [conversion-budget] log line.
 export function classifyConversionBudget(): FailureClassification {
   return { kind: KIND.CLIENT, action: 'stop', cooldownMs: 0, counted: false };
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// v5: cross-center budget enforcement and exactly one private stop reason.
 import assert from 'node:assert/strict';
 import { handleInferenceCenterRequest } from '../src/inference/inference-center-entry.ts';
 import { buildInferenceRequest } from '../src/inference/inference-client-request.ts';
@@ -14,8 +13,6 @@ const node = {
   models: { 'chat-test': 'physical-chat-test' },
 };
 const env = {
-  // Contract construction requires a configured private transport even when
-  // the test invokes the center entrypoint directly (no network call).
   AIG_INFERENCE_SERVICE: {
     fetch: async () => {
       throw new Error('unexpected inference transport call');

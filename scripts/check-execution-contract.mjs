@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// No network, secrets, Worker bindings or production deployment.
 import assert from 'node:assert/strict';
 import {
   authorizeExecutionRequest,
@@ -80,8 +79,6 @@ const now = Date.now();
 assert.equal(centerResponseDeadlineMs(now + 10_000, now), now + 9_500);
 assert.equal(centerResponseDeadlineMs(now + 100, now), now + 95);
 
-// The restored v0.1.5 reserve-aware request budget must not reduce the
-// first slow-but-healthy Code candidate to an equal share of all retries.
 assert.equal(attemptBudgetWindowMs(120_000, 8), 85_000, 'normal policy reserves 5s per later candidate, not 15s slices');
 assert.equal(attemptBudgetWindowMs(60_000, 8), 25_000, 'fast policy still gives the first candidate meaningful prefill time');
 assert.equal(attemptBudgetWindowMs(12_000, 8), 1_500, 'tight budgets collapse to a fair share without starving later attempts');
@@ -116,8 +113,6 @@ assert.equal(authorizeExecutionRequest(request, key, 'authorization'), false);
 assert.equal(headers.has('authorization'), false);
 assert.equal(headers.has('cookie'), false);
 
-// W3C version 00: each center attempt uses a fresh span, all siblings share
-// the Gateway-generated UUID-derived trace ID. Client context is untrusted.
 const expectedTraceId = traceIdForRequest(invocation.requestId);
 const trace = parseTraceparent(headers.get('traceparent'));
 assert.equal(trace?.traceId, expectedTraceId);
@@ -319,8 +314,6 @@ assert.equal(parseExecutionInvocation(makeRequest(v6WithoutObject), allowed, now
 
 console.log('Execution contracts v1-v6: strict budgets, isolation, version and authorization validation passed.');
 
-// Error serialization retains the historical Inference and Generation envelope
-// shapes. The response parser must never infer dispatch from a missing marker.
 const inferenceProblem = serializeExecutionError(504, EXECUTION_ERROR_CODE.CENTER_UPSTREAM_HEADERS_TIMEOUT, {
   retryable: true,
   result: EXECUTION_WIRE_RESULT.ATTEMPTED,

@@ -1,6 +1,4 @@
 {
-  // Future private deployment only; this PR does not switch production traffic.
-  // Provision AIG_PROTOCOL_AUTH_KEY as a Secret before binding this Worker.
   "name": "ai-protocol-center",
   "main": "src/protocol/protocol-center-entry.ts",
   "compatibility_date": "2026-08-06",

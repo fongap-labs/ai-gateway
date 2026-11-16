@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Responses conversion, shared event builder and compatibility contract.
 import assert from 'node:assert/strict';
 import { parseResponsesRequest as ownedParse } from '../apps/inference/conversion/responses.ts';
 import { ResponsesStreamDecoder as OwnedDecoder } from '../apps/inference/conversion/responses-stream.ts';

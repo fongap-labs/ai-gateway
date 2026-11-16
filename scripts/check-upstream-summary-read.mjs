@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Regression: independent D1 reads overlap after buffered writes flush, with
-// identical cumulative/hourly results and the old-schema fallback retained.
 import assert from 'node:assert/strict';
 import { __resetUsageBufferForTests, bufferPersist, flushUsageBuffer, snapshotUsageBuffer } from '../packages/usage-store/buffer.ts';
 import { metricsResponse } from '../src/observability/diagnostic-endpoints.ts';
@@ -86,8 +84,6 @@ assert.equal(summary.cumulative.deliveredRequests, 2);
 assert.equal(summary.cumulative.input, 92);
 assert.equal(summary.coverage, 2 / 3);
 
-// Missing v0010 cache-observation columns must activate the same older-schema
-// fallbacks independently for the totals and hourly tables.
 const legacySql = [];
 const legacyD1 = {
   prepare(sql) {
@@ -151,9 +147,6 @@ const brokenD1 = {
 const broken = await loadUpstreamSummary({ TOKEN_STATS_DB: brokenD1 }, now);
 assert.equal(broken?.available, false);
 assert.match(broken.error, /loadUpstreamSummary: hourly unavailable/);
-// Write observability must reflect D1-reported rows, not extrapolate quota.
-// The first event is flushed promptly; subsequent events are buffered without
-// D1 I/O until a normal explicit flush.
 __resetUsageBufferForTests();
 let writeCalls = 0;
 let failNextBatch = false;
@@ -222,7 +215,6 @@ assert.match(finalMetrics, /gateway_usage_d1_buffer_oldest_pending_age_seconds\{
 __resetUsageBufferForTests();
 assert.equal(snapshotUsageBuffer().batchAttempts, 0, 'isolate test reset must clear D1 counters');
 
-// Missing D1 row metadata must remain unknown, not become fabricated writes.
 const noMetaD1 = {
   ...writeD1,
   async batch(statements) {
@@ -234,9 +226,6 @@ assert.equal(snapshotUsageBuffer().reportedRowsWritten, 0);
 assert.ok(snapshotUsageBuffer().statementsWithoutRowMetadata > 0);
 __resetUsageBufferForTests();
 
-// An explicitly unsuccessful D1Result is a failed batch even if the binding
-// resolves rather than throws. Neither success metrics nor rows_written from
-// that attempt can be treated as committed; preserve the same retry boundary.
 let d1ReportsFailure = true;
 const failedDb = {
   ...writeD1,
@@ -262,8 +251,6 @@ assert.equal(snapshotUsageBuffer().pendingEvents, 0);
 assert.ok(snapshotUsageBuffer().reportedRowsWritten > 0);
 __resetUsageBufferForTests();
 
-// A synchronous statement-preparation failure must requeue rather than silently
-// discard already buffered usage increments.
 let prepUnavailable = false;
 const preparationD1 = {
   ...writeD1,
@@ -282,8 +269,6 @@ await flushUsageBuffer();
 assert.equal(snapshotUsageBuffer().pendingEvents, 0);
 __resetUsageBufferForTests();
 
-// An in-flight batch must retain its original age while temporarily absent
-// from pendingByDatabase, then reset the gauge when the batch completes.
 let enterD1;
 let releaseD1;
 const enteredD1 = new Promise((resolve) => {

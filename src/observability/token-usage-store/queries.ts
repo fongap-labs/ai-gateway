@@ -1,25 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Token Usage Queries.
-//
-// All read paths from the D1 token-usage store. Every query in this
-// module is fail-open: missing binding returns null/empty Set, query
-// failure returns an { available: false, error } object so the
-// dashboard can degrade gracefully. None of the queries throw into
-// a request path.
-//
-// Dashboard consumers (src/dashboard/pages.ts):
-//   queryTokenSummary     - rolling / today / cumulative / coverage
-//   queryTokenDailySeries - 52-week heatmap
-//   queryTokenModelUsage  - per-model usage
-//   queryModelUsageCoverage - per-model usage coverage
-//
-// Public Model Status consumers (src/runtime/model-status.ts):
-//   queryRecentModelEvidence - recent successful traffic
-//
-// TTFT percentile consumer (src/dashboard/pages.ts):
-//   queryAllModelsTtftPercentiles
 
 import type { GatewayEnv } from '../../types/runtime.ts';
 import { flushBeforeRead } from './buffer.ts';
@@ -93,16 +73,6 @@ type CoverageRow = {
 
 const asMessage = (e: unknown): string => String((e as { message?: unknown } | null | undefined)?.message || e);
 
-// Aggregate summary for the public dashboard. Returns:
-//   {
-//     available: true,
-//     today:      { total, requests },   // UTC+8 calendar day of `now`
-//     cumulative: { total, requests, reports, missing }, // from lifetime totals
-//     h24: { total, requests },          // rolling 24h from hourly
-//     d7:  { total, requests },          // rolling 7d from hourly
-//     coverage: <number|null>,           // reports / (reports + missing)
-//   }
-// or null when binding missing, or error object when query fails.
 export async function queryTokenSummary(
   env: GatewayEnv,
   now: number = Date.now(),
@@ -125,7 +95,6 @@ export async function queryTokenSummary(
   const h24Start = normalizeHour(now - 24 * HOUR_MS);
   const d7Start = normalizeHour(now - 7 * DAY_MS);
 
-  // First, try to read lifetime totals for cumulative KPIs.
   let totalsRow: TotalsRow | null = null;
   try {
     const totalsStmt = d1.prepare(
@@ -133,11 +102,8 @@ export async function queryTokenSummary(
        FROM ${TABLE_TOTALS} WHERE scope = 'global'`,
     );
     totalsRow = await totalsStmt.first<TotalsRow>();
-  } catch (_e) {
-    // Totals table may not exist yet (migration pending). We'll fall back below.
-  }
+  } catch (_e) {}
 
-  // Rolling windows from hourly (hot path).
   const hourlyStmt = d1.prepare(
     `SELECT
        COALESCE(SUM(CASE WHEN hour >= ? THEN total_tokens END), 0) AS today_total,
@@ -156,7 +122,6 @@ export async function queryTokenSummary(
   }
   if (!hourlyRow || typeof hourlyRow !== 'object') return null;
 
-  // Cumulative from totals (with hourly fallback for rolling-deploy safety).
   let cum_total: number, cum_requests: number, cum_reports: number, cum_missing: number;
   if (totalsRow && typeof totalsRow === 'object') {
     cum_total = Number(totalsRow.total_tokens) || 0;
@@ -164,7 +129,6 @@ export async function queryTokenSummary(
     cum_reports = Number(totalsRow.usage_reports) || 0;
     cum_missing = Number(totalsRow.usage_missing) || 0;
   } else {
-    // Fallback: full scan of hourly (pre-migration or table missing).
     try {
       const fallbackStmt = d1.prepare(
         `SELECT COALESCE(SUM(total_tokens),0) AS t, COALESCE(SUM(requests),0) AS r,
@@ -212,18 +176,6 @@ export async function queryTokenSummary(
   };
 }
 
-// Daily totals for the homepage activity heatmap.
-//
-// Source-of-truth policy:
-//   * the most recent 7 UTC+8 calendar days are rebuilt from hourly rows;
-//   * older days come from the materialized daily table;
-//   * when the daily table is absent/empty, hourly rows are used for every
-//     retained day available in the requested range.
-//
-// Hourly retention is 7 rolling days. Rebuilding today + the previous six
-// calendar days is therefore safe at every time of day: the oldest overlaid
-// day still starts less than 7 * 24h before `now`. Never overlay the seventh
-// previous calendar day because its early hours may already have been pruned.
 export async function queryTokenDailySeries(
   env: GatewayEnv,
   startDayIso: string,
@@ -236,9 +188,6 @@ export async function queryTokenDailySeries(
   let dailyRows: DailyRow[] = [];
   let hasDailyTableData = false;
 
-  // Materialized history first. Recent retained days are overlaid below from
-  // hourly, so a stale cron snapshot can never make a just-finished day jump
-  // backwards after midnight.
   try {
     const res = await d1
       .prepare(
@@ -252,8 +201,6 @@ export async function queryTokenDailySeries(
     dailyRows = Array.isArray(res?.results) ? res.results : [];
     hasDailyTableData = dailyRows.length > 0;
   } catch (_e) {
-    // Table may not exist yet (migration pending). Hourly becomes the only
-    // available source below.
     dailyRows = [];
     hasDailyTableData = false;
   }
@@ -268,10 +215,6 @@ export async function queryTokenDailySeries(
     });
   }
 
-  // Keep exactly seven FULL UTC+8 calendar days on the hourly truth path:
-  // today plus the previous six days. If daily history is unavailable, query
-  // from the caller's requested start instead and return whatever hourly
-  // retention still contains.
   const recentStartMs = utc8DayStartUtcMs(now) - 6 * DAY_MS;
   const recentStartIso = isoDayUtc8(recentStartMs);
   const hourlyStartDayIso = hasDailyTableData ? (startDayIso > recentStartIso ? startDayIso : recentStartIso) : startDayIso;
@@ -306,13 +249,8 @@ export async function queryTokenDailySeries(
       });
     }
 
-    // Hourly wins for every recent day it can prove. Older materialized rows
-    // stay untouched, and an empty hourly result never fabricates a zero day.
     for (const [day, value] of hourlyByDay) map.set(day, value);
   } catch (e) {
-    // With materialized history available, degrade to that snapshot rather
-    // than failing the whole dashboard. Without daily history there is no
-    // trustworthy source left, so preserve the existing fail-open contract.
     if (!hasDailyTableData) {
       return { available: false, error: `queryTokenDailySeries: ${asMessage(e)}` };
     }
@@ -321,14 +259,6 @@ export async function queryTokenDailySeries(
   return map;
 }
 
-// Per-model delivered usage: token totals follow model-detail sampling while
-// request counts retain all delivered success evidence.
-//
-// Reader canonicalization: rows are grouped by LOWER(TRIM(model)) so
-// historical case variants (Code-Max / code-max / CODE-MAX) merge into ONE
-// stats dimension instead of splitting (or overwriting each other). The
-// writer already canonicalizes; the reader must not depend on that —
-// pre-normalization rows still exist in D1 until retention ages them out.
 export async function queryTokenModelUsage(
   env: GatewayEnv,
   days: number = 7,
@@ -363,33 +293,10 @@ export async function queryTokenModelUsage(
   }
 }
 
-// Recent Evidence window for the Public Model Status layer. This is the
-// SINGLE definition of that window (24h): the runtime constant
-// src/runtime/model-status.ts re-exports this binding, and every caller
-// must pass it (or rely on this default) instead of hardcoding days.
 export const MODEL_STATUS_RECENT_WINDOW_MS = 24 * HOUR_MS;
 
-// Historical evidence window for the Public Model Status layer. This is the
-// model-hourly retention window (7d): the per-model table is pruned by
-// cleanupModelStats beyond that, so 7d is the maximum "has this model EVER
-// served" lookback we can honestly answer. Used to distinguish no_recent
-// (recent window empty, history present) from no_record (no history at all).
 export const MODEL_STATUS_HISTORICAL_WINDOW_MS = 7 * DAY_MS;
 
-// Recent-success evidence for the Public Model Status layer
-// (src/runtime/model-status.ts). Returns a Set<string> of canonical
-// statistical model keys (trim + lowercase) that have at least one request
-// in the per-model hourly aggregate within the last `windowMs` milliseconds.
-// Successful request evidence and TTFT samples are independent of the optional
-// per-model token-detail sampling rate.
-// `requests > 0` is the success-evidence signal: the per-model table is
-// written exactly once per delivered response by persistTokenUsage(), so a
-// row with requests > 0 in the recent window means the model successfully
-// completed at least one real request in that hour. The Set is canonical so
-// callers can match official logical model IDs (Code-Max) against it via
-// normalizeModelKey() without case drift. Fail-open: missing binding →
-// empty Set, query failure → empty Set. NEVER fabricates evidence — an
-// empty Set is "no evidence", not "evidence of failure".
 export async function queryRecentModelEvidence(
   env: GatewayEnv,
   windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS,
@@ -417,28 +324,10 @@ export async function queryRecentModelEvidence(
     }
     return out;
   } catch (_e) {
-    // Fail-open: no evidence. Public Model Status then falls back to
-    // the runtime-only signal; a fresh isolate with no runtime state
-    // reports `no_record`, never `down` for every model.
     return new Set();
   }
 }
 
-// Query TTFT histogram aggregates for ALL models in the window with ONE
-// grouped D1 query, then compute percentiles in memory.
-// The dashboard must not issue one query per model (N+1) nor limit TTFT
-// visibility to Usage Top-N. Grouping is canonical (LOWER(TRIM(model))):
-// historical case variants merge in SQL, so the in-memory pass cannot
-// overwrite one variant's histogram with another's. Rows are keyed by the
-// canonical statistical model key (trim + lowercase). Each entry:
-//   { available: true, p50, p95, sampleCount, p50Insufficient, p95Insufficient }
-//   samples < TTFT_P50_MIN_SAMPLES -> p50/p95 null, both insufficient
-//   P50_MIN <= samples < P95_MIN   -> p50 set, p95 null (p95 insufficient)
-//   samples >= P95_MIN             -> both set
-// Percentiles are bucket-upper-bound precision (never a fabricated precise
-// value); the last open bucket returns Infinity, which the dashboard renders
-// as `>=10s`, never as a missing value. `windowMs` is an explicit millisecond
-// window (the model-status section passes the 24h recent-evidence window).
 export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: number = MODEL_STATUS_RECENT_WINDOW_MS, now: number = Date.now()) {
   await flushBeforeRead();
   const d1 = tokenStatsD1(env);
@@ -496,13 +385,6 @@ export async function queryAllModelsTtftPercentiles(env: GatewayEnv, windowMs: n
   }
 }
 
-// Query TTFT percentiles from the histogram buckets for a given model.
-// Returns the UPPER BOUND of the bucket containing the percentile
-// (matching the bucket precision contract — no fake precise values).
-// P50 and P95 have separate minimum sample thresholds: P50 needs 5
-// samples, P95 needs 20 (the tail is far noisier, so the bar is higher).
-// Below the P50 floor both percentiles are null; between the floors P50
-// is reported and P95 stays null (dashboard tooltip: "P95 insufficient samples").
 const TTFT_P50_MIN_SAMPLES = 5;
 const TTFT_P95_MIN_SAMPLES = 20;
 
@@ -512,19 +394,12 @@ function percentileFromBuckets(buckets: number[], total: number, pct: number): n
   for (let i = 0; i < buckets.length; i++) {
     cumulative += buckets[i] ?? 0;
     if (cumulative >= threshold) {
-      // Return upper bound of this bucket (or Infinity for the last)
       return TTFT_BUCKET_BOUNDARIES_MS[i] ?? Infinity;
     }
   }
   return Infinity;
 }
 
-// Query per-model reliability stats from token_usage_model_hourly.
-// Returns per-model usage coverage. Provider-agnostic: this query
-// does not filter by provider — it returns aggregate per-model
-// stats. Provider-specific filtering is NOT done here. Grouping is
-// canonical (LOWER(TRIM(model))) so historical case variants merge
-// instead of splitting requests / reports / missing across keys.
 export async function queryModelUsageCoverage(env: GatewayEnv, days: number = 7, now: number = Date.now()) {
   await flushBeforeRead();
   const d1 = tokenStatsD1(env);

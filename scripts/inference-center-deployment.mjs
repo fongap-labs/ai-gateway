@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Only the isolated, protected center deployment consumes this package.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

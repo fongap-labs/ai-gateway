@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Strict two-Tier source/runtime contract. No network, credentials or deployment.
 
 import assert from 'node:assert/strict';
 import { recordOutcome } from '../apps/gateway/attempt/outcome.ts';
@@ -30,8 +29,6 @@ import { __resetTier1StateForTests, adoptTier1Cooldown } from '../src/reliabilit
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
-// Cost protection changes only defaults, never an operator's explicit choice.
-// Global delivered-success and usage-coverage evidence remains unsampled.
 assert.equal(getLimits({}).tokenD1SamplePct, 100);
 assert.equal(getLimits({ AIG_COST_GUARDS: 'false' }).tokenD1SamplePct, 100);
 assert.equal(getLimits({ AIG_COST_GUARDS: 'true' }).tokenD1SamplePct, 1);
@@ -74,8 +71,6 @@ assert.deepEqual(
   'Token tier is terminal; no third tier can receive unused attempts',
 );
 
-// v0.1.5 family behavior, expressed through opaque model configuration:
-// one-way upward fallback never returns; interchangeable models get two rounds.
 const fallbackModels = {
   entry: { policy: { fallback: ['middle', 'high', 'last'] } },
   middle: { policy: { fallback: ['high', 'last'] } },
@@ -110,8 +105,6 @@ assert.deepEqual(
   'interchangeable family retains v0.1.5 3/2/1 allocation',
 );
 
-// The three-member v0.1.5 fallback family remains revisitable even when
-// downstream model aliases are not configured to return to the source.
 const nonReciprocal = {
   source: { policy: { fallback: ['peer-a', 'peer-b'], fallback_mode: 'recheck' } },
   'peer-a': { policy: { fallback: [] } },
@@ -131,8 +124,6 @@ assert.deepEqual(
   'three-member families retain v0.1.5 attempt shares',
 );
 
-// Model count and spelling never decide one-way vs recheck. Explicit policy
-// overrides graph-derived defaults, and attempt caps stay per-model config.
 const sameGraph = {
   start: { policy: { fallback: ['leaf-a', 'leaf-b'] } },
   'leaf-a': { policy: { fallback: [] } },
@@ -284,9 +275,6 @@ const oldPrivateSecrets = loadExecutionConfig({
 assert.equal(oldPrivateSecrets.status, 'invalid', 'old paid credentials cannot be skipped by private-center load');
 assert.equal(oldPrivateSecrets.nodesUsable, 0);
 
-// The 404 guard must precede authorization, subscriptions and private-center
-// execution. A retired OAuth callback must never exchange, refresh or persist
-// tokens, even if an operator forgot to remove historical configuration.
 for (const method of ['GET', 'POST']) {
   for (const uri of ['/oauth/start', '/oauth/callback', '/oauth/refresh']) {
     const request = new Request(`https://gateway.example.invalid${uri}`, { method });
@@ -305,9 +293,6 @@ for (const method of ['GET', 'POST']) {
   }
 }
 
-// An extra physical dispatch does not by itself prove failure recovery.
-// A loser of a speculative hedge, a pre-dispatch refusal or an unrelated
-// successful attempt must not advertise x-gateway-failover.
 assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 503, kind: 'server' }]), true);
 assert.equal(hasConfirmedUpstreamFailure([{ dispatched: true, status: 0, kind: 'network' }]), true);
 assert.equal(hasConfirmedUpstreamFailure([{ dispatched: false, status: 422, kind: 'client' }]), false);
@@ -381,9 +366,6 @@ await verifyTier1FailureFallsBack(502);
 await verifyTier1FailureFallsBack(503);
 await verifyTier1FailureFallsBack(504);
 
-// A configured legacy count limit must never reject a healthy ninth request.
-// Hold twelve actual Gateway -> private-center executions open concurrently;
-// all must complete normally under the existing request-body byte budget.
 __resetIsolateConcurrencyForTests();
 let admitBurstArrivals = 0;
 let resolveAdmissionBurst;
@@ -474,8 +456,6 @@ async function verifyFreeKeyRotation(failureStatus, errorCode = '', schemaError 
   const first = `tier1-rotate-a-${failureStatus}${suffix}`;
   const second = `tier1-rotate-b-${failureStatus}${suffix}`;
   const dispatches = [];
-  // A confirmed protocol incompatibility must be rerouted to a different
-  // physical model, not replayed across Keys of the same model.
   const isConfirmedIncompatible = errorCode === 'unsupported_parameter' || schemaError;
   const alternateNode = isConfirmedIncompatible ? node(second, { models: { [CUTOVER_MODEL]: 'mock-alternate-upstream-model' } }) : node(second);
   const env = {
@@ -542,8 +522,6 @@ await verifyFreeKeyRotation(422, 'unsupported_parameter');
 await verifyFreeKeyRotation(422, 'model_not_found');
 await verifyFreeKeyRotation(422, '', true);
 
-// An attempt budget of eight is a ceiling, not a target. If the only Key
-// returns 503, the gateway must terminate after ONE physical dispatch.
 let exhaustedDispatches = 0;
 const exhaustedEnv = {
   AIG_ACCESS_KEY_AIR: base.AIG_ACCESS_KEY_AIR,
@@ -554,8 +532,6 @@ const exhaustedEnv = {
   AIG_POLICIES_CONFIG: JSON.stringify({ default: { max_attempts: 8, tier_attempts: { tier1: 8 }, hedge: { enabled: false } } }),
   AIG_INFERENCE_SERVICE: {
     async fetch(request) {
-      // A conversion-preflight RPC is not a physical Key/Provider dispatch.
-      // Only /internal/execute carries a selected node identity.
       if (request.headers.get('x-aig-node-id')) exhaustedDispatches++;
       return new Response(JSON.stringify({ error: { message: 'temporary upstream failure' } }), {
         status: 503,
@@ -633,8 +609,6 @@ async function verifyCrossModelProviderFailover(failureStatus, failureBody) {
 await verifyCrossModelProviderFailover(503, 'temporarily unavailable');
 await verifyCrossModelProviderFailover(422, 'No endpoints found for model physical-primary');
 
-// Preserve legacy 400-as-node-incompatibility routing (tested above), but
-// a structured invalid client request 422 must NOT be replayed on other Keys or paid fallback.
 async function verifyTerminalClientError(status) {
   const freeId = `free-terminal-${status}`;
   const dispatched = [];
@@ -696,7 +670,6 @@ async function verifyStreamGuardAcceptsJsonFallback() {
           path: new URL(request.url).pathname,
           stream: requestBody.stream,
         });
-        // Mock a Provider that ignores the private Center's stream:true body.
         return new Response(
           JSON.stringify({
             id: 'chatcmpl-fallback',
@@ -733,8 +706,6 @@ async function verifyStreamGuardAcceptsJsonFallback() {
 
 await verifyStreamGuardAcceptsJsonFallback();
 
-// State-module extraction regressions: one store, unchanged quota reservations,
-// fixed 429 scope, half-open transition, and read-only diagnostic snapshots.
 const tier1State = await import('../src/reliability/tier1-state.ts');
 const tier1Store = await import('../src/reliability/tier1-store.ts');
 assert.equal(tier1State.getTier1Account, tier1Store.getTier1Account, 'facade must use the one state store');
@@ -799,9 +770,6 @@ assert.equal(tier1State.snapshotTier1AccountRuntime(quotaId, [stateModelId], quo
 tier1State.__resetTier1StateForTests();
 assert.equal(tier1Store.tier1Accounts.size, 0, 'reset clears the same store seen by diagnostics');
 
-// Mixed 429 + headers timeout must retain the cooldown of a configured
-// compatible-model fallback, even when the terminal-status tie selects 504.
-// Use opaque model names so the test cannot pass through hard-coded Code aliases.
 const retrySource = 'retry-source';
 const retryTarget = 'retry-target';
 const retryEnv = {
@@ -864,9 +832,6 @@ assert.match(mixedRetryBody.error.message, /^503 \| .*retry after [0-9]+s\.$/, '
 const pureRateLimit = exhausted({ rate_limit: 8 });
 assert.equal(pureRateLimit.status, 503);
 assert.equal(pureRateLimit.headers.get('x-should-retry'), null, 'pure 429 capacity failures retain the legacy SDK retry contract');
-// Admission optimization is an internal resource guard, not a public
-// response-code switch. Even with it enabled, family exhaustion stays 503
-// and the client receives the measured fallback-family Retry-After.
 const guardedMixedRetry = exhausted({ rate_limit: 4, headers_timeout: 4 }, { ...retryEnv, AIG_REQUEST_ADMISSION: 'true' });
 assert.equal(guardedMixedRetry.status, 503);
 assert.ok(Number(guardedMixedRetry.headers.get('retry-after')) >= 15, 'admission mode must retain model-family Retry-After');
@@ -878,9 +843,6 @@ assert.equal(timeoutRetry.status, 503);
 assert.ok(Number(timeoutRetry.headers.get('retry-after')) >= 15, 'timeout-only cooldown must preserve its real wait');
 assert.equal(timeoutRetry.headers.get('x-should-retry'), 'false', 'timeout-only cooldown prevents immediate SDK replay');
 
-// An exhausted model-family pass must describe the actual dispatched model,
-// not the original model's unrelated physical mapping. No credentials or
-// request body are included in the per-attempt diagnostic record.
 const diagnosticNode = {
   ...retryTargetNode,
   id: 'tier2-effective-model-diagnostic',
@@ -940,9 +902,6 @@ recordOutcome(
 );
 assert.equal(diagnosticState.attempts[1].effective_model, retrySource, 'legacy callers without descriptors retain the requested model');
 assert.equal(diagnosticState.attempts[1].upstream_model, 'physical-source', 'legacy callers retain their original physical model mapping');
-// A key-fingerprint flood must not trigger a 5000-entry eviction scan per
-// request. Keep the most recently used denial window and evict only the
-// oldest record (not an extra 10% of still-active rate limits).
 const rpmEpoch = 1_000_000;
 __resetKeyRpmForTests();
 for (let i = 0; i < 5_000; i++) {
@@ -963,7 +922,6 @@ assert.equal(admitAuthAttempt('invalid-1', 1, rpmEpoch + 5_002).ok, true, 'only 
 assert.equal(admitAuthAttempt('invalid-2', 1, rpmEpoch + 5_002).ok, false, 'another invalid fingerprint remains throttled');
 __resetKeyRpmForTests();
 
-// Observability is isolate-local and must not perform extra KV writes or Provider calls.
 __resetTier1StateForTests();
 __resetSharedTier1CooldownsForTests();
 let kvReads = 0;
@@ -1007,8 +965,6 @@ assert.equal(kvReads, before, 'reading metrics must not cause more KV requests')
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
-// A transient KV failure must not poison the isolate-local "already shared"
-// cache. Retry only after one minute, on a subsequent real cooldown event.
 const retryClock = Date.now();
 adoptTier1Cooldown({ node: 'retry-account', until: retryClock + 900_000, reason: 'auth' }, retryClock);
 let retryWrites = 0;

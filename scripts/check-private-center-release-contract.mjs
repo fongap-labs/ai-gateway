@@ -82,8 +82,6 @@ reject((p) => (p.gateway.services = []));
 reject((p) => (p.gateway.services[0].service = 'external'));
 reject((p) => (p.gateway.services[1].binding = 'AIG_INFERENCE_SERVICE'));
 reject((p) => (p.gateway.vars.AIG_TIER1_CREDENTIALS_01 = 'do-not-log'));
-// Credentials are never ordinary Wrangler vars: even edge access keys and
-// health/cache keys must be Secret bindings in every independently deployed Worker.
 for (const [worker, name] of [
   ['gateway', 'AIG_ACCESS_KEY_AIR'],
   ['gateway', 'AIG_EDGE_CACHE_HMAC_KEY'],
@@ -96,7 +94,6 @@ for (const [worker, name] of [
 ]) {
   reject((p) => (p[worker].vars[name] = 'never-public'));
 }
-// Legitimate non-credential Token usage configuration remains a plain var.
 const usageConfig = copy();
 usageConfig.gateway.vars.AIG_TOKEN_D1_SAMPLE_PCT = '5';
 assert.equal(assertReleaseTopology(usageConfig).ready, true);

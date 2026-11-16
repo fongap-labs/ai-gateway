@@ -47,21 +47,7 @@ const patterns = [
   ['Slack token', new RegExp('x' + 'ox[baprs]-[A-Za-z0-9-]{10,}', 'g')],
 ];
 
-// SHA-256 digests of values that are public by design and documented in
-// SECURITY.md "Google OAuth client constants" (the Gemini CLI's installed-app
-// OAuth client). Allowlisting the digest — never the plaintext — keeps this
-// script free of credential values while still failing on any other match of
-// the same pattern family.
-//
-// ▚ HUMAN DECISION REQUIRED: confirm the client type in the Google Cloud
-// Console. If it is a "Desktop app / Installed application", the digest stays
-// and the constant remains documented. If it is a "Web application", rotate
-// the secret immediately, move the value into a Worker secret, delete the
-// constant from src/providers/google.ts, and remove this digest entry.
-const knownPublicValueDigests = new Set([
-  // Gemini CLI installed-app OAuth client secret
-  '6a5f78b8b99dd4025e41ba11bf54c304c6af29f924c5569cc7865b2428ce03a9',
-]);
+const knownPublicValueDigests = new Set(['6a5f78b8b99dd4025e41ba11bf54c304c6af29f924c5569cc7865b2428ce03a9']);
 
 function matchIsAllowlisted(match) {
   const digest = createHash('sha256').update(match, 'utf8').digest('hex');
@@ -99,13 +85,6 @@ function scanFile(rel) {
   }
 }
 
-// In a working tree, scan exactly what could enter a commit: tracked files plus
-// untracked files not excluded by .gitignore. Local deployment material such
-// as wrangler.user.jsonc remains on disk by design and must not make every
-// post-configuration `npm run validate:merge` fail. A forcibly tracked sensitive file
-// is still returned by `git ls-files --cached` and is therefore rejected.
-// Source archives may not contain .git; fall back to the conservative walk in
-// that case so release artifacts still receive a useful scan.
 let gitCandidates = null;
 try {
   gitCandidates = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
@@ -115,9 +94,7 @@ try {
   })
     .split('\0')
     .filter(Boolean);
-} catch {
-  /* archive / environment without git */
-}
+} catch {}
 
 if (gitCandidates) {
   for (const rel of gitCandidates) scanFile(rel);

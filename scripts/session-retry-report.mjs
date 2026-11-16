@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Local-only DSH JSONL retry report. Never print message content, keys, bodies or paths.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,9 +73,6 @@ export function summarizeSessionFiles(files) {
   return totals;
 }
 
-// The DSH export is a ZIP containing JSONL streams. Extract locally first;
-// uploading raw session content (which can contain prompts and local paths) is
-// intentionally unnecessary. Only numeric aggregates reach stdout.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const paths = process.argv.slice(2);
   if (!paths.length) {

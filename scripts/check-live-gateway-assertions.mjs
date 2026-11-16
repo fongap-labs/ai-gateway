@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Pure offline contract checks: no Gateway, Key or Provider request.
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
 import { hasChatVisionColor, hasGeneratedImageDataUri, hasResponsesOutputText, hasResponsesVisionColor } from './live-gateway-assertions.mjs';
@@ -50,8 +49,6 @@ assert.equal(hasResponsesVisionColor(responsesVision('green'), 'yellow'), false)
 assert.equal(hasResponsesVisionColor(responsesVision('Sorry, no image is available'), 'yellow'), false);
 assert.equal(hasResponsesVisionColor(responsesVision('yellow', 'user'), 'yellow'), false);
 assert.equal(hasResponsesVisionColor({ output: [{ type: 'function_call', arguments: 'yellow' }] }, 'yellow'), false);
-// Guard the actual image payloads, not just response shapes: a damaged PNG can
-// pass the static checks but fail only when the live test randomly selects it.
 assert.equal(visionColors.length, 4);
 for (const { name, base64 } of visionColors) {
   const imageBytes = Buffer.from(base64, 'base64');

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Bounded protocol-aware observation of Server-Sent Events. The observer never
-// changes the bytes sent to the client. It only recognizes complete SSE frames,
-// terminal protocol events, and provider-reported usage.
 
 import { mergeReportedUsage, normalizeTokenUsage } from '../observability/token-usage.ts';
 
@@ -202,7 +198,6 @@ export class SseLifecycleObserver {
           }
         }
       } catch {
-        // Malformed provider frames are relayed as-is but cannot support cache replay.
         this._malformedEvent = true;
       }
     } else if (this.strictDataValidation && data && data.trim() === '[DONE]' && this.protocol !== 'openai_chat') {
@@ -228,9 +223,6 @@ function shouldInspectFrame(protocol: SseProtocol, eventName: string, data: stri
   )
     return true;
   if (protocol === 'openai_responses' && /^(?:response\.(?:output_text|reasoning_text|refusal|content_part)\.)/.test(eventName)) return false;
-  // Ordinary OpenAI delta chunks contain finish_reason:null (often usage:null).
-  // Parsing each one makes the SSE lifecycle observer CPU-bound on Free Workers.
-  // Inspect only frames containing a meaningful terminal, usage, tool or error signal.
   return (
     /"(?:error|tool_calls|function_call|tool_use|computer_call|incomplete_details)"\s*:/i.test(data) ||
     /"(?:finish_reason|stop_reason)"\s*:\s*"(?:[^"\\]|\\.)+"/i.test(data) ||

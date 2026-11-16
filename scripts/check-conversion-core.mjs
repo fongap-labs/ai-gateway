@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// Runtime identity and compatibility for the provider-neutral conversion core.
 import assert from 'node:assert/strict';
 import { protocolForSurface } from '../packages/conversion-core/surface-protocol.ts';
 
-// The physical Inference and Perception executors must share one neutral surface map.
 for (const [surface, expected] of [
   ['chat_completions', 'openai_chat'],
   ['responses', 'openai_responses'],
@@ -25,8 +23,6 @@ for (const unit of ['ir', 'budget', 'diag', 'result', 'validation']) {
   }
 }
 
-// Matrix translations must remain reference-identical across the neutral owner,
-// the Inference compatibility facade, and the historical src API.
 for (const unit of [
   'anthropic-stream',
   'anthropic',
@@ -47,8 +43,6 @@ for (const unit of [
   }
 }
 
-// No stale src implementation is allowed to diverge from the shared config,
-// HTTP transport or protocol owners. Keep singleton caches and Error classes identical.
 for (const [legacy, canonical] of [
   ['src/config/env.ts', 'packages/config-core/env.ts'],
   ['src/config/models.ts', 'packages/config-core/models.ts'],
