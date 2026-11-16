@@ -191,7 +191,7 @@ export function classifyUpstreamStatus(
     if ((error && MODEL_ROUTE_ERROR_CODES.has(error.code)) || looksLikeModelMissing(body)) {
       return { kind: KIND.MODEL_MISSING, action: 'rotate', cooldownMs: 1_800_000, counted: false, modelScoped: true };
     }
-    return { kind: KIND.CLIENT, action: 'rotate', cooldownMs: 0, counted: false, physicalRouteFailure: true };
+    return { kind: KIND.ENDPOINT_NOT_FOUND, action: 'rotate', cooldownMs: 5_000, counted: false, physicalRouteFailure: true };
   }
   if (status === 404) {
     const error = structuredUpstreamError(body);
