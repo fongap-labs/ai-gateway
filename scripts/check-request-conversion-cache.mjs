@@ -38,4 +38,23 @@ await assert.rejects(reuseRequestConversionPreflight(state, body, invalidKey, fa
 await assert.rejects(reuseRequestConversionPreflight(state, body, invalidKey, fail), /temporary center failure/);
 assert.equal(failures, 2, 'failed preflight must not be cached');
 
-console.log('Request-local conversion preflight passed: reuse, pair isolation, body replacement, no cross-request caching, no failure caching.');
+const pendingState = {};
+let concurrentCalls = 0;
+let releasePending;
+const gate = new Promise((resolve) => {
+  releasePending = resolve;
+});
+const concurrentCheck = async () => {
+  concurrentCalls++;
+  await gate;
+  return { body, fidelity: 'portable', diagnostics: [] };
+};
+const firstPending = reuseRequestConversionPreflight(pendingState, body, key, concurrentCheck);
+const secondPending = reuseRequestConversionPreflight(pendingState, body, key, concurrentCheck);
+assert.strictEqual(firstPending, secondPending, 'in-flight checks must share one promise');
+await Promise.resolve();
+assert.equal(concurrentCalls, 1, 'parallel attempts must not duplicate preflight RPC');
+releasePending();
+assert.strictEqual(await firstPending, await secondPending);
+
+console.log('Request-local conversion preflight passed: reuse, in-flight dedup, pair isolation, body replacement and failure eviction.');
