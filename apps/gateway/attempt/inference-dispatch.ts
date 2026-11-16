@@ -1,5 +1,4 @@
 import { readEnv } from '../../../packages/config-core/env.ts';
-import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
 import {
   EXECUTION_ERROR_CODE,
   EXECUTION_WIRE_RESULT,
@@ -8,6 +7,7 @@ import {
   parseExecutionResponse,
 } from '../../../packages/contracts/execution.ts';
 import { INFERENCE_FRAMED_STREAM_CONTENT_TYPE, INFERENCE_FRAMED_STREAM_FORMAT } from '../../../packages/contracts/inference-stream-frames.ts';
+import { requestReasoningPreference } from '../../../packages/contracts/reasoning-preference.ts';
 import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json-patch.ts';
 import { attemptBudgetWindowMs, attemptHeadersTimeoutMs, centerResponseDeadlineMs, requestSizeAllowanceMs } from '../../../src/config/timeouts.ts';
 import { reportedUsageFromJsonText } from '../../../src/observability/reported-usage.ts';
