@@ -16,9 +16,10 @@ export function patchNativeJsonTopLevel(raw: string, logicalModel: string, physi
   const keyAt = raw.indexOf('"model"');
   if (keyAt < 0 || raw.indexOf('"model"', keyAt + 7) !== -1) return null;
   const match = /^"model"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(raw.slice(keyAt));
-  if (!match) return null;
+  const modelValue = match?.[1];
+  if (!match || modelValue === undefined) return null;
   try {
-    if (JSON.parse(match[1]) !== logicalModel) return null;
+    if (JSON.parse(modelValue) !== logicalModel) return null;
   } catch {
     return null;
   }
@@ -28,8 +29,8 @@ export function patchNativeJsonTopLevel(raw: string, logicalModel: string, physi
 
   let out = raw;
   if (logicalModel !== physicalModel) {
-    const valueAt = keyAt + match[0].length - match[1].length;
-    out = raw.slice(0, valueAt) + JSON.stringify(physicalModel) + raw.slice(valueAt + match[1].length);
+    const valueAt = keyAt + match[0].length - modelValue.length;
+    out = raw.slice(0, valueAt) + JSON.stringify(physicalModel) + raw.slice(valueAt + modelValue.length);
   }
   if (shouldInjectStreamUsage) {
     // The input has already passed JSON.parse with a root-object check.
