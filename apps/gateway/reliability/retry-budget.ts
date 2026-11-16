@@ -79,11 +79,17 @@ export class RetrySlot {
     return true;
   }
 
+  release(): void {
+    if (!this.isHeld) return;
+    this.isHeld = false;
+    retryingRequests = Math.max(0, retryingRequests - 1);
+  }
+
   end(): void {
     if (this.isEnded) return;
     this.isEnded = true;
     activeRequests = Math.max(0, activeRequests - 1);
-    if (this.isHeld) retryingRequests = Math.max(0, retryingRequests - 1);
+    this.release();
   }
 }
 
