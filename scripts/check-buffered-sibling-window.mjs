@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { preferUntriedFailureProviders } from '../apps/gateway/reliability/retry-budget.ts';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { attemptBudgetWindowMs, requestSizeAllowanceMs, viableFailoverWindowMs } from '../src/config/timeouts.ts';
-import { preferUntriedFailureProviders } from '../apps/gateway/reliability/retry-budget.ts';
 import { __resetAllStateForTests } from '../src/reliability/node-state.ts';
 import { __resetTier1StateForTests } from '../src/reliability/tier1-state.ts';
 import { __resetTier1AffinityForTests } from '../src/scheduler/tier1-affinity.ts';
