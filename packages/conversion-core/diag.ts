@@ -1,10 +1,5 @@
 ﻿// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Diagnostics accumulator for the translation matrix. Produces exactly the
-// ConversionDiagnostic vocabulary defined in ../result.ts and finalizes into
-// a ConversionResult. The vocabulary is CLOSED: feature is a free token but
-// must never carry request text, tool names, schemas or credentials.
 
 import type { ConversionDiagnostic, ConversionFidelity, ConversionResult, StructuredOutputStrategy } from './result.ts';
 

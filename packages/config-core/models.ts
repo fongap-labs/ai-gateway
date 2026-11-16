@@ -1,33 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// AIG_MODELS_CONFIG: logical model -> { policy, capabilities?, reasoning_efforts?,
-// modalities? } plus runtime-policy fields (visibility, display_order, group,
-// ui_visible). The FLAT input schema is unchanged; the parse separates the
-// two concepts:
-//
-//   catalog facts   capabilities / reasoning_efforts / modalities — what the
-//                   model IS (declared, validated, never routed on beyond
-//                   projection)
-//   runtime policy  policy / visibility / ui_visible / display_order / group —
-//                   how the gateway treats the model (failover policy binding,
-//                   dashboard visibility and grouping)
-//
-// `policy` is the failover policy name; `capabilities` (tools / reasoning /
-// vision / stream) and `reasoning_efforts` optionally override the registry
-// defaults. `modalities` is a SCHEMA RESERVATION for the Omni phase (what a
-// model can accept/emit: input/output token arrays over a closed vocabulary);
-// it is parsed, validated and carried in the registry, but nothing routes on
-// it yet and it is NOT exposed on any public API surface. Parsed once per
-// isolate; env vars are immutable at runtime.
-//
-// Like the node config, AIG_MODELS_CONFIG is strict: unknown fields, an invalid
-// `policy`, non-boolean capabilities, unknown capability keys, malformed
-// reasoning_efforts, and obvious self-contradictions in declared capabilities
-// are surfaced as diagnostics. The gateway does not infer provider/model
-// feature support from provider names or build a second capability router.
-// The parse is done once
-// per isolate and both the loaded config and its diagnostics are cached.
 
 import { readEnv } from './env.ts';
 
@@ -46,9 +18,6 @@ const ALLOWED_ENTRY_FIELDS = new Set([
   'group',
   'ui_visible',
 ]);
-// Closed modality vocabulary for the Omni-phase schema reservation. Extending
-// this list is the ONLY way to introduce a new modality token — free-form
-// strings never enter the registry.
 const MODALITY_TOKENS = new Set(['text', 'image', 'audio', 'video']);
 const VALID_VISIBILITY = new Set(['public', 'internal']);
 const DEFAULT_VISIBILITY = 'public';
@@ -56,31 +25,17 @@ const DEFAULT_DISPLAY_ORDER = 100;
 const DEFAULT_GROUP = 'general';
 const DEFAULT_UI_VISIBLE = true;
 
-/**
- * Catalog facts: what a logical model IS — declared capabilities, reasoning
- * effort vocabulary, and modalities. Optional fields are only present when
- * explicitly configured; the registry applies defaults on read.
- */
 export type ModelCatalogFacts = {
   capabilities?: Record<string, boolean>;
   reasoning_efforts?: string[];
   modalities?: { input: string[]; output: string[] };
 };
 
-/**
- * Runtime policy: how the gateway treats a logical model — the failover
- * policy binding, dashboard visibility, UI grouping, and display order.
- * Never capability knowledge.
- */
 export type ModelRuntimePolicy = {
   policy?: string;
-  /** Explicit ordered candidate aliases; never inferred from model name. */
   fallback?: string[];
-  /** Recheck the original alias or only move forward; independent of spelling and family size. */
   fallback_mode?: 'one_way' | 'recheck';
-  /** Optional per-alias caps: [requested, ...fallback], bounded by request maxAttempts. */
   fallback_attempt_caps?: number[];
-  /** Explicit visual preprocessor used only when the requested model cannot see images. */
   vision_delegate?: string;
   visibility: string;
   ui_visible: boolean;
@@ -88,10 +43,6 @@ export type ModelRuntimePolicy = {
   group: string;
 };
 
-/**
- * A parsed AIG_MODELS_CONFIG entry: catalog facts and runtime policy are
- * distinct concepts and never share one flat record.
- */
 export type ModelEntry = {
   catalog: ModelCatalogFacts;
   policy: ModelRuntimePolicy;
@@ -142,9 +93,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             errors.push(`AIG_MODELS_CONFIG: "${name}" has unknown field "${field}" (allowed: ${[...ALLOWED_ENTRY_FIELDS].join(', ')})`);
           }
         }
-        // `policy` participates only when explicitly configured; a present
-        // value (null included) must be a non-empty string. Unknown policy
-        // names are cross-checked against AIG_POLICIES_CONFIG by nodes.ts.
         const policy: ModelRuntimePolicy = {
           visibility: DEFAULT_VISIBILITY,
           ui_visible: DEFAULT_UI_VISIBLE,
@@ -260,8 +208,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
               }
             }
             if (hasValidCapability) {
-              // The filter predicate guarantees boolean values; the assertion
-              // only re-states that for Object.fromEntries.
               catalog.capabilities = Object.fromEntries(
                 Object.entries(capRec).filter(([k, v]) => CAPABILITY_KEYS.includes(k) && typeof v === 'boolean'),
               ) as Record<string, boolean>;
@@ -276,7 +222,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             catalog.reasoning_efforts = efforts.map((e) => e.trim());
           }
         }
-        // Schema reservation only: validated and carried, never routed on.
         const mods = cfg.modalities;
         if (mods !== undefined) {
           if (!mods || typeof mods !== 'object' || Array.isArray(mods)) {
@@ -299,10 +244,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
             if (isValidModality) catalog.modalities = { input: sides.input, output: sides.output };
           }
         }
-        // Small-scope capability consistency checks. These validate only
-        // contradictions inside the logical-model declaration; they do NOT
-        // infer provider/model feature support or turn capabilities into a
-        // second routing engine.
         if (catalog.reasoning_efforts?.length && catalog.capabilities?.reasoning === false) {
           errors.push(`AIG_MODELS_CONFIG: model "${name}": reasoning_efforts conflicts with capabilities.reasoning=false`);
         }
@@ -318,8 +259,6 @@ function analyzeModels(env: Record<string, unknown>): { models: Record<string, M
       }
     }
   }
-  // Validate every target after parsing all declarations. Reciprocal
-  // fallbacks (Pro <-> Max) are intentional and bounded at request level.
   const known = new Set(Object.keys(models).map((name) => name.toLowerCase()));
   for (const [name, entry] of Object.entries(models)) {
     const delegate = entry.policy.vision_delegate;

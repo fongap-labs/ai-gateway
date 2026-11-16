@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Explicit Chat image tool bridge. Never infer billable image generation from
-// arbitrary conversational text. The client must select the declared function
-// and an authorized internal image model.
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { generatedImageMime } from '../../packages/contracts/image-media.ts';
 import { validateImageGenerationRequest } from '../../packages/contracts/image-request.ts';
@@ -52,7 +48,6 @@ export async function runExplicitImageTool({
   const fail = (status: number, message: string, code: string) =>
     gatewayError(request, env, 'openai_chat', status, message, requestId, undefined, undefined, code);
 
-  // Protect paid tools even when a normal chat key can call the text model.
   if (auth.mode !== 'grouped' || !auth.authorized || auth.group !== 'AGENT') {
     return fail(403, 'Image generation requires the authorized AGENT tool key.', 'gateway_image_tool_unauthorized');
   }
@@ -115,8 +110,6 @@ export async function runExplicitImageTool({
   } catch {
     return fail(502, 'Image tool result is unknown and must not be retried automatically.', 'gateway_image_tool_outcome_unknown');
   }
-  // A generation attempt is potentially billable. Never replay it after an
-  // unknown outcome, even if a transient upstream status was returned.
   if (!response.ok) {
     return fail(502, 'Image generation failed; automatic replay disabled.', 'gateway_image_tool_failed');
   }
@@ -129,7 +122,6 @@ export async function runExplicitImageTool({
     const json = JSON.parse(result.text) as { data?: Array<{ b64_json?: unknown }> };
     image = json.data?.[0]?.b64_json;
   } catch {
-    // A malformed reply is terminal: do not start another paid generation.
   }
   if (typeof image !== 'string' || !image || image.length > MAX_IMAGE_TOOL_REPLY) {
     return fail(502, 'Image tool returned no valid image.', 'gateway_image_tool_reply_invalid');
@@ -138,8 +130,6 @@ export async function runExplicitImageTool({
   if (!mediaType) {
     return fail(502, 'Image tool returned unsupported or invalid image data.', 'gateway_image_tool_reply_invalid');
   }
-  // Explicit Chat integration uses Markdown data URI. Clients must opt into
-  // rendering it; ordinary Chat requests and tool invocation remain distinct.
   const content = `![Generated image](data:${mediaType};base64,${image})`;
   const completion = {
     id: `chatcmpl-image-${crypto.randomUUID()}`,
@@ -163,8 +153,6 @@ export async function runExplicitImageTool({
   });
 }
 
-// Client opt-in: only an AGENT request that advertises exactly the image tool
-// and selects tool_choice=auto can ask the text model to decide whether to draw.
 export function isAutomaticImageToolCall(body: Record<string, unknown>): boolean {
   const tools = body.tools;
   const metadata = body.metadata;
@@ -207,7 +195,6 @@ export async function runAutomaticImageTool({
 }): Promise<Response> {
   const fail = (status: number, message: string, code: string) =>
     gatewayError(request, env, 'openai_chat', status, message, requestId, undefined, undefined, code);
-  // The server never chooses to spend image credits for regular chat users.
   if (!auth.authorized || auth.mode !== 'grouped' || auth.group !== 'AGENT') {
     return fail(403, 'Automatic image tools require an AGENT key.', 'gateway_image_tool_unauthorized');
   }
@@ -228,8 +215,6 @@ export async function runAutomaticImageTool({
   if (Date.now() >= deadlineMs) {
     return fail(504, 'Automatic image tool deadline expired before model selection.', 'gateway_image_tool_deadline_expired');
   }
-  // The private tool routing metadata is not forwarded to the text Provider.
-  // Strip it from the decision subrequest to avoid re-entering this branch.
   const decisionMetadata = { ...metadata };
   delete decisionMetadata.aig_image_model;
   delete decisionMetadata.aig_image_size;
@@ -270,7 +255,6 @@ export async function runAutomaticImageTool({
   const message = choice && typeof choice === 'object' ? (choice as Record<string, unknown>).message : null;
   const calls = message && typeof message === 'object' ? (message as Record<string, unknown>).tool_calls : null;
   if (!Array.isArray(calls) || calls.length === 0) {
-    // A valid text answer is not permission to generate an image.
     if (body.stream === true) return synthesizeSseFromCompletion(completion, env, request);
     return new Response(result.text, {
       status: 200,
@@ -306,8 +290,6 @@ export async function runAutomaticImageTool({
   } else if (args !== undefined) {
     return fail(502, 'The image tool arguments must be JSON.', 'gateway_image_tool_selection_invalid');
   }
-  // This appends a single verified prompt only for the image bridge. The
-  // generated text is never used to authorize a model or a credential.
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const selectedBody = {
     ...body,

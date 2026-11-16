@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Explicit, authorized Chat image prepass. The Gateway reuses its normal
-// scheduler and Perception binding through one bounded internal subrequest;
-// it never calls a Provider directly or changes the requested text model.
 import { readBodyTextBounded } from '../../src/protocol/http.ts';
 
 type ImagePart = { type: 'image_url'; image_url: string | { url: string } };
@@ -130,7 +126,6 @@ export async function preprocessChatImages({
     const json = JSON.parse(reply.text) as { choices?: Array<{ message?: { content?: unknown } }> };
     observations = json.choices?.[0]?.message?.content;
   } catch {
-    // Never turn a malformed preprocessor response into a text-only answer.
   }
   if (typeof observations !== 'string' || !observations.trim()) {
     return {
@@ -151,12 +146,6 @@ export async function preprocessChatImages({
   return { ok: true, body: { ...body, messages: rewritten } };
 }
 
-/**
- * Use the same bounded, authorized Perception prepass for Responses
- * input_image blocks. The final request stays a native Responses request:
- * only inline image blocks become input_text visual observations.
- * File-ID images fail closed because there is no authorized file resolver.
- */
 export async function preprocessResponsesImages(args: {
   request: Request;
   body: Record<string, unknown>;

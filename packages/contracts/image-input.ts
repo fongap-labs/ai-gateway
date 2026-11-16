@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-/** Detect only established image-bearing request structures; never inspect or decode payload data. */
 export function hasImageInput(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const record = body as Record<string, unknown>;

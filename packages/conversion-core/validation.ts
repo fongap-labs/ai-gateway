@@ -3,9 +3,6 @@
 
 export class ConversionError extends Error {
   code: string;
-  // The client's own top-level request field that no target protocol can carry,
-  // when that is the whole reason for the rejection. The client can resend
-  // without it, so the gateway can name it instead of reporting a server fault.
   requestField: string | null;
   constructor(code: string, message?: string, options: { requestField?: string } = {}) {
     super(message || code);

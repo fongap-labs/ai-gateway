@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// One upstream HTTP attempt per authenticated private-center invocation.
-// No Tier selection, model fallback, speculative retry or Provider credentials.
-// Preserve the v1-v6 private error/disposition envelope exactly.
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, serializeExecutionError } from '../contracts/execution.ts';
 
 export type ProviderAttemptRequest = {

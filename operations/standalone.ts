@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Dedicated Operations Worker entrypoint. Never export a public fetch route.
-// Fail closed if maintenance storage was not bound during a controlled cutover.
 import type { GatewayEnv } from '../packages/contracts/runtime.ts';
 import { scheduled as runScheduledMaintenance } from './index.ts';
 

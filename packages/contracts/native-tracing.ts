@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Thin wrapper around Cloudflare's native custom-span API. Absent tracing
-// context (Node tests, local adapters, disabled platform tracing) is a no-op.
-// Never emit bodies, credentials, raw URLs or upstream response details.
 
 import type { ExecutionContextLike, GatewayTraceSpan } from './runtime.ts';
 

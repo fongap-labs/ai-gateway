@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Conversion result contract shared by every translator. The pairwise
-// Chat <-> Messages converter wrappers that used to live here were absorbed
-// into the IR matrix (conversion/matrix/): request bodies, fidelity
-// diagnostics and structured-output strategies are produced per-protocol now.
 
 export type ConversionFidelity = 'exact' | 'portable' | 'degraded';
 export type ConversionDiagnosticAction = 'mapped' | 'dropped' | 'emulated' | 'defaulted';

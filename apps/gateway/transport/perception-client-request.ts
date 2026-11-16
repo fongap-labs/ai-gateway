@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Perception has an independently owned Service Binding and authentication key.
 
 import type { ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';

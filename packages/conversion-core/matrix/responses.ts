@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// OpenAI Responses side of the translation matrix: request parse/build and
-// whole-object round trips. Streaming decode/encode lives in
-// responses-stream.ts.
 
 import { MatrixDiag } from '../diag.ts';
 import {
@@ -61,7 +57,6 @@ function responsesTools(body: Record<string, unknown>, diag: MatrixDiag): IrTool
   for (const rawTool of Array.isArray(body.tools) ? body.tools : []) {
     if (!isRecord(rawTool)) throw new ConversionError('conversion_not_supported: tools entry is not an object');
     if (rawTool.type === 'custom') {
-      // Codex custom tools (e.g., apply_patch) → declare as function with {"input": string} param
       const name = rawTool.name;
       if (typeof name !== 'string' || !name) continue;
       diag.add({ feature: 'custom_tool', action: 'mapped' });
@@ -329,7 +324,6 @@ function functionCallOutputToText(output: unknown, diag: MatrixDiag): string {
   return JSON.stringify(output);
 }
 
-/** Parse an OpenAI Responses request body into the canonical IR. */
 export function parseResponsesRequest(body: Record<string, unknown>): { request: IrRequest; diag: MatrixDiag } {
   if (!isRecord(body)) throw new ConversionError('conversion_not_supported: request body is not an object');
   assertFields(body, RESPONSES_ALLOWED_FIELDS, 'request');
@@ -376,7 +370,6 @@ export function parseResponsesRequest(body: Record<string, unknown>): { request:
   return { request, diag };
 }
 
-// ---- Build: IR -> OpenAI Responses request body ----------------------------
 
 export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<string, unknown> {
   const out: Record<string, unknown> = { model: ir.model };
@@ -446,7 +439,6 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
       flushImages();
       continue;
     }
-    // assistant
     const content: Record<string, unknown>[] = [];
     for (const part of message.parts) {
       if (part.type === 'text') {
@@ -475,14 +467,9 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
   if (ir.structuredOutputSchema) {
     out.text = { format: { type: 'json_schema', name: 'response', schema: ir.structuredOutputSchema, strict: true } };
   }
-  // The Responses API permits an omitted output ceiling. A hardcoded 1024
-  // silently truncates long code generation and may reject some free endpoints.
-  // Preserve the client's limit when supplied; otherwise let the physical
-  // Provider apply its own default.
   if (ir.maxTokens != null) out.max_output_tokens = ir.maxTokens;
   if (ir.temperature != null) out.temperature = ir.temperature;
   if (ir.topP != null) out.top_p = ir.topP;
-  // top_k is an Anthropic-native control; this target cannot carry it.
   if (ir.topK != null) diag.add({ feature: 'sampling_control', action: 'dropped' });
   if (ir.stop.length) diag.add({ feature: 'stop_sequences', action: 'dropped' });
   if (ir.tools.length) {
@@ -521,7 +508,6 @@ function imageUrlOf(part: IrImagePart): string {
   return part.data ? `data:${part.mediaType || 'application/octet-stream'};base64,${part.data}` : '';
 }
 
-// ---- Whole-object round trips ---------------------------------------------
 
 export function responsesStopToIr(status: unknown, hasToolCalls: boolean): IrStop {
   if (status === 'incomplete') return 'length';
@@ -530,7 +516,6 @@ export function responsesStopToIr(status: unknown, hasToolCalls: boolean): IrSto
   return 'stop';
 }
 
-/** Assemble a Responses response object into IR (upstream replies). */
 export function responsesObjectToIr(data: Record<string, unknown>): { reply: IrReply; diag: MatrixDiag } {
   const diag = new MatrixDiag();
   const parts: IrPart[] = [];

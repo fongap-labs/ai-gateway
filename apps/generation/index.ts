@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Private generation HTTP entrypoint: contract verification and endpoint dispatch.
-// Non-idempotent Provider execution and response conversion live in execution.ts.
 
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';

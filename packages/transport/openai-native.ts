@@ -1,18 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// OpenAI transport: upstream paths, headers and protocol-specific response
-// semantics for every node with protocol "openai".
-//
-// Scope: request shape (path/headers/model substitution/stream detection) and
-// protocol-specific response handling ONLY. Reliability (scheduler, cooldowns,
-// circuit breaker, hedges, failover budgets) lives in src/scheduler and
-// src/reliability and is protocol-agnostic.
-//
-// Surfaces:
-//   chat_completions -> {base_url}/v1/chat/completions
-//   responses        -> {base_url}/v1/responses   (NATIVE - never converted
-//                                                     to/from chat completions)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -20,8 +7,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 import type { Surface } from '../contracts/protocol.ts';
 
-// Upstream path per surface. The gateway forwards OpenAI requests to the
-// native OpenAI-compatible endpoint of the same surface.
 export const OPENAI_SURFACE_PATH = Object.freeze({
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
@@ -42,7 +27,6 @@ export function resolveOpenAIPath(surface: Surface): string {
   return path;
 }
 
-// Strict native header allowlist; caller-supplied Authorization is never forwarded.
 export function buildOpenAIHeaders(request: Request, credential: string, requestId: string): Headers {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${credential}`);
@@ -56,9 +40,6 @@ export function buildOpenAIHeaders(request: Request, credential: string, request
   return headers;
 }
 
-// A real Responses output may be emitted as deltas OR as a complete tool
-// item/completed reply by a compatible Provider. Never commit on a lifecycle
-// heartbeat alone; commit only after actual text, reasoning, or tool output.
 export function isResponsesRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   const type = json.type;
@@ -73,14 +54,6 @@ export function isResponsesRealOutput(json: unknown): boolean {
   return false;
 }
 
-// OpenAI Chat meaningful-output predicate for the Tier 1 first-event guard.
-// The original Chat guard committed on ANY parseable non-error event - a bare
-// role-only delta ({"delta":{"role":"assistant"}}) closed the failover boundary
-// and was recorded as TTFT, even though no real token had flowed. For Tier 1's
-// passive TTFT learning this is only used when the node is tier-1, so Tier 2/3
-// keep the original lax boundary. Real output = non-empty text, a reasoning
-// increment, or a tool-call increment; role-only / empty / usage-only deltas do
-// NOT commit, so a node that announces itself and then dies can still rotate.
 export function isOpenAIChatRealOutput(json: unknown): boolean {
   if (!isRecord(json)) return false;
   const choices = json?.choices;
@@ -105,11 +78,6 @@ function isMeaningfulToolCall(call: unknown): boolean {
   );
 }
 
-// Conversion-aware predicate for cross-protocol O->A streaming (OpenAI upstream,
-// Anthropic client). Reasoning alignment converts reasoning /
-// reasoning_content increments to native Anthropic thinking blocks, so they
-// are real client-visible output and commit the failover boundary. Real
-// output = non-empty text, reasoning increment, OR tool-call increment.
 export function isOpenAIChatRealOutputForConversion(json: unknown): boolean {
   if (!isRecord(json)) return false;
   const choices = json?.choices;
@@ -134,8 +102,6 @@ export function isOpenAIChatCompletionMeaningful(json: unknown): boolean {
     const reasoning = message.reasoning ?? message.reasoning_content;
     if (typeof reasoning === 'string' && reasoning.trim().length > 0) return true;
     if (Array.isArray(message.tool_calls) && message.tool_calls.some(isMeaningfulToolCall)) return true;
-    // Legitimate refusal: the model declined to answer. This is valid output,
-    // not an empty response - do not rotate away from it.
     if (typeof message.refusal === 'string' && message.refusal.trim().length > 0) return true;
   }
   return false;
@@ -149,12 +115,10 @@ export function isOpenAIResponsesObjectMeaningful(json: unknown): boolean {
       ((typeof item.name === 'string' && item.name.trim().length > 0) || (typeof item.arguments === 'string' && item.arguments.trim().length > 0))
     )
       return true;
-    // Legitimate refusal: the model declined to answer. Valid output, not empty.
     if (item?.type === 'refusal' && typeof item.refusal === 'string' && item.refusal.trim().length > 0) return true;
     for (const part of [...(item?.content ?? []), ...(item?.summary ?? [])]) {
       const text = part?.text ?? part?.content;
       if (typeof text === 'string' && text.trim().length > 0) return true;
-      // Refusal content part within a message output item.
       if (part?.type === 'refusal' && typeof part.refusal === 'string' && part.refusal.trim().length > 0) return true;
     }
   }

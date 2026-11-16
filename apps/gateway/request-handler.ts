@@ -1,17 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Main request pipeline.
-//
-//   auth -> route -> body -> validate -> model support check
-//     -> bounded logical-model rounds:
-//          -> native per-tier attempt loop
-//          -> configured cross-protocol fallback for the SAME logical model
-//          -> next compatible logical model when the current model pool is
-//             exhausted
-//
-// Streaming rule: the first-event guard runs BEFORE any streaming Response is
-// returned to the client; after that point transparent failover is forbidden.
 
 import { hasImageInput } from '../../packages/contracts/image-input.ts';
 import { getProviderProfile } from '../../packages/contracts/provider-profiles.ts';
@@ -45,26 +33,12 @@ import { tier1ModelAvailability } from './scheduling/tier1-scheduler.ts';
 import { runTierLoop } from './tier-loop.ts';
 import { preprocessChatImages, preprocessResponsesImages } from './vision-preprocess.ts';
 
-// An attempt with a still-untried sibling gets a bounded waiting window.
-// The base cap grows with the same prompt-size allowance as the request
-// budget, so long Code prefill is not cut off at the short-prompt deadline.
-// The absolute attempt budget still reserves escape time for later models.
 const SIBLING_HOP_CAP_MS = 45_000;
 
 export async function handleRequest(request: Request, env: GatewayEnv, ctx: ExecutionContextLike): Promise<Response> {
-  // Per-isolate reliability configuration (probe gate) must be applied before
-  // the first scheduling decision of this request. getLimits caches the
-  // clamped values per env object, so this costs one map lookup in steady state.
   const limits = getLimits(env);
   configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
-  // Keep isolate activity observable without enforcing an arbitrary number
-  // of concurrent requests. The byte-budget below remains a hard memory gate
-  // regardless of AIG_ISOLATE_MAX_IN_FLIGHT (legacy variable, now ignored).
   const releaseActivity = request.body !== null ? trackIsolateRequest() : () => {};
-  // A missing Content-Length no longer pre-charges 20 MB (or imposes a 512 KB
-  // chunked cutoff). Instead reserve an initial allowance, and grow from the
-  // actual streamed bytes before preflight stores the next chunk. Declared
-  // lengths are still reserved upfront; either path retains the 32 MB guard.
   const declaredLength = Number(request.headers.get('content-length'));
   const bodyAdmission = admitMeteredRequestBody(declaredLength, request.body !== null);
   if (!bodyAdmission) {
@@ -86,8 +60,6 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   try {
     return await handleAdmittedRequest(request, env, ctx, bodyAdmission.observe);
   } finally {
-    // Count only the Gateway execution stage. Existing stream metrics observe
-    // active downstream SSE connections; do not wrap or buffer SSE to count it.
     bodyAdmission.release();
     releaseActivity();
   }
@@ -144,9 +116,6 @@ async function runAdmittedRequest(
   let bodyJson = initialBodyJson;
   let rawBody = initialRawBody;
 
-  // A forced, declared image tool call is an explicit instruction from an
-  // authorized AGENT client; never route arbitrary chat text into paid image
-  // generation, and never bypass the private Generation Center binding.
   if (route === 'openai_chat' && isExplicitImageToolCall(bodyJson)) {
     return runExplicitImageTool({
       request,
@@ -175,7 +144,6 @@ async function runAdmittedRequest(
     });
   }
 
-  // Edge cache: compute plan and check for HIT before any upstream work.
   const keyGroup = ('group' in pre.authResult && pre.authResult.group) || '';
   const edgeCachePlan = await resolveEdgeCachePlan(
     route,
@@ -193,9 +161,6 @@ async function runAdmittedRequest(
   }
 
   const requestPolicy = policy;
-  // Optional visual preprocessing is separate from the model fallback graph:
-  // the original Code/General alias remains responsible for answering.
-  // It requires explicit configuration and authorization for the vision alias.
   const visualDelegate = loadModelsConfig(env)[requestedModel]?.policy.vision_delegate;
   if (
     (route === 'openai_chat' || route === 'openai_responses') &&
@@ -240,9 +205,6 @@ async function runAdmittedRequest(
       body: bodyJson,
       visionModel: delegateModel,
       remainingMs: failoverBudgetMs - (Date.now() - requestStartMs),
-      // An internal vision request is derived from the admitted body.
-      // Keep normal preflight and authorization but do not charge it twice
-      // to the isolate body admission budget.
       execute: (subrequest) => handleAdmittedRequest(subrequest, env, ctx, observeBodyBytes),
     });
     if (!visualResult.ok) {
@@ -259,7 +221,7 @@ async function runAdmittedRequest(
       );
     }
     bodyJson = visualResult.body;
-    rawBody = undefined; // Original image JSON must never reach a text-only node.
+    rawBody = undefined;  
     if (hasImageInput(bodyJson)) {
       return gatewayError(
         request,
@@ -274,14 +236,7 @@ async function runAdmittedRequest(
       );
     }
   }
-  // An image may only move to a model explicitly listed in the requested
-  // model's configured fallback chain, and only if that model declares vision.
-  // Never silently strip an image, infer vision from the provider name, or
-  // treat an image-generation route as image understanding.
   const imageInputRequired = route !== 'openai_images' && hasImageInput(bodyJson);
-  // Provider profiles are a hard per-node gate for image-bearing requests.
-  // Preflight intentionally uses the unfiltered pool so a text model can
-  // preprocess its image with Omni before this dispatch-specific check.
   const tiers: TierMap<RuntimeNode[]> = imageInputRequired
     ? {
         1: configuredTiers[1].filter((node) => getProviderProfile(node.provider).imageInput),
@@ -307,9 +262,6 @@ async function runAdmittedRequest(
     .map((round) =>
       round.filter(({ model }) => {
         const capabilities = modelRegistryEntry(env, model).catalog.capabilities;
-        // Only explicit operator declarations are authoritative for tools and
-        // streams. Registry defaults are conservative discovery hints, not a
-        // reason to reject Claude/Codex tool calls or native pass-through.
         const declared = loadModelsConfig(env)[model]?.catalog.capabilities;
         if (imageInputRequired && capabilities.vision !== true) return false;
         if (requiresTools && declared?.tools === false) return false;
@@ -345,9 +297,6 @@ async function runAdmittedRequest(
       'gateway_model_capability_unsupported',
     );
   }
-  // A vision declaration alone does not make a Provider endpoint image-capable.
-  // Detect a provider-profile mismatch before scheduling so it cannot consume
-  // attempts or return a misleading capacity / cooldown error.
   const visionProviderConfigured =
     !imageInputRequired ||
     modelPlan.some((round) =>
@@ -370,11 +319,6 @@ async function runAdmittedRequest(
   const familyModels = new Set(modelPlan.flat().map((pass) => pass.model.trim().toLowerCase()));
   const familyFallback = familyModels.size > 1;
 
-  // Request-local real failure domains. A logical sibling is not fresh
-  // capacity when the same configured account resolves it to the same upstream
-  // model that already failed earlier in this request. This set is also used by
-  // wall-clock reserve planning so duplicate aliases do not reserve escape time
-  // after their shared execution path is already known to have failed.
   const failedDomains = new Set<string>();
   const nodesById = new Map(config.nodes.map((node) => [node.id, node] as const));
 
@@ -402,10 +346,6 @@ async function runAdmittedRequest(
     return result;
   };
 
-  // Request-level wall-clock reserve for future FAMILY passes. The reserve is
-  // request-scoped, but it is not allowed to become phantom capacity: once a
-  // credential+upstreamModel failure domain is known, future aliases that only
-  // resolve to that same spent domain are filtered out before reserving time.
   const futureAttemptReserveFor = (futurePasses: ReadonlyArray<{ model: string; attemptCap: number | null }>, passAttemptCeiling: number): number => {
     if (!familyFallback) return 0;
     let slotsLeft = Math.max(0, requestPolicy.maxAttempts - passAttemptCeiling);
@@ -424,7 +364,6 @@ async function runAdmittedRequest(
     return reserved;
   };
 
-  // Three separate request-wide counters. Model switches never reset them.
   const state: LoopContext['state'] = {
     attempted: new Set<string>(),
     attempts: [],
@@ -443,14 +382,8 @@ async function runAdmittedRequest(
     tierAttemptsUsed: {},
   };
 
-  // Affinity only chooses between Tier 1 keys. With fewer than two that can serve
-  // this request there is nothing to choose, so the session costs no KV read or
-  // write. A binding whose read timed out is unknown: it is neither used nor
-  // overwritten by this request.
   const tier1Choices = tiers[1].filter((node) => supportsRequest(node, reqDescriptor, knownModels)).length;
   const sessionId = tier1Choices >= 2 ? resolveTier1SessionId(request) : null;
-  // Long cooldowns other isolates found (a rejected key, a spent quota) are
-  // adopted before scheduling; both KV reads are bounded and run together.
   const [, affinityRead] = await Promise.all([
     tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env) : undefined,
     sessionId ? readTier1Affinity(env, sessionId, ctx) : null,
@@ -491,9 +424,6 @@ async function runAdmittedRequest(
     edgeCachePlan,
   };
 
-  // Each round starts as a pending list in plan order. The default (requested)
-  // model is taken whenever it can take the request; when it is unavailable or
-  // busy, the freest sibling goes next. A pass never runs twice.
   const pendingRounds = modelPlan.map((round) => [...round]);
   const triedModels = new Set<string>();
   const availabilityOf = (model: string): number =>
@@ -505,7 +435,6 @@ async function runAdmittedRequest(
       requestPolicy.maxInFlight ?? null,
       failedDomainNodeIds(config.nodes, model, failedDomains),
     );
-  // Passes not yet tried: the rest of this round, then every later round.
   const upcomingPasses = (roundIndex: number, pending: ReadonlyArray<{ model: string; attemptCap: number | null }>) => [
     ...pending,
     ...pendingRounds.slice(roundIndex + 1).flat(),
@@ -533,8 +462,6 @@ async function runAdmittedRequest(
       const domainExcluded = state.attempted.size;
       const effectiveFeasibility = feasibilityForModel(effectiveModel, state.attempted);
 
-      // If every statically reachable path for this alias is already a spent
-      // failure domain, skip it without charging an attempt or reserving time.
       if (!effectiveFeasibility.reachable) {
         if (domainExcluded > 0) {
           logLazy(
@@ -550,8 +477,6 @@ async function runAdmittedRequest(
       }
 
       state.requestedModel = effectiveModel;
-      // "Later" means a model this request has not tried yet. Re-check passes for
-      // models already tried do not keep an earlier hop short.
       const modelKey = effectiveModel.trim().toLowerCase();
       const untriedLater = upcomingPasses(roundIndex, pending).some((later) => {
         const laterKey = later.model.trim().toLowerCase();
@@ -590,9 +515,6 @@ async function runAdmittedRequest(
       if (state.logicalAttempts >= requestPolicy.maxAttempts) break modelRoundsLoop;
       if (state.logicalAttempts >= passAttemptCeiling) continue;
 
-      // Native execution may have discovered additional spent domains. Re-plan
-      // the sibling reserve before protocol fallback so those aliases do not
-      // keep phantom escape time inside the remainder of this pass.
       const fallbackLoopCtx: LoopContext = {
         ...effectiveLoopCtx,
         futureAttemptReserve: futureAttemptReserveFor(upcomingPasses(roundIndex, pending), passAttemptCeiling),
@@ -608,9 +530,6 @@ async function runAdmittedRequest(
     }
   }
 
-  // The compatible candidate pool has been exhausted. Never replay an
-  // already-tried Key+model merely to spend unused max_attempts; a later
-  // request may probe recovery after the existing cooldown has elapsed.
   state.requestedModel = requestedModel;
   return buildExhaustedResponse(
     request,
@@ -627,11 +546,7 @@ async function runAdmittedRequest(
   );
 }
 
-// Hands a final response to the client, storing a cacheable success at the edge.
 function deliver(response: Response, loopCtx: LoopContext): Response {
-  // Aggregate evidence that a successful request actually recovered after at
-  // least one dispatched upstream failure. No Key, node, Provider or physical
-  // model identifiers are disclosed. Hedges without failure do not qualify.
   if (response.status === 200 && loopCtx.state.dispatches > 1 && hasConfirmedUpstreamFailure(loopCtx.state.attempts)) {
     const headers = new Headers(response.headers);
     headers.set('x-gateway-dispatches', String(loopCtx.state.dispatches));

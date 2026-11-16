@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Isolate-local write buffer for token-usage D1 upserts.
-//
-// Every physical upstream attempt used to issue its own upserts into the hot
-// hour row. Under high request rates that queues D1 writes and spends the
-// per-row write quota quickly. The buffer instead merges events by
-// (kind, hour, model) and writes the merged increments in one d1.batch() call
-// per database binding.
-//
-// The first delivered event per database and isolate is flushed promptly so a
-// short-lived isolate can contribute success evidence. Subsequent flushes are
-// rate-limited and triggered by a later event or explicit maintenance flush.
-//
-// Best effort, like the isolate-local /metrics counters. Increments that are
-// still buffered are lost if the isolate is recycled before they flush. A failed
-// batch is atomic in D1, so its increments are merged back into the buffer and
-// retried at the next flush rather than discarded.
 
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { normalizeHour, normalizeModelKey, TTFT_BUCKET_COUNT, tokenStatsD1, ttftBucketIndex } from './keys.ts';
@@ -29,24 +12,15 @@ import {
   type UsageStatement,
 } from './statements.ts';
 
-// Workers Free allows 100,000 D1 row writes a day and every flush upserts a few
-// rows per table, so flushing every couple of seconds under steady traffic spends
-// the allowance on bookkeeping. Events merge by (kind, hour, model), so a longer
-// window reduces repeated writes but pending increments can be lost if the isolate
-// is recycled before a later event or explicit flush submits them.
 const FLUSH_INTERVAL_MS = 60_000;
 const FLUSH_EVENT_THRESHOLD = 500;
 
 export type UsageEvent = {
-  /** Event time in epoch milliseconds; selects the hour row. */
   now: number;
   model: string | null;
   usage: UsagePayload;
-  /** Time to first token, delivered responses only. */
   ttftMs?: number | null;
-  /** Persist global aggregates independently from optional per-model samples. */
   exactGlobal?: boolean;
-  /** Include sampled per-model token and physical-attempt details. */
   includeModel?: boolean;
 };
 
@@ -55,8 +29,6 @@ type UsageEntry = {
   hour: string;
   model: string | null;
   payload: UsagePayload;
-  // The delivered model row always contains success evidence. Its upstream
-  // counters remain sampled independently from that evidence.
   modelUpstream: UsagePayload | null;
   successTtftCount: number;
   ttftBuckets: number[];
@@ -65,12 +37,9 @@ type UsageEntry = {
   countTowardGlobal: boolean;
 };
 
-// Pending increments for one D1 binding. Keyed by the binding object, so events
-// recorded against one database are never written to another.
 type PendingBatch = {
   entries: Map<string, UsageEntry>;
   events: number;
-  /** Isolate-local arrival time of the oldest uncommitted event. */
   oldestQueuedAt: number;
 };
 
@@ -79,15 +48,9 @@ let databasesWithInitialFlush = new WeakSet<UsageDatabase>();
 let bufferedEvents = 0;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushInFlight: Promise<void> | null = null;
-// A batch is removed from pendingByDatabase while D1 is writing it; retain
-// its age separately so /metrics does not report zero backlog mid-flush.
 let inFlightOldestQueuedAt: number | null = null;
 let lastFlushAt = 0;
-// After a failed flush, event-driven flushes wait FLUSH_INTERVAL_MS. Without this,
-// a D1 outage would retry the whole buffer on every event.
 let lastFailureAt = 0;
-// Counters track actual D1 batch results returned by the runtime, not estimates
-// of the account-wide Cloudflare allowance. They reset with the isolate.
 const writeStats = {
   batchAttempts: 0,
   batchSuccesses: 0,
@@ -97,7 +60,6 @@ const writeStats = {
   statementsWithoutRowMetadata: 0,
 };
 
-/** Read-only isolate snapshot: does not read or write D1. */
 export function snapshotUsageBuffer(now: number = Date.now()) {
   let pendingEntries = 0;
   let oldestQueuedAt = inFlightOldestQueuedAt;
@@ -109,8 +71,6 @@ export function snapshotUsageBuffer(now: number = Date.now()) {
     pendingEvents: bufferedEvents,
     pendingDatabases: pendingByDatabase.size,
     pendingEntries,
-    // Since isolate start only; zero when empty. Does not query D1 or
-    // represent the age of any buffered work in other Workers/isolates.
     oldestPendingAgeSeconds: bufferedEvents > 0 && oldestQueuedAt !== null ? Math.max(0, Math.floor((now - oldestQueuedAt) / 1_000)) : 0,
     flushing: flushInFlight !== null,
     ...writeStats,
@@ -180,18 +140,12 @@ function clearFlushTimer(): void {
 
 function armFlushTimer(): void {
   if (flushTimer !== null || pendingByDatabase.size === 0) return;
-  // This detached timer is opportunistic: Workers may suspend or recycle an
-  // isolate when the request ends. It is not protected by ctx.waitUntil(), so
-  // its firing must never be treated as a durability guarantee or used to
-  // justify lower D1 usage estimates.
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void flushUsageBuffer().catch((error) => {
       console.error('token-stats buffered flush failed:', (error as Error)?.message || error);
     });
   }, FLUSH_INTERVAL_MS);
-  // Node-based central tests must not remain alive solely for a statistics timer.
-  // Workers return a numeric timeout handle and ignore this optional method.
   (flushTimer as unknown as { unref?: () => void }).unref?.();
 }
 
@@ -203,11 +157,6 @@ function persistFailure(cause: unknown): Error & { scope: string } {
   return error;
 }
 
-/**
- * Buffers one usage event. Resolves immediately while buffering. When this event
- * triggers a flush, the returned promise settles with that flush, so a caller that
- * passes it to waitUntil keeps the isolate alive until the write completes.
- */
 export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEvent): Promise<void> {
   const database = tokenStatsD1(env);
   if (!database) return Promise.resolve();
@@ -259,7 +208,6 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
   if (lastFlushAt === 0) lastFlushAt = now;
   const isRetryWindowOpen = now - lastFailureAt >= FLUSH_INTERVAL_MS;
   const isFlushDue = bufferedEvents >= FLUSH_EVENT_THRESHOLD || now - lastFlushAt >= FLUSH_INTERVAL_MS;
-  // Cold isolates must persist their first attempt, including failure-only traffic.
   if (!databasesWithInitialFlush.has(database) && isRetryWindowOpen) {
     databasesWithInitialFlush.add(database);
     return flushUsageBuffer();
@@ -270,8 +218,6 @@ export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEven
 }
 
 function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntry>): UsageStatement[] {
-  // Hour totals are summed across models, so each (kind, hour) gets one global
-  // upsert per table. The model rows keep their own upsert.
   const hourTotals = new Map<string, { kind: UsageKind; hour: string; payload: UsagePayload; updatedAt: number }>();
   const statements: UsageStatement[] = [];
   for (const entry of taken) {
@@ -306,29 +252,19 @@ function buildFlushStatements(database: UsageDatabase, taken: Iterable<UsageEntr
   return statements;
 }
 
-// Writes one database's pending batch in a single D1 batch. On failure the
-// increments are merged back into that database's pending batch and the error is
-// rethrown.
 async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Promise<void> {
   pendingByDatabase.delete(database);
   inFlightOldestQueuedAt = batch.oldestQueuedAt;
   try {
-    // Preparation can fail too (for example a D1 binding error). Keep it
-    // inside the failure boundary so queued increments are always restored.
     const statements = buildFlushStatements(database, batch.entries.values());
     writeStats.batchAttempts++;
     const results = await database.batch(statements);
-    // D1Result.success is part of the batch contract. An adapter may resolve
-    // with an explicit unsuccessful statement instead of throwing; never count
-    // such a batch as committed or discard its pending increments.
     if (Array.isArray(results) && results.some((result) => result?.success === false)) {
       throw new Error('D1 batch returned an unsuccessful statement');
     }
     writeStats.batchSuccesses++;
     writeStats.committedStatements += statements.length;
     let reportedStatements = 0;
-    // The D1 runtime may omit metadata in a test double or an older adapter.
-    // Count only rows explicitly reported by D1, never guess the missing rows.
     if (Array.isArray(results)) {
       for (const result of results) {
         const rows = result?.meta?.rows_written;
@@ -353,11 +289,6 @@ async function flushDatabase(database: UsageDatabase, batch: PendingBatch): Prom
   }
 }
 
-/**
- * Writes every buffered increment, one D1 batch per database binding. If a batch
- * fails, the other bindings are still written, and the first failure is rethrown
- * after all of them have run.
- */
 export function flushUsageBuffer(): Promise<void> {
   if (flushInFlight) return flushInFlight;
   clearFlushTimer();
@@ -380,8 +311,6 @@ export function flushUsageBuffer(): Promise<void> {
   return flushInFlight;
 }
 
-// Read paths only nudge a flush after its normal interval, so dashboard
-// traffic cannot turn every buffered write into a new D1 transaction.
 export async function flushBeforeRead(): Promise<void> {
   if (pendingByDatabase.size === 0 && !flushInFlight) return;
   if (!flushInFlight && Date.now() - lastFlushAt < FLUSH_INTERVAL_MS) return;

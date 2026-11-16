@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// HTTP boundary helpers: CORS, error responses, upstream headers, URL
-// building, timing-safe auth, bounded body reads.
 
 import { readEnv } from '../config-core/env.ts';
 import { UPSTREAM_PROCESSING_ERROR, upstreamProcessingError } from '../contracts/upstream-processing.ts';
@@ -14,7 +11,6 @@ const SECURITY_HEADERS = {
 
 export function corsHeaders(request: Request, env: Record<string, unknown>): Record<string, string> {
   const allowedOrigin = readEnv(env, 'AIG_CORS_ORIGIN');
-  // Default: CORS disabled. Browser access requires explicit AIG_CORS_ORIGIN.
   if (!allowedOrigin) return { ...SECURITY_HEADERS };
   const origin = normalizeAllowedOrigin(allowedOrigin);
   if (origin === null) return { ...SECURITY_HEADERS };
@@ -80,8 +76,6 @@ export function jsonError(
   });
 }
 
-// Pages that submit a form back to this origin (OAuth onboarding) pass allowSelfForm; every other
-// page keeps form-action 'none'. The security headers below always win over caller headers.
 export function htmlResponse(
   content: BodyInit,
   init?: { status?: number; headers?: Record<string, string>; nonce?: string; allowSelfForm?: boolean },
@@ -109,13 +103,7 @@ function base64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// Strict upstream header construction lives in src/transport/: the protocol
-// owns its auth header shape (OpenAI -> Authorization Bearer, Anthropic ->
-// x-api-key). Client auth material is never forwarded for either protocol.
 
-// Join an upstream API path onto a configured base_url.
-// If base_url already ends with /v1, a leading /v1 on the path is stripped
-// so "https://host/v1" + "/v1/chat/completions" does not double the prefix.
 export function buildTargetUrl(baseUrl: string, upstreamPath: string): string {
   const base = new URL(baseUrl);
   let path = upstreamPath || '/';
@@ -148,8 +136,6 @@ export class BodyAdmissionBudgetError extends Error {
   }
 }
 
-// Collects the raw chunks and decodes once. A multi-byte UTF-8 sequence split across
-// chunks is then decoded whole, and the body is never built up as a string piece by piece.
 export async function readBodyTextWithLimit(request: Request, maxBytes: number, observeBytes?: (actualBytes: number) => boolean): Promise<string> {
   if (!request.body) return '';
   const reader = request.body.getReader();
@@ -163,8 +149,6 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number, 
       await reader.cancel().catch(() => {});
       throw new BodyTooLargeError();
     }
-    // Reserve measured bytes before retaining a chunk. A rejected growth is
-    // a transient isolate budget failure, not a malformed client request.
     if (observeBytes && !observeBytes(total)) {
       await reader.cancel().catch(() => {});
       throw new BodyAdmissionBudgetError();
@@ -180,8 +164,6 @@ export async function readBodyTextWithLimit(request: Request, maxBytes: number, 
   return new TextDecoder().decode(combined);
 }
 
-// Reads at most `maxBytes` of a response body and reports whether more was left
-// behind. Never throws; a failed or timed-out read yields what was gathered so far.
 export async function readBodyTextBounded(
   response: Response,
   maxBytes: number = 4096,
@@ -247,17 +229,12 @@ export async function readBodyTextBounded(
   }
 }
 
-// Diagnostic read: a truncated tail is fine for error text.
 export async function safeReadErrorBody(response: Response, maxBytes: number = 4096, deadlineMs?: number | null): Promise<string> {
   return (await readBodyTextBounded(response, maxBytes, deadlineMs)).text;
 }
 
-// Largest buffered (non-stream) upstream reply the gateway will hold and parse.
 export const MAX_BUFFERED_REPLY_BYTES = 2 * 1024 * 1024;
 
-// Reads a complete buffered reply. A reply over the limit is never parsed from
-// a truncated prefix: the read throws TOO_LARGE so the caller can stop instead
-// of regenerating the same oversized answer on another node.
 export async function readBufferedReplyText(response: Response, deadlineMs?: number | null): Promise<string> {
   const { text, isTruncated } = await readBodyTextBounded(response, MAX_BUFFERED_REPLY_BYTES, deadlineMs);
   if (isTruncated) {
@@ -275,14 +252,6 @@ export function trimDiagnostic(text: unknown, limit: number = 600): string {
     .slice(0, limit);
 }
 
-// Terminal-error intent header: tells SDKs (Codex / Claude) NOT to auto-retry a
-// request the gateway already resolved — the gateway has internally rotated
-// across nodes, so a client-side blind retry risks repeating work the gateway
-// already spent its budget on. Rate-limit (429) and capacity (503) responses stay
-// retryable via Retry-After. `isRetryable` marks a pre-commit failure that was
-// purely transient (a spent failover budget, or only timeouts / 5xx / 429 across
-// every attempt): nothing was delivered to the client, so a retry cannot repeat a
-// tool call, and by then the cooldown state steers it to capacity that recovered.
 export function shouldNotRetryHeaders(status: number, isRetryable: boolean = false): Record<string, string> {
   if (status === 429 || status === 503 || isRetryable) return {};
   return { 'x-should-retry': 'false' };

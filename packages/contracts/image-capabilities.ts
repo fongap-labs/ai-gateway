@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Lightweight, credential-free image capability metadata shared by the
-// Gateway control plane and the Generation execution plane. Provider-native
-// request encoding and actual credentialed fetch remain center-only.
 
 export const IMAGE_PROVIDER_IDS = ['openai-image', 'google-image', 'cloudflare-image'] as const;
 
@@ -24,11 +20,6 @@ export function isImageGenerationProvider(provider: string): boolean {
   return typeof provider === 'string' && providers.has(provider.trim().toLowerCase());
 }
 
-/**
- * Preliminary control-plane eligibility only; NOT approval to execute.
- * Generation Center revalidates the selected node, URL, key and native body
- * before doing one potentially billable Provider attempt.
- */
 export function canRouteImageGeneration(node: ImageRoutingNode, logicalModel: string, size: unknown): boolean {
   const provider = typeof node.provider === 'string' ? node.provider.trim().toLowerCase() : '';
   if (!isImageGenerationProvider(provider) || node.auth === 'oauth') return false;
@@ -36,8 +27,6 @@ export function canRouteImageGeneration(node: ImageRoutingNode, logicalModel: st
   const physicalModel = node.models[logicalModel];
   if (!physicalModel || typeof physicalModel !== 'string' || !sizes.has(size as string)) return false;
   try {
-    // Match the native image adapters' URL parser without importing them
-    // into Gateway. Transport protocol/userinfo policy is checked at config.
     if (!new URL(node.baseUrl).protocol) return false;
   } catch {
     return false;

@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-// Gateway-owned physical-attempt accounting and stream statistics.
 
-// observability.ts - post-outcome recording for one physical upstream attempt.
-// Delivered-response token statistics and physical-attempt token statistics are
-// intentionally separate: failed/fallback/hedge work must never fabricate
-// successful model-status evidence, but it still belongs in upstream cost
-// accounting when usage is reported.
 
 import { gatewayStats, recordStreamCompleted, recordStreamInterrupted, recordStreamStart } from '../../../src/observability/gateway-stats.ts';
 import { recordProviderAttemptEvidence } from '../../../src/observability/provider-attempt-evidence.ts';
@@ -35,10 +29,6 @@ import type { AttemptContext, AttemptSettlement } from '../../../src/types/reque
 import { upstreamModelOf } from '../response/response-helpers.ts';
 import { releaseLargeRequestBody } from './body-release.ts';
 
-// One settlement holder per physical upstream dispatch. The holder travels by
-// reference with the attempt context, so a context copy (a model-family
-// fallback rewrites the node) still settles the SAME attempt exactly once
-// instead of persisting a second physical attempt for one dispatch.
 function settlementOf(c: AttemptContext): AttemptSettlement {
   if (!c.attemptSettlement) c.attemptSettlement = { observedUsage: null, settled: false };
   return c.attemptSettlement;
@@ -93,7 +83,6 @@ export function recordUndeliveredUpstreamAttempt(c: AttemptContext, node: Runtim
     try {
       c.logger?.error?.(`upstream token-stats D1 ${scope} persist failed: ${err?.message || err}`);
     } catch {
-      /* fail-open */
     }
   });
   scheduleBackground(c, task);
@@ -106,7 +95,6 @@ function scheduleD1TokenPersist(c: AttemptContext, usage: unknown, logicalModel?
     try {
       c.logger?.error?.(`token-stats D1 ${scope} persist failed: ${err?.message || err}`);
     } catch {
-      /* never throw */
     }
   });
   scheduleBackground(c, task);
@@ -125,16 +113,6 @@ function scheduleBackground(c: AttemptContext, task: Promise<unknown>): void {
   }
 }
 
-/**
- * A committed stream whose matrix translation hit the AIG_CONVERSION_BUDGET
- * ends as a NEUTRAL end with a budget reason, not as a node failure: the reply
- * size is the client's demand, so the key takes no cooldown and the attempt is
- * not counted as delivered, but the physical upstream attempt — which DID run
- * and bill its tokens — is settled exactly once through the undelivered writer.
- * The client saw the protocol error frames / truncated reply through the relay.
- * Composes with the makeNodeStreamTrack callbacks, which the caller bypasses
- * when the budget fired.
- */
 export function recordNodeBudgetStop(c: AttemptContext, node: RuntimeNode, reason: string, status: number): void {
   const latencyMs = c.attemptStartMs ? Date.now() - c.attemptStartMs : -1;
   recordUndeliveredUpstreamAttempt(c, node);
@@ -181,8 +159,6 @@ export function recordNodeSuccess(c: AttemptContext, node: RuntimeNode, latencyM
       clearAdaptive429State(node.provider, credentialSlotId(node), logicalModel);
     recordTier1ProviderModelSuccess(node.provider, upstreamModelOf(node, logicalModel), node.id);
     recordTier1UpstreamModelServed(node.id, upstreamModelOf(node, logicalModel));
-    // Confirm the quota lease with actual delivered usage before release; a
-    // settled lease is not restored, so the request reservation is consumed.
     const observed = settlementOf(c).observedUsage;
     const consumed = normalizeTokenUsage(observed)?.total ?? 0;
     settleTier1Quota(node.id, c.tier1ReleaseToken, consumed);
@@ -200,10 +176,6 @@ export function makeNodeStreamTrack(
   latencyMs: number,
   { observeStreamUsage = true }: { observeStreamUsage?: boolean } = {},
 ) {
-  // Once a stream is committed, no callback below needs the client body or
-  // the matrix conversion context. Dropping them here avoids retaining large
-  // prompt trees for the stream's lifetime; small bodies stay for hedge copies
-  // and other short-lived uses.
   releaseLargeRequestBody(c);
   const tier1 = node.tier === 'tier-1';
   return {

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared private-center Matrix stream conversion, native-object collection and
-// synthetic SSE rendering. Gateway still owns first-event commit and retry.
 
 import { markSyntheticClientStreamHeaders } from '../../transport/client-lifecycle.ts';
 import { convertSseStream } from '../../transport/convert-sse.ts';
@@ -17,39 +14,23 @@ import { ChatStreamDecoder, ChatStreamEncoder } from './chat-stream.ts';
 import { replyToObject, replyToResponsesObject } from './response.ts';
 import { ResponsesStreamDecoder, ResponsesStreamEncoder } from './responses-stream.ts';
 
-// ---- Stream translation ------------------------------------------------------
 
 export type MatrixStreamHandle = {
   clientStream: ReadableStream<Uint8Array>;
   collector: IrCollector;
   from: IrProtocol;
   to: IrProtocol;
-  /** Non-null once the upstream reached its terminal event. */
   replyIfDone: () => IrReply | null;
   diagnostics: () => readonly ConversionDiagnostic[];
-  /** The budget stop reason once the AIG_CONVERSION_BUDGET expired, else null. */
   budgetExceeded: () => BudgetStopReason | null;
 };
 
-/** Wiring for AIG_CONVERSION_BUDGET on the streaming translate path. */
 export type MatrixStreamBudget = {
   cfg: MatrixConversionBudget;
-  /**
-   * AIG_CONVERSION_BUDGET_MODE. "truncate" renders a well-formed short reply
-   * (canonical length stop through the collector, then encoder.finish); "error"
-   * enqueues `stopChunk` (the client-protocol gateway error frames the success
-   * layer built) and closes.
-   */
   mode: 'error' | 'truncate';
   stopChunk: Uint8Array | null;
 };
 
-/**
- * Wrap a streaming upstream body (the forced `stream:true` request body) into
- * the client protocol stream. Upstream decode and client encode both run
- * through IR; the collector keeps the final reply for usage normalization and
- * the object fallback.
- */
 export function openMatrixStream(
   upstreamBody: ReadableStream<Uint8Array> | null | undefined,
   from: IrProtocol,
@@ -65,17 +46,9 @@ export function openMatrixStream(
   const budget = createMatrixBudget(options.budget?.cfg ?? null);
   let budgetStop: BudgetStopReason | null = null;
 
-  // Shared budget-stop choreography. Runs INSIDE convertSseStream's onData, so
-  // it must never throw: enqueue the terminal frames, flip the driver's
-  // terminal flag and let the driver close cleanly (cancelling the upstream in
-  // its finally block). Throwing here would error the client controller — the
-  // ungraceful path AIG_CONVERSION_BUDGET_MODE=error deliberately avoids.
   const stopByBudget = (controller: ReadableStreamDefaultController<Uint8Array>): void => {
     budgetStop = budget?.stopped ?? null;
     if (options.budget?.mode === 'truncate') {
-      // A well-formed shortened reply: the canonical length stop renders the
-      // provider-idiomatic terminal frames (finish_reason length /
-      // stop_reason max_tokens / response.incomplete) through encoder.finish.
       collector.feed({ type: 'stop', stop: 'length' });
       sealReply(controller);
       return;
@@ -84,8 +57,6 @@ export function openMatrixStream(
       controller.enqueue(options.budget.stopChunk);
       return;
     }
-    // Defensive default when the success layer supplied no error chunk: keep
-    // the client stream structured rather than erroring the controller.
     enqueue(controller, textEncoder, [
       'data: {"error":{"message":"Gateway conversion output budget exceeded.","type":"api_error","code":"conversion_budget_exceeded"}}\n\n',
       'data: [DONE]\n\n',
@@ -96,20 +67,14 @@ export function openMatrixStream(
     const { events, terminal } = pushDecoder(decoder, from, data);
     for (const event of events) {
       if (event.type === 'error') {
-        // Throwing unwinds into convertSseStream and errors the client
-        // controller, which the outer request boundary treats like any
-        // other upstream failure (failover when nothing was written yet).
         throw upstreamReportedError(event.message);
       }
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
-      // A caller-known input count fills in when the upstream start event carries none.
       const seeded =
         event.type === 'start' && event.inputTokens === undefined && options.seedInputTokens !== undefined
           ? { ...event, inputTokens: options.seedInputTokens }
           : event;
       const stamped = seeded.type === 'start' && options.model ? { ...seeded, model: options.model } : seeded;
-      // Budget probe BEFORE the collector/encoder consume the event, so the
-      // overshooting piece is never delivered or billed as translated work.
       if (budget) {
         if (!budget.beginEvent(event) || !budget.chargeOutput(outputUnitsOf(event))) {
           stopByBudget(controller);
@@ -128,13 +93,9 @@ export function openMatrixStream(
     enqueue(controller, textEncoder, encoder.finish(finalReply));
   };
 
-  // A Chat upstream that closes right after its finish chunk (no usage chunk, no
-  // `[DONE]`) still delivered a complete reply; seal it instead of erroring the client.
   const clientStream = convertSseStream(
     upstreamBody,
     onData,
-    // The driver stops reading (and cancels the upstream) once the decoder saw
-    // its terminal sentinel OR the translation budget expired.
     () => decoder.done || budgetStop !== null,
     (controller) => {
       if (!endsCleanly(decoder)) return false;
@@ -154,7 +115,6 @@ export function openMatrixStream(
 }
 
 function upstreamReportedError(message: string): Error {
-  // Upstream detail is not echoed to the client; the fallback log keeps the request id.
   void message;
   return new Error('Upstream stream error');
 }
@@ -198,7 +158,6 @@ function pushDecoder(
   from: IrProtocol,
   data: string,
 ): { events: IrEvent[]; terminal: boolean } {
-  // The chat decoder owns [DONE] so its terminal flag (read by the SSE driver) is set.
   if (decoder instanceof ChatStreamDecoder) return decoder.push(data);
   if (data === '[DONE]') return { events: [], terminal: true };
   if (from === 'anthropic') {
@@ -215,7 +174,6 @@ function pushDecoder(
   return { events: [], terminal: false };
 }
 
-/** A close without the terminal sentinel is complete only for a Chat reply that already finished. */
 function endsCleanly(decoder: ChatStreamDecoder | AnthropicStreamDecoder | ResponsesStreamDecoder): boolean {
   return decoder instanceof ChatStreamDecoder && decoder.finishedReply;
 }
@@ -227,7 +185,6 @@ function streamDiagnostics(reply: IrReply | null, to: IrProtocol): readonly Conv
   return diagnostics;
 }
 
-// ---- Object fallback (non-streaming client over a forced-stream upstream) ----
 
 export async function collectMatrixObject(
   upstreamBody: ReadableStream<Uint8Array> | null | undefined,
@@ -247,9 +204,6 @@ export async function collectMatrixObject(
   const collector = new IrCollector();
   const decoder = makeDecoder(from);
   const budget = createMatrixBudget(options.budget?.cfg ?? null);
-  // Anthropic-only seed: mirrors the legacy conversion path's input-token
-  // estimate so node accounting does not collapse to zero when message_start
-  // carries no usage. A real start event overwrites the seed.
   if (from === 'anthropic' && (options.seedInputTokens ?? 0) > 0) {
     collector.feed({ type: 'start', id: '', model: options.model ?? '', inputTokens: options.seedInputTokens });
   }
@@ -260,14 +214,6 @@ export async function collectMatrixObject(
     for (const event of events) {
       if (event.type === 'error') throw new Error(`upstream stream error: ${event.message || 'unknown'}`);
       if (event.type === 'usage') options.onUpstreamUsage?.(event.raw);
-      // AIG_CONVERSION_BUDGET probe BEFORE the collector consumes the event, so
-      // the overshooting piece is never rendered or billed as translated work.
-      // "error" mode throws ConversionBudgetStop (the success layer renders a
-      // 502 and stops; regenerating on another node would bill the same
-      // oversized answer). "truncate" seals the canonical length stop and
-      // terminates the READ: hasTerminal breaks the read loop, which cancels
-      // the upstream, and the collected short reply is rendered normally and
-      // delivered with regular success accounting.
       if (budget) {
         if (!budget.beginEvent(event) || !budget.chargeOutput(outputUnitsOf(event))) {
           if (options.budget?.mode === 'truncate') {
@@ -313,7 +259,6 @@ export async function collectMatrixObject(
   return { reply, object: replyToObject(reply, to), diagnostics: streamDiagnostics(reply, to) };
 }
 
-// ---- Synthetic SSE (client asked for a stream over a collected reply) --------
 
 export function synthesizeMatrixStreamFromObject(reply: IrReply, to: IrProtocol): Response {
   const encoded = new TextEncoder();

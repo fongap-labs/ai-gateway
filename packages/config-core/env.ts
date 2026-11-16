@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Small env helpers shared by all config loaders.
 
 export function readEnv(env: Record<string, unknown>, name: string): string | undefined {
   const value = env?.[name];

@@ -3,8 +3,6 @@
 
 import type { QuotaSignal } from '../../../packages/contracts/quota-signal.ts';
 
-// Quota signals are hints supplied by a trusted private center, never client
-// headers. Reject oversized or malformed data; unknown remains unknown.
 export function quotaFromCenter(headers: Headers): QuotaSignal | null {
   const encoded = headers.get('x-aig-quota-signal');
   if (!encoded || encoded.length > 512) return null;

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared strict request contract for the public Gateway and private Generation Center.
-// Provider-specific options require a separate capability; never silently
-// discard an unknown field or pretend image editing is supported.
 
 import type { ImageSize } from './image-capabilities.ts';
 

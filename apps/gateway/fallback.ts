@@ -1,51 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Protocol Fallback Orchestration; private preflight owns request translation.
-//
-// Supported conversions (see SUPPORTED_CONVERSIONS in protocol-fallbacks.ts
-// for the single source of truth): every directed pair among OpenAI Chat
-// Completions, Anthropic Messages and OpenAI Responses travels through the
-// canonical IR matrix (conversion/matrix/) — streaming, tool calls and
-// reasoning survive translation. The former legacy pairwise Chat <-> Messages
-// converters were absorbed into that matrix. There is no Gemini conversion.
-// Fallback follows the resolved PROTOCOL_FALLBACKS policy, including the
-// built-in matrix-wide default when the variable is unset. There is no Gemini
-// conversion.
-//
-// Contract:
-//   * Native-first: the native tier loop runs first and only when it
-//     returns null (all tiers exhausted without a response) does the
-//     fallback chain get a chance.
-//   * Shared state: the fallback loop reuses the SAME state, the
-//     SAME failover budget, the SAME requestStartMs, the SAME
-//     logicalAttempts counter, the SAME dispatches counter, and the
-//     SAME hedges counter. There is no fresh budget and no reset.
-//   * Hedge never crosses protocol/surface: the scheduler's
-//     (protocol, surface) filter excludes foreign nodes, so a hedge
-//     twin is always same-protocol and same-surface as its primary.
-//     Whether hedge is allowed inside a fallback pass is determined
-//     by the normal policy and tier hedge rules — the fallback chain
-//     does not suppress it, nor does it launch cross-protocol twins.
-//   * Each fallback step that has a supported candidate re-runs the
-//     tier loop. The first step that returns a Response wins. The set of
-//     reachable fallback steps is precomputed by route-feasibility.ts at
-//     preflight time and carried through loopCtx.feasibility; runFallbackChain
-//     iterates that set rather than re-implementing the feasibility check.
-//   * If private conversion preflight rejects with ConversionError, or would drop high-risk semantic
-//     state, that fallback target is skipped before any upstream dispatch.
-//     The client request is still legal; the target protocol is incompatible.
-//     No logical attempt, dispatch, hedge, active-request, cooldown or circuit
-//     state is charged for a skipped conversion.
-//   * Successful conversion emits a debug-only fidelity record. Diagnostics
-//     contain only fixed feature/action labels; request content, schemas, tool
-//     names and credentials are never logged.
-//   * If every recognized fallback target is rejected before any upstream
-//     dispatch, return a dedicated 502 instead of misreporting the condition as
-//     node cooldown/circuit exhaustion. The exception is a request whose only
-//     problem is top-level fields no target protocol can carry, for a model with
-//     no native node: no node of this gateway can ever serve those fields, so the
-//     answer is a 400 that names them, and the client can resend without them.
 
 import { highRiskSemanticLoss } from '../../packages/conversion-core/fidelity-policy.ts';
 import { isMatrixPair } from '../../packages/conversion-core/protocol-pairs.ts';
@@ -62,7 +16,6 @@ import { computeTierCaps } from './scheduling/tier-policy.ts';
 import { checkInferenceConversion } from './transport/inference-preflight-client.ts';
 import { reuseRequestConversionPreflight } from './transport/request-conversion-cache.ts';
 
-/** client route -> canonical IR protocol. */
 function routeToIrProtocol(route: string): IrProtocol | null {
   switch (route) {
     case 'openai_chat':
@@ -76,7 +29,6 @@ function routeToIrProtocol(route: string): IrProtocol | null {
   }
 }
 
-/** fallback (protocol, surface) -> canonical IR protocol. */
 function fallbackToIrProtocol(fb: { protocol: string; surface: string }): IrProtocol | null {
   if (fb.protocol === 'openai' && fb.surface === 'chat_completions') return 'openai_chat';
   if (fb.protocol === 'openai' && fb.surface === 'responses') return 'openai_responses';
@@ -91,9 +43,6 @@ type TierLoopRunner = (
   overrideTierCaps: TierMap<number> | null,
 ) => Promise<Response | null>;
 
-/**
- * Run the cross-protocol fallback chain.
- */
 export async function runFallbackChain({
   loopCtx,
   route,
@@ -118,13 +67,9 @@ export async function runFallbackChain({
     if (state.logicalAttempts >= policy.maxAttempts || state.retryShed) break;
     const remainingBudgetMs = failoverBudgetMs - (Date.now() - requestStartMs);
     if (remainingBudgetMs <= 0) {
-      // The rejected conversions are part of the answer the client gets, even
-      // when the request runs out of wall-clock budget.
       state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
       return buildBudgetExhaustedResponse(request, env, route, requestId, requestedModel, state, exposeUpstreamInfo);
     }
-    // bodyChars keeps the size-aware timeouts and oversize memory working on the
-    // fallback pass; a translated request is as large as the client's.
     const fbReqDescriptor: RoutableRequest = { model: requestedModel, protocol: fb.protocol, surface: fb.surface, bodyChars: loopCtx.bodyChars };
     let conversionResult: ConversionResult;
     const isNonstreamPreferred = getLimits(env).conversionPreferNonstream && bodyJson.stream !== true;
@@ -132,18 +77,6 @@ export async function runFallbackChain({
       const from = routeToIrProtocol(route);
       const to = fallbackToIrProtocol(fb);
       if (!from || !to || !isMatrixPair(from, to)) continue;
-      // Structured output on chat/messages targets keeps the conservative
-      // prompt strategy: the matrix adapters embed the JSON instruction
-      // themselves and native/tool modes require positive capability
-      // evidence that cross-protocol fallback cannot assume here.
-      // AIG_CONVERSION_PREFER_NONSTREAM: a non-streaming client keeps its own
-      // stream flag so the provider may answer with one JSON body (streaming
-      // clients still get the forced upstream stream).
-      // The public Gateway is never allowed to run the private body translator.
-      // Missing/invalid center bindings reject before any physical attempt.
-      // Family alias fallback can reach the same protocol pair repeatedly.
-      // Reuse only a successful check for this exact body within this request.
-      // No failure or Provider capability is cached across requests.
       conversionResult = await reuseRequestConversionPreflight(state, bodyJson, JSON.stringify([from, to, isNonstreamPreferred]), () =>
         checkInferenceConversion(env, {
           request,
@@ -157,8 +90,6 @@ export async function runFallbackChain({
       );
     } catch (e) {
       if (e instanceof InferenceCenterUnavailable) {
-        // A preflight RPC failure is not a Provider failure. Fail closed
-        // without charging a logical attempt, node health or dispatch count.
         return gatewayError(
           request,
           env,
@@ -191,8 +122,6 @@ export async function runFallbackChain({
       throw e;
     }
 
-    // Debug-only: provides an exact denominator for fidelity analysis when an
-    // operator enables debug logging, without adding default per-request noise.
     logger.debug(
       JSON.stringify({
         event: 'fallback_conversion',
@@ -226,12 +155,6 @@ export async function runFallbackChain({
     }
 
     convertedTargetCount++;
-    // Protocol fallback must preserve the same explicit Tier 1 admission
-    // contract as the native pass. Omitting maxInFlight here overstates live
-    // capacity and can distort tier caps / fair-share timeout slicing before
-    // the downstream picker eventually rejects the saturated account.
-    // The tier-attempt budget is request-wide: the native pass already spent
-    // part of it, so only the remainder is available to this fallback target.
     const fbTierCaps = computeTierCaps(
       tiers,
       fbReqDescriptor,
@@ -255,7 +178,6 @@ export async function runFallbackChain({
   state.conversionRejections = (state.conversionRejections ?? 0) + conversionRejectedCount;
   if (conversionRejectedCount > 0 && convertedTargetCount === 0 && state.dispatches === 0) {
     if (!feasibility?.nativeSupported && !hasOtherRejection && unsupportedRequestFields.size > 0) {
-      // Field names come from the client's own body; bound them before echoing one back.
       const fields = [...unsupportedRequestFields].map((field) => field.slice(0, 64));
       const names = fields.map((field) => `"${field}"`).join(', ');
       return gatewayError(

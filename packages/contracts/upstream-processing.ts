@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared failure contract for consuming an already-started upstream response.
-// Producers describe WHAT failed; reliability/classify decides HOW that fact
-// affects rotation, cooldown and circuit state. Keep HTTP/stream mechanics out
-// of this neutral cross-layer contract.
 
 export const UPSTREAM_PROCESSING_ERROR = Object.freeze({
   DEADLINE: 'deadline',

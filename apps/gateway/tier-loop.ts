@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Gateway-owned physical attempt orchestration. The request handler owns
-// authorization and model rounds; this module alone owns Tier loop dispatch,
-// request-wide attempt accounting and retry admission. Capability centers
-// only execute one physical attempt, and must not introduce a second scheduler.
 
 import { releaseTier1Slot } from '../../src/reliability/tier1-state.ts';
 import type { RuntimeNode } from '../../src/types/node.ts';
@@ -17,9 +12,6 @@ import { buildBudgetExhaustedResponse } from './response/errors.ts';
 import { computeTierCaps, countRemainingDispatchableAttempts, pickForTier, redistributeUnusedTierAttempts } from './scheduling/tier-policy.ts';
 import { recordTier1AffinityDecision } from './scheduling/tier1-affinity.ts';
 
-// Whether the next attempt may be dispatched. A retry after an upstream that was
-// slow or failing (not a plain pool rotation) draws on the isolate retry budget;
-// once it is refused the request stops trying instead of walking the whole pool.
 function mayDispatchNextAttempt(state: LoopState, candidate: RuntimeNode): boolean {
   if (state.retryShed) return false;
   const last = state.attempts.at(-1);
@@ -100,11 +92,6 @@ export async function runTierLoop(
         raceLostIds,
         maxInFlight: policy.maxInFlight ?? null,
       };
-      // Prefer a different free Key after any dispatched failure, but do not
-      // misclassify a 422 or a model-scoped 429 as an exhausted credential.
-      // An actual 401 or account-scoped 429 is a hard exclusion across sibling
-      // models. Other failures permit a bounded fallback to a different route
-      // on the same Key only when no independent credential is dispatchable.
       const knownNodes = state.nodes ?? [...tiers[1], ...tiers[2]];
       const dispatchedAttempts = state.attempts.filter((attempt) => attempt.dispatched === true);
       const strictlyAttempted =
@@ -130,9 +117,6 @@ export async function runTierLoop(
         continue;
       }
       const node = pick.node as RuntimeNode;
-      // Check retry capacity only after a real, dispatchable candidate is
-      // selected. This avoids paying retry budget for empty/race-lost picks.
-      // Release an acquired Tier 1 slot if the retry budget refuses dispatch.
       if (!mayDispatchNextAttempt(state, node)) {
         if (tierNumber === 1) releaseTier1Slot(node.id, pick.tier1ReleaseToken ?? null);
         return null;
@@ -182,18 +166,12 @@ export async function runTierLoop(
       );
       if (outcome.budgetCharged) {
         usedInTier++;
-        // `tier_attempts` is a request-wide cap: remember what this tier spent
-        // so a later protocol-fallback or model-family pass only gets the rest.
         state.tierAttemptsUsed = state.tierAttemptsUsed ?? {};
         state.tierAttemptsUsed[tierNumber] = (state.tierAttemptsUsed[tierNumber] ?? 0) + 1;
       }
       if (outcome.response) return outcome.response;
       if (outcome.stop) break;
     }
-    // A tier may have fewer live keys than its initial allocation predicted.
-    // Pass unused attempts down in priority order, keeping explicit tier caps
-    // and the shared request-wide ceiling intact. Protocol-fallback overrides
-    // have their own explicit budgets and are not redistributed here.
     if (!overrideTierCaps && usedInTier < cap) {
       redistributeUnusedTierAttempts(tierCaps, tierNumber, cap - usedInTier, policy);
     }

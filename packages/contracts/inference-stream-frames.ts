@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Private binary framing for cross-center translated SSE. The Gateway MUST
-// decode this before returning a public Response: raw usage and budget status
-// are control frames, never client SSE bytes.
 import type { BudgetStopReason } from '../conversion-core/budget.ts';
 
 export const INFERENCE_FRAMED_STREAM_FORMAT = 'inference-framed-v1' as const;
@@ -101,11 +97,6 @@ function takeFrame(bytes: Uint8Array): { frame: Frame; length: number } | null {
   return { frame, length: HEADER_BYTES + size };
 }
 
-/**
- * Frame a converted SSE stream and its private raw-usage side channel without
- * buffering the full response. A conversion callback reports usage *during*
- * reads; its frames remain in order before the converted bytes from that read.
- */
 export function frameInferenceStream(
   makeStream: (onUsage: (usage: unknown) => void) => ReadableStream<Uint8Array>,
   budgetStopped: () => BudgetStopReason | null = () => null,
@@ -162,11 +153,6 @@ export function frameInferenceStream(
   });
 }
 
-/**
- * Strip internal framing before Gateway's public first-output guard. Control
- * events are delivered to accounting callbacks only and can never become
- * client-visible SSE frames, including when a frame is malformed or truncated.
- */
 export function unframeInferenceStream(
   source: ReadableStream<Uint8Array>,
   callbacks: { onUsage?: (usage: Record<string, unknown>) => void; onBudgetStop?: (reason: BudgetStopReason) => void } = {},

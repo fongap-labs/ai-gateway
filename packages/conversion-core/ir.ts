@@ -1,40 +1,19 @@
 ﻿// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Canonical intermediate representation (IR) for cross-protocol translation.
-//
-// The new conversion matrix (Chat / Responses / Messages mutual translation)
-// is relational, not pairwise: every client protocol is PARSED into this IR,
-// every upstream protocol is BUILT from it; every upstream stream is DECODED
-// into IR events and encoded back into each client protocol. N protocols give
-// N parse/build/decode/encode adapters instead of N*(N-1) direct translators
-// (the same hub shape magpie ships; see yetone/magpie internal/gateway/ir.go).
-//
-// The IR is intentionally small. It models exactly the cross-protocol
-// portable surface: plain text, images, function tools/calls/results,
-// reasoning (thinking) parts with optional thinking level, sampling stops and
-// usage. Everything beyond that belongs to ONE protocol and stays native.
-//
-// No client-controlled text may ever appear in diagnostics - only the fixed
-// feature/action vocabulary defined in ../result.ts.
 
 export type IrProtocol = 'openai_chat' | 'openai_responses' | 'anthropic';
 
-// Canonical stop values (magpie's `"stop"|"length"|"tool"|"filter"`).
 export type IrStop = '' | 'stop' | 'length' | 'tool' | 'filter';
 
-// Canonical thinking level. Anthropic budget_tokens and OpenAI reasoning
-// effort both normalize into this vocabulary; unknown levels never guess.
 export type IrEffort = 'low' | 'medium' | 'high' | 'max';
 
 export type IrImagePart = {
   type: 'image';
   url: string;
   mediaType?: string;
-  data?: string; // base64 payload when the image was inline (`data:` / base64)
+  data?: string;  
 };
 
-/** Inline document (PDF and the like) attached by the client; carried only as base64. */
 export type IrDocumentPart = {
   type: 'document';
   mediaType: string;
@@ -46,7 +25,6 @@ export type IrToolCallPart = {
   type: 'tool_call';
   id: string;
   name: string;
-  /** Raw JSON-encoded arguments string, exactly as the wire carried it. */
   args: string;
 };
 
@@ -62,22 +40,15 @@ export type IrToolResultPart = {
 export type IrThinkingPart = {
   type: 'thinking';
   text: string;
-  /** Provider thinking signature when the origin preserved one. */
   signature?: string;
-  /** True when the part stood for an opaque sealed/redacted thinking block whose text was dropped. */
   sealed?: boolean;
-  /** Raw provider payload for sealed blocks (Anthropic `redacted_thinking` data, Responses encrypted_content). */
   data?: string;
 };
 
 export type IrPart = { type: 'text'; text: string } | IrImagePart | IrDocumentPart | IrToolCallPart | IrToolResultPart | IrThinkingPart;
 
-// An inline image only travels as a data URI. Anthropic targets need the
-// payload split out (`base64` source), while Chat/Responses targets keep the
-// URI itself, so the IR carries both and each builder picks its shape.
 const DATA_URL_IMAGE = /^data:([^;,]+)(;base64)?,(.*)$/s;
 
-/** Parse an inline `data:` image URI into an IR image part. */
 export function inlineDataUrlImage(url: string): IrImagePart {
   const match = DATA_URL_IMAGE.exec(url);
   if (!match) return { type: 'image', url };
@@ -89,9 +60,6 @@ export function inlineDataUrlImage(url: string): IrImagePart {
   return { type: 'image', url };
 }
 
-// Data URLs are ASCII base64; percent decoding is a no-op for valid ones and a
-// recovery path for sloppy producers. decodeURIComponent throws on stray
-// percent signs, so fall back to the raw payload.
 function decodeURIComponentSafe(raw: string): string {
   try {
     return decodeURIComponent(raw);
@@ -100,20 +68,14 @@ function decodeURIComponentSafe(raw: string): string {
   }
 }
 
-/** `stringContent` marks a user message whose source content was a plain string (kept a string on the wire). */
 export type IrMessage = { role: 'user' | 'assistant' | 'system'; parts: IrPart[]; stringContent?: boolean };
 
 export type IrTool = { name: string; description?: string; schema: unknown; strict?: boolean };
 
-/**
- * ToolChoice is normalized to one of: undefined (unset), "auto", "none",
- * "required", "name:<tool>".
- */
 export type IrToolChoice = 'auto' | 'none' | 'required' | `name:${string}`;
 
 export type IrRequest = {
   model: string;
-  /** System text segments in source order: one per system/developer item or top-level system. */
   system: string[];
   messages: IrMessage[];
   tools: IrTool[];
@@ -122,16 +84,12 @@ export type IrRequest = {
   maxTokens?: number | null;
   temperature?: number | null;
   topP?: number | null;
-  /** Anthropic-native top-k sampling cutoff. Only the Anthropic target can carry it. */
   topK?: number | null;
   stop: string[];
-  /** Thinking level; null means the client did not ask for reasoning. */
   effort?: IrEffort | null;
-  /** Schema-driven structured output, translated conservatively (prompt). */
   structuredOutputSchema?: Record<string, unknown> | null;
 };
 
-// ---- Streaming events ------------------------------------------------------
 
 export type IrEvent =
   | { type: 'start'; id: string; model: string; inputTokens?: number }
@@ -145,18 +103,15 @@ export type IrEvent =
   | { type: 'sealed'; text: string }
   | { type: 'error'; message: string };
 
-/** The completed translation of one upstream reply stream. */
 export type IrReply = {
   id: string;
   model: string;
   parts: IrPart[];
   stop: IrStop;
-  /** Raw usage object exactly as the upstream reported it. */
   rawUsage: unknown;
   inputTokens: number;
 };
 
-/** Assembles IrEvents into an IrReply (shared by streaming/object paths). */
 export class IrCollector {
   id = '';
   model = '';
@@ -164,7 +119,6 @@ export class IrCollector {
   stop: IrStop = '';
   rawUsage: unknown = null;
   inputTokens = 0;
-  // mutable tail state for streaming assembly
   private openKind: 'text' | 'think' | null = null;
 
   feed(event: IrEvent): void {
@@ -188,18 +142,12 @@ export class IrCollector {
         return;
       }
       case 'sig': {
-        // Attach the signature to a STILL-OPEN thinking part only - matching
-        // the Anthropic stream lifecycle where signature_delta closes a block.
         const tail = this.parts[this.parts.length - 1];
         if (this.openKind === 'think' && tail && tail.type === 'thinking')
           tail.signature = tail.signature ? `${tail.signature}${event.signature}` : event.signature;
         return;
       }
       case 'sealed': {
-        // Opaque encrypted thinking has no portable representation on Chat /
-        // Responses. The raw payload is retained on the marked part so an
-        // Anthropic client can still receive `redacted_thinking` verbatim;
-        // other clients drop it and report diagnostics at build time.
         this.parts.push(event.text ? { type: 'thinking', text: '', sealed: true, data: event.text } : { type: 'thinking', text: '', sealed: true });
         this.openKind = null;
         return;
@@ -212,8 +160,6 @@ export class IrCollector {
       case 'tool_args': {
         const tail = this.parts[this.parts.length - 1];
         if (tail && tail.type === 'tool_call') tail.args += event.args;
-        // An args fragment without an open call is dropped silently: the
-        // stream reorder case never survives translation losslessly.
         return;
       }
       case 'stop': {
@@ -252,24 +198,13 @@ export class IrCollector {
   }
 }
 
-/**
- * A reply that carries tool calls ends in a tool turn. Some Chat upstreams report a plain
- * `stop` for it; a truncated reply (`length`) keeps its own reason.
- */
 export function stopWithToolCalls(stop: IrStop, parts: readonly IrPart[]): IrStop {
   return stop === 'stop' && parts.some((part) => part.type === 'tool_call') ? 'tool' : stop;
 }
 
-// ---- Thinking level mapping ------------------------------------------------
-//
-// effort <-> Anthropic thinking budget_tokens, and effort <- budget inverse.
-// Values follow the magpie mapping (4096 / 10000 / 24000 / 32000); the
-// inverse grading is documented so a translated budget stays stable across
-// round trips at the effort grain.
 
 export const EFFORT_BUDGET: Readonly<Record<IrEffort, number>> = Object.freeze({ low: 4096, medium: 10000, high: 24000, max: 32000 });
 
-/** Anthropic requires reasoning requests to leave answer-token headroom. */
 export const THINKING_HEADROOM = 1024;
 
 export function effortToBudget(effort: IrEffort): number {
@@ -283,10 +218,9 @@ export function budgetToEffort(budget: number): IrEffort {
   return 'max';
 }
 
-/** OpenAI Chat/Responses effort vocabulary -> canonical level. */
 export function normalizeEffort(value: unknown): IrEffort | null | undefined {
   if (value === undefined || value === null) return undefined;
-  if (value === 'none') return null; // explicitly disabled
+  if (value === 'none') return null;  
   if (typeof value !== 'string') return undefined;
   switch (value) {
     case 'minimal':
@@ -304,7 +238,6 @@ export function normalizeEffort(value: unknown): IrEffort | null | undefined {
   }
 }
 
-// ---- Shared value helpers --------------------------------------------------
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

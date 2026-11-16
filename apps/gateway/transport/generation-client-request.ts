@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Private image executor request. No implicit provider fallback on binding
-// or authentication errors: these operations may have already been billed.
 
 import type { ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';

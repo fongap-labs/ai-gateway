@@ -1,17 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// OpenAI Responses SSE framing and event builders.
-//
-// The Responses wire format is NOT Chat Completions SSE: events are named
-// (`response.created`, `response.output_text.delta`, …), carry an ordered
-// `sequence_number`, and reference output items by `output_index` / `item_id`.
-// These builders are the single source of that framing so every path (stream,
-// synthesizer, error) emits byte-compatible events.
-//
-// Event shapes and sequence numbering follow the OpenAI Responses event
-// contract (the same ordering free-claude-code adopts) so Codex / OpenCode
-// clients can consume them without a custom parser.
 
 export function formatResponsesSseEvent(eventType: string, data: unknown): string {
   return `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -141,7 +129,6 @@ export class ResponsesEventBuilder {
   }
 }
 
-// ---- Error envelope --------------------------------------------------------
 
 export type ResponsesErrorType =
   | 'invalid_request_error'
@@ -170,9 +157,6 @@ export function responsesErrorTypeForStatus(status: number): ResponsesErrorType 
   return 'api_error';
 }
 
-// OpenAI-style error envelope used by /v1/responses responses. Keep `code`
-// nullable for strict Codex/OpenAI compatibility; gateway-specific diagnostic
-// classification is carried in response headers, never by mutating this body.
 export function buildResponsesError(
   message: unknown,
   errorType?: string | null,

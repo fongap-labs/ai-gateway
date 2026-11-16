@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared private-center protocol request conversion. Gateway callers temporarily
-// use a compatibility export; this module is the sole conversion implementation.
 import type { MatrixDiag } from '../diag.ts';
 import type { IrProtocol, IrRequest } from '../ir.ts';
 import { isMatrixPair } from '../protocol-pairs.ts';
@@ -14,7 +11,6 @@ import { buildResponsesRequest, parseResponsesRequest } from './responses.ts';
 
 export { isMatrixPair } from '../protocol-pairs.ts';
 
-// ---- Request translation ----------------------------------------------------
 
 export function convertMatrixRequest(
   from: IrProtocol,
@@ -60,13 +56,6 @@ function finalizeMatrix(
   structuredOutput: StructuredOutputStrategy | undefined,
   isNonstreamPreferred = false,
 ): ConversionResult {
-  // Translation matrix paths default to driving the upstream in streaming mode
-  // (AIG_CONVERSION_PREFER_NONSTREAM off): non-streaming clients are served
-  // from the collected reply through the single decode path. With the flag on,
-  // a non-streaming CLIENT keeps its own stream flag so the provider may
-  // answer with one JSON body — the success layer already translates and
-  // bounds that shape (readBufferedReplyText / replyFromNativeObject), and
-  // SSE parsing disappears from the request. Streaming clients upstream-stream.
   if (!isNonstreamPreferred || body.stream === true) body.stream = true;
   return diag.finalize(body, structuredOutput ? { strategy: structuredOutput } : undefined);
 }

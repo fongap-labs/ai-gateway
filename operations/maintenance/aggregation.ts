@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Token Usage Aggregation.
-//
-// Both accounting views travel through the same hourly -> daily -> weekly
-// materialization pipeline:
-//   legacy columns   = successfully delivered responses
-//   upstream_*       = physical upstream attempts
-// This keeps retention/query behavior aligned without duplicating tables.
 
 import type { D1PreparedStatement } from '../../packages/contracts/cloudflare.ts';
 import type { GatewayEnv } from '../../packages/contracts/runtime.ts';
@@ -37,8 +29,6 @@ type AggregateRow = {
   upstreamMissing: number;
 };
 
-// One typed source of truth for the 20 metrics bound after the day/week
-// key. Both upserts intentionally share the same column order.
 const AGGREGATE_BIND_FIELDS = [
   'input',
   'output',
@@ -161,9 +151,6 @@ export async function aggregateHourlyToDaily(env: GatewayEnv, now: number = Date
     const rows = Array.isArray(result?.results) ? result.results : [];
 
     const byDay = new Map<string, AggregateRow>();
-    // Once hourly rows start expiring, a day rebuilt from what is left would
-    // overwrite the already-finalized daily row with a partial total. Only
-    // re-aggregate days whose hourly data is still fully inside retention.
     const cutoffDay = isoDayUtc8(now - HOURLY_RETENTION_MS);
     for (const row of rows) {
       if (!row || typeof row.hour !== 'string') continue;

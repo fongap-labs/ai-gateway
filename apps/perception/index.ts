@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Private multimodal execution entrypoint with its own auth and Service Binding.
 
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';

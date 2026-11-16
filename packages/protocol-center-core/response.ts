@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Single cross-protocol response owner. Called from legacy Inference and,
-// after opt-in handoff, Protocol Center. Never schedules Provider attempts.
 import { getLimits } from '../config-core/timeouts.ts';
 import { EXECUTION_ERROR_CODE, EXECUTION_WIRE_RESULT, type ExecutionInvocation, INFERENCE_TRANSLATED_OBJECT_FORMAT } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
@@ -19,7 +16,6 @@ import { readBufferedReplyText } from '../transport/http.ts';
 
 type Invocation = ExecutionInvocation;
 
-// Versioned v5 budgeted streams and v4 legacy framing share one conversion owner.
 function streamFramingOptions(invocation: Invocation, clientProtocol: IrProtocol): { model?: string; budget?: MatrixStreamBudget } {
   if (!invocation.streamBudget) return { model: invocation.displayModel };
   const { cfg, mode } = invocation.streamBudget;
@@ -33,8 +29,6 @@ function streamFramingOptions(invocation: Invocation, clientProtocol: IrProtocol
   };
 }
 
-// All successful v3/v6 object conversions must carry the private response
-// marker. Invalid native data must fail closed inside the center.
 function translatedObject(native: Record<string, unknown>, invocation: Invocation, headers: Headers, status: number): Response | null {
   if (!invocation.returnObject || !invocation.inputSurface) return null;
   const upstreamProtocol = protocolForSurface(invocation.surface);
@@ -54,16 +48,10 @@ function translatedObject(native: Record<string, unknown>, invocation: Invocatio
       headers: outgoing,
     });
   } catch {
-    // A malformed/unsupported native object follows the same Gateway error
-    // classification path as v2; never mislabel a raw object as translated.
     return null;
   }
 }
 
-/**
- * Convert one already-dispatched Provider response while preserving physical
- * quota headers, disposition, raw accounting and deadlines. No retry or fetch.
- */
 export async function convertPrivateMatrixResponse(
   upstream: Response,
   invocation: Invocation,
@@ -96,9 +84,6 @@ export async function convertPrivateMatrixResponse(
     return new Response(framed.body, { status: upstream.status, headers: outgoing });
   }
   if (invocation.returnStream && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
-    // v4/v5: even when Provider ignores stream:true and returns native JSON,
-    // its object→IR→client SSE conversion stays inside the private center.
-    // Never forward unframed Provider bytes for Gateway to decode.
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
     if (!from || !to || !invocation.displayModel) return dispatchedConversionProblem('center_conversion_route_invalid');
@@ -122,8 +107,6 @@ export async function convertPrivateMatrixResponse(
     }
   }
   if (invocation.returnObject && upstream.ok && content?.toLowerCase().includes('text/event-stream')) {
-    // v3 (Provider ignored prefer-nonstream) and v6 both collect physical SSE
-    // inside Inference. Gateway receives one tagged object, never raw SSE.
     const from = protocolForSurface(invocation.surface);
     const to = invocation.inputSurface ? protocolForSurface(invocation.inputSurface) : null;
     if (!from || !to) return dispatchedConversionProblem('center_conversion_route_invalid');
@@ -174,8 +157,6 @@ export async function convertPrivateMatrixResponse(
     }
   }
   if (invocation.returnObject && upstream.ok && !content?.toLowerCase().includes('text/event-stream')) {
-    // Translate v3/v6 native JSON inside Inference. Never return unmarked
-    // successful objects for Gateway to decode using its legacy Matrix path.
     let raw: string;
     try {
       raw = await readBufferedReplyText(upstream, bufferedResponseDeadlineMs);
@@ -198,7 +179,5 @@ export async function convertPrivateMatrixResponse(
     }
     return dispatchedConversionProblem('center_converted_object_invalid');
   }
-  // Raw body stream ownership transfers to the caller. No buffering, no
-  // JSON inspection of model output, and no further provider retry here.
   return new Response(upstream.body, { status: upstream.status, headers: outgoing });
 }

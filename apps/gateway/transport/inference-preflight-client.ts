@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// A private, bounded conversion check: no node selection or Provider attempt.
 import {
   buildInferencePreflightHeaders,
   buildProtocolPreflightHeaders,
@@ -31,8 +29,6 @@ export async function checkInferenceConversion(
     deadlineMs: number;
   },
 ): Promise<ConversionResult> {
-  // Only a completely absent Protocol binding uses the legacy Inference preflight.
-  // An installed but misconfigured binding must fail closed, without silent bypass.
   const protocolService = env.AIG_PROTOCOL_SERVICE as { fetch?: (request: Request) => Promise<Response> } | undefined;
   const useProtocol = protocolService !== undefined;
   if (

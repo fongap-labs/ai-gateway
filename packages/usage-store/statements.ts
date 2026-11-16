@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// SQL upserts for the token-usage tables. Every statement is additive: it adds
-// the given increments to the stored row. That is why the write buffer can merge
-// several events into one increment per (kind, hour, model) without changing the
-// stored totals.
-//
-// Delivered statements touch the delivered columns (requests, usage_reports,
-// usage_missing, TTFT buckets) and the upstream_* columns. Upstream statements
-// touch only upstream_* columns, so a non-delivered physical attempt never
-// fabricates success evidence.
 
 import { TABLE, TABLE_MODEL, TABLE_TOTALS, type tokenStatsD1 } from './keys.ts';
 
@@ -33,13 +23,10 @@ export type UsageKind = 'delivered' | 'upstream';
 export type UsageDatabase = NonNullable<ReturnType<typeof tokenStatsD1>>;
 export type UsageStatement = ReturnType<UsageDatabase['prepare']>;
 
-// Hour-level totals for one kind: the `hour` row of token_usage_hourly and the
-// global row of token_usage_totals.
 export function buildGlobalStatements(d1: UsageDatabase, kind: UsageKind, hour: string, p: UsagePayload, updatedAt: number): UsageStatement[] {
   return kind === 'delivered' ? deliveredGlobalStatements(d1, hour, p, updatedAt) : upstreamGlobalStatements(d1, hour, p, updatedAt);
 }
 
-// Per-model row of token_usage_model_hourly for one kind.
 export function buildModelStatement(
   d1: UsageDatabase,
   kind: UsageKind,

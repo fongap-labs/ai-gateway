@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// SSE protocol framing and deadline primitives shared by Gateway commit
-// guard and Inference conversion. No policy, Provider or node dependencies.
 
 export const GUARD_ERROR = {
   TIMEOUT: 'first_event_timeout',

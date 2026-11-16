@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Public API request entrypoint. Scheduled maintenance belongs to operations.
 
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
 import { sanitizedInternalErrorForRoute } from '../../src/observability/diagnostic-endpoints.ts';

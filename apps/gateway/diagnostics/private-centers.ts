@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Authenticated, opt-in production Service Binding probe. There are no Provider
-// calls or credentials in the response. Perception uses a deliberately invalid
-// execution contract because it has no /internal/health route.
 
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { resolveBuildSha } from '../../../src/observability/diagnostic-endpoints.ts';
@@ -68,15 +64,11 @@ async function checkCenter(env: GatewayEnv, spec: (typeof SPECS)[number]): Promi
       signal: AbortSignal.timeout(2500),
     });
   try {
-    // Authenticated request is guaranteed to terminate before execution:
-    // GET /internal/health or POST /internal/execute without contract headers.
     const authorized = await binding.fetch(makeRequest(secret));
     if (authorized.status === 403) return 'unauthorized';
     if (authorized.status !== spec.success) return 'unexpected-response';
     const body: unknown = await authorized.json().catch(() => null);
     if (!isExpectedPositive(body, spec.name)) return 'unexpected-response';
-    // A deliberately short credential must fail authorization regardless of
-    // the installed secret value; it must never reach Provider execution.
     const rejected = await binding.fetch(makeRequest('invalid'));
     if (rejected.status !== 403) return 'auth-not-enforced';
     return 'ok';

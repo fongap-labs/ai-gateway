@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Request-level attempt accounting; all execution is private-center owned.
-// An unavailable center always fails closed, never to a direct Provider.
 
 import { hasImageInput } from '../../../packages/contracts/image-input.ts';
 import { withNativeSpan } from '../../../packages/contracts/native-tracing.ts';
@@ -22,8 +20,6 @@ import { rotateWithNeutralEnd } from './outcome.ts';
 
 export { isBufferedUpstreamReply } from './attempt-mode.ts';
 
-// Every Provider call is charged once, including hedge losers. The Gateway
-// owns the request-level attempt/hedge budget; centers execute one attempt.
 export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
   return withNativeSpan(
     c.ctx,
@@ -40,8 +36,6 @@ export async function attemptNode(c: AttemptContext): Promise<AttemptOutcome> {
 }
 
 async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
-  // The attempt may synchronously settle and increment logicalAttempts before
-  // dispatchAttempt returns. Capture the role *before* dispatching.
   const previouslyAttempted = c.state.logicalAttempts > 0;
   const outcome = await dispatchAttempt(c);
   if (outcome.budgetCharged !== false) {
@@ -59,18 +53,9 @@ async function attemptNodeUntraced(c: AttemptContext): Promise<AttemptOutcome> {
       latencyMs: c.attemptStartMs ? Date.now() - c.attemptStartMs : -1,
     });
   }
-  // Some hedge-loss paths intentionally bypass recordOutcome() because they are
-  // neutral reliability outcomes. They still contacted an upstream, so close
-  // the physical-attempt accounting slot here. The settlement helper is
-  // idempotent, therefore the headers-phase hedge path (which settles earlier)
-  // is not double-counted.
   if (outcome.hedgedAway) recordUndeliveredUpstreamAttempt(c, c.node);
   if (outcome.budgetCharged === undefined) outcome.budgetCharged = true;
   if (outcome.response?.ok) {
-    // Successful dispatches never pass through recordOutcome, so charge them
-    // here - exactly once, like every failure/neutral path. A committed
-    // response reached an upstream, so it always charges the dispatch count;
-    // a hedge twin still never charges the logical attempt.
     c.state.dispatches++;
     if (!c.hedgedAttempt) c.state.logicalAttempts++;
     const effectiveModel = c.reqDescriptor.model;
@@ -97,7 +82,6 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   const attemptStartMs = Date.now();
   c.attemptStartMs = attemptStartMs;
   c.traceparent = createInternalTraceparent(c.requestId) ?? undefined;
-  // Created BEFORE the physical attempt and before any hedge context copies.
   c.attemptSettlement = { observedUsage: null, settled: false };
   const upstreamProtocol = conversionContext ? conversionContext.fallbackProtocol : node.protocol;
   c.upstreamProtocol = upstreamProtocol;
@@ -105,12 +89,7 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
   c.surface = surface;
   const sourceBody = conversionContext ? conversionContext.convertedBody : bodyJson;
 
-  // Image generation is non-idempotent and must always use the private center.
-  // A missing Service Binding or auth key fails closed (503); never dispatch a
-  // paid generation directly from Gateway or silently retry another Provider.
   if (route === 'openai_images') return dispatchGenerationAttempt(c);
-  // The Gateway computed this after optional visual preprocessing. Direct
-  // attempt contexts without the hint retain independent shape detection.
   if (c.imageInputRequired ?? hasImageInput(bodyJson)) {
     const visionDeclared = modelRegistryEntry(c.env, reqDescriptor.model).catalog.capabilities.vision === true;
     const providerAcceptsImages = getProviderProfile(node.provider).imageInput;
@@ -133,8 +112,5 @@ async function dispatchAttempt(c: AttemptContext): Promise<AttemptOutcome> {
     if (!providerAcceptsImages) return rotateWithNeutralEnd(c.state, node, KIND.AUTH, c, true);
     return dispatchInferenceAttempt(c, sourceBody, 'perception');
   }
-  // The Gateway never owns Provider credentials or outbound network calls.
-  // A missing/invalid Service Binding is classified by dispatchInferenceAttempt
-  // as a neutral 503; it MUST NOT trigger a legacy direct-provider fallback.
   return dispatchInferenceAttempt(c, sourceBody, 'inference');
 }

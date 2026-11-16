@@ -1,25 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Isolate-local retry budget. Rotating to another key after a 429, a refusal or a
-// missing model is ordinary pool behaviour and is not limited here. What this
-// bounds is the speculative, expensive work that follows an upstream that is slow
-// or failing (timeouts, 5xx, dropped connections, empty replies) and the hedge
-// twins: when many requests are in that state at once, they would otherwise all
-// walk the whole key pool and push the healthy keys into rate limits.
-//
-// A request holds at most one retry slot, from its first speculative retry until
-// the request leaves the pre-commit phase. The number of requests allowed to hold
-// one at the same moment is RETRY_BUDGET_RATIO of the requests being served, but
-// never fewer than RETRY_BUDGET_MIN, so a small private deployment is never shed.
-// Like all Tier 1 state it is best effort and per isolate.
 
 import { type FailureKind, KIND } from '../../../src/reliability/classify.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 export const RETRY_BUDGET_RATIO = 0.2;
-/** Independent Key recovery may use a guarded extra share, never an unbounded retry storm. */
 export const RETRY_INDEPENDENT_KEY_RATIO = 0.4;
 export const RETRY_BUDGET_MIN = 3;
 
@@ -27,22 +13,11 @@ export function isIndependentKeyRecovery(previousNode: RuntimeNode | undefined, 
   return previousNode !== undefined && credentialSlotId(previousNode) !== credentialSlotId(candidate);
 }
 
-/**
- * A single route/model refusal does not prove the physical Key is exhausted.
- * Only a dispatched credential rejection (401) or an account-scoped 429 can
- * exclude that Key across sibling models for the remainder of this request.
- */
 export function isCredentialWideFailure(attempt: Readonly<Record<string, unknown>>): boolean {
   if (attempt.dispatched !== true) return false;
   return attempt.status === 401 || (attempt.kind === KIND.RATE_LIMIT && attempt.rate_limit_scope === 'account');
 }
 
-/**
- * Prefer fresh credentials across the entire request, not only a fresh node ID.
- * This is a soft preference: the tier loop falls back to the original candidate
- * set when every remaining node shares a previously attempted credential.
- * Only explicitly declared keyGroup identities may be treated as shared.
- */
 export function preferUntriedCredentials(
   candidates: ReadonlyArray<RuntimeNode>,
   allNodes: ReadonlyArray<RuntimeNode>,
@@ -71,8 +46,6 @@ let activeRequests = 0;
 let retryingRequests = 0;
 let deniedTotal = 0;
 
-// Failures after which another attempt is speculative. A pool rotation after a
-// 429, an auth refusal, a client error or a missing model is not in this set.
 const SPECULATIVE_RETRY_AFTER: ReadonlySet<FailureKind> = new Set([
   KIND.SERVER,
   KIND.NETWORK,
@@ -95,7 +68,6 @@ export class RetrySlot {
     activeRequests++;
   }
 
-  /** A separate Key gets a bounded recovery lane; the same Key keeps the strict speculative budget. */
   tryAcquire(independentKey: boolean = false): boolean {
     if (this.isEnded) return false;
     if (this.isHeld) return true;
@@ -110,7 +82,6 @@ export class RetrySlot {
     return true;
   }
 
-  /** Called when the request stops being able to retry (response chosen or failed). */
   end(): void {
     if (this.isEnded) return;
     this.isEnded = true;

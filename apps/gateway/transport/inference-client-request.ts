@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Private transport adapter for the inference executor. Keep the contract
-// independent of Cloudflare RPC so an HTTPS backend can implement it later.
 
 import type { ExecutionInputSurface, ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';
@@ -51,7 +48,6 @@ export function configuredInferenceService(env: GatewayEnv): InferenceService {
   return service;
 }
 
-/** Build one request. Caller remains responsible for retries, budgets and SSE commit. */
 function buildPrivateCenterRequest(invocation: InferenceInvocation, authHeader: string, key: string, destination: 'inference' | 'protocol'): Request {
   const headers = buildExecutionHeaders(
     {
@@ -77,9 +73,6 @@ function buildPrivateCenterRequest(invocation: InferenceInvocation, authHeader: 
     const value = invocation.request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  // Trust only the Gateway's freshly serialized body, never the untrusted
-  // client's Content-Length. This lets the center charge the real private
-  // payload size before reading it, even when the client used chunked upload.
   headers.set('content-length', String(new Blob([invocation.body]).size));
   return new Request(`https://${destination}.internal/internal/execute`, {
     method: 'POST',
@@ -89,7 +82,6 @@ function buildPrivateCenterRequest(invocation: InferenceInvocation, authHeader: 
   });
 }
 
-/** Existing native execution remains directly bound to Inference. */
 export function buildInferenceRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
   configuredInferenceService(env);
   return buildPrivateCenterRequest(invocation, 'x-aig-inference-auth', env.AIG_INFERENCE_AUTH_KEY as string, 'inference');
@@ -104,13 +96,11 @@ function configuredProtocolService(env: GatewayEnv): InferenceService {
   return service;
 }
 
-/** Cross-protocol execution enters Protocol Center only when explicitly bound. */
 export function buildProtocolExecutionRequest(env: GatewayEnv, invocation: InferenceInvocation): Request {
   configuredProtocolService(env);
   return buildPrivateCenterRequest(invocation, 'x-aig-protocol-auth', env.AIG_PROTOCOL_AUTH_KEY as string, 'protocol');
 }
 
-/** No implicit fallback to Provider network or legacy protocol execution after a bound center fails. */
 export async function invokeInferenceNode(env: GatewayEnv, invocation: InferenceInvocation): Promise<Response> {
   if (invocation.inputSurface && env.AIG_PROTOCOL_SERVICE !== undefined) {
     const service = configuredProtocolService(env);

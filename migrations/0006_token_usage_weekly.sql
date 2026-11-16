@@ -1,11 +1,5 @@
 -- SPDX-License-Identifier: MIT
 -- Copyright (c) 2026 Fongap Labs
---
--- Weekly aggregates keyed by the Monday start date (UTC) of the ISO week
--- (YYYY-MM-DD). Retention: 52 weeks.
--- Derived from token_usage_daily by the scheduled maintenance job.
--- Idempotent: each run recomputes all weekly buckets from current daily
--- data and overwrites — no double-counting.
 
 CREATE TABLE IF NOT EXISTS token_usage_weekly (
     week_start TEXT PRIMARY KEY,

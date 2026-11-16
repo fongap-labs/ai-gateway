@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// One physical inference Provider attempt only. No client-level admission,
-// model family retries, Tier scheduling or public routing in this module.
 
 import { loadExecutionConfig } from '../config-core/nodes.ts';
 import { collectKnownModels, modelRegistryEntry, resolvePhysicalModel } from '../config-core/registry.ts';
@@ -26,8 +24,6 @@ import { buildProviderForwardRequest } from '../transport/provider-forward-reque
 import { buildUpstreamHeadersFor, resolveUpstreamPath } from '../transport/provider-routing.ts';
 import { preDispatchProblem, problem } from './response.ts';
 
-// The physical center uses the same clamped maximum as Gateway preflight.
-// Its own memory pool remains separate, even in an in-process integration test.
 const centerBodyPool = createBodyAdmissionPool();
 type Invocation = ExecutionInvocation;
 type ExecutionOptions = { center?: 'perception' };
@@ -43,15 +39,9 @@ function nativeNode(configuredNodes: readonly RuntimeNode[], invocation: Invocat
 
 export async function executeNative(request: Request, env: GatewayEnv, invocation: Invocation, options: ExecutionOptions = {}): Promise<Response> {
   const config = loadExecutionConfig(env);
-  // Keep serving strictly validated nodes in a degraded configuration, as the
-  // former Gateway did. Invalid nodes and missing secrets are already excluded
-  // by loadExecutionConfig; an entirely unusable center still fails closed.
   if (!config.ready) return problem(503, 'center_configuration_invalid');
   const knownModels = collectKnownModels(config.nodes, env);
   const node = nativeNode(config.nodes, invocation, knownModels);
-  // This node is absent from the center's strictly validated physical pool.
-  // Tell Gateway no Provider execution occurred so it may try another
-  // metadata-visible node without falsely marking the Provider unhealthy.
   if (!node) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
 
   const contentType = request.headers.get('content-type') ?? '';
@@ -64,8 +54,6 @@ export async function executeNative(request: Request, env: GatewayEnv, invocatio
   }
   if (declaredSize > maxRequestBytes) return problem(413, 'center_body_too_large');
 
-  // The private center owns a separate isolate budget. Unknown lengths are
-  // charged the full read ceiling, so chunked uploads cannot evade admission.
   const releaseBody = centerBodyPool.admit(declaredSize, maxRequestBytes);
   if (!releaseBody) {
     const rejected = problem(503, EXECUTION_ERROR_CODE.CENTER_BODY_BUDGET_EXHAUSTED, true);
@@ -99,7 +87,6 @@ async function executeAdmittedNative(
     return problem(error instanceof BodyTooLargeError ? 413 : 400, 'center_body_invalid');
   }
 
-  // Only the Inference execution ticket can accept a prepared protocol request.
   if (options.center === 'perception' && invocation.preparedRequest) return problem(400, 'center_prepared_request_not_allowed');
   if (options.center === 'perception') {
     const visionDeclared = modelRegistryEntry(env, invocation.logicalModel).catalog.capabilities.vision === true;
@@ -110,11 +97,7 @@ async function executeAdmittedNative(
 
   if (clientBody.model !== invocation.logicalModel) return problem(400, 'center_model_mismatch');
   if (clientBody.stream !== undefined && typeof clientBody.stream !== 'boolean') return problem(400, 'center_stream_invalid');
-  // v6 is exclusively a non-streaming public reply, even if the physical
-  // upstream is later forced into SSE by Matrix conversion.
   if (invocation.returnObject && clientBody.stream === true && !invocation.preparedRequest) return problem(400, 'center_stream_invalid');
-  // v4 is solely for real streaming requests; never synthesize an object
-  // protocol response under a private framed-stream ticket.
   if (invocation.returnStream && (clientBody.stream !== true || !invocation.inputSurface || !invocation.displayModel))
     return problem(400, 'center_stream_invalid');
   let outboundBody: Record<string, unknown> = clientBody;
@@ -122,27 +105,18 @@ async function executeAdmittedNative(
   if (invocation.inputSurface) {
     const matchesNode = node.protocol === 'anthropic' ? invocation.surface === 'messages' : invocation.surface !== 'messages';
     if (!matchesNode) return problem(400, 'center_conversion_route_invalid');
-    // Run the same pure adapter at the private dispatch boundary, regardless
-    // of any Gateway-side feasibility/preflight decision.
     if (!invocation.preparedRequest) {
       const prepared = prepareProtocolRequest(clientBody, invocation.inputSurface, invocation.surface, invocation.preferNonstream === true);
       if (!prepared.ok) return problem(prepared.status, prepared.code);
       outboundBody = prepared.body;
       isMutated = prepared.converted;
     } else {
-      // A private v7 ticket proves Protocol Center already prepared the body.
-      // Preserve reply conversion below without charging twice for request conversion.
       isMutated = true;
     }
   }
-  // Enforce the mapping again at the physical dispatch boundary. A missing,
-  // wildcard, or identity mapping must never send the public alias upstream.
   const physicalModel = resolvePhysicalModel(node, invocation.logicalModel, knownModels);
   if (!physicalModel) return preDispatchProblem(404, EXECUTION_ERROR_CODE.CENTER_ROUTE_UNAVAILABLE);
   const clientRequest = buildProviderForwardRequest(request);
-  // Identity mappings are common on free endpoints. Do not stringify a
-  // potentially multi-megabyte native prompt a second time when neither the
-  // protocol nor the physical model changes.
   if (outboundBody.model !== physicalModel) {
     outboundBody = { ...outboundBody, model: physicalModel };
     isMutated = true;
@@ -168,9 +142,6 @@ async function executeAdmittedNative(
   const headers = buildUpstreamHeadersFor(node.protocol, clientRequest, credential, invocation.requestId);
   const providerTraceparent = childTraceparent(request.headers.get('traceparent'), invocation.requestId);
   if (providerTraceparent) headers.set('traceparent', providerTraceparent);
-  // The request has already been parsed and checked. When its root model key
-  // is unambiguous, patch only that small JSON value (and optional usage)
-  // without stringifying multi-megabyte messages for every physical attempt.
   const patchedNativeBody =
     !invocation.inputSurface && isMutated ? patchNativeJsonTopLevel(rawBody, String(clientBody.model), physicalModel, shouldInjectStreamUsage) : null;
   const body = patchedNativeBody ?? (isMutated ? JSON.stringify(outboundBody) : rawBody);
@@ -202,9 +173,6 @@ async function executeAdmittedNative(
       }),
     );
   }
-  // Only a versioned v8 ticket, received over the authenticated Inference
-  // binding, may transfer raw response ownership to Protocol Center.
-  // Inference still owns the physical Provider attempt and quota normalization.
   if (invocation.rawResponse) return new Response(upstream.body, { status: upstream.status, headers: outgoing });
   return convertPrivateMatrixResponse(upstream, invocation, clientBody, env, request.signal, outgoing);
 }

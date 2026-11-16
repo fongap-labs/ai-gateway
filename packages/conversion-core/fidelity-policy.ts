@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Shared fail-closed semantic fidelity policy for Gateway admission and
-// Inference execution. Do not maintain duplicate high-risk lists.
 import type { ConversionResult } from './result.ts';
 
-// These losses change the observable result of a coding session. Skip a
-// cross-protocol route instead of returning HTTP 200 with corrupted history.
 const HIGH_RISK_DROPPED_FEATURES = new Set([
   'provider_native_tool',
   'provider_native_tool_history',

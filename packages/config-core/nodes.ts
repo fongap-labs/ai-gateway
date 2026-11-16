@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Config Layer: environment shards -> Runtime Node list.
-//
-//   AIG_TIER{1,2}_NODES_01..10   plain variables, JSON arrays of node
-//                                     configs WITHOUT credential material.
-//   AIG_TIER{1,2}_CREDENTIALS_01..10  secrets, JSON objects { nodeId: credential }.
-//
-// Current Node JSON schema is deliberately small. Required fields:
-//   id, provider, base_url, models
-// Optional:
-//   priority (non-negative integer number, default 100)
-//   key_group (optional non-secret credential group)
-//
-// Protocol and surfaces are NOT account-level configuration. They come from
-// the provider wire profile so one provider contract is defined exactly once.
-// Unknown fields, credential material, alternate model shapes, and numeric
-// strings are configuration errors.
 
 import type { Surface } from '../contracts/protocol.ts';
 import { getProviderProfile } from '../contracts/provider-profiles.ts';
@@ -42,11 +25,6 @@ export type ConfigStatus = 'unconfigured' | 'invalid' | 'degraded' | 'ready';
 export type GatewayConfig = {
   status: ConfigStatus;
   ready: boolean;
-  /**
-   * Some configuration was rejected (a malformed shard, a conflicting node, an
-   * invalid model/policy/fallback setting). The gateway keeps serving with
-   * what remains (status `degraded`), but a deploy is refused until it is fixed.
-   */
   hasConfigErrors: boolean;
   accessKeyBound: boolean;
   nodes: RuntimeNode[];
@@ -72,8 +50,6 @@ export function loadGatewayConfig(env: Record<string, unknown>): GatewayConfig {
   return cachedResult;
 }
 
-// Private execution workers have no client access keys. They still run the
-// exact same node, credential and model validation as the public gateway.
 export function loadExecutionConfig(env: Record<string, unknown>): GatewayConfig {
   if (cachedExecutionEnv === env && cachedExecutionResult) return cachedExecutionResult;
   cachedExecutionEnv = env;
@@ -125,14 +101,10 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   diagnostics.push(...auxDiagnostics);
   const accessKeyBound = ['AIR', 'PRO', 'MAX', 'ULTRA', 'AGENT'].some((g) => readEnv(env, `AIG_ACCESS_KEY_${g}`));
 
-  // The public Gateway is ALWAYS metadata-only, even when its private center
-  // binding is temporarily unavailable. Never parse upstream Provider secrets.
   const isGatewayInferenceCenterOwned = shouldRequireClientKey;
   const tierShards = collectShards(env, TIER_SHARD_PATTERN, 'AIG_TIER1_NODES_', 'AIG_TIER1_NODES_01', 2, diagnostics);
   const secretShards = collectShards(env, SECRET_SHARD_PATTERN, 'AIG_TIER1_CREDENTIALS_', 'AIG_TIER1_CREDENTIALS_01', 2, diagnostics);
 
-  // Old Tier 3 must never disappear silently when the 2-Tier matcher is used.
-  // Check names only: the public Gateway must not read Provider secret values.
   let hasLegacyTier3Policy = false;
   const rawPolicies = readEnv(env, 'AIG_POLICIES_CONFIG');
   if (rawPolicies) {
@@ -155,7 +127,6 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
         });
       }
     } catch {
-      // Malformed policy JSON is reported by the existing strict diagnostics.
     }
   }
   const legacyTierKeys = Object.keys(env).filter((key) => key.startsWith('AIG_TIER3_'));
@@ -209,14 +180,9 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
 
   const credentials = new Map<string, string>();
   const credentialTiers = new Map<string, string>();
-  // Node ids whose configuration is ambiguous (a credential or the id itself is
-  // defined twice). Every node with such an id is excluded, not just the copy
-  // that happened to be read second.
   const conflictedIds = new Set<string>();
   let hasConfigErrors = auxDiagnostics.length > 0;
   const sortedSecretShards = [...secretShards].sort((a, b) => a.tierNumber - b.tierNumber || a.index - b.index);
-  // Only private centers parse physical credentials. The public Gateway
-  // preserves shard names for migration diagnostics without reading values.
   const secretShardsToParse = isGatewayInferenceCenterOwned ? [] : sortedSecretShards;
   for (const shard of secretShardsToParse) {
     const parsed = parseJsonVar(env[shard.key] as string, shard.key, diagnostics, { isSecret: true });
@@ -246,8 +212,6 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
   }
 
   const isHttpAllowed = getBool(env, 'AIG_CAN_USE_HTTP', false);
-  // Gateway schedules center-owned attempts using public node metadata only.
-  // The private centers still require their own Provider credential shards.
   const seenIds = new Map<string, string>();
   let nodes: RuntimeNode[] = [];
   let hasLegacySubscriptionAuth = false;
@@ -261,8 +225,6 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
       continue;
     }
     for (const rawNode of parsed) {
-      // OAuth subscriber capacity is not an API Token tier. Do not route it
-      // into new Tier 2 or silently omit it from an otherwise healthy pool.
       if (rawNode && typeof rawNode === 'object' && !Array.isArray(rawNode) && Object.hasOwn(rawNode, 'auth')) {
         diagnostics.push(`${shard.key}: deprecated subscription auth marker; remove the node through the two-tier cutover plan`);
         hasLegacySubscriptionAuth = true;
@@ -312,12 +274,7 @@ function buildConfig(env: Record<string, unknown>, shouldRequireClientKey: boole
     if (!seenIds.has(nodeId)) diagnostics.push(`credential "${nodeId}" has no matching node config`);
   }
 
-  // Only a configuration with no usable node stops the gateway. Anything else
-  // that was rejected degrades it: the usable nodes keep serving and /health lists
-  // the diagnostics, while the deploy check refuses it until it is fixed.
   if (hasLegacySubscriptionAuth) {
-    // A mixed legacy subscription/Token configuration must not partially
-    // deploy: removing a subscriber tier is a deliberate, audited cutover.
     return {
       status: 'invalid',
       ready: false,
@@ -405,7 +362,6 @@ function buildRuntimeNode(
     return null;
   }
 
-  // Provider identifiers are normalized once and resolved by the wire registry.
   const provider = typeof rec.provider === 'string' ? rec.provider.trim().toLowerCase() : '';
   if (!provider) {
     diagnostics.push(`node "${id}": provider is required and must be a non-empty string`);
@@ -416,7 +372,6 @@ function buildRuntimeNode(
   const isImageOnly = profile.wire.surfaces.length === 1 && profile.wire.surfaces[0] === 'images_generations';
   const credentialBelongsToCenter = isGateway && (isGatewayInferenceCenterOwned || isImageOnly);
 
-  // Every Token node declares its upstream HTTPS base URL.
   const rawBaseUrl = typeof rec.base_url === 'string' ? rec.base_url.trim() : '';
   const baseUrl = rawBaseUrl;
   let url: URL;
@@ -435,7 +390,6 @@ function buildRuntimeNode(
     return null;
   }
 
-  // Public Gateway holds metadata only; private centers require static credentials.
   const credential = credentials.get(id) || '';
   if (!credential && !credentialBelongsToCenter) {
     diagnostics.push(`node "${id}": no credential found in AIG_TIER{N}_CREDENTIALS_*; node excluded`);
@@ -464,9 +418,6 @@ function buildRuntimeNode(
   };
 }
 
-// Surface availability is a property of a configured physical endpoint, not
-// a permanent model capability. Nodes may opt into an OpenAI-compatible
-// surface or restrict a default profile without changing Provider adapters.
 function resolveConfiguredSurfaces(
   raw: unknown,
   defaults: ReadonlyArray<Surface>,
@@ -498,10 +449,6 @@ function parsePriority(raw: unknown, nodeId: string, diagnostics: string[]): num
   return raw;
 }
 
-// Rekeys every node's model map onto the canonical catalog spelling, so one
-// logical model has one key on every node that serves it. A node that maps one
-// logical model to two different upstreams under different casings is ambiguous
-// and is excluded, the same way a duplicate node id is.
 function canonicalizeNodeModels(
   nodes: RuntimeNode[],
   env: Record<string, unknown>,
@@ -511,7 +458,6 @@ function canonicalizeNodeModels(
   try {
     configured = Object.keys(loadModelsConfig(env));
   } catch {
-    /* config diagnostics own malformed MODELS_CONFIG */
   }
   const canonical = canonicalLogicalNames(
     nodes.flatMap((node) => Object.keys(node.models)),
@@ -597,8 +543,6 @@ export function collectShards(
   return shards;
 }
 
-// A JSON.parse error message quotes the text around the failure, so for a secret
-// shard it would copy part of a credential into /health and the deploy log.
 function parseJsonVar(raw: string, key: string, diagnostics: string[], { isSecret = false }: { isSecret?: boolean } = {}): unknown {
   try {
     return JSON.parse(raw);

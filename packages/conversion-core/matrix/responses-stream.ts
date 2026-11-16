@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// OpenAI Responses streaming side of the translation matrix.
-//
-// ResponsesStreamDecoder: upstream Responses SSE data payloads -> IR events.
-// Terminal is response.completed / response.incomplete / response.failed
-// (or a literal `[DONE]` sentinel; native Responses streams do not send one,
-// but tolerate it). Item state is tracked by output_index / item_id.
-//
-// ResponsesStreamEncoder: IR events -> Responses SSE for a Responses client,
-// reusing ResponsesEventBuilder so framing (sequence_number, event names,
-// shapes) stays byte-compatible with the native path.
 
 import type { IrEvent, IrReply, IrStop } from '../ir.ts';
 import { isRecord } from '../ir.ts';
@@ -21,8 +10,6 @@ type OpenItem = {
   itemId: string;
   index: number;
   streamed: boolean;
-  /** True when the COMPLETE arguments were already emitted (e.g. from the
-   *  `output_item.added` event), so later argument deltas must not repeat them. */
   argsEmitted?: boolean;
 };
 
@@ -123,9 +110,6 @@ export class ResponsesStreamDecoder {
       case 'response.function_call_arguments.delta': {
         const state = this.resolve(payload);
         if (state?.type !== 'tool') return { events: [], terminal: false };
-        // The complete arguments may already have been delivered by the
-        // `output_item.added` event. Repeating them here would hand the client
-        // duplicated JSON arguments.
         if (state.argsEmitted) return { events: [], terminal: false };
         state.streamed = true;
         return { events: [{ type: 'tool_args', args: typeof payload.delta === 'string' ? payload.delta : '' }], terminal: false };
@@ -136,7 +120,6 @@ export class ResponsesStreamDecoder {
       case 'response.incomplete': {
         this.terminal = true;
         const response = isRecord(payload.response) ? payload.response : {};
-        // A truncated reply is never a finished tool turn: its open call may carry cut-off arguments.
         const stop: IrStop = payload.type === 'response.incomplete' ? 'length' : this.sawTool ? 'tool' : 'stop';
         const events: IrEvent[] = [{ type: 'stop', stop }];
         if (isRecord(response.usage)) events.push({ type: 'usage', raw: response.usage });
@@ -174,7 +157,6 @@ export class ResponsesStreamDecoder {
     switch (item.type) {
       case 'function_call': {
         this.sawTool = true;
-        // `streamed` tells whether arguments were already emitted, so a later `.done` event can fill in what deltas never carried.
         const state: OpenItem = { type: 'tool', itemId, index, streamed: false };
         this.open.set(index, state);
         if (itemId) this.byItemId.set(itemId, state);
@@ -204,8 +186,6 @@ export class ResponsesStreamDecoder {
         return { events: [], terminal: false };
       }
       default: {
-        // Unknown provider-native output items (web_search_call, image
-        // generation, MCP tools...) have no cross-protocol form.
         const state: OpenItem = { type: 'other', itemId, index, streamed: true };
         this.open.set(index, state);
         return { events: [], terminal: false };
@@ -237,7 +217,6 @@ export class ResponsesStreamDecoder {
     return { events: [{ type, text }], terminal: false };
   }
 
-  /** Emit complete arguments carried by a non-delta event, unless deltas already delivered them. */
   private toolArgumentsFallback(state: OpenItem | undefined, args: unknown): IrEvent[] {
     if (state?.type !== 'tool' || state.streamed || state.argsEmitted || typeof args !== 'string' || !args) return [];
     state.streamed = true;
@@ -311,11 +290,9 @@ export class ResponsesStreamEncoder {
         this.open.buffer += event.args;
         return [this.builder.function_call_arguments_delta(this.open.itemId, this.open.outputIndex, event.args)];
       case 'sealed':
-        // The upstream's opaque payload belongs to a different protocol.
         return [];
       case 'stop':
       case 'usage':
-        // Buffered: finish(reply) owns the reply tail.
         return [];
       default:
         return [];

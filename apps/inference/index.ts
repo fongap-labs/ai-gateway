@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
 
-// Private inference HTTP entrypoint: contract authentication, endpoint dispatch.
-// Physical Provider execution lives in the shared execution core;
-// never add Tier scheduling or a second Provider call here.
 
 import { INFERENCE_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';

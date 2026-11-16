@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Identical client-protocol budget error framing in local Gateway conversion
-// and private Inference conversion; this module has no public transport role.
 import type { IrProtocol } from './ir.ts';
 
 const encoder = new TextEncoder();

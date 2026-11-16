@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Fongap Labs
-//
-// Failover policy shape resolved for a logical model.
 
 export type PolicyConfig = {
   maxAttempts: number;
@@ -10,9 +8,5 @@ export type PolicyConfig = {
   headersTimeoutMs?: number | null;
   firstEventTimeoutMs?: number | null;
   failoverBudgetMs?: number | null;
-  // Optional isolate-local admission ceiling for a Tier 1 account. Built-in
-  // policies default to null/unlimited. Set a positive integer only when the
-  // upstream has a KNOWN per-account concurrency contract; 0/null/unset means
-  // no hard ceiling. This is not a learned or cluster-wide Provider quota.
   maxInFlight?: number | null;
 };
