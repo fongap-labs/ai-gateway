@@ -122,7 +122,11 @@ export async function preprocessChatImages({
             ? { status: 413, code: 'gateway_vision_preprocess_image_too_large', message: 'Image payload exceeds the vision processing limit.' }
             : result.status >= 500
               ? { status: 503, code: 'gateway_vision_preprocess_unavailable', message: 'Vision preprocessing is temporarily unavailable.' }
-              : { status: 502, code: 'gateway_vision_preprocess_failed', message: 'The configured vision preprocessor could not analyze this image.' };
+              : {
+                  status: 502,
+                  code: 'gateway_vision_preprocess_failed',
+                  message: 'The configured vision preprocessor could not analyze this image.',
+                };
     return { ok: false, ...failure, cause };
   }
   if (Number(result.headers.get('content-length')) > 256 * 1024) {
