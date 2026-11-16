@@ -485,6 +485,7 @@ export function buildResponsesRequest(ir: IrRequest, diag: MatrixDiag): Record<s
         : { type: 'function', name: ir.toolChoice.slice('name:'.length) };
   }
   if (ir.parallelToolCalls != null) out.parallel_tool_calls = ir.parallelToolCalls;
+  if (ir.effort === null) out.reasoning = { effort: 'none' };
   if (ir.effort) {
     diag.add({ feature: 'reasoning_control', action: 'mapped' });
     out.reasoning = { effort: ir.effort === 'max' ? 'high' : ir.effort, summary: 'auto' };
