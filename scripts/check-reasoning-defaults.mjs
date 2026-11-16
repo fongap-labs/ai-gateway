@@ -19,7 +19,10 @@ for (const route of ['openai_chat', 'openai_responses', 'anthropic_messages']) {
   assert.equal(normalizeReasoningDefaults(route, body), body, 'missing parameter must preserve native request bytes');
 }
 assert.equal(hasExplicitReasoningOff('openai_chat', normalizeReasoningDefaults('openai_chat', { ...chat, reasoning_effort: 'OFF' })), true);
-assert.equal(hasExplicitReasoningOff('openai_responses', normalizeReasoningDefaults('openai_responses', { ...responses, reasoning: { effort: 'off' } })), true);
+assert.equal(
+  hasExplicitReasoningOff('openai_responses', normalizeReasoningDefaults('openai_responses', { ...responses, reasoning: { effort: 'off' } })),
+  true,
+);
 assert.equal(hasExplicitReasoningOff('anthropic_messages', { ...anthropic, thinking: { type: 'disabled' } }), true);
 assert.equal(hasExplicitReasoningOff('anthropic_messages', { ...anthropic, thinking: { type: 'adaptive' } }), false);
 assert.equal(hasExplicitReasoningOff('openai_chat', chat), false);
