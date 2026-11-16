@@ -12,9 +12,7 @@ type VisionRoutingContext = {
   nodes: ReadonlyArray<RuntimeNode>;
 };
 
-export type VisionDelegateResolution =
-  | { kind: 'ready'; model: string }
-  | { kind: 'unauthorized' | 'unavailable' | 'none' };
+export type VisionDelegateResolution = { kind: 'ready'; model: string } | { kind: 'unauthorized' | 'unavailable' | 'none' };
 
 function canonicalModel(names: ReadonlySet<string>, name: string): string | undefined {
   return [...names].find((candidate) => candidate.toLowerCase() === name.toLowerCase());
@@ -35,13 +33,7 @@ export function hasVisionNode(nodes: ReadonlyArray<RuntimeNode>, model: string, 
   });
 }
 
-export function resolveVisionDelegate({
-  env,
-  requestedModel,
-  knownModels,
-  allowedModels,
-  nodes,
-}: VisionRoutingContext): VisionDelegateResolution {
+export function resolveVisionDelegate({ env, requestedModel, knownModels, allowedModels, nodes }: VisionRoutingContext): VisionDelegateResolution {
   if (modelRegistryEntry(env, requestedModel).catalog.capabilities.vision === true) return { kind: 'none' };
   const explicit = loadModelsConfig(env)[requestedModel]?.policy.vision_delegate;
   if (explicit) {
@@ -60,11 +52,7 @@ export function resolveVisionDelegate({
       const registry = modelRegistryEntry(env, model);
       return registry.catalog.capabilities.vision === true && registry.policy.visibility !== 'internal' && hasVisionNode(nodes, model, env);
     })
-    .sort(
-      (a, b) =>
-        modelRegistryEntry(env, a).policy.display_order - modelRegistryEntry(env, b).policy.display_order ||
-        a.localeCompare(b),
-    );
+    .sort((a, b) => modelRegistryEntry(env, a).policy.display_order - modelRegistryEntry(env, b).policy.display_order || a.localeCompare(b));
   return candidates.length > 0 ? { kind: 'ready', model: candidates[0] } : { kind: 'none' };
 }
 
