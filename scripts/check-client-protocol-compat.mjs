@@ -101,6 +101,38 @@ for (const route of routes) {
 }
 
 for (const route of routes) {
+  const terminal503 = gatewayError(
+    request,
+    {},
+    route,
+    503,
+    'Upstream response cannot be retried safely.',
+    'terminal-503',
+    undefined,
+    undefined,
+    'gateway_upstream_exhausted',
+    false,
+  );
+  assert.equal(terminal503.status, 503);
+  assert.equal(terminal503.headers.get('x-gateway-retryable'), 'false', 'HTTP 503 alone must not force replay');
+  assert.equal(terminal503.headers.get('x-should-retry'), 'false');
+  const transient503 = gatewayError(
+    request,
+    {},
+    route,
+    503,
+    'Upstream temporarily unavailable.',
+    'transient-503',
+    undefined,
+    { 'retry-after': '5' },
+    'gateway_attempt_budget_exhausted',
+    true,
+  );
+  assert.equal(transient503.headers.get('x-gateway-retryable'), 'true');
+  assert.equal(transient503.headers.get('retry-after'), '5');
+}
+
+for (const route of routes) {
   const chunk = new TextDecoder().decode(streamInterruptionChunk(route, 'stream-id', 'secret bearer token with whitespace'));
   assert.equal(chunk.includes('secret bearer'), false, 'never leak an arbitrary upstream reason in client SSE');
   const compactSecret = new TextDecoder().decode(streamInterruptionChunk(route, 'stream-id', 'sk-private-token'));

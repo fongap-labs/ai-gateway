@@ -16,6 +16,14 @@ import {
 const t = 1_000_000;
 const server = classifyTier1Failure({ kind: 'server' });
 const timeout = classifyTier1Failure({ kind: 'headers_timeout' });
+const delayedServer = classifyUpstreamStatus(503, new Headers({ 'Retry-After': '7' }), {}, t);
+const delayedDecision = classifyTier1Failure(delayedServer, { retryAfterMs: delayedServer.retryAfterMs });
+assert.equal(delayedDecision.cooldownMs, 7_000, 'Tier 1 must honor upstream 503 Retry-After');
+__resetTier1StateForTests();
+applyTier1Outcome('free-key-retry', 'Code-Ultra', delayedDecision, t);
+assert.equal(getTier1Model('free-key-retry', 'Code-Ultra').cooldownUntil, t + 7_000);
+assert.equal(getTier1Model('unrelated-key', 'Code-Ultra').cooldownUntil, 0);
+assert.equal(classifyTier1Failure({ kind: 'server' }).cooldownMs, 0, 'missing Retry-After preserves exponential fallback');
 __resetTier1StateForTests();
 
 applyTier1Outcome('free-key-1', 'Code-Ultra', server, t);
