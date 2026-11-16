@@ -11,6 +11,7 @@
 // details stay hidden. Both are exposed only when the caller passes
 // `exposeUpstreamInfo` (AIG_SHOULD_EXPOSE_UPSTREAM=true).
 
+import { getBool } from '../../../packages/config-core/env.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
 import { loadModelsConfig } from '../../../src/config/models.ts';
 import { parseRetryAfterMs } from '../../../src/config/timeouts.ts';
@@ -314,11 +315,13 @@ export function buildExhaustedResponse(
       const hadTimeout =
         (state.failureKinds[FAILURE_KIND.HEADERS_TIMEOUT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.FIRST_EVENT_TIMEOUT] ?? 0) > 0;
       retryAfterSec = Math.max(hadTimeout ? 5 : 1, familyWaitSec ?? 1);
-      // HTTP 429 requires observed rate limiting as well as family-wide
-      // cooldown; timeout-only cooldowns must remain HTTP 503.
+      // The Free Workers admission policy enables 429 only with observed
+      // rate limiting and family-wide cooldown. Legacy clients without the
+      // admission flag retain the established HTTP 503 contract; pure timeouts
+      // remain HTTP 503 in both modes.
       const hasRateLimitEvidence =
         (state.failureKinds[FAILURE_KIND.RATE_LIMIT] ?? 0) > 0 || (state.failureKinds[FAILURE_KIND.RATE_LIMIT_GLOBAL] ?? 0) > 0;
-      if (hasRateLimitEvidence && retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
+      if (getBool(env, 'AIG_REQUEST_ADMISSION', false) && hasRateLimitEvidence && retryAfterSec >= 15 && familyHasOnlyCoolingNodes(tiers, reqDescriptor, requestedModel, now, env, knownModels_)) {
         status = 429;
       }
       if (retryAfterSec >= 5) {
