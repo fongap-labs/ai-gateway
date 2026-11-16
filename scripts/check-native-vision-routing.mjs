@@ -19,7 +19,15 @@ function requestFor(route, model) {
       : route === 'responses'
         ? {
             model,
-            input: [{ role: 'user', content: [{ type: 'input_text', text: 'What is shown?' }, { type: 'input_image', image_url: imageUrl }] }],
+            input: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'input_text', text: 'What is shown?' },
+                  { type: 'input_image', image_url: imageUrl },
+                ],
+              },
+            ],
             stream: false,
           }
         : {
@@ -115,7 +123,7 @@ async function exercise({
   assert.equal(listedModels.find((item) => item.id === textModel)?.supports_vision, false);
   assert.equal(
     listedModels.find((item) => item.id === visionModel)?.supports_vision,
-    restrictAccess ? undefined : (bindPerception && provider === 'openai'),
+    restrictAccess ? undefined : bindPerception && provider === 'openai',
   );
 
   assert.equal(loadModelsConfig(env)[textModel].policy.vision_delegate, undefined);

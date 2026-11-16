@@ -4,7 +4,16 @@ import { hasChatVisionColor, hasGeneratedImageDataUri } from './live-gateway-ass
 import { visionColors } from './live-gateway-vision-fixtures.mjs';
 
 const options = {};
-const valueOptions = new Set(['url', 'chat-model', 'vision-model', 'text-key-group', 'vision-key-group', 'failover-model', 'expect-dispatches', 'image-model']);
+const valueOptions = new Set([
+  'url',
+  'chat-model',
+  'vision-model',
+  'text-key-group',
+  'vision-key-group',
+  'failover-model',
+  'expect-dispatches',
+  'image-model',
+]);
 for (let index = 2; index < process.argv.length; index++) {
   const arg = process.argv[index];
   if (arg === '--run-image' || arg === '--run-direct-image' || arg === '--run-auto-image') {

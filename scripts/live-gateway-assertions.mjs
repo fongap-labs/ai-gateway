@@ -35,4 +35,3 @@ function matchesExpectedVisionColor(value, expectedColor) {
 export function hasChatVisionColor(reply, expectedColor) {
   return matchesExpectedVisionColor(reply?.choices?.[0]?.message?.content, expectedColor);
 }
-

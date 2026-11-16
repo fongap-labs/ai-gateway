@@ -45,9 +45,7 @@ function buildModelsList(
   const logicalNames = collectKnownModels(nodes, env);
   const perceptionService = env.AIG_PERCEPTION_SERVICE as { fetch?: unknown } | undefined;
   const perceptionReady =
-    typeof perceptionService?.fetch === 'function' &&
-    typeof env.AIG_PERCEPTION_AUTH_KEY === 'string' &&
-    env.AIG_PERCEPTION_AUTH_KEY.length >= 32;
+    typeof perceptionService?.fetch === 'function' && typeof env.AIG_PERCEPTION_AUTH_KEY === 'string' && env.AIG_PERCEPTION_AUTH_KEY.length >= 32;
   type ModelListEntry = {
     id: string;
     object: string;
