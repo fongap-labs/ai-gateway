@@ -214,3 +214,95 @@ export async function preprocessResponsesImages(args: {
   };
   return { ok: true, body: { ...args.body, input: rewritten } };
 }
+
+export async function preprocessAnthropicImages(args: {
+  request: Request;
+  body: Record<string, unknown>;
+  visionModel: string;
+  remainingMs: number;
+  execute: (internalRequest: Request) => Promise<Response>;
+}): Promise<PreprocessResult> {
+  const fail = (): PreprocessFailure => ({
+    ok: false,
+    status: 400,
+    code: 'gateway_vision_preprocess_shape_unsupported',
+    message: 'Anthropic vision preprocessing requires 1–8 supported image blocks in user messages.',
+  });
+  const messages = args.body.messages;
+  if (!Array.isArray(messages) || !messages.every(isMessage)) return fail();
+
+  const images: ImagePart[] = [];
+  const text: string[] = [];
+  let lastUserIndex = -1;
+  let unsupported = false;
+  const rewritten = messages.map((message, index) => {
+    if (message.role === 'user') lastUserIndex = index;
+    if (!Array.isArray(message.content)) return { ...message };
+    const content = message.content.map((part: unknown) => {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) return part;
+      const block = part as Record<string, unknown>;
+      if (block.type === 'text' && message.role === 'user' && typeof block.text === 'string') text.push(block.text);
+      if (block.type !== 'image') return part;
+      if (message.role !== 'user') {
+        unsupported = true;
+        return part;
+      }
+      const source = block.source;
+      if (!source || typeof source !== 'object' || Array.isArray(source)) {
+        unsupported = true;
+        return part;
+      }
+      const imageSource = source as Record<string, unknown>;
+      let url: string | null = null;
+      if (
+        imageSource.type === 'base64' &&
+        typeof imageSource.media_type === 'string' &&
+        /^(image\/png|image\/jpeg|image\/webp|image\/gif)$/.test(imageSource.media_type) &&
+        typeof imageSource.data === 'string' &&
+        imageSource.data.length > 0 &&
+        /^[A-Za-z0-9+/]*={0,2}$/.test(imageSource.data)
+      ) {
+        url = `data:${imageSource.media_type};base64,${imageSource.data}`;
+      } else if (imageSource.type === 'url' && typeof imageSource.url === 'string') {
+        try {
+          const parsed = new URL(imageSource.url);
+          if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) url = imageSource.url;
+        } catch {}
+      }
+      if (!url) {
+        unsupported = true;
+        return part;
+      }
+      images.push({ type: 'image_url', image_url: { url } });
+      return { type: 'text', text: '[Image attachment; see visual observations below.]' };
+    });
+    return { ...message, content };
+  });
+  if (unsupported || lastUserIndex < 0 || images.length === 0 || images.length > 8) return fail();
+
+  const visualResult = await preprocessChatImages({
+    ...args,
+    body: {
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: text.join('\n').slice(-1_000) || 'Describe the attached image accurately.' }, ...images],
+        },
+      ],
+    },
+  });
+  if (!visualResult.ok) return visualResult;
+  const chatMessages = visualResult.body.messages;
+  if (!Array.isArray(chatMessages)) return fail();
+  const chatContent = (chatMessages[0] as Record<string, unknown>)?.content;
+  if (!Array.isArray(chatContent)) return fail();
+  const note = (chatContent[chatContent.length - 1] as Record<string, unknown>)?.text;
+  if (typeof note !== 'string' || !note.includes('Visual observations')) return fail();
+  const user = rewritten[lastUserIndex];
+  if (!user || !Array.isArray(user.content)) return fail();
+  rewritten[lastUserIndex] = {
+    ...user,
+    content: [...user.content, { type: 'text', text: note }],
+  };
+  return { ok: true, body: { ...args.body, messages: rewritten } };
+}
