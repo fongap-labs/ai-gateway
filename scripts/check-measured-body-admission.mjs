@@ -1,9 +1,30 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { LARGE_BODY_CHARS, releaseLargeRequestBody } from '../apps/gateway/attempt/body-release.ts';
 import { createBodyAdmissionPool } from '../packages/transport/body-admission.ts';
 import { BodyAdmissionBudgetError, BodyTooLargeError, readBodyTextWithLimit } from '../packages/transport/http.ts';
 
 const MiB = 1024 * 1024;
+const largeAttempt = {
+  reqDescriptor: { bodyChars: LARGE_BODY_CHARS + 1 },
+  bodyJson: { messages: ['large'] },
+  rawBody: 'large raw request body',
+  conversionContext: { converted: true },
+};
+releaseLargeRequestBody(largeAttempt);
+assert.deepEqual(largeAttempt.bodyJson, {}, 'large committed requests release parsed JSON');
+assert.equal(largeAttempt.rawBody, undefined, 'large committed requests release raw text');
+assert.equal(largeAttempt.conversionContext, null, 'large committed requests release conversion data');
+const smallAttempt = {
+  reqDescriptor: { bodyChars: LARGE_BODY_CHARS },
+  bodyJson: { messages: ['retryable'] },
+  rawBody: 'small raw request body',
+  conversionContext: { converted: false },
+};
+releaseLargeRequestBody(smallAttempt);
+assert.deepEqual(smallAttempt.bodyJson, { messages: ['retryable'] }, 'small requests retain parsed data for retries');
+assert.equal(smallAttempt.rawBody, 'small raw request body');
+assert.deepEqual(smallAttempt.conversionContext, { converted: false });
 const pool = createBodyAdmissionPool();
 const first = pool.admitGrowing(0, true);
 const second = pool.admitGrowing(0, true);
