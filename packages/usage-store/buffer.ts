@@ -11,6 +11,7 @@ import {
 
 const FLUSH_INTERVAL_MS = 60_000;
 const FLUSH_EVENT_THRESHOLD = 500;
+const MAX_BUFFERED_EVENTS = 1_000;
 
 export type UsageEvent = {
   now: number;
@@ -55,6 +56,7 @@ const writeStats = {
   committedStatements: 0,
   reportedRowsWritten: 0,
   statementsWithoutRowMetadata: 0,
+  droppedEvents: 0,
 };
 
 export function snapshotUsageBuffer(now: number = Date.now()) {
@@ -157,6 +159,10 @@ function persistFailure(cause: unknown): Error & { scope: string } {
 export function bufferPersist(env: GatewayEnv, kind: UsageKind, event: UsageEvent): Promise<void> {
   const database = tokenStatsD1(env);
   if (!database) return Promise.resolve();
+  if (bufferedEvents >= MAX_BUFFERED_EVENTS) {
+    writeStats.droppedEvents++;
+    return Promise.resolve();
+  }
   const hour = normalizeHour(event.now);
   const model = typeof event.model === 'string' && event.model.length > 0 ? normalizeModelKey(event.model) : null;
   const ttftBuckets = Array.from({ length: TTFT_BUCKET_COUNT }, () => 0);
@@ -331,4 +337,5 @@ export function __resetUsageBufferForTests(): void {
   writeStats.committedStatements = 0;
   writeStats.reportedRowsWritten = 0;
   writeStats.statementsWithoutRowMetadata = 0;
+  writeStats.droppedEvents = 0;
 }
