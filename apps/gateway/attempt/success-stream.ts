@@ -13,6 +13,29 @@ import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from '
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
 
+type CombinedAbortSignal = { signal: AbortSignal; dispose: () => void };
+
+function combineAbortSignals(clientSignal: AbortSignal, hedgeSignal: AbortSignal | undefined): CombinedAbortSignal {
+  if (!hedgeSignal) return { signal: clientSignal, dispose: () => {} };
+  const signals = [clientSignal, hedgeSignal];
+  const signalAny = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any;
+  if (typeof signalAny === 'function') return { signal: signalAny(signals), dispose: () => {} };
+
+  const controller = new AbortController();
+  const listeners = signals.map((signal) => {
+    const abort = () => controller.abort(signal.reason);
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    return { signal, abort };
+  });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const { signal, abort } of listeners) signal.removeEventListener('abort', abort);
+    },
+  };
+}
+
 export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;
   const { request, env, requestId, route, node, requestedModel, limits, exposeUpstreamInfo, state, policy } = c;
@@ -24,6 +47,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
 
   const guardStartMs = Date.now();
+  const firstEventSignal = combineAbortSignals(request.signal, c.hedgeAbort?.signal);
   let guarded: Response;
   try {
     const remainingRequestBudgetMs =
@@ -47,7 +71,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     guarded = await ensureFirstSseEvent(
       upstream,
       firstEventTimeout,
-      request.signal,
+      firstEventSignal.signal,
       isRealOutput,
       (event: unknown) => {
         const usage = reportedUsageFromPayload(event);
@@ -56,6 +80,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       limits.streamPassthrough ? { maxPreBytes: limits.streamGuardPrefixBytes } : {},
     );
   } catch (e) {
+    firstEventSignal.dispose();
     detach();
     const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : GUARD_ERROR.EMPTY;
     if (request.signal?.aborted) {
@@ -80,6 +105,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     return { rotate: true, kind: classification.kind };
   }
 
+  firstEventSignal.dispose();
   detach();
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
   if (node.tier === 'tier-1') {

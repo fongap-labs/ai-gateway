@@ -45,7 +45,7 @@
     "check:operations-cron-control": "node scripts/check-operations-cron-control.mjs",
     "check:production-release-preflight": "node scripts/check-production-release-preflight.mjs",
     "check:apps": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.gateway-build.jsonc --outdir .wrangler-dry-run/gateway-app && node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.inference-build.jsonc --outdir .wrangler-dry-run/inference-app && node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.perception-build.jsonc --outdir .wrangler-dry-run/perception-app && node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.generation-build.jsonc --outdir .wrangler-dry-run/generation-app && node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.protocol-build.jsonc --outdir .wrangler-dry-run/protocol-app",
-    "check:stream": "node scripts/check-stream-observation.mjs && node scripts/check-native-json-patch.mjs",
+    "check:stream": "node scripts/check-stream-observation.mjs && node scripts/check-native-json-patch.mjs && node scripts/check-hedge-cancel.mjs",
     "check:generation": "node scripts/cloudflare-wrangler.mjs deploy --dry-run --config wrangler.generation-center.jsonc --outdir .wrangler-dry-run/generation",
     "check:generation-contract": "node scripts/check-generation-center.mjs",
     "check:perception-contract": "node scripts/check-perception-center.mjs",

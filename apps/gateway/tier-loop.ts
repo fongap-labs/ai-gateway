@@ -154,6 +154,7 @@ export async function runTierLoop(
             state,
             failoverBudgetMs,
             requestStartMs,
+            attemptDeadlineMs: requestStartMs + failoverBudgetMs,
             reqDescriptor,
             remainingDispatchableAttempts,
             attemptCapMs: loopCtx.attemptCapMs ?? null,
