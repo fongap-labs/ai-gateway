@@ -38,7 +38,7 @@ try {
     ),
   );
   await stored;
-  assert.equal(storedBody, '{"ok":true}', 'cache storage should still complete after registration failure');
+  assert.equal(storedBody, '{"ok":true}', 'the mock cache write should complete in this test process after registration fails');
 } finally {
   clearTimeout(timeout);
   if (previousCaches) Object.defineProperty(globalThis, 'caches', previousCaches);
