@@ -5,8 +5,10 @@ import { storeEdgeCacheResponse } from '../apps/gateway/cache/edge-cache.ts';
 const previousCaches = Object.getOwnPropertyDescriptor(globalThis, 'caches');
 let storedBody;
 let resolveStored;
-const stored = new Promise((resolve) => {
+let timeout;
+const stored = new Promise((resolve, reject) => {
   resolveStored = resolve;
+  timeout = setTimeout(() => reject(new Error('edge cache write did not complete')), 1_000);
 });
 Object.defineProperty(globalThis, 'caches', {
   configurable: true,
@@ -38,6 +40,7 @@ try {
   await stored;
   assert.equal(storedBody, '{"ok":true}', 'cache storage should still complete after registration failure');
 } finally {
+  clearTimeout(timeout);
   if (previousCaches) Object.defineProperty(globalThis, 'caches', previousCaches);
   else delete globalThis.caches;
 }
