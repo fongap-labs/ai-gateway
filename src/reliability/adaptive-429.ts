@@ -58,8 +58,16 @@ function updateMaxModelStageForKey(provider: string, keyId: string, stage: numbe
   if (stage > current) maxModelStage.set(key, stage);
 }
 
-function clearMaxModelStageForKey(provider: string, keyId: string): void {
-  maxModelStage.delete(accountKey(provider, keyId));
+function recomputeMaxModelStageForKey(key: string): void {
+  const modelPrefix = `${key}\u0000`;
+  let maxStage = 0;
+  for (const [stateKey, state] of states) {
+    if (stateKey.startsWith(modelPrefix) && stateKey.length > modelPrefix.length) {
+      maxStage = Math.max(maxStage, state.stage);
+    }
+  }
+  if (maxStage > 0) maxModelStage.set(key, maxStage);
+  else maxModelStage.delete(key);
 }
 
 function automaticCooldownMs(stage: number, steps: readonly number[]): number {
@@ -70,11 +78,16 @@ function automaticCooldownMs(stage: number, steps: readonly number[]): number {
 function pruneIfNeeded(): void {
   if (states.size <= MAX_ENTRIES) return;
   const entries = [...states.entries()].sort((a, b) => a[1].last429At - b[1].last429At);
+  const affectedAccounts = new Set<string>();
   const remove = states.size - Math.floor(MAX_ENTRIES * 0.75);
   for (let i = 0; i < remove; i++) {
     const entry = entries[i];
-    if (entry) states.delete(entry[0]);
+    if (!entry) continue;
+    states.delete(entry[0]);
+    const separator = entry[0].lastIndexOf('\u0000');
+    if (separator !== entry[0].indexOf('\u0000')) affectedAccounts.add(entry[0].slice(0, separator));
   }
+  for (const key of affectedAccounts) recomputeMaxModelStageForKey(key);
 }
 
 export function nextAdaptive429CooldownMs(
@@ -118,8 +131,9 @@ export function nextAdaptive429CooldownMs(
 }
 
 export function clearAdaptive429State(provider: string, keyId: string, modelId: string = ''): void {
+  const key = accountKey(provider, keyId);
   states.delete(scopeKey(provider, keyId, modelId));
-  clearMaxModelStageForKey(provider, keyId);
+  recomputeMaxModelStageForKey(key);
 }
 
 export function snapshotAdaptive429State(provider: string, keyId: string, now: number = Date.now(), modelId: string = '') {
@@ -133,4 +147,5 @@ export function snapshotAdaptive429State(provider: string, keyId: string, now: n
 
 export function __resetAdaptive429StateForTests(): void {
   states.clear();
+  maxModelStage.clear();
 }
