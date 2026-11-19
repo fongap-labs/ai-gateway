@@ -1026,6 +1026,45 @@ assert.equal(retryWrites, 2, 'successfully shared cooldown must not be rewritten
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
+__resetTier1StateForTests();
+__resetSharedTier1CooldownsForTests();
+let failedRegistrationWrites = 0;
+let resolveFailedRegistrationWrite;
+const failedRegistrationWrite = new Promise((resolve) => {
+  resolveFailedRegistrationWrite = resolve;
+});
+const failedRegistrationEnv = {
+  TIER1_AFFINITY: {
+    async get() {
+      return null;
+    },
+    async put() {
+      failedRegistrationWrites++;
+      resolveFailedRegistrationWrite();
+    },
+  },
+};
+const failedRegistrationNow = Date.now();
+adoptTier1Cooldown({ node: 'registration-failure-account', until: failedRegistrationNow + 900_000, reason: 'auth' }, failedRegistrationNow);
+assert.doesNotThrow(() =>
+  shareLongTier1Cooldowns(
+    failedRegistrationEnv,
+    {
+      waitUntil() {
+        throw new Error('background task registration unavailable');
+      },
+    },
+    'registration-failure-account',
+    failedRegistrationNow,
+  ),
+);
+await failedRegistrationWrite;
+await Promise.resolve();
+assert.equal(failedRegistrationWrites, 1, 'shared cooldown persistence must continue after background registration fails');
+assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
+__resetSharedTier1CooldownsForTests();
+__resetTier1StateForTests();
+
 console.log(
   'Two-Tier runtime contracts passed (Tier 1 to Tier 2 429/503 recovery, ignored-stream JSON fallback, routing, private credentials and fail-closed migration guards).',
 );
