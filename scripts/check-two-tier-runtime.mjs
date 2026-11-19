@@ -1028,8 +1028,10 @@ __resetTier1StateForTests();
 
 let failedRegistrationWrites = 0;
 let resolveFailedRegistrationWrite;
-const failedRegistrationWrite = new Promise((resolve) => {
+let failedRegistrationTimeout;
+const failedRegistrationWrite = new Promise((resolve, reject) => {
   resolveFailedRegistrationWrite = resolve;
+  failedRegistrationTimeout = setTimeout(() => reject(new Error('shared cooldown KV write did not complete')), 1_000);
 });
 const failedRegistrationEnv = {
   TIER1_AFFINITY: {
@@ -1057,8 +1059,9 @@ assert.doesNotThrow(() =>
   ),
 );
 await failedRegistrationWrite;
+clearTimeout(failedRegistrationTimeout);
 await Promise.resolve();
-assert.equal(failedRegistrationWrites, 1, 'shared cooldown persistence must continue after background registration fails');
+assert.equal(failedRegistrationWrites, 1, 'the mock task should continue in this test process after registration fails');
 assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
