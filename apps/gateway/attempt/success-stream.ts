@@ -3,6 +3,7 @@ import { reportedUsageFromPayload } from '../../../src/observability/reported-us
 import { classifyClientAbort, classifyFirstEventFailure } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
+import { combineAbortSignals } from '../../../src/stream/abort-signals.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../../src/transport/index.ts';
@@ -12,29 +13,6 @@ import { finalHeaders, streamInterruptionChunk, upstreamModelOf } from '../respo
 import { makeNodeStreamTrack, observeUpstreamAttemptUsage, recordTokens } from './observability.ts';
 import { hedgeLoserOutcome, recordOutcome } from './outcome.ts';
 import type { SuccessArgs } from './success.ts';
-
-type CombinedAbortSignal = { signal: AbortSignal; dispose: () => void };
-
-function combineAbortSignals(clientSignal: AbortSignal, hedgeSignal: AbortSignal | undefined): CombinedAbortSignal {
-  if (!hedgeSignal) return { signal: clientSignal, dispose: () => {} };
-  const signals = [clientSignal, hedgeSignal];
-  const signalAny = (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any;
-  if (typeof signalAny === 'function') return { signal: signalAny(signals), dispose: () => {} };
-
-  const controller = new AbortController();
-  const listeners = signals.map((signal) => {
-    const abort = () => controller.abort(signal.reason);
-    if (signal.aborted) abort();
-    else signal.addEventListener('abort', abort, { once: true });
-    return { signal, abort };
-  });
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      for (const { signal, abort } of listeners) signal.removeEventListener('abort', abort);
-    },
-  };
-}
 
 export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOutcome> {
   const { upstream, c, latencyMs, detach } = s;

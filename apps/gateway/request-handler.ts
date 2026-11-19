@@ -35,7 +35,10 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
   const releaseActivity = request.body !== null ? trackIsolateRequest() : () => {};
   const declaredLength = Number(request.headers.get('content-length'));
-  const bodyAdmission = admitMeteredRequestBody(declaredLength, request.body !== null);
+  const declaredBodyExceedsLimit = Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes;
+  const bodyAdmission = declaredBodyExceedsLimit
+    ? { observe: (_actualBytes: number) => true, release: () => {} }
+    : admitMeteredRequestBody(declaredLength, request.body !== null);
   if (!bodyAdmission) {
     releaseActivity();
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));

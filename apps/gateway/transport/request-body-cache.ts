@@ -2,6 +2,10 @@ import { patchNativeJsonTopLevel } from '../../../packages/transport/native-json
 
 const byRequest = new WeakMap<object, { body: Record<string, unknown>; variants: Map<string, string> }>();
 
+export function releaseRequestBodyCache(requestState: object): void {
+  byRequest.delete(requestState);
+}
+
 export function requestBodyForAttempt(
   requestState: object,
   body: Record<string, unknown>,

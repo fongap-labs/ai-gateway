@@ -6,6 +6,7 @@ export const SHARED_COOLDOWNS_KEY = 'tier1-cooldowns:v1';
 export const SHARED_COOLDOWN_MIN_MS = 5 * 60_000;
 const REFRESH_MS = 5 * 60_000;
 const READ_TIMEOUT_MS = 50;
+const READ_RETRY_MS = 15_000;
 const MIN_KV_TTL_SECONDS = 60;
 export const SHARED_COOLDOWN_WRITE_RETRY_MS = 60_000;
 
@@ -16,6 +17,8 @@ type CooldownKV = {
 
 let known: Tier1SharedCooldown[] = [];
 let readAt = Number.NEGATIVE_INFINITY;
+let readRetryAfter = 0;
+let readGeneration = 0;
 let isWriting = false;
 let isDirty = false;
 let isWriteRetryPending = false;
@@ -75,26 +78,43 @@ function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number):
 
 export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number = Date.now()): Promise<void> {
   const kv = kvOf(env);
-  if (!kv || now - readAt < REFRESH_MS) return;
+  if (!kv || now < readRetryAfter || now - readAt < REFRESH_MS) return;
   readAt = now;
+  const generation = ++readGeneration;
   const load = (async () => {
     try {
       kvStats.reads++;
       const entries = parseEntries(await kv.get(SHARED_COOLDOWNS_KEY));
+      if (generation !== readGeneration) return;
       known = merge(known, entries, Date.now());
       for (const entry of entries) adoptTier1Cooldown(entry);
+      readAt = Date.now();
+      readRetryAfter = 0;
     } catch {
       kvStats.readFailures++;
+      if (generation === readGeneration) {
+        readAt = Number.NEGATIVE_INFINITY;
+        readRetryAfter = Date.now() + READ_RETRY_MS;
+      }
     }
   })();
   let timerId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   const timeout = new Promise<void>((resolve) => {
-    timerId = setTimeout(resolve, READ_TIMEOUT_MS);
+    timerId = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, READ_TIMEOUT_MS);
   });
   try {
     await Promise.race([load, timeout]);
   } finally {
     clearTimeout(timerId);
+  }
+  if (timedOut && generation === readGeneration) {
+    readGeneration++;
+    readAt = Number.NEGATIVE_INFINITY;
+    readRetryAfter = Date.now() + READ_RETRY_MS;
   }
 }
 
@@ -168,6 +188,8 @@ async function flush(kv: CooldownKV): Promise<void> {
 export function __resetSharedTier1CooldownsForTests(): void {
   known = [];
   readAt = Number.NEGATIVE_INFINITY;
+  readRetryAfter = 0;
+  readGeneration++;
   isWriting = false;
   isDirty = false;
   isWriteRetryPending = false;

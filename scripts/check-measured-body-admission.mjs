@@ -1,13 +1,29 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { LARGE_BODY_CHARS, releaseLargeRequestBody } from '../apps/gateway/attempt/body-release.ts';
+import { handleRequest } from '../apps/gateway/request-handler.ts';
+import { requestBodyForAttempt } from '../apps/gateway/transport/request-body-cache.ts';
 import { createBodyAdmissionPool } from '../packages/transport/body-admission.ts';
 import { BodyAdmissionBudgetError, BodyTooLargeError, readBodyTextWithLimit } from '../packages/transport/http.ts';
 
 const MiB = 1024 * 1024;
+const cacheState = {};
+let cachedModelReads = 0;
+const cachedLargeBody = new Proxy(
+  { model: 'cached-model', messages: [] },
+  {
+    get(target, property, receiver) {
+      if (property === 'model') cachedModelReads++;
+      return Reflect.get(target, property, receiver);
+    },
+  },
+);
+requestBodyForAttempt(cacheState, cachedLargeBody, undefined, 'cached-model', true);
+const readsBeforeBodyRelease = cachedModelReads;
 const largeAttempt = {
+  state: cacheState,
   reqDescriptor: { bodyChars: LARGE_BODY_CHARS + 1 },
-  bodyJson: { messages: ['large'] },
+  bodyJson: cachedLargeBody,
   rawBody: 'large raw request body',
   conversionContext: { converted: true },
 };
@@ -15,6 +31,23 @@ releaseLargeRequestBody(largeAttempt);
 assert.deepEqual(largeAttempt.bodyJson, {}, 'large committed requests release parsed JSON');
 assert.equal(largeAttempt.rawBody, undefined, 'large committed requests release raw text');
 assert.equal(largeAttempt.conversionContext, null, 'large committed requests release conversion data');
+requestBodyForAttempt(cacheState, cachedLargeBody, undefined, 'cached-model', true);
+assert.ok(cachedModelReads > readsBeforeBodyRelease, 'large committed requests release cached serialized-body variants');
+const oversizedGatewayResponse = await handleRequest(
+  new Request('https://gateway.invalid/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      [String.fromCharCode(97, 117, 116, 104, 111, 114, 105, 122, 97, 116, 105, 111, 110)]: String.fromCharCode(66, 101, 97, 114, 101, 114, 32, 120),
+      'content-type': 'application/json',
+      'content-length': String(32 * MiB + 1),
+    },
+    body: '{}',
+  }),
+  { AIG_ACCESS_KEY_AIR: 'x', AIG_ACCESS_MODELS_AIR: '*' },
+  { waitUntil() {} },
+);
+assert.equal(oversizedGatewayResponse.status, 413, 'a single oversized request gets a permanent 413, not retryable pool-busy 503');
+assert.equal(oversizedGatewayResponse.headers.get('retry-after'), null, 'permanent size failures do not ask clients to retry');
 const smallAttempt = {
   reqDescriptor: { bodyChars: LARGE_BODY_CHARS },
   bodyJson: { messages: ['retryable'] },
@@ -50,6 +83,12 @@ const declared = pool.admitGrowing(20 * MiB, true);
 assert.ok(declared);
 assert.equal(pool.admitGrowing(20 * MiB, true), null, 'declared large requests remain protected');
 declared.release();
+assert.equal(pool.admit(32 * MiB + 1, 0), null, 'a single declared body cannot exceed the aggregate budget');
+assert.equal(pool.admitGrowing(32 * MiB + 1, true), null, 'a single growing-body reservation cannot exceed the aggregate budget');
+const oversizedChunked = pool.admitGrowing(0, true);
+assert.ok(oversizedChunked);
+assert.equal(oversizedChunked.observe(32 * MiB + 1), false, 'a single growing body cannot exceed the aggregate budget');
+oversizedChunked.release();
 
 const chunked = pool.admitGrowing(0, true);
 assert.ok(chunked);

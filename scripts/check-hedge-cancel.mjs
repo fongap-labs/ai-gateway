@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { handleRequest } from '../apps/gateway/request-handler.ts';
 import { __resetTier1StateForTests, getTier1Account, getTier1Model } from '../src/reliability/tier1-state.ts';
+import { combineAbortSignals } from '../src/stream/abort-signals.ts';
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const clientAbort = new AbortController();
+const hedgeAbort = new AbortController();
+const firstEventAbort = combineAbortSignals(clientAbort.signal, hedgeAbort.signal);
+hedgeAbort.abort();
+assert.equal(firstEventAbort.signal.aborted, true, 'hedge cancellation reaches the shared first-event guard signal');
+firstEventAbort.dispose();
+const matrixSource = readFileSync(new URL('../apps/gateway/attempt/success-matrix.ts', import.meta.url), 'utf8');
+assert.match(matrixSource, /ensureFirstSseEvent\(guardSource, firstEventTimeout, firstEventSignal\.signal, isRealOutput\)/);
 const model = 'Hedge-Cancel-Test';
 const encoder = new TextEncoder();
 let slowNodeId = null;

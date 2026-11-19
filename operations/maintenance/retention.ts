@@ -66,8 +66,9 @@ export async function cleanupModelStats(env: GatewayEnv) {
     console.log(`token-stats cleanup: deleted ${deleted} model-usage rows older than ${cutoffHour}`);
     return { deleted, cutoffHour };
   } catch (e) {
-    console.error('token-stats cleanup failed:', (e as { message?: unknown } | null | undefined)?.message || e);
-    throw e;
+    const error = (e as { message?: unknown } | null | undefined)?.message || e;
+    console.error('token-stats cleanup failed:', error);
+    return { error };
   }
 }
 
