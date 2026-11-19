@@ -23,6 +23,7 @@ import {
   hydrateSharedTier1Cooldowns,
   shareLongTier1Cooldowns,
   snapshotSharedTier1Cooldowns,
+  waitForSharedTier1CooldownWrites,
 } from '../src/reliability/tier1-shared-cooldowns.ts';
 import { __resetTier1StateForTests, adoptTier1Cooldown } from '../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
@@ -1027,11 +1028,13 @@ __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
 let failedRegistrationWrites = 0;
-let resolveFailedRegistrationWrite;
-let failedRegistrationTimeout;
-const failedRegistrationWrite = new Promise((resolve, reject) => {
-  resolveFailedRegistrationWrite = resolve;
-  failedRegistrationTimeout = setTimeout(() => reject(new Error('shared cooldown KV write did not complete')), 1_000);
+let releaseFailedRegistrationWrite;
+let failedRegistrationWriteStarted;
+const failedRegistrationGate = new Promise((resolve) => {
+  releaseFailedRegistrationWrite = resolve;
+});
+const failedRegistrationStarted = new Promise((resolve) => {
+  failedRegistrationWriteStarted = resolve;
 });
 const failedRegistrationEnv = {
   TIER1_AFFINITY: {
@@ -1039,29 +1042,31 @@ const failedRegistrationEnv = {
       return null;
     },
     async put() {
+      failedRegistrationWriteStarted();
+      await failedRegistrationGate;
       failedRegistrationWrites++;
-      resolveFailedRegistrationWrite();
     },
   },
 };
 const failedRegistrationNow = Date.now();
 adoptTier1Cooldown({ node: 'registration-failure-account', until: failedRegistrationNow + 900_000, reason: 'auth' }, failedRegistrationNow);
-assert.doesNotThrow(() =>
-  shareLongTier1Cooldowns(
-    failedRegistrationEnv,
-    {
-      waitUntil() {
-        throw new Error('background task registration unavailable');
-      },
-    },
-    'registration-failure-account',
-    failedRegistrationNow,
-  ),
-);
-await failedRegistrationWrite;
-clearTimeout(failedRegistrationTimeout);
+const failedRegistrationContext = {
+  waitUntil() {
+    throw new Error('background task registration unavailable');
+  },
+};
+shareLongTier1Cooldowns(failedRegistrationEnv, failedRegistrationContext, 'registration-failure-account', failedRegistrationNow);
+const pendingWrite = waitForSharedTier1CooldownWrites(failedRegistrationContext);
+await failedRegistrationStarted;
+let fallbackSettled = false;
+void pendingWrite.then(() => {
+  fallbackSettled = true;
+});
 await Promise.resolve();
-assert.equal(failedRegistrationWrites, 1, 'the mock task should continue in this test process after registration fails');
+assert.equal(fallbackSettled, false, 'request fallback must wait while the shared KV write is pending');
+releaseFailedRegistrationWrite();
+await pendingWrite;
+assert.equal(failedRegistrationWrites, 1, 'request fallback must await KV persistence after registration fails');
 assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();

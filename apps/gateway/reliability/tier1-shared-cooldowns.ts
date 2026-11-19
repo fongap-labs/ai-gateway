@@ -21,6 +21,7 @@ let isDirty = false;
 let isWriteRetryPending = false;
 let writeRetryAfter = 0;
 const kvStats = { reads: 0, readFailures: 0, writes: 0, writeFailures: 0 };
+const failedRegistrations = new WeakMap<object, Promise<void>[]>();
 
 export function snapshotSharedTier1Cooldowns() {
   return { binding: KV_BINDING, ...kvStats, knownEntries: known.length };
@@ -108,9 +109,25 @@ export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLi
     return;
   }
   const task = flush(kv);
-  try {
-    ctx?.waitUntil?.(task);
-  } catch {}
+  let registered = false;
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    try {
+      ctx.waitUntil(task);
+      registered = true;
+    } catch {}
+  }
+  if (!registered && ctx && typeof ctx === 'object') {
+    const pending = failedRegistrations.get(ctx) ?? [];
+    pending.push(task);
+    failedRegistrations.set(ctx, pending);
+  }
+}
+
+export async function waitForSharedTier1CooldownWrites(ctx: object): Promise<void> {
+  const pending = failedRegistrations.get(ctx);
+  if (!pending) return;
+  failedRegistrations.delete(ctx);
+  await Promise.allSettled(pending);
 }
 
 async function flush(kv: CooldownKV): Promise<void> {
