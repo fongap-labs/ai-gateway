@@ -3,6 +3,7 @@ import { reportedUsageFromPayload } from '../../../src/observability/reported-us
 import { classifyClientAbort, classifyFirstEventFailure } from '../../../src/reliability/classify.ts';
 import { markProbeFailure, recordTtft } from '../../../src/reliability/node-state.ts';
 import { commitTier1RecoveryProbe, recordTier1Ttft } from '../../../src/reliability/tier1-state.ts';
+import { combineAbortSignals } from '../../../src/stream/abort-signals.ts';
 import { ensureFirstSseEvent, GUARD_ERROR, guardedStreamFailureReason } from '../../../src/stream/guard.ts';
 import { relayStreamResponse, trackStreamResponse } from '../../../src/stream/track.ts';
 import { isAnthropicNativeRealOutput, isOpenAIChatRealOutput, isResponsesRealOutput } from '../../../src/transport/index.ts';
@@ -24,6 +25,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
   const needsModelRewrite = requestedModel !== upstreamModelOf(node, c.reqDescriptor.model);
 
   const guardStartMs = Date.now();
+  const firstEventSignal = combineAbortSignals(request.signal, c.hedgeAbort?.signal);
   let guarded: Response;
   try {
     const remainingRequestBudgetMs =
@@ -47,7 +49,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     guarded = await ensureFirstSseEvent(
       upstream,
       firstEventTimeout,
-      request.signal,
+      firstEventSignal.signal,
       isRealOutput,
       (event: unknown) => {
         const usage = reportedUsageFromPayload(event);
@@ -56,6 +58,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
       limits.streamPassthrough ? { maxPreBytes: limits.streamGuardPrefixBytes } : {},
     );
   } catch (e) {
+    firstEventSignal.dispose();
     detach();
     const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : GUARD_ERROR.EMPTY;
     if (request.signal?.aborted) {
@@ -80,6 +83,7 @@ export async function handleStreamingSuccess(s: SuccessArgs): Promise<AttemptOut
     return { rotate: true, kind: classification.kind };
   }
 
+  firstEventSignal.dispose();
   detach();
   c.ttftMs = Date.now() - (c.attemptStartMs as number);
   if (node.tier === 'tier-1') {

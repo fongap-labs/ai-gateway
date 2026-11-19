@@ -352,6 +352,8 @@ export function metricsResponse(request: Request, env: Record<string, unknown>, 
   counter('gateway_usage_d1_statements_missing_row_metadata_total', usageBuffer.statementsWithoutRowMetadata);
   emit('gateway_usage_d1_buffer_pending_events', 'gauge', 'Usage events pending D1 flush in this isolate; lost if the isolate is recycled.');
   counter('gateway_usage_d1_buffer_pending_events', usageBuffer.pendingEvents);
+  emit('gateway_usage_d1_buffer_dropped_events_total', 'counter', 'Usage events omitted after the in-memory D1 buffer reached its bound.');
+  counter('gateway_usage_d1_buffer_dropped_events_total', usageBuffer.droppedEvents);
   emit('gateway_usage_d1_buffer_pending_entries', 'gauge', 'Distinct aggregated usage entries pending D1 flush.');
   counter('gateway_usage_d1_buffer_pending_entries', usageBuffer.pendingEntries);
   emit(

@@ -19,7 +19,7 @@ import { evaluateRouteFeasibility } from './policy/route-feasibility.ts';
 import { detectRoute, normalizePath, TIER_ORDER } from './policy/router.ts';
 import { preflight as runPreflight } from './preflight.ts';
 import { RetrySlot } from './reliability/retry-budget.ts';
-import { hydrateSharedTier1Cooldowns } from './reliability/tier1-shared-cooldowns.ts';
+import { hydrateSharedTier1Cooldowns, waitForSharedTier1CooldownWrites } from './reliability/tier1-shared-cooldowns.ts';
 import { buildBudgetExhaustedResponse, buildExhaustedResponse, gatewayError } from './response/errors.ts';
 import { hasConfirmedUpstreamFailure } from './response/failover-evidence.ts';
 import { supportsRequest } from './scheduling/scheduler.ts';
@@ -35,7 +35,10 @@ export async function handleRequest(request: Request, env: GatewayEnv, ctx: Exec
   configureTier1ProbeGate({ v2: limits.tier1ProbeV2, timeoutMs: limits.tier1ProbeTimeoutMs });
   const releaseActivity = request.body !== null ? trackIsolateRequest() : () => {};
   const declaredLength = Number(request.headers.get('content-length'));
-  const bodyAdmission = admitMeteredRequestBody(declaredLength, request.body !== null);
+  const declaredBodyExceedsLimit = Number.isFinite(declaredLength) && declaredLength > limits.maxBodyBytes;
+  const bodyAdmission = declaredBodyExceedsLimit
+    ? { observe: (_actualBytes: number) => true, release: () => {} }
+    : admitMeteredRequestBody(declaredLength, request.body !== null);
   if (!bodyAdmission) {
     releaseActivity();
     const route = detectRoute(request.method, normalizePath(new URL(request.url).pathname));
@@ -70,6 +73,7 @@ async function handleAdmittedRequest(
   try {
     return await runAdmittedRequest(request, env, ctx, retrySlot, observeBodyBytes);
   } finally {
+    await waitForSharedTier1CooldownWrites(ctx);
     retrySlot.end();
   }
 }
@@ -472,7 +476,7 @@ async function runAdmittedRequest(
   );
 }
 
-function deliver(response: Response, loopCtx: LoopContext): Response {
+async function deliver(response: Response, loopCtx: LoopContext): Promise<Response> {
   if (response.status === 200 && loopCtx.state.dispatches > 1 && hasConfirmedUpstreamFailure(loopCtx.state.attempts)) {
     const headers = new Headers(response.headers);
     headers.set('x-gateway-dispatches', String(loopCtx.state.dispatches));
@@ -482,6 +486,6 @@ function deliver(response: Response, loopCtx: LoopContext): Response {
   }
   const plan = loopCtx.edgeCachePlan;
   if (!plan || response.status !== 200) return response;
-  storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream, plan.route, loopCtx.request.signal);
+  await storeEdgeCacheResponse(loopCtx.ctx, plan.keyRequest, response.clone(), plan.ttlSec, plan.stream, plan.route, loopCtx.request.signal);
   return injectMissHeader(response, loopCtx.request, loopCtx.env);
 }

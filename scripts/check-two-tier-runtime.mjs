@@ -23,8 +23,9 @@ import {
   hydrateSharedTier1Cooldowns,
   shareLongTier1Cooldowns,
   snapshotSharedTier1Cooldowns,
+  waitForSharedTier1CooldownWrites,
 } from '../src/reliability/tier1-shared-cooldowns.ts';
-import { __resetTier1StateForTests, adoptTier1Cooldown } from '../src/reliability/tier1-state.ts';
+import { __resetTier1StateForTests, adoptTier1Cooldown, getTier1Account } from '../src/reliability/tier1-state.ts';
 import { routingStrategyFor } from '../src/scheduler/routing-strategy.ts';
 import { collectSecretsFromEnv, collectVarsFromEnv, normalizeRuntimeConfig } from './github-deployment-config.mjs';
 
@@ -987,6 +988,50 @@ assert.equal(kvReads, before, 'reading metrics must not cause more KV requests')
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
+let readAttempts = 0;
+const readRetryEnv = {
+  TIER1_AFFINITY: {
+    async get() {
+      readAttempts++;
+      if (readAttempts === 1) throw new Error('transient KV read failure');
+      return JSON.stringify([{ node: 'read-retry-account', until: Date.now() + 900_000, reason: 'auth' }]);
+    },
+    async put() {},
+  },
+};
+const readRetryClock = Date.now();
+await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock);
+assert.equal(snapshotSharedTier1Cooldowns().readFailures, 1);
+await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock + 16_000);
+assert.equal(readAttempts, 2, 'a failed shared cooldown read becomes eligible for a bounded retry');
+assert.equal(snapshotSharedTier1Cooldowns().reads, 2);
+assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 1, 'the successful retry adopts shared cooldown state');
+__resetSharedTier1CooldownsForTests();
+
+let timeoutReadAttempts = 0;
+let resolveTimedOutRead;
+const timeoutReadEnv = {
+  TIER1_AFFINITY: {
+    async get() {
+      timeoutReadAttempts++;
+      if (timeoutReadAttempts === 1) return new Promise((resolve) => (resolveTimedOutRead = resolve));
+      return null;
+    },
+    async put() {},
+  },
+};
+const timeoutReadClock = Date.now();
+await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock);
+assert.equal(timeoutReadAttempts, 1, 'the first shared read is abandoned at its 50 ms deadline');
+resolveTimedOutRead(JSON.stringify([{ node: 'stale-read-account', until: Date.now() + 900_000, reason: 'auth' }]));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 0, 'a late result is discarded immediately after the read times out');
+assert.equal(getTier1Account('stale-read-account').accountCooldownUntil ?? 0, 0, 'a timed out read cannot reapply a cleared cooldown');
+await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock + 16_000);
+assert.equal(timeoutReadAttempts, 2, 'a timed out shared read can be retried after backoff');
+assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 0, 'a newer empty KV read leaves no shared cooldowns');
+__resetSharedTier1CooldownsForTests();
+
 const retryClock = Date.now();
 adoptTier1Cooldown({ node: 'retry-account', until: retryClock + 900_000, reason: 'auth' }, retryClock);
 let retryWrites = 0;
@@ -1023,6 +1068,50 @@ assert.equal(snapshotSharedTier1Cooldowns().writeFailures, 1);
 assert.equal(JSON.parse(storedCooldown ?? '[]')[0]?.node, 'retry-account');
 shareLongTier1Cooldowns(sharedRetryEnv, retryContext, 'retry-account', retryClock + 62_000);
 assert.equal(retryWrites, 2, 'successfully shared cooldown must not be rewritten');
+__resetSharedTier1CooldownsForTests();
+__resetTier1StateForTests();
+
+let failedRegistrationWrites = 0;
+let releaseFailedRegistrationWrite;
+let failedRegistrationWriteStarted;
+const failedRegistrationGate = new Promise((resolve) => {
+  releaseFailedRegistrationWrite = resolve;
+});
+const failedRegistrationStarted = new Promise((resolve) => {
+  failedRegistrationWriteStarted = resolve;
+});
+const failedRegistrationEnv = {
+  TIER1_AFFINITY: {
+    async get() {
+      return null;
+    },
+    async put() {
+      failedRegistrationWriteStarted();
+      await failedRegistrationGate;
+      failedRegistrationWrites++;
+    },
+  },
+};
+const failedRegistrationNow = Date.now();
+adoptTier1Cooldown({ node: 'registration-failure-account', until: failedRegistrationNow + 900_000, reason: 'auth' }, failedRegistrationNow);
+const failedRegistrationContext = {
+  waitUntil() {
+    throw new Error('background task registration unavailable');
+  },
+};
+shareLongTier1Cooldowns(failedRegistrationEnv, failedRegistrationContext, 'registration-failure-account', failedRegistrationNow);
+const pendingWrite = waitForSharedTier1CooldownWrites(failedRegistrationContext);
+await failedRegistrationStarted;
+let fallbackSettled = false;
+void pendingWrite.then(() => {
+  fallbackSettled = true;
+});
+await Promise.resolve();
+assert.equal(fallbackSettled, false, 'request fallback must wait while the shared KV write is pending');
+releaseFailedRegistrationWrite();
+await pendingWrite;
+assert.equal(failedRegistrationWrites, 1, 'request fallback must await KV persistence after registration fails');
+assert.equal(snapshotSharedTier1Cooldowns().writes, 1);
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 

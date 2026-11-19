@@ -235,7 +235,7 @@ function protocolForRoute(route: string): SseProtocol | undefined {
   return undefined;
 }
 
-export function storeEdgeCacheResponse(
+export async function storeEdgeCacheResponse(
   ctx: { waitUntil?: (p: Promise<unknown>) => void } | undefined,
   keyRequest: Request,
   response: Response,
@@ -243,7 +243,7 @@ export function storeEdgeCacheResponse(
   isStreamExpected: boolean,
   routeHint?: string,
   signal?: AbortSignal,
-): void {
+): Promise<void> {
   const cache = defaultCache();
   if (!cache) return;
   if (response.status !== 200 || !response.body) return;
@@ -263,7 +263,13 @@ export function storeEdgeCacheResponse(
     const cacheBody = bytes.buffer as ArrayBuffer;
     await cache.put(keyRequest, new Response(cacheBody, { status: 200, headers }));
   })().catch(() => {});
-  if (ctx?.waitUntil) ctx.waitUntil(task);
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    try {
+      ctx.waitUntil(task);
+      return;
+    } catch {}
+  }
+  await task;
 }
 
 export function injectMissHeader(response: Response, request: Request, env: GatewayEnv): Response {

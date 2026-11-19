@@ -113,6 +113,34 @@ try {
   const absentKey = await result(missingKey, keys.AIG_ACCESS_KEY_ULTRA);
   assert.equal((await absentKey.json()).centers.inference, 'missing-key');
 
+  const oversizedBinding = {
+    ...env,
+    AIG_INFERENCE_SERVICE: {
+      fetch: () => Promise.resolve(new Response(JSON.stringify({ status: 'ok', center: 'inference', padding: 'x'.repeat(9000) }), { status: 200 })),
+    },
+  };
+  const oversized = await result(oversizedBinding, keys.AIG_ACCESS_KEY_ULTRA);
+  assert.equal(oversized.status, 503);
+  assert.equal((await oversized.json()).centers.inference, 'unexpected-response');
+
+  const hungBinding = {
+    ...env,
+    AIG_INFERENCE_SERVICE: { fetch: () => new Promise(() => {}) },
+  };
+  let watchdog;
+  const probeOutcome = await Promise.race([
+    result(hungBinding, keys.AIG_ACCESS_KEY_ULTRA).then((response) => ({ kind: 'response', response })),
+    new Promise((resolve) => {
+      watchdog = setTimeout(() => resolve({ kind: 'watchdog' }), 3000);
+    }),
+  ]);
+  clearTimeout(watchdog);
+  assert.equal(probeOutcome.kind, 'response', 'private-center diagnostics must return when a binding ignores abort');
+  if (probeOutcome.kind === 'response') {
+    assert.equal(probeOutcome.response.status, 503);
+    assert.equal((await probeOutcome.response.json()).centers.inference, 'timeout');
+  }
+
   assert.equal(providerCalls, 0);
   console.log('Authenticated private-center live probe contracts passed offline (no Provider calls).');
 } finally {

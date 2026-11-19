@@ -293,4 +293,27 @@ await heldWrite;
 assert.equal(snapshotUsageBuffer().oldestPendingAgeSeconds, 0, 'completed writes clear backlog age');
 __resetUsageBufferForTests();
 
+let unavailableWrites = 0;
+const unavailableD1 = {
+  ...writeD1,
+  async batch() {
+    unavailableWrites++;
+    throw new Error('D1 remains unavailable');
+  },
+};
+await __resetUsageBufferForTests();
+await assert.rejects(bufferPersist({ TOKEN_STATS_DB: unavailableD1 }, 'delivered', usageEvent), /D1 remains unavailable/);
+for (let i = 0; i < 1_000; i++) {
+  await bufferPersist({ TOKEN_STATS_DB: unavailableD1 }, 'delivered', { ...usageEvent, model: `distinct-model-${i}` });
+}
+const bounded = snapshotUsageBuffer();
+assert.equal(bounded.pendingEvents, 1_000, 'a failed D1 must not let the in-memory queue exceed its event cap');
+assert.equal(bounded.droppedEvents, 1, 'usage events rejected at the cap must be observable');
+assert.ok(bounded.pendingEntries <= 2_000, 'each accepted exact-global event may retain at most two aggregate entries');
+assert.equal(unavailableWrites, 1, 'bounded intake must not hammer an unavailable D1');
+const boundedMetrics = await metricsResponse(new Request('https://gateway.example/metrics'), {}, 'usage-d1-test').text();
+assert.match(boundedMetrics, /gateway_usage_d1_buffer_dropped_events_total\{\} 1/);
+__resetUsageBufferForTests();
+assert.equal(snapshotUsageBuffer().droppedEvents, 0, 'test reset clears the dropped-event counter');
+
 console.log('Upstream D1 summary and buffered write diagnostics passed without extra D1 reads or writes.');

@@ -44,7 +44,7 @@ const sourceRows = [
   },
 ];
 
-function mockD1({ failBatchTable } = {}) {
+function mockD1({ failBatchTable, failDeleteTable } = {}) {
   const tables = new Map([
     ['token_usage_hourly', new Map(sourceRows.map((row, index) => [`${row.hour}:${index}`, structuredClone(row)]))],
     ['token_usage_daily', new Map()],
@@ -73,6 +73,7 @@ function mockD1({ failBatchTable } = {}) {
           const match = /\bDELETE\s+FROM\s+([a-z_]+)\s+WHERE\s+([a-z_]+)\s*</i.exec(sql);
           assert.ok(match, `mock DELETE has a table and cutoff: ${sql}`);
           deletes.push({ table: match[1], column: match[2], cutoff: values[0] });
+          if (match[1] === failDeleteTable) throw new Error(`mock D1 delete failed: ${match[1]}`);
           return { meta: { changes: 0 } };
         },
         sql,
@@ -161,6 +162,22 @@ try {
     'failed rollups must retain all source rows and defer retention deletes',
   );
   assert.equal(failedD1.tables.get('token_usage_hourly').size, sourceRows.length);
+
+  errors.length = 0;
+  const failedModelCleanup = mockD1({ failDeleteTable: 'token_usage_model_hourly' });
+  await assert.doesNotReject(
+    scheduled({}, { TOKEN_STATS_DB: failedModelCleanup }),
+    'a model-stat retention failure must not fail the entire maintenance invocation',
+  );
+  assert.ok(
+    errors.some((args) => args.join(' ').includes('model')),
+    'model-stat cleanup failure remains visible in diagnostics',
+  );
+  assert.equal(
+    failedModelCleanup.deletes.filter(({ table }) => ['token_usage_hourly', 'token_usage_daily', 'token_usage_weekly'].includes(table)).length,
+    3,
+    'unrelated usage rollup retention continues after model-stat cleanup failure',
+  );
 } finally {
   Date.now = originalNow;
   console.error = originalError;
