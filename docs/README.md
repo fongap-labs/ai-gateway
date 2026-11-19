@@ -21,7 +21,7 @@
 - [配置](operations/configuration.md)、[部署与回滚](operations/deployment.md)、[故障排查](operations/troubleshooting.md)
 - [能力中心迁移计划](operations/center-migration-plan.md)：本阶段仅 Cloudflare，Oracle 留作未来选项
 - [Provider 发现](operations/provider-discovery.md)、[公开模型状态](operations/public-model-status.md)
-- [免费资源预算](operations/free-tier-budget.md)、[GitHub 仓库设置](operations/github-repository-settings.md)
+- [免费资源预算](operations/free-tier-budget.md)、[Phase 2 跨 isolate 协调提案](operations/phase-two-coordination-proposal.md)、[GitHub 仓库设置](operations/github-repository-settings.md)
 
 ## 治理
 
