@@ -1026,8 +1026,6 @@ assert.equal(retryWrites, 2, 'successfully shared cooldown must not be rewritten
 __resetSharedTier1CooldownsForTests();
 __resetTier1StateForTests();
 
-__resetTier1StateForTests();
-__resetSharedTier1CooldownsForTests();
 let failedRegistrationWrites = 0;
 let resolveFailedRegistrationWrite;
 const failedRegistrationWrite = new Promise((resolve) => {
