@@ -263,7 +263,15 @@ export function storeEdgeCacheResponse(
     const cacheBody = bytes.buffer as ArrayBuffer;
     await cache.put(keyRequest, new Response(cacheBody, { status: 200, headers }));
   })().catch(() => {});
-  if (ctx?.waitUntil) ctx.waitUntil(task);
+  if (ctx && typeof ctx.waitUntil === 'function') {
+    try {
+      ctx.waitUntil(task);
+    } catch {
+      task.catch(() => {});
+    }
+  } else {
+    task.catch(() => {});
+  }
 }
 
 export function injectMissHeader(response: Response, request: Request, env: GatewayEnv): Response {
