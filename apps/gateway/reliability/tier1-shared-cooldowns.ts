@@ -99,10 +99,10 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
     }
   })();
   let timerId: ReturnType<typeof setTimeout> | undefined;
-  let timedOut = false;
+  let hasTimedOut = false;
   const timeout = new Promise<void>((resolve) => {
     timerId = setTimeout(() => {
-      timedOut = true;
+      hasTimedOut = true;
       resolve();
     }, READ_TIMEOUT_MS);
   });
@@ -111,7 +111,7 @@ export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number =
   } finally {
     clearTimeout(timerId);
   }
-  if (timedOut && generation === readGeneration) {
+  if (hasTimedOut && generation === readGeneration) {
     readGeneration++;
     readAt = Number.NEGATIVE_INFINITY;
     readRetryAfter = Date.now() + READ_RETRY_MS;
@@ -129,14 +129,14 @@ export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLi
     return;
   }
   const task = flush(kv);
-  let registered = false;
+  let isRegistered = false;
   if (ctx && typeof ctx.waitUntil === 'function') {
     try {
       ctx.waitUntil(task);
-      registered = true;
+      isRegistered = true;
     } catch {}
   }
-  if (!registered && ctx && typeof ctx === 'object') {
+  if (!isRegistered && ctx && typeof ctx === 'object') {
     const pending = failedRegistrations.get(ctx) ?? [];
     pending.push(task);
     failedRegistrations.set(ctx, pending);
