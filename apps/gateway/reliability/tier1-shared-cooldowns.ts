@@ -2,7 +2,8 @@ import type { ExecutionContextLike, GatewayEnv } from '../../../packages/contrac
 import { adoptTier1Cooldown, type Tier1SharedCooldown, tier1LongCooldowns } from '../../../src/reliability/tier1-state.ts';
 
 const KV_BINDING = 'TIER1_AFFINITY';
-export const SHARED_COOLDOWNS_KEY = 'tier1-cooldowns:v1';
+export const SHARED_COOLDOWN_KEY_PREFIX = 'tier1-cooldown:v1:';
+const keyForNode = (nodeId: string): string => SHARED_COOLDOWN_KEY_PREFIX + nodeId;
 export const SHARED_COOLDOWN_MIN_MS = 5 * 60_000;
 const REFRESH_MS = 5 * 60_000;
 const READ_TIMEOUT_MS = 50;
@@ -16,13 +17,14 @@ type CooldownKV = {
 };
 
 let known: Tier1SharedCooldown[] = [];
-let readAt = Number.NEGATIVE_INFINITY;
-let readRetryAfter = 0;
+const readAtByNode = new Map<string, number>();
+const readRetryAfterByNode = new Map<string, number>();
+const readGenerations = new Map<string, number>();
 let readGeneration = 0;
-let isWriting = false;
-let isDirty = false;
-let isWriteRetryPending = false;
-let writeRetryAfter = 0;
+const writing = new Set<string>();
+const dirty = new Set<string>();
+const writeRetryPending = new Set<string>();
+const writeRetryAfterByNode = new Map<string, number>();
 const kvStats = { reads: 0, readFailures: 0, writes: 0, writeFailures: 0 };
 const failedRegistrations = new WeakMap<object, Promise<void>[]>();
 
@@ -35,7 +37,7 @@ function kvOf(env: GatewayEnv): CooldownKV | null {
   return kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? (kv as CooldownKV) : null;
 }
 
-function parseEntries(value: unknown): Tier1SharedCooldown[] {
+function parseEntries(value: unknown, nodeId: string): Tier1SharedCooldown[] {
   let parsed: unknown;
   try {
     parsed = typeof value === 'string' ? JSON.parse(value) : null;
@@ -47,7 +49,7 @@ function parseEntries(value: unknown): Tier1SharedCooldown[] {
   for (const raw of parsed) {
     if (!raw || typeof raw !== 'object') continue;
     const { node, model, until, reason, quota } = raw as Record<string, unknown>;
-    if (typeof node !== 'string' || typeof until !== 'number' || !Number.isFinite(until) || typeof reason !== 'string') continue;
+    if (node !== nodeId || typeof until !== 'number' || !Number.isFinite(until) || typeof reason !== 'string') continue;
     entries.push({
       node,
       until,
@@ -63,7 +65,7 @@ const entryKey = (entry: Tier1SharedCooldown): string => `${entry.node}\u0000${e
 
 function isNews(entry: Tier1SharedCooldown): boolean {
   const current = known.find((candidate) => entryKey(candidate) === entryKey(entry));
-  return isWriteRetryPending || !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
+  return writeRetryPending.has(entry.node) || !current || entry.until - current.until >= SHARED_COOLDOWN_MIN_MS;
 }
 
 function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number): Tier1SharedCooldown[] {
@@ -76,59 +78,71 @@ function merge(a: Tier1SharedCooldown[], b: Tier1SharedCooldown[], now: number):
   return [...byKey.values()];
 }
 
-export async function hydrateSharedTier1Cooldowns(env: GatewayEnv, now: number = Date.now()): Promise<void> {
+export async function hydrateSharedTier1Cooldowns(
+  env: GatewayEnv,
+  now: number = Date.now(),
+  activeNodeIds: ReadonlyArray<string> = [],
+): Promise<void> {
   const kv = kvOf(env);
-  if (!kv || now < readRetryAfter || now - readAt < REFRESH_MS) return;
-  readAt = now;
-  const generation = ++readGeneration;
-  const load = (async () => {
-    try {
-      kvStats.reads++;
-      const entries = parseEntries(await kv.get(SHARED_COOLDOWNS_KEY));
-      if (generation !== readGeneration) return;
-      known = merge(known, entries, Date.now());
-      for (const entry of entries) adoptTier1Cooldown(entry);
-      readAt = Date.now();
-      readRetryAfter = 0;
-    } catch {
-      kvStats.readFailures++;
-      if (generation === readGeneration) {
-        readAt = Number.NEGATIVE_INFINITY;
-        readRetryAfter = Date.now() + READ_RETRY_MS;
+  if (!kv || activeNodeIds.length === 0) return;
+  await Promise.all(
+    [...new Set(activeNodeIds)].map(async (nodeId) => {
+      if (!nodeId || now < (readRetryAfterByNode.get(nodeId) ?? 0) || now - (readAtByNode.get(nodeId) ?? Number.NEGATIVE_INFINITY) < REFRESH_MS) {
+        return;
       }
-    }
-  })();
-  let timerId: ReturnType<typeof setTimeout> | undefined;
-  let hasTimedOut = false;
-  const timeout = new Promise<void>((resolve) => {
-    timerId = setTimeout(() => {
-      hasTimedOut = true;
-      resolve();
-    }, READ_TIMEOUT_MS);
-  });
-  try {
-    await Promise.race([load, timeout]);
-  } finally {
-    clearTimeout(timerId);
-  }
-  if (hasTimedOut && generation === readGeneration) {
-    readGeneration++;
-    readAt = Number.NEGATIVE_INFINITY;
-    readRetryAfter = Date.now() + READ_RETRY_MS;
-  }
+      readAtByNode.set(nodeId, now);
+      const generation = ++readGeneration;
+      readGenerations.set(nodeId, generation);
+      const load = (async () => {
+        try {
+          kvStats.reads++;
+          const entries = parseEntries(await kv.get(keyForNode(nodeId)), nodeId);
+          if (readGenerations.get(nodeId) !== generation) return;
+          known = merge(known, entries, Date.now());
+          for (const entry of entries) adoptTier1Cooldown(entry);
+          readAtByNode.set(nodeId, Date.now());
+          readRetryAfterByNode.delete(nodeId);
+        } catch {
+          kvStats.readFailures++;
+          if (readGenerations.get(nodeId) === generation) {
+            readAtByNode.delete(nodeId);
+            readRetryAfterByNode.set(nodeId, Date.now() + READ_RETRY_MS);
+          }
+        }
+      })();
+      let timerId: ReturnType<typeof setTimeout> | undefined;
+      let hasTimedOut = false;
+      const timeout = new Promise<void>((resolve) => {
+        timerId = setTimeout(() => {
+          hasTimedOut = true;
+          resolve();
+        }, READ_TIMEOUT_MS);
+      });
+      try {
+        await Promise.race([load, timeout]);
+      } finally {
+        clearTimeout(timerId);
+      }
+      if (hasTimedOut && readGenerations.get(nodeId) === generation) {
+        readGenerations.set(nodeId, ++readGeneration);
+        readAtByNode.delete(nodeId);
+        readRetryAfterByNode.set(nodeId, Date.now() + READ_RETRY_MS);
+      }
+    }),
+  );
 }
 
 export function shareLongTier1Cooldowns(env: GatewayEnv, ctx: ExecutionContextLike | undefined, accountId: string, now: number = Date.now()): void {
   const kv = kvOf(env);
-  if (!kv || now < writeRetryAfter) return;
+  if (!kv || now < (writeRetryAfterByNode.get(accountId) ?? 0)) return;
   const fresh = tier1LongCooldowns(accountId, SHARED_COOLDOWN_MIN_MS, now).filter(isNews);
   if (fresh.length === 0) return;
   known = merge(known, fresh, now);
-  if (isWriting) {
-    isDirty = true;
+  if (writing.has(accountId)) {
+    dirty.add(accountId);
     return;
   }
-  const task = flush(kv);
+  const task = flush(kv, accountId);
   let isRegistered = false;
   if (ctx && typeof ctx.waitUntil === 'function') {
     try {
@@ -150,50 +164,52 @@ export async function waitForSharedTier1CooldownWrites(ctx: object): Promise<voi
   await Promise.allSettled(pending);
 }
 
-async function flush(kv: CooldownKV): Promise<void> {
-  isWriting = true;
+async function flush(kv: CooldownKV, nodeId: string): Promise<void> {
+  writing.add(nodeId);
   try {
     do {
-      isDirty = false;
+      dirty.delete(nodeId);
       kvStats.reads++;
       let prior: string | null | undefined;
       try {
-        prior = await kv.get(SHARED_COOLDOWNS_KEY);
+        prior = await kv.get(keyForNode(nodeId));
       } catch {
         kvStats.readFailures++;
         throw new Error('Shared cooldown KV read failed');
       }
-      known = merge(parseEntries(prior), known, Date.now());
-      if (known.length === 0) break;
-      const latest = Math.max(...known.map((entry) => entry.until));
+      const entries = merge(parseEntries(prior, nodeId), known.filter((entry) => entry.node === nodeId), Date.now());
+      known = merge(known, entries, Date.now());
+      if (entries.length === 0) break;
+      const latest = Math.max(...entries.map((entry) => entry.until));
       const ttl = Math.max(MIN_KV_TTL_SECONDS, Math.ceil((latest - Date.now()) / 1000));
       try {
-        await kv.put(SHARED_COOLDOWNS_KEY, JSON.stringify(known), { expirationTtl: ttl });
+        await kv.put(keyForNode(nodeId), JSON.stringify(entries), { expirationTtl: ttl });
         kvStats.writes++;
-        isWriteRetryPending = false;
-        writeRetryAfter = 0;
+        writeRetryPending.delete(nodeId);
+        writeRetryAfterByNode.delete(nodeId);
       } catch {
         kvStats.writeFailures++;
         throw new Error('Shared cooldown KV write failed');
       }
-    } while (isDirty);
+    } while (dirty.has(nodeId));
   } catch {
-    isWriteRetryPending = true;
-    writeRetryAfter = Date.now() + SHARED_COOLDOWN_WRITE_RETRY_MS;
+    writeRetryPending.add(nodeId);
+    writeRetryAfterByNode.set(nodeId, Date.now() + SHARED_COOLDOWN_WRITE_RETRY_MS);
   } finally {
-    isWriting = false;
+    writing.delete(nodeId);
   }
 }
 
 export function __resetSharedTier1CooldownsForTests(): void {
   known = [];
-  readAt = Number.NEGATIVE_INFINITY;
-  readRetryAfter = 0;
+  readAtByNode.clear();
+  readRetryAfterByNode.clear();
+  readGenerations.clear();
   readGeneration++;
-  isWriting = false;
-  isDirty = false;
-  isWriteRetryPending = false;
-  writeRetryAfter = 0;
+  writing.clear();
+  dirty.clear();
+  writeRetryPending.clear();
+  writeRetryAfterByNode.clear();
   kvStats.reads = 0;
   kvStats.readFailures = 0;
   kvStats.writes = 0;
