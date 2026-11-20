@@ -315,7 +315,7 @@ async function runAdmittedRequest(
   const tier1Choices = tiers[1].filter((node) => supportsRequest(node, reqDescriptor, knownModels)).length;
   const sessionId = tier1Choices >= 2 ? resolveTier1SessionId(request, env) : null;
   const [, affinityRead] = await Promise.all([
-    tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env) : undefined,
+    tiers[1].length > 0 ? hydrateSharedTier1Cooldowns(env, Date.now(), tiers[1].map((node) => node.id)) : undefined,
     sessionId ? readTier1Affinity(env, sessionId, ctx) : null,
   ]);
   const tier1Session = affinityRead === undefined ? null : sessionId;
