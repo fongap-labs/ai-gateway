@@ -159,19 +159,28 @@ async function inventory(fetcher, account, token, worker) {
 export async function synchronizeRuntimeSecrets(env, fetcher = fetch, configurations) {
   const plan = buildRuntimeSecretPlan(env, configurations);
   for (const worker of plan.workers) await inventory(fetcher, plan.account, plan.token, worker);
-  for (const { worker, name, value } of plan.writes) {
-    const result = await request(fetcher, endpoint(plan.account, worker), plan.token, 'PUT', {
-      name,
-      text: value,
-      type: 'secret_text',
-    });
-    if (!result || result.name !== name || result.type !== 'secret_text') {
-      throw new Error(`Cloudflare did not confirm the ${worker} / ${name} update; review the partial change before retry.`);
+  for (const worker of plan.workers) {
+    const writes = plan.writes.filter((item) => item.worker === worker);
+    if (!writes.length) continue;
+    const secrets = Object.fromEntries(writes.map(({ name, value }) => [name, { name, text: value, type: 'secret_text' }]));
+    const result = await request(fetcher, `${endpoint(plan.account, worker)}-bulk`, plan.token, 'PATCH', { secrets });
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      Array.isArray(result) ||
+      writes.some(({ name }) => result[name]?.name !== name || result[name]?.type !== 'secret_text')
+    ) {
+      throw new Error(`Cloudflare did not confirm the ${worker} Secret batch update; review the partial change before retry.`);
     }
   }
   for (const worker of plan.workers) {
-    const names = await inventory(fetcher, plan.account, plan.token, worker);
-    const missing = plan.writes.filter((item) => item.worker === worker && !names.has(item.name));
+    let missing = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const names = await inventory(fetcher, plan.account, plan.token, worker);
+      missing = plan.writes.filter((item) => item.worker === worker && !names.has(item.name));
+      if (!missing.length) break;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
     if (missing.length) throw new Error(`Cloudflare did not retain ${worker} Secret metadata: ${missing.map((item) => item.name).join(', ')}.`);
   }
   return { workers: plan.workers.length, bindings: plan.writes.length };

@@ -785,12 +785,17 @@ const fakeCloudflare = async (url, options) => {
   if (options.method === 'GET') {
     return Response.json({ success: true, result: [...mirrored.get(worker).keys()].map((name) => ({ name, type: 'secret_text' })) });
   }
-  assert.equal(options.method, 'PUT');
-  const secret = JSON.parse(options.body);
-  assert.equal(secret.type, 'secret_text');
-  assert.ok(secretPlan.writes.some((item) => item.worker === worker && item.name === secret.name && item.value === secret.text));
-  mirrored.get(worker).set(secret.name, secret.text);
-  return Response.json({ success: true, result: { name: secret.name, type: 'secret_text' } });
+  assert.equal(options.method, 'PATCH');
+  const secrets = JSON.parse(options.body).secrets;
+  const result = {};
+  for (const [name, secret] of Object.entries(secrets)) {
+    assert.equal(secret.name, name);
+    assert.equal(secret.type, 'secret_text');
+    assert.ok(secretPlan.writes.some((item) => item.worker === worker && item.name === name && item.value === secret.text));
+    mirrored.get(worker).set(name, secret.text);
+    result[name] = { name, type: 'secret_text' };
+  }
+  return Response.json({ success: true, result });
 };
 assert.deepEqual(await synchronizeRuntimeSecrets(flatProviderKeys, fakeCloudflare, privateConfigurations), { workers: 4, bindings: 9 });
 assert.deepEqual(JSON.parse(mirrored.get('ai-inference-center').get('AIG_TIER1_CREDENTIALS_01')), { 'chat-01': 'text-key', 'omni-01': 'vision-key' });
@@ -803,7 +808,8 @@ for (const [worker, name] of [
   ['ai-generation-center', 'AIG_GENERATION_AUTH_KEY'],
 ])
   assert.equal(mirrored.get(worker).get(name), mirrored.get('ai-gateway').get(name));
-assert.equal(methods.filter((method) => method === 'PUT').length, 9);
+assert.equal(methods.filter((method) => method === 'PATCH').length, 4);
+assert.equal(methods.includes('PUT'), false);
 assert.equal(methods.includes('DELETE'), false);
 const rejectedMethods = [];
 await assert.rejects(
