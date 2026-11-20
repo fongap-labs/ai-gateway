@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- 维护: 将 AI Gateway 中央测试包固定到 action-worker 合并提交 `caccfa3`，启用 Cloudflare 批量 Secret 同步、回执完整性和失败关闭回归，不放宽现有部署门禁。
+- 修复: 将 AI Gateway 中央测试包固定到 action-worker 合并提交 `caccfa3`，启用 Cloudflare 批量 Secret 同步、回执完整性和失败关闭回归，不放宽现有部署门禁。
 
 - 修复: Cloudflare Worker 运行时 Secrets 改为每个 Worker 单次批量更新，校验完整写入回执并限次只读复查，避免逐条更新导致多个版本之间的绑定状态不一致；校验失败仍阻止生产发布。
 
