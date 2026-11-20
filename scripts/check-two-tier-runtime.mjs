@@ -959,7 +959,7 @@ const kv = {
   },
 };
 const kvEnv = { TIER1_AFFINITY: kv };
-await hydrateSharedTier1Cooldowns(kvEnv);
+await hydrateSharedTier1Cooldowns(kvEnv, Date.now(), ['metric-test-account']);
 assert.equal(snapshotSharedTier1Cooldowns().reads, 1);
 const tasks = [];
 const now = Date.now();
@@ -1000,9 +1000,9 @@ const readRetryEnv = {
   },
 };
 const readRetryClock = Date.now();
-await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock);
+await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock, ['read-retry-account']);
 assert.equal(snapshotSharedTier1Cooldowns().readFailures, 1);
-await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock + 16_000);
+await hydrateSharedTier1Cooldowns(readRetryEnv, readRetryClock + 16_000, ['read-retry-account']);
 assert.equal(readAttempts, 2, 'a failed shared cooldown read becomes eligible for a bounded retry');
 assert.equal(snapshotSharedTier1Cooldowns().reads, 2);
 assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 1, 'the successful retry adopts shared cooldown state');
@@ -1021,13 +1021,13 @@ const timeoutReadEnv = {
   },
 };
 const timeoutReadClock = Date.now();
-await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock);
+await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock, ['stale-read-account']);
 assert.equal(timeoutReadAttempts, 1, 'the first shared read is abandoned at its 50 ms deadline');
 resolveTimedOutRead(JSON.stringify([{ node: 'stale-read-account', until: Date.now() + 900_000, reason: 'auth' }]));
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 0, 'a late result is discarded immediately after the read times out');
 assert.equal(getTier1Account('stale-read-account').accountCooldownUntil ?? 0, 0, 'a timed out read cannot reapply a cleared cooldown');
-await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock + 16_000);
+await hydrateSharedTier1Cooldowns(timeoutReadEnv, timeoutReadClock + 16_000, ['stale-read-account']);
 assert.equal(timeoutReadAttempts, 2, 'a timed out shared read can be retried after backoff');
 assert.equal(snapshotSharedTier1Cooldowns().knownEntries, 0, 'a newer empty KV read leaves no shared cooldowns');
 __resetSharedTier1CooldownsForTests();
