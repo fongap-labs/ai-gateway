@@ -162,9 +162,7 @@ export async function synchronizeRuntimeSecrets(env, fetcher = fetch, configurat
   for (const worker of plan.workers) {
     const writes = plan.writes.filter((item) => item.worker === worker);
     if (!writes.length) continue;
-    const secrets = Object.fromEntries(
-      writes.map(({ name, value }) => [name, { name, text: value, type: 'secret_text' }]),
-    );
+    const secrets = Object.fromEntries(writes.map(({ name, value }) => [name, { name, text: value, type: 'secret_text' }]));
     const result = await request(fetcher, `${endpoint(plan.account, worker)}-bulk`, plan.token, 'PATCH', { secrets });
     if (
       !result ||
