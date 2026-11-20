@@ -177,7 +177,11 @@ async function flush(kv: CooldownKV, nodeId: string): Promise<void> {
         kvStats.readFailures++;
         throw new Error('Shared cooldown KV read failed');
       }
-      const entries = merge(parseEntries(prior, nodeId), known.filter((entry) => entry.node === nodeId), Date.now());
+      const entries = merge(
+        parseEntries(prior, nodeId),
+        known.filter((entry) => entry.node === nodeId),
+        Date.now(),
+      );
       known = merge(known, entries, Date.now());
       if (entries.length === 0) break;
       const latest = Math.max(...entries.map((entry) => entry.until));
