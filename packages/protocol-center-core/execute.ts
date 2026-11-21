@@ -1,6 +1,6 @@
 import { getLimits } from '../config-core/timeouts.ts';
-import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation, serializeExecutionError } from '../contracts/execution.ts';
 import { INFERRED_CREDENTIAL_GROUPS_HEADER } from '../contracts/credential-groups.ts';
+import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation, serializeExecutionError } from '../contracts/execution.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
 import { BodyTooLargeError, readBodyTextWithLimit } from '../transport/http.ts';

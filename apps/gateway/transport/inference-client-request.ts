@@ -1,6 +1,6 @@
-import type { ExecutionInputSurface, ExecutionTransport } from '../../../packages/contracts/execution.ts';
-import { adoptInferredCredentialGroups, INFERRED_CREDENTIAL_GROUPS_HEADER } from '../../../packages/contracts/credential-groups.ts';
 import { loadGatewayConfig } from '../../../packages/config-core/nodes.ts';
+import { adoptInferredCredentialGroups, INFERRED_CREDENTIAL_GROUPS_HEADER } from '../../../packages/contracts/credential-groups.ts';
+import type { ExecutionInputSurface, ExecutionTransport } from '../../../packages/contracts/execution.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';
 import type { InferenceStreamBudget } from '../../../packages/contracts/inference-stream-budget.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
