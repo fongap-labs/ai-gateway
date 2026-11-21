@@ -1,5 +1,6 @@
 import { getLimits } from '../config-core/timeouts.ts';
 import { buildExecutionHeaders, EXECUTION_WIRE_RESULT, type ExecutionInvocation, serializeExecutionError } from '../contracts/execution.ts';
+import { INFERRED_CREDENTIAL_GROUPS_HEADER } from '../contracts/credential-groups.ts';
 import type { GatewayEnv } from '../contracts/runtime.ts';
 import { prepareProtocolRequest } from '../conversion-core/matrix/request-protocol-adapter.ts';
 import { BodyTooLargeError, readBodyTextWithLimit } from '../transport/http.ts';
@@ -62,7 +63,10 @@ export async function executeProtocolRequest(request: Request, env: GatewayEnv, 
   try {
     const raw = await center.fetch(forwarding);
     if (!raw.ok || raw.headers.get('x-aig-result') !== EXECUTION_WIRE_RESULT.DISPATCHED) return raw;
-    return convertPrivateMatrixResponse(raw, invocation, prepared.body, env, request.signal, new Headers(raw.headers));
+    const converted = await convertPrivateMatrixResponse(raw, invocation, prepared.body, env, request.signal, new Headers(raw.headers));
+    const groups = raw.headers.get(INFERRED_CREDENTIAL_GROUPS_HEADER);
+    if (groups !== null) converted.headers.set(INFERRED_CREDENTIAL_GROUPS_HEADER, groups);
+    return converted;
   } catch {
     return serializeExecutionError(503, 'protocol_inference_outcome_unknown', { retryable: false });
   }
