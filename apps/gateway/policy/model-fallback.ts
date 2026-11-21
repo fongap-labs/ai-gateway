@@ -1,6 +1,7 @@
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
+import { inferMirroredModelSiblings } from './automatic-model-family.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
@@ -26,6 +27,18 @@ function configuredTargets(requested: string, modelsConfig: Record<string, Model
   return Object.entries(modelsConfig).find(([name]) => keyOf(name) === key)?.[1].policy.fallback ?? [];
 }
 
+function hasDeclaredFallback(requested: string, modelsConfig: Record<string, ModelEntry>): boolean {
+  const requestedKey = keyOf(requested);
+  const entry = modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1];
+  return entry?.policy.fallback !== undefined;
+}
+
+function resolvedTargets(requested: string, knownModels: ReadonlySet<string>, modelsConfig: Record<string, ModelEntry>): readonly string[] {
+  return hasDeclaredFallback(requested, modelsConfig)
+    ? configuredTargets(requested, modelsConfig)
+    : inferMirroredModelSiblings(requested, knownModels);
+}
+
 function fallbackMode(requested: string, modelsConfig: Record<string, ModelEntry>): 'one_way' | 'recheck' {
   const requestedKey = keyOf(requested);
   const entry = modelsConfig[requested] ?? Object.entries(modelsConfig).find(([name]) => keyOf(name) === requestedKey)?.[1];
@@ -49,7 +62,7 @@ export function buildModelFallbackRounds(
   const catalog = catalogByKey(knownModels);
   const first = [requestedModel];
   const seen = new Set([keyOf(requestedModel)]);
-  for (const target of configuredTargets(requestedModel, modelsConfig)) {
+  for (const target of resolvedTargets(requestedModel, knownModels, modelsConfig)) {
     const key = keyOf(target);
     const resolved = catalog.get(key);
     if (resolved && !seen.has(key)) {
@@ -57,7 +70,7 @@ export function buildModelFallbackRounds(
       seen.add(key);
     }
   }
-  if (first.length <= 1) return [first];
+  if (first.length <= 1 || !hasDeclaredFallback(requestedModel, modelsConfig)) return [first];
   const second = fallbackMode(requestedModel, modelsConfig) === 'one_way' ? first.slice(1) : [...first];
   return second.length ? [first, second] : [first];
 }
@@ -99,12 +112,15 @@ export function buildModelFallbackPlan(
   const rounds = buildModelFallbackRounds(requestedModel, knownModels, modelsConfig);
   if ((rounds[0]?.length ?? 0) <= 1) return [[{ model: requestedModel, attemptCap: null }]];
   const attemptBudget = normalizedBudget(maxAttempts);
+  const inferred = !hasDeclaredFallback(requestedModel, modelsConfig);
+  const targets = resolvedTargets(requestedModel, knownModels, modelsConfig);
+  const fairCap = Math.max(1, Math.floor(attemptBudget / (rounds[0]?.length ?? 1)));
   const first = firstRoundPlan(
     rounds[0] ?? [requestedModel],
     attemptBudget,
-    [requestedModel, ...configuredTargets(requestedModel, modelsConfig)],
-    fallbackMode(requestedModel, modelsConfig),
-    configuredAttemptCaps(requestedModel, modelsConfig),
+    [requestedModel, ...targets],
+    inferred ? 'one_way' : fallbackMode(requestedModel, modelsConfig),
+    inferred ? Array(rounds[0]?.length ?? 1).fill(fairCap) : configuredAttemptCaps(requestedModel, modelsConfig),
   );
   const allowed = new Set(first.map(({ model }) => keyOf(model)));
   const result: ModelFallbackPass[][] = [first];
