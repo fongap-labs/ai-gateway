@@ -13,7 +13,7 @@ export function hasSharedCredential(node: RuntimeNode): boolean {
 export function credentialPeers(nodes: readonly RuntimeNode[], node: RuntimeNode): RuntimeNode[] {
   if (!hasSharedCredential(node)) return [];
   const identity = credentialSlotId(node);
-  return nodes.filter((peer) => peer.id !== node.id && credentialSlotId(peer) === identity);
+  return nodes.filter((peer) => peer.id !== node.id && peer.tier === node.tier && credentialSlotId(peer) === identity);
 }
 
 const recentModels = new Map<string, Map<string, number>>();
