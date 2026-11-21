@@ -233,7 +233,7 @@ Tier 1 使用观测到的运行时事实，而非猜测的 Provider 额度：
 
 未显式配置时，内置 `chat` 与 `coding` 策略均允许最多 8 次请求级逻辑尝试（现行安全上限），用于优先轮换 Tier 1 免费节点。两层均可用时，跨层分配初始保留 1 次 Tier 2 兜底，其余最多 7 次分配给 Tier 1；若 Tier 1 已无可调度节点，未用完的尝试预算可转到 Tier 2。成功、节点冷却、重试准入或总超时将提前终止；最大尝试次数不是必须打满的目标。内置策略关闭 Hedge，避免向同一免费池额外发送重复请求。中央部署默认的流式和非流式尝试准入上限也相应调整至 8；显式设置的较低上限仍优先。`AIG_POLICIES_CONFIG` 可以按名称覆盖，但不是常规必填变量。
 
-`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前已授权模型目录中解析，并受请求级 attempt 上限约束；未显式声明 `fallback` 时，可基于三组以上镜像末段名称的保守家族发现机制在同一命名空间内自动切换，无须补充 `AIG_MODELS_CONFIG`。无法可靠识别的模型仍只使用自身节点，显式 `fallback: []` 不进行自动推断。逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
+`max_attempts` 是请求级的逻辑 attempt 上限，Tier 上限必须落在该值之内。`headers_timeout_ms`、`first_event_timeout_ms` 与 `failover_budget_ms` 可按策略覆盖全局时序。默认策略会按逻辑模型标识的内置分类选择预算；运营者可在 `AIG_POLICIES_CONFIG` 定义策略，并通过 `AIG_MODELS_CONFIG.<model>.policy` 将当前逻辑模型绑定到策略。模型回退候选仅从当前已授权模型目录中解析，并受请求级 attempt 上限约束；未显式声明 `fallback` 时，可基于至少三个跨命名空间重复的末段标识的保守家族发现机制在同一命名空间内自动切换，无须补充 `AIG_MODELS_CONFIG`。无法可靠识别的模型仍只使用自身节点，显式 `fallback: []` 不进行自动推断。逻辑模型 ID 和上游映射来自配置，不应复制进代码或操作手册。跨 Tier 只支持严格 Tier 优先级；`budget_split`、加权分配及其他 Tier 预算模式会作为未知字段拒绝。
 
 ## 请求时序
 
