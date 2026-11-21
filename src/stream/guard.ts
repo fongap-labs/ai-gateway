@@ -37,17 +37,23 @@ export async function ensureFirstSseEvent(
       clearTimeout(timerId);
       clientSignal?.removeEventListener('abort', abort);
       const state: { failureReason: string | null } = { failureReason: null };
-      const stream = new ReadableStream({
-        start(controller) {
-          for (const chunk of consumed) controller.enqueue(chunk);
+      const replayChunks = consumed.reverse();
+      const stream = new ReadableStream(
+        {
+          pull(controller) {
+            const buffered = replayChunks.pop();
+            if (buffered) {
+              controller.enqueue(buffered);
+              return;
+            }
+            return pull(reader, controller, state);
+          },
+          cancel() {
+            reader.cancel().catch(() => {});
+          },
         },
-        pull(controller) {
-          return pull(reader, controller, state);
-        },
-        cancel() {
-          reader.cancel().catch(() => {});
-        },
-      });
+        { highWaterMark: 0 },
+      );
       const replay = new Response(stream, {
         status: upstreamResponse.status,
         statusText: upstreamResponse.statusText,
