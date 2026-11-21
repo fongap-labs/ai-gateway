@@ -1,8 +1,8 @@
 import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts';
 import type { ModelEntry } from '../../../src/config/models.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
-import { inferMirroredModelSiblings } from './automatic-model-family.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
+import { inferMirroredModelSiblings } from './automatic-model-family.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
 export type ModelFallbackPass = { model: string; attemptCap: number | null };
