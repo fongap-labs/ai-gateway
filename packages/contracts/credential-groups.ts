@@ -3,11 +3,8 @@ import type { RuntimeNode } from './runtime-node.ts';
 // Private center -> Gateway only. This metadata never contains raw credentials.
 export const INFERRED_CREDENTIAL_GROUPS_HEADER = 'x-aig-credential-groups';
 const MAX_GROUPS_HEADER_LENGTH = 8192;
-const cachedGroups = new WeakMap<ReadonlyArray<RuntimeNode>, string | null>();
 
 export function encodeInferredCredentialGroups(nodes: ReadonlyArray<RuntimeNode>): string | null {
-  const cached = cachedGroups.get(nodes);
-  if (cached !== undefined) return cached;
   const idsByCredential = new Map<string, string[]>();
   const covered: string[] = [];
   for (const node of nodes) {
@@ -24,7 +21,6 @@ export function encodeInferredCredentialGroups(nodes: ReadonlyArray<RuntimeNode>
     .sort((left, right) => (left[0] ?? '').localeCompare(right[0] ?? ''));
   const payload = JSON.stringify({ covered: covered.sort(), groups });
   const bounded = payload.length <= MAX_GROUPS_HEADER_LENGTH ? payload : null;
-  cachedGroups.set(nodes, bounded);
   return bounded;
 }
 
