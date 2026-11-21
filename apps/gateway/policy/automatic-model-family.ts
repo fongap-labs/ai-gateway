@@ -5,9 +5,7 @@ function splitName(name: string): { namespace: string; slot: string } | null {
   const normalized = name.trim().toLowerCase();
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) return null;
   const separator = normalized.lastIndexOf('-');
-  return separator < 0
-    ? { namespace: '', slot: normalized }
-    : { namespace: normalized.slice(0, separator), slot: normalized.slice(separator + 1) };
+  return separator < 0 ? { namespace: '', slot: normalized } : { namespace: normalized.slice(0, separator), slot: normalized.slice(separator + 1) };
 }
 
 export function inferMirroredModelSiblings(requested: string, knownModels: ReadonlySet<string>): string[] {
@@ -27,7 +25,7 @@ export function inferMirroredModelSiblings(requested: string, knownModels: Reado
   }
 
   const own = families.get(origin.namespace);
-  if (!own || !own.has(origin.slot) || own.size < 3) return [];
+  if (!own?.has(origin.slot) || own.size < 3) return [];
 
   // Requiring three independent mirrored slots prevents free-form names,
   // vision-only singletons and incidental suffix collisions from becoming
