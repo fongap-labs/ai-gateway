@@ -1,5 +1,7 @@
 import { INFERENCE_PREFLIGHT_PATH, parseInferencePreflightInvocation } from '../../packages/contracts/conversion-preflight.ts';
 import type { ExecutionSurface } from '../../packages/contracts/execution.ts';
+import { INFERRED_CREDENTIAL_GROUPS_HEADER, encodeInferredCredentialGroups } from '../../packages/contracts/credential-groups.ts';
+import { loadExecutionConfig } from '../../packages/config-core/nodes.ts';
 import { authorizeExecutionRequest, parseExecutionInvocation } from '../../packages/contracts/execution.ts';
 import { withNativeSpan } from '../../packages/contracts/native-tracing.ts';
 import type { ExecutionContextLike, GatewayEnv } from '../../packages/contracts/runtime.ts';
@@ -31,7 +33,12 @@ export async function handleInferenceCenterRequest(request: Request, env: Gatewa
     ctx,
     'aig.inference.execute',
     { requestId: invocation.requestId, nodeId: invocation.nodeId, model: invocation.logicalModel, center: 'inference', phase: 'execute' },
-    () => executeNative(request, env, invocation),
+    async () => {
+      const response = await executeNative(request, env, invocation);
+      const groups = encodeInferredCredentialGroups(loadExecutionConfig(env).nodes);
+      if (groups !== null) response.headers.set(INFERRED_CREDENTIAL_GROUPS_HEADER, groups);
+      return response;
+    },
   );
 }
 
