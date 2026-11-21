@@ -938,10 +938,15 @@ assert.match(
   /if \(invocation.rawResponse\) return new Response\(upstream.body/,
   'Only authenticated v8 tickets may hand raw Provider bytes to Protocol',
 );
+assert.equal(
+  (protocolExecutionOwner.match(/convertPrivateMatrixResponse\(raw, invocation, prepared\.body/g) ?? []).length,
+  1,
+  'Protocol Core must translate the raw response exactly once',
+);
 assert.match(
   protocolExecutionOwner,
-  /return convertPrivateMatrixResponse\(raw, invocation, prepared\.body/,
-  'Protocol Core must translate the raw response once',
+  /const converted = await convertPrivateMatrixResponse\(raw, invocation, prepared\.body/,
+  'Protocol Core must finish translation before attaching internal credential metadata',
 );
 assert.doesNotMatch(
   protocolExecutionOwner,

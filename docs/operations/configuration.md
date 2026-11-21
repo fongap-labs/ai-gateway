@@ -96,6 +96,8 @@ surfaces
 
 Tier 2 只接受静态 API Token。节点必须声明 `id`、`provider`、`base_url` 和 `models`，不得包含 `auth`、OAuth 登录信息或直接内嵌的凭据。上游 Token 只存放在对应的私有中心 `AIG_TIER2_CREDENTIALS_XX` Secret 分片中。
 
+**共享凭据自动识别（Inference）**：文本节点无需人工填写 `key_group`。私有 Inference Center 在执行时只在自身内存中比较 Provider 与实际 Secret，按相同凭据识别节点组合；经内部认证的 Service Binding 将不含密钥的节点分组随执行响应返回 Gateway，Gateway 消费后移除该内部响应头。分组会随中心 Secret 变更更新，无新增 KV/D1 读写。未收到经过验证的分组信息时维持既有节点隔离，不猜测两个 Key 是否相同。已存在的 `key_group` 作为兼容输入保留，但不是共享 Key 识别的必要配置，也不优先于中心返回的真实凭据关系。模型族跨 Pro/Max/Ultra 的逻辑回退仍须检查模型目录是否包含允许的候选，不能仅凭模型名字推断兼容性。
+
 ## Provider wire profiles（提供商线协议配置）
 
 Provider Adapter 定义基础协议和默认 API surface；可选的节点 `surfaces` 则声明物理端点实际提供的接口：

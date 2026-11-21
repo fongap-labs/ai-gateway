@@ -14,7 +14,7 @@ import {
 import type { FailureClassification, FailureKind } from '../../../src/reliability/classify.ts';
 import { classifyHedgeRaceLoss, KIND } from '../../../src/reliability/classify.ts';
 import { applyHealthPenalty, bumpNodeCounters, recordFailure, recordModelMissing, recordNeutralEnd } from '../../../src/reliability/node-state.ts';
-import { credentialPeers, credentialSlotId, noteKeyGroup429 } from '../../../src/reliability/shared-credential-group.ts';
+import { credentialPeers, credentialSlotId, hasSharedCredential, noteKeyGroup429 } from '../../../src/reliability/shared-credential-group.ts';
 import { recordTier1ProviderModelRateLimit } from '../../../src/reliability/tier1-heat.ts';
 import {
   adoptTier1Cooldown,
@@ -185,7 +185,7 @@ export function recordOutcome(
       if (classification.requestTooLarge) recordTier1Oversize(node.id, effectiveModel, c?.reqDescriptor?.bodyChars ?? 0);
       if (classification.kind === KIND.RATE_LIMIT) {
         recordTier1ProviderModelRateLimit(node.provider, upstreamModel, credentialSlotId(node));
-        const observedScope = node.keyGroup ? noteKeyGroup429(node, upstreamModel) : decideTier1RateLimitScope(node.id, effectiveModel);
+        const observedScope = hasSharedCredential(node) ? noteKeyGroup429(node, upstreamModel) : decideTier1RateLimitScope(node.id, effectiveModel);
         tier1RateLimitScope = classification.rateLimitWindow === 'quota' ? 'account' : observedScope;
         const now = Date.now();
 
@@ -219,7 +219,7 @@ export function recordOutcome(
       const tier1ModelKey = classification.kind === KIND.MODEL_MISSING ? upstreamModel : effectiveModel;
       const outcomeAt = Date.now();
       applyTier1Outcome(node.id, tier1ModelKey, t1Class, outcomeAt);
-      if (node.keyGroup) {
+      if (hasSharedCredential(node)) {
         const peers = credentialPeers(state.nodes ?? [], node);
         if (
           t1Class.scope === 'account' &&

@@ -22,8 +22,10 @@ assert.equal(isCredentialWideFailure({ dispatched: false, status: 401, kind: 'au
 assert.equal(isCredentialWideFailure({ dispatched: true, status: 401, kind: 'auth' }), true);
 assert.equal(isCredentialWideFailure({ dispatched: true, status: 403, kind: 'auth' }), false);
 assert.equal(isCredentialWideFailure({ dispatched: true, status: 422, kind: 'client' }), false);
-assert.equal(isCredentialWideFailure({ dispatched: true, status: 504, kind: 'headers_timeout' }), false);
-assert.equal(isCredentialWideFailure({ dispatched: true, status: 429, kind: 'rate_limit', rate_limit_scope: 'model' }), false);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 504, kind: 'headers_timeout' }), true);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 0, kind: 'first_event_timeout' }), true);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 504, kind: 'server' }), true);
+assert.equal(isCredentialWideFailure({ dispatched: true, status: 429, kind: 'rate_limit', rate_limit_scope: 'model' }), true);
 assert.equal(isCredentialWideFailure({ dispatched: true, status: 429, kind: 'rate_limit', rate_limit_scope: 'account' }), true);
 
 const sameProvider = {

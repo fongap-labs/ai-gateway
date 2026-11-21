@@ -2,6 +2,7 @@ import { resolvePhysicalModel } from '../../../packages/config-core/registry.ts'
 import type { ModelEntry } from '../../../src/config/models.ts';
 import { credentialSlotId } from '../../../src/reliability/shared-credential-group.ts';
 import type { RuntimeNode } from '../../../src/types/node.ts';
+import { isCredentialWideFailure } from '../reliability/retry-budget.ts';
 import { inferMirroredModelSiblings } from './automatic-model-family.ts';
 
 const DEFAULT_FAMILY_ATTEMPT_BUDGET = 6;
@@ -211,7 +212,7 @@ export function rememberFailedDomains(
     if (attempt.dispatched !== true || typeof attempt.node_id !== 'string') continue;
     const node = nodesById.get(attempt.node_id);
     if (!node) continue;
-    if (keyFailures.has(String(attempt.kind)) || (attempt.kind === 'rate_limit' && attempt.rate_limit_scope === 'account')) {
+    if (keyFailures.has(String(attempt.kind)) || isCredentialWideFailure(attempt)) {
       failedDomains.add(keyFailureDomainKey(node));
     }
     const rejectedRoute =

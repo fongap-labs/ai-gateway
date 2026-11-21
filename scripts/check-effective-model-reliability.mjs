@@ -291,7 +291,11 @@ const scoped429 = new Set();
 rememberFailedDomains(scoped429, groupedMap, new Set([groupedA.id]), effective, [
   { node_id: groupedA.id, dispatched: true, kind: 'rate_limit', rate_limit_scope: 'model' },
 ]);
-assert.equal(failedDomainNodeIds([groupedOmni], 'Omni', scoped429).has(groupedOmni.id), false, 'model 429 must not suppress Omni');
+assert.equal(
+  failedDomainNodeIds([groupedOmni], 'Omni', scoped429).has(groupedOmni.id),
+  true,
+  'model 429 must exclude the same Key across request-scoped model fallback',
+);
 const account429 = new Set();
 rememberFailedDomains(account429, groupedMap, new Set([groupedA.id]), effective, [
   { node_id: groupedA.id, dispatched: true, kind: 'rate_limit', rate_limit_scope: 'account' },
