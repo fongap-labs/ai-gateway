@@ -1,4 +1,6 @@
 import type { ExecutionInputSurface, ExecutionTransport } from '../../../packages/contracts/execution.ts';
+import { adoptInferredCredentialGroups, INFERRED_CREDENTIAL_GROUPS_HEADER } from '../../../packages/contracts/credential-groups.ts';
+import { loadGatewayConfig } from '../../../packages/config-core/nodes.ts';
 import { buildExecutionHeaders } from '../../../packages/contracts/execution.ts';
 import type { InferenceStreamBudget } from '../../../packages/contracts/inference-stream-budget.ts';
 import type { GatewayEnv } from '../../../packages/contracts/runtime.ts';
@@ -101,10 +103,14 @@ export function buildProtocolExecutionRequest(env: GatewayEnv, invocation: Infer
 }
 
 export async function invokeInferenceNode(env: GatewayEnv, invocation: InferenceInvocation): Promise<Response> {
-  if (invocation.inputSurface && env.AIG_PROTOCOL_SERVICE !== undefined) {
-    const service = configuredProtocolService(env);
-    return service.fetch(buildProtocolExecutionRequest(env, invocation));
-  }
-  const service = configuredInferenceService(env);
-  return service.fetch(buildInferenceRequest(env, invocation));
+  const response =
+    invocation.inputSurface && env.AIG_PROTOCOL_SERVICE !== undefined
+      ? await configuredProtocolService(env).fetch(buildProtocolExecutionRequest(env, invocation))
+      : await configuredInferenceService(env).fetch(buildInferenceRequest(env, invocation));
+  const groups = response.headers.get(INFERRED_CREDENTIAL_GROUPS_HEADER);
+  if (groups === null) return response;
+  adoptInferredCredentialGroups(loadGatewayConfig(env).nodes, groups);
+  const headers = new Headers(response.headers);
+  headers.delete(INFERRED_CREDENTIAL_GROUPS_HEADER);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

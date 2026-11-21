@@ -12,7 +12,14 @@ export function isIndependentKeyRecovery(previousNode: RuntimeNode | undefined, 
 
 export function isCredentialWideFailure(attempt: Readonly<Record<string, unknown>>): boolean {
   if (attempt.dispatched !== true) return false;
-  return attempt.status === 401 || (attempt.kind === KIND.RATE_LIMIT && attempt.rate_limit_scope === 'account');
+  return (
+    attempt.status === 401 ||
+    attempt.status === 504 ||
+    attempt.kind === KIND.RATE_LIMIT ||
+    attempt.kind === KIND.RATE_LIMIT_GLOBAL ||
+    attempt.kind === KIND.HEADERS_TIMEOUT ||
+    attempt.kind === KIND.FIRST_EVENT_TIMEOUT
+  );
 }
 
 export function preferUntriedCredentials(

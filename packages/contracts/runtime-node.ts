@@ -13,6 +13,8 @@ export type NodeReasoning = {
 export type RuntimeNode = {
   id: string;
   keyGroup?: string;
+  credentialIdentity?: string;
+  credentialShared?: boolean;
   tier: NodeTier;
   provider: string;
   protocol: Protocol;
