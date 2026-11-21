@@ -42,6 +42,6 @@ export function inferMirroredModelSiblings(requested: string, knownModels: Reado
   if (!verified.has(origin.slot)) return [];
 
   return [...own]
-    .filter(([slot, model]) => slot !== origin.slot && verified.has(slot) && model.toLowerCase() !== requested.trim().toLowerCase())
+    .filter(([slot, model]) => slot !== origin.slot && slot !== 'air' && verified.has(slot) && model.toLowerCase() !== requested.trim().toLowerCase())
     .map(([, model]) => model);
 }
