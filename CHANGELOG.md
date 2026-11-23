@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 维护: 统一智能体规则入口并整理相关文档引用。
+
 - 维护: 将 AI Gateway 的中央测试包固定 SHA 更新为 action-worker 已通过主分支 CI 和治理验证的 `04eff97`，不再引用历史红叉提交 `fa56c21`；历史失败结论原样保留，完整测试仍在新 SHA 上执行。
 
 - 修复: 私有 Inference Center 共享凭据分组不再缓存会过期的 Secret 关系，Key 轮换后实时重新推断、避免错误串用冷却；集中回归测试包固定到 action-worker 合并提交 `fa56c21`，覆盖 SSE 背压取消、同 Key 故障隔离和自动模型族切换。
