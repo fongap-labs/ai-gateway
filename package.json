@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=22.18.0"
+    "node": "26.13.1"
   },
   "scripts": {
     "build": "npm run validate:merge",
@@ -102,7 +102,7 @@
     "multi-provider"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
-    "typescript": "^7.0.2"
+    "@biomejs/biome": "2.6.4",
+    "typescript": "7.0.2"
   }
 }
